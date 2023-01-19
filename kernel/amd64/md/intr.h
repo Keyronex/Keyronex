@@ -40,6 +40,7 @@ typedef struct md_cpu {
 	uint64_t    lapic_id;
 	uint64_t    lapic_tps; /* lapic timer ticks per second (divider 1) */
 	struct tss *tss;
+	ipl_t switchipl;
 	struct kthread *old, *new;
 } md_cpu_t;
 
@@ -101,6 +102,6 @@ uint64_t md_timer_get_remaining(void);
 /* initialise a thread's state */
 void md_thread_init(struct kthread *thread, void (*start_fun)(void *),
     void			   *start_arg);
-void md_switch(struct kthread *from, struct kthread *to);
+void md_switch(ipl_t switchipl, struct kthread *from, struct kthread *to);
 
 #endif /* INTR_H_ */

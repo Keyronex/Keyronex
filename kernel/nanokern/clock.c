@@ -6,6 +6,12 @@
 #include "md/intr.h"
 #include "md/spl.h"
 
+static void
+preempt_dpc(void *arg)
+{
+	nk_raise_dispatch_interrupt();
+}
+
 static kthread_t *
 next_thread(kcpu_t *cpu)
 {
@@ -20,17 +26,20 @@ next_thread(kcpu_t *cpu)
 	return cand;
 }
 
+/* entered at ipl = dispatch */
 static void
-do_reschedule(void)
+do_reschedule(ipl_t ipl)
 {
 	/* time to reschedule */
-	kcpu_t	  *cpu = curcpu();
-	ipl_t	   ipl = spldispatch();
+	kcpu_t *cpu = curcpu();
 	bool	   iff;
 	kthread_t *cur, *next;
 
-	/* switch can only occur at IPL dispatch (for now */
-	nk_assert(ipl == kSPL0);
+#if DEBUG_SCHED == 1
+	nk_dbg("\n\nScheduler Entry\n");
+#endif
+
+	nk_assert(splget() == kSPLDispatch);
 
 	nk_spinlock_acquire(&cpu->sched_lock);
 	cur = cpu->running_thread;
@@ -38,21 +47,29 @@ do_reschedule(void)
 	if (cur == cpu->idle_thread) {
 		/*! idle thread must never wait, try to exit, whatever */
 		nk_assert(cur->state == kThreadStateRunning);
-	}
-
-	if (cur->state == kThreadStateRunning) {
+	} else if (cur->state == kThreadStateRunning) {
 		cur->state = kThreadStateRunnable;
+		TAILQ_INSERT_TAIL(&cpu->runqueue, cur, queue_link);
 	}
 
 	next = next_thread(cpu);
+	next->state = kThreadStateRunning;
 
-	nk_dbg("Cur  = %p, next = %p\n", cur, next);
+#if DEBUG_SCHED == 1
+	nk_dbg("Current thread = %p, next = %p\n", cur, next);
+#endif
 
 	/* start timeslicing if needed ... */
-	// setup timeslicer callout
+	if (next != cpu->idle_thread &&
+	    cpu->preempt_callout.state != kCalloutPending) {
+		cpu->preempt_callout.nanosecs = NS_PER_S / 20;
+		cpu->preempt_callout.dpc.callback = preempt_dpc;
+		nkx_callout_enqueue(&cpu->preempt_callout);
+	}
 
 	if (next == cur) {
 		nk_spinlock_release_nospl(&cpu->sched_lock);
+		/* FIXME: xxx? see below */
 		splx(ipl);
 		return;
 	}
@@ -60,10 +77,31 @@ do_reschedule(void)
 	/* disable interrupts so we can return to IPL 0 */
 	iff = md_intr_disable();
 	/* FIXME: xxx we lower and potentially risk more DPCs dispatched! */
-	splx(ipl);
+	/*  - this indeed proved to be a problem, SPL lowering moved to the
+	 * switcher
+	 *
+	 * i am now concerned that, when we replace md_switch() with a sane
+	 * implementation, that we might miss software interrupts happening
+	 * between end of DPC processing and beginning of rescheduling.
+	 *
+	 * a potential solution: disable interrupts prior to doing a check on
+	 * pending DPCs. if there are none more, then restore prior interrupt
+	 * state and return, lowering spl on close. this should work because
+	 * only an interrupt on a core (or indeed a manual request) can raise a
+	 * a software interrupt. and so with interrupts blocked, we are not
+	 * going to see one raised until we iret into the next thread..
+	 *
+	 * we might also improve things by deferring the actual lowering of SPL
+	 * below dispatch until we are out of that codepath?
+	 *
+	 * finally, should we save SPL in the thread on sleep? i think it might
+	 * be important for the case of waiting?
+	 */
+	// splx(ipl);
 
-	/* do the switch. It will release the CPU lock at an appropriate time */
-	md_switch(cur, next);
+	/* do the switch. It will release the CPU lock at an appropriate time
+	 * and lower IPL */
+	md_switch(ipl, cur, next);
 
 	/* back from the switch. Re-enable interrupts and return. */
 	md_intr_x(iff);
@@ -72,21 +110,29 @@ do_reschedule(void)
 static void
 do_soft_int_dispatch()
 {
-	while (true) {
-		ipl_t ipl = splhigh();
+	ipl_t ipl = spldispatch();
 
-		kdpc_t *dpc = TAILQ_FIRST(&curcpu()->dpc_queue);
-		if (dpc)
-			TAILQ_REMOVE(&curcpu()->dpc_queue, dpc, queue_entry);
-		splx(ipl);
+	/* FIXME: xxx test/set with ints off, or atomic test/set?  */
+	while (curcpu()->soft_int_dispatch) {
+		curcpu()->soft_int_dispatch = 0;
+		while (true) {
+			ipl_t ipl = splhigh();
 
-		if (dpc == NULL)
-			break;
+			kdpc_t *dpc = TAILQ_FIRST(&curcpu()->dpc_queue);
+			if (dpc)
+				TAILQ_REMOVE(&curcpu()->dpc_queue, dpc,
+				    queue_entry);
+			splx(ipl);
 
-		dpc->callback(dpc->arg);
+			if (dpc == NULL)
+				break;
+
+			dpc->callback(dpc->arg);
+		}
 	}
 
-	do_reschedule();
+	/* do_reschedule drops ipl */
+	do_reschedule(ipl);
 }
 
 ipl_t
@@ -102,22 +148,17 @@ splraise(ipl_t spl)
 void
 nkx_spl_lowered(ipl_t from, ipl_t to)
 {
-	if (to < kSPLDispatch) {
-		/* FIXME: xxx test/set with ints off, or atomic test/set?  */
-		while (curcpu()->soft_int_dispatch) {
-			curcpu()->soft_int_dispatch = 0;
-			do_soft_int_dispatch();
-		}
+	if (to < kSPLDispatch &&curcpu()->soft_int_dispatch) {
+		do_soft_int_dispatch();
 	}
 }
 
 void
 nk_raise_dispatch_interrupt(void)
 {
+	curcpu()->soft_int_dispatch = true;
 	if (splget() < kSPLDispatch)
 		do_soft_int_dispatch();
-	else
-		curcpu()->soft_int_dispatch = true;
 }
 
 void
@@ -128,9 +169,10 @@ nkx_callout_enqueue(kxcallout_t *callout)
 	ipl_t	     ipl;
 
 #if DEBUG_TIMERS == 1
-	kprintf("Enqueuing callout %p\n", callout);
+	nk_dbg("Enqueuing callout %p\n", callout);
 #endif
 
+	nk_assert(callout->state == kCalloutDisabled);
 	nk_assert(callout->nanosecs > 0);
 	ipl = splhigh();
 	co = TAILQ_FIRST(queue);
@@ -138,6 +180,8 @@ nkx_callout_enqueue(kxcallout_t *callout)
 	if (!co) {
 		TAILQ_INSERT_HEAD(queue, callout, queue_entry);
 		md_timer_set(callout->nanosecs);
+		uint64_t rem = md_timer_get_remaining();
+
 		goto next;
 	} else {
 		uint64_t remains = md_timer_get_remaining();
@@ -214,13 +258,18 @@ nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 
 	co = TAILQ_FIRST(queue);
 
+#if DEBUG_TIMERS == 1
+	nk_dbg("callout %p happened\n", co);
+#endif
+
 	nk_assert(co != NULL);
 
 	if (co == NULL)
 		return;
 
 	TAILQ_REMOVE(queue, co, queue_entry);
-	co->state = kCalloutElapsed;
+	/* ! do we want kCalloutElapsed? Do we need it? */
+	co->state = kCalloutDisabled;
 
 	nk_dpc_enqueue(&co->dpc);
 
@@ -233,7 +282,9 @@ nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 void
 nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg)
 {
-	nk_dbg("Reschedule\n");
+#if DEBUG_SCHED == 1
+	nk_dbg("Reschedule IPI received on cpu %lu\n", cpu->num);
+#endif
 	nk_raise_dispatch_interrupt();
 }
 

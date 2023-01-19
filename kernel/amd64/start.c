@@ -262,12 +262,41 @@ smp_init()
 		__asm__("pause");
 }
 
+static void fun2(void*arg)
+{
+	kprintf("Hello from thread B! My address: %p\n", curcpu()->running_thread);
+
+	while (true) {
+		for (int i = 0; i < 40000;i++)
+			asm("pause");
+		kprintf("B");
+	}
+
+
+	done();
+}
+
 static void
 fun(void *arg)
 {
-	kprintf("Hello from the thread!\n");
+	kprintf("Hello from thread A! My address; %p!\n", curcpu()->running_thread);
+
+	kthread_t thread;
+	nk_thread_init(&proc0, &thread, fun2, 0xf008a1);
+	nk_thread_resume(&thread);
+
+	kprintf("Hello after thread B began!\n");
+
+	while (true) {
+		for (int i = 0; i < 40000;i++)
+			asm("pause");
+		kprintf("A");
+	}
+
+	#if 0
 	char *nul = 0;
 	*nul = '\0';
+	#endif
 	done();
 }
 

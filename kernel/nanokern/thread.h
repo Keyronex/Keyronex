@@ -168,6 +168,9 @@ typedef struct kcpu {
 	/*! (~) the idle thread for the core */
 	kthread_t *idle_thread;
 
+	/*! (spldispatch?should it be high?,s) preemption callout */
+	kxcallout_t preempt_callout;
+
 	bool
 	    /*! Soft interrupt at dispatch level  */
 	    soft_int_dispatch : 1;
@@ -363,7 +366,7 @@ extern kcpu_t **all_cpus;
 extern size_t ncpus;
 
 /*! nanokernel structures lock */
-extern kspinlock_t nanokern_lock;
+extern kspinlock_t nk_lock;
 /*! the first thread (idle on cpu0) */
 extern kthread_t thread0;
 /*! the kernel process */

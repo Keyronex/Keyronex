@@ -5,7 +5,7 @@
 
 #include "vm/vm.h"
 
-kspinlock_t nanokern_lock = KSPINLOCK_INITIALISER;
+kspinlock_t nk_lock = KSPINLOCK_INITIALISER;
 kspinlock_t nk_dbg_lock = KSPINLOCK_INITIALISER;
 kthread_t   thread0;
 kprocess_t  proc0;

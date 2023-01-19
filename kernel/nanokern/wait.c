@@ -92,7 +92,7 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 
 	memset(waitblocks, 0, sizeof(kwaitblock_t) * nobjects);
 
-	nk_spinlock_acquire(&nanokern_lock);
+	nk_spinlock_acquire(&nk_lock);
 
 	/*
 	 * do an initial loop of the objects to determine whether any are
@@ -122,7 +122,7 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 
 	if (satisfied && !isWaitall) {
 		/* we have acquired at least one */
-		nk_spinlock_release(&nanokern_lock, ipl);
+		nk_spinlock_release(&nk_lock, ipl);
 		return kKernWaitStatusOK;
 	} else if (satisfied && isWaitall) {
 		/* all of them are acquirable, so acquire them all */
@@ -130,7 +130,7 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 			kdispatchheader_t *hdr = objects[i];
 			nkx_object_acquire(thread, hdr);
 		}
-		nk_spinlock_release(&nanokern_lock, ipl);
+		nk_spinlock_release(&nk_lock, ipl);
 		return kKernWaitStatusOK;
 
 	} else if (timeout == 0) {

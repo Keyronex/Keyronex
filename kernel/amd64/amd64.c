@@ -85,6 +85,7 @@ struct md_intr_entry {
 
 static void pagefault(md_intr_frame_t *frame, void *arg);
 void	    idt_load(void);
+void	    lapic_eoi();
 
 static idt_entry_t	    idt[256] = { 0 };
 static struct md_intr_entry md_intrs[256] = { 0 };
@@ -159,8 +160,7 @@ idt_setup(void)
 
 	idt_load();
 	md_intr_register(14, kSPL0, pagefault, NULL);
-	// md_intr_register(kIntNumLAPICTimer, kSPLHigh, nk_cpu_hardclock,
-	// NULL);
+	md_intr_register(kIntNumLAPICTimer, kSPLHigh, nkx_cpu_hardclock, NULL);
 	md_intr_register(kIntNumRescheduleIPI, kSPLDispatch, nkx_reschedule_ipi,
 	    NULL);
 }
@@ -194,7 +194,9 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		/* here the context switch actually happens */
 		kthread_t *old = curcpu()->md.old, *next = curcpu()->md.new;
 
+#if DEBUG_SCHED == 1
 		nk_dbg("Switch from %p to %p\n", old, next);
+#endif
 
 		old->frame = *frame;
 		// old->md.fs = rdmsr(kAMD64MSRFSBase);
@@ -205,6 +207,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		curcpu()->running_thread = next;
 
 		nk_spinlock_release_nospl(&curcpu()->sched_lock);
+		splx(curcpu()->md.switchipl);
 		return;
 	}
 
@@ -222,7 +225,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	entry->handler(frame, entry->arg);
 
 	if (num >= 32) {
-		// lapic_eoi();
+		lapic_eoi();
 	}
 
 	splx(ipl);
@@ -385,8 +388,8 @@ md_timer_set(uint64_t nanos)
 uint64_t
 md_timer_get_remaining()
 {
-	return lapic_read(kLAPICRegTimerCurrentCount) /
-	    (curcpu()->md.lapic_tps * NS_PER_S);
+	return (lapic_read(kLAPICRegTimerCurrentCount) * NS_PER_S) /
+	    curcpu()->md.lapic_tps;
 }
 
 void
@@ -407,8 +410,9 @@ md_thread_init(struct kthread *thread, void (*start_fun)(void *),
 }
 
 void
-md_switch(struct kthread *from, struct kthread *to)
+md_switch(ipl_t switchipl, struct kthread *from, struct kthread *to)
 {
+	curcpu()->md.switchipl = switchipl;
 	curcpu()->md.old = from;
 	curcpu()->md.new = to;
 	/* the sched lock will be dropped (and IPL too) here */

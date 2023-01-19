@@ -13,7 +13,7 @@ nk_semaphore_init(ksemaphore_t *sem, unsigned count)
 void
 nk_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 {
-	ipl_t ipl = nk_spinlock_acquire(&nanokern_lock);
+	ipl_t ipl = nk_spinlock_acquire(&nk_lock);
 
 	/* low: test for overflow; implement semaphore limits? */
 	sem->hdr.signalled += adjustment;
@@ -27,5 +27,5 @@ nk_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 		}
 	}
 
-	nk_spinlock_release(&nanokern_lock, ipl);
+	nk_spinlock_release(&nk_lock, ipl);
 }

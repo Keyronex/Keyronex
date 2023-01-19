@@ -12,7 +12,7 @@ nk_mutex_init(kmutex_t *mtx)
 void
 nk_mutex_release(kmutex_t *mtx)
 {
-	ipl_t ipl = nk_spinlock_acquire(&nanokern_lock);
+	ipl_t ipl = nk_spinlock_acquire(&nk_lock);
 
 	nk_assert(mtx->owner == curcpu()->running_thread);
 	mtx->hdr.signalled++;
@@ -28,5 +28,5 @@ nk_mutex_release(kmutex_t *mtx)
 		}
 	}
 
-	nk_spinlock_release(&nanokern_lock, ipl);
+	nk_spinlock_release(&nk_lock, ipl);
 }
