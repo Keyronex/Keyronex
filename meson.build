@@ -14,7 +14,7 @@ endif
 kernel_objc_args = kernel_c_args
 kernel_includes = [ include_directories('kernel/' + arch, 'limine', 'kernel') ]
 
-mlibc = subproject('mlibc')
+mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
 libc_includes = mlibc.get_variable('libc_include_dirs')
 
 executable('limine-deploy', 'limine/limine-deploy.c', native: true)

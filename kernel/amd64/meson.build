@@ -1,6 +1,6 @@
 ldscript = meson.current_source_dir()/'linker.ld'
 
-kern_srcs += files( 'start.c' )
+kern_srcs += files( 'amd64.c', 'locore.S', 'start.c', 'vm_machdep.c' )
 
 vxkern = executable('keyronex', kern_srcs,
 	c_args : [ kernel_c_args ],

@@ -45,7 +45,7 @@ make install-gcc
 
 mkdir ../bld-mlibc2
 cd ../bld-mlibc2
-meson --cross-file ../../scalux-gcc-x64.ini  --prefix=/usr --libdir=lib -Dno_headers=true ../../mlibc
+meson --cross-file ../../scalux-gcc-x64.ini  --prefix=/usr --libdir=lib ../../mlibc
 ninja
 ninja install
 

@@ -1,30 +1,39 @@
-<img src="docs/scaluxnofont.svg" width=200/>
+<img src="docs/keyronexnofont.svg" width=200/>
 
 ---
 
 **Keyonex**™ - the key to scalability.
 
 Welcome to the Keyronex repository. Keyronex is an operating system currently
-targeting amd64 PCs. It is early in development, so much of what follows is just
-the plan. The Keyronix kernel is internally structured into three components:
-the core kernel, DeviceKit, and the POSIX services.
+targeting amd64 PCs. **It is early in development, so much of what follows is
+just the plan**. The Keyronix kernel is internally structured into three
+components: the nanokernel, DeviceKit, and the Portable Applications Subsystem.
+These have the following functionality:
 
-The core kernel implements basic primitives: scheduling, virtual memory
-management, synchronisation, and simple message-passing. These services are used
-to implement a POSIX personality by the POSIX services. DeviceKit implements an
-object-oriented driver framework in Objective-C, with adapters to expose
-relevant devices to the POSIX personality. All three are implemented in
-kernel-space and are logically distinct but currently quite closely coupled.
+- The nanokernel implements basic primitives: scheduling, virtual memory
+  management, synchronisation, and simple message-passing.
+- These services are used to implement a POSIX personality by the Portable
+  Applications Subsystem.
+- DeviceKit implements an object-oriented driver framework in Objective-C, with
+  adapters to expose relevant devices to the Portable Applications Subsystem.
 
-Within the core kernel, the basic scheduling services (located under `kern`) are
-logically distinct and avoid depending on the higher-level facilities.
+All three are implemented in kernel-space and are logically distinct; the
+nanokernel is only minimally dependent on the higher services, but the Portable
+Applications Subsystem and DeviceKit interdepend on each other and on the
+nanokernel.
 
 Building
 --------
 
 You need patched binutils and GCC installed into `/opt/x86_64-keyronex'.
-Instructions in [docs/toolchain.md](). TODO: explain further.
+Instructions in [docs/toolchain.md]().
 
+Repeating the installation of mlibc headers into the sysroot should be
+unnecessary (I hope). If it is necessary, you can do:
+
+`meson --cross-file=amd64.ini --prefix=/usr build`
+`ninja -C build`
+`DESTDIR=/tmp/keyronex-sysroot ninja -C build install`
 
 Third-party components
 ----------------------
@@ -32,7 +41,7 @@ Third-party components
 Several third-party components are used. These are some of them:
 - mlibc: Provides libc.
 - nanoprintf: used for `kprintf`.
-
+- FreeBSD: `queue.h`, `tree.h` generic lists and trees
 <!--
  - liballoc: Provides one of the in-kernel allocators.
  - NetBSD:
@@ -54,4 +63,4 @@ Licence
 -------
 
 Code original to Keyronex is licenced under the Mozilla Public Licence v2.0.
-Other components are under their own licences
+Other components are under their own licences.

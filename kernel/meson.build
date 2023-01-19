@@ -1,4 +1,12 @@
 kern_srcs = files(
+    'nanokern/clock.c', 'nanokern/mutex.c', 'nanokern/semaphore.c', 'nanokern/thread.c',
+    'nanokern/wait.c',
+
+    'kern/kmem_slab.c', 'kern/ksrv.c', 'kern/vmem.c',
+
+    'libkern/libkern.c',
+
+    'vm/vm_kernel.c', 'vm/vm_page.c', 'vm/vm.c'
 )
 
 subdir(arch)
