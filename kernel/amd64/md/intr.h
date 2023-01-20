@@ -39,8 +39,9 @@ typedef struct md_intr_frame {
 typedef struct md_cpu {
 	uint64_t    lapic_id;
 	uint64_t    lapic_tps; /* lapic timer ticks per second (divider 1) */
+	uintptr_t   lapic_base;
 	struct tss *tss;
-	ipl_t switchipl;
+	ipl_t	    switchipl;
 	struct kthread *old, *new;
 } md_cpu_t;
 
@@ -95,9 +96,9 @@ void md_ipi_invlpg(struct kcpu *cpu);
 void md_ipi_reschedule(struct kcpu *cpu);
 
 /*! set the per-cpu timer */
-void md_timer_set(uint64_t nanos);
+void md_timer_set(struct kcpu *cpu, uint64_t nanos);
 /*! get remaining nanosecs on per-cpu timer */
-uint64_t md_timer_get_remaining(void);
+uint64_t md_timer_get_remaining(struct kcpu *cpu);
 
 /* initialise a thread's state */
 void md_thread_init(struct kthread *thread, void (*start_fun)(void *),

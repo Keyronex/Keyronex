@@ -6,6 +6,7 @@
 #include "vm/vm.h"
 
 kspinlock_t nk_lock = KSPINLOCK_INITIALISER;
+kspinlock_t callouts_lock = KSPINLOCK_INITIALISER;
 kspinlock_t nk_dbg_lock = KSPINLOCK_INITIALISER;
 kthread_t   thread0;
 kprocess_t  proc0;
@@ -39,6 +40,7 @@ nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc)
 {
 	thread->cpu = cpu;
 	thread->process = proc;
+	thread->saved_ipl = kSPL0;
 	ipl_t ipl = nk_spinlock_acquire(&proc->lock);
 	SLIST_INSERT_HEAD(&proc->threads, thread, proc_link);
 	nk_spinlock_release(&proc->lock, ipl);

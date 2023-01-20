@@ -21,6 +21,8 @@ typedef struct kdpc {
 	TAILQ_ENTRY(kdpc) queue_entry;
 	void (*callback)(void *);
 	void *arg;
+	/*! Is it bound to a queue, ready to be run? */
+	bool bound;
 } kdpc_t;
 
 typedef struct kxcallout {
@@ -39,7 +41,11 @@ typedef struct kxcallout {
 		kCalloutPending,
 		kCalloutElapsed,
 	} state;
+	/*! If kCalloutPending/kCalloutElapsed, on which CPU? */
+	struct kcpu *cpu;
 } kxcallout_t;
+
+TAILQ_HEAD(kxcallout_queue, kxcallout);
 
 #define KSPINLOCK_INITIALISER    \
 	{                        \
@@ -53,6 +59,8 @@ typedef enum kwaitstatus {
 	kKernWaitStatusTimedOut,
 	/*! invalid argument */
 	kKernWaitStatusInvalidArgument,
+	/*! internal status, wait is currently underway */
+	kKernWaitStatusWaiting,
 } kwaitstatus_t;
 
 typedef struct kwaitblock {
@@ -97,6 +105,7 @@ typedef enum kthread_state {
 	kThreadStateSuspended,
 	kThreadStateRunnable,
 	kThreadStateRunning,
+	kThreadStateWaiting,
 } kthread_state_t;
 
 typedef struct kthread {
@@ -128,7 +137,11 @@ typedef struct kthread {
 	struct kprocess *process;
 
 	kthread_state_t state;
+
+	/*! thread saved frame */
 	md_intr_frame_t frame;
+	/*! saved IPL */
+	ipl_t saved_ipl;
 } kthread_t;
 
 /*!
@@ -144,7 +157,10 @@ typedef struct kprocess {
 
 /*!
  * Describes a CPU core.
- * Locking: s => sched_lock, ~ => invariant
+ * Locking:
+ * - s => kcpu::sched_lock
+ * - c => ::callouts_lock
+ * - ~ => invariant
  */
 typedef struct kcpu {
 	unsigned num;
@@ -159,8 +175,8 @@ typedef struct kcpu {
 	/*! (splhigh) DPCs to be executed */
 	TAILQ_HEAD(, kdpc) dpc_queue;
 
-	/*! (splhigh) Callouts pending */
-	TAILQ_HEAD(, kxcallout) callout_queue;
+	/*! (splhigh,c) Callouts pending */
+	struct kxcallout_queue callout_queue;
 
 	/*! (s) currently-running thread */
 	kthread_t *running_thread;
@@ -236,11 +252,12 @@ void nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg);
  */
 void nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg);
 /*!
- * Enqueue a callout
+ * Enqueue a callout on the local CPU.
  */
 void nkx_callout_enqueue(kxcallout_t *callout);
 /*!
- * Dequeue a callout
+ * Dequeue a callout from its CPU.
+ * \pre callout is pending
  */
 void nkx_callout_dequeue(kxcallout_t *callout);
 
@@ -273,6 +290,11 @@ bool nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr);
  * Common initialisation for one of the idle threads or a regular thread.
  */
 void nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc);
+
+/*!
+ * Enter the scheduler (with old IPL provided)
+ */
+void nkx_do_reschedule(ipl_t ipl);
 
 /*!
  * Enqueue a DPC. (It's run immediately if IPL <= kSPLDispatch)
@@ -367,6 +389,8 @@ extern size_t ncpus;
 
 /*! nanokernel structures lock */
 extern kspinlock_t nk_lock;
+/* callouts lock, acquired at IPL=high */
+extern kspinlock_t callouts_lock;
 /*! the first thread (idle on cpu0) */
 extern kthread_t thread0;
 /*! the kernel process */

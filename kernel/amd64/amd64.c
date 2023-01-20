@@ -232,29 +232,29 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 }
 
 static uint32_t
-lapic_read(uint32_t reg)
+lapic_read(kcpu_t *cpu, uint32_t reg)
 {
-	return *(uint32_t *)P2V((rdmsr(kAMD64MSRAPICBase) & 0xfffff000) + reg);
+	return *(uint32_t *)P2V((cpu->md.lapic_base & 0xfffff000) + reg);
 }
 
 static void
-lapic_write(uint32_t reg, uint32_t val)
+lapic_write(kcpu_t *cpu, uint32_t reg, uint32_t val)
 {
-	uint32_t *addr = P2V((rdmsr(kAMD64MSRAPICBase) & 0xfffff000) + reg);
+	uint32_t *addr = P2V((cpu->md.lapic_base & 0xfffff000) + reg);
 	*addr = val;
 }
 
 void
 lapic_eoi()
 {
-	lapic_write(kLAPICRegEOI, 0x0);
+	lapic_write(curcpu(), kLAPICRegEOI, 0x0);
 }
 
 void
 lapic_enable(uint8_t spurvec)
 {
-	lapic_write(kLAPICRegSpurious,
-	    lapic_read(kLAPICRegSpurious) | (1 << 8) | spurvec);
+	lapic_write(curcpu(), kLAPICRegSpurious,
+	    lapic_read(curcpu(), kLAPICRegSpurious) | (1 << 8) | spurvec);
 }
 
 /* setup PIC to run oneshot for 1/hz sec */
@@ -290,14 +290,14 @@ lapic_timer_calibrate()
 
 	ipl_t ipl = nk_spinlock_acquire(&calib);
 
-	lapic_write(kLAPICRegTimerDivider, 0x2); /* divide by 8*/
-	lapic_write(kLAPICRegTimer, kIntNumLAPICTimer);
+	lapic_write(curcpu(), kLAPICRegTimerDivider, 0x2); /* divide by 8*/
+	lapic_write(curcpu(), kLAPICRegTimer, kIntNumLAPICTimer);
 
 	pit_init_oneshot(hz);
-	lapic_write(kLAPICRegTimerInitial, initial);
+	lapic_write(curcpu(), kLAPICRegTimerInitial, initial);
 
 	pit_await_oneshot();
-	apic_after = lapic_read(kLAPICRegTimerCurrentCount);
+	apic_after = lapic_read(curcpu(), kLAPICRegTimerCurrentCount);
 	// lapic_write(kLAPICRegTimer, 0x10000); /* disable*/
 
 	nk_spinlock_release(&calib, ipl);
@@ -361,8 +361,8 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 static void
 send_ipi(uint32_t lapic_id, uint8_t intr)
 {
-	lapic_write(kLAPICRegICR1, lapic_id << 24);
-	lapic_write(kLAPICRegICR0, intr);
+	lapic_write(curcpu(), kLAPICRegICR1, lapic_id << 24);
+	lapic_write(curcpu(), kLAPICRegICR0, intr);
 }
 
 void
@@ -378,18 +378,18 @@ md_ipi_reschedule(kcpu_t *cpu)
 }
 
 void
-md_timer_set(uint64_t nanos)
+md_timer_set(struct kcpu *cpu, uint64_t nanos)
 {
-	uint64_t ticks = curcpu()->md.lapic_tps * nanos / NS_PER_S;
+	uint64_t ticks = cpu->md.lapic_tps * nanos / NS_PER_S;
 	nk_assert(ticks < UINT32_MAX);
-	lapic_write(kLAPICRegTimerInitial, ticks);
+	lapic_write(cpu, kLAPICRegTimerInitial, ticks);
 }
 
 uint64_t
-md_timer_get_remaining()
+md_timer_get_remaining(struct kcpu *cpu)
 {
-	return (lapic_read(kLAPICRegTimerCurrentCount) * NS_PER_S) /
-	    curcpu()->md.lapic_tps;
+	return (lapic_read(cpu, kLAPICRegTimerCurrentCount) * NS_PER_S) /
+	    cpu->md.lapic_tps;
 }
 
 void

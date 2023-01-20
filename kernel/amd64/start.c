@@ -182,6 +182,7 @@ common_init(struct limine_smp_info *smpi)
 	kthread_t *thread = cpu->running_thread;
 
 	idt_load();
+	cpu->md.lapic_base = rdmsr(kAMD64MSRAPICBase);
 	lapic_enable(0xff);
 
 	nkx_thread_common_init(thread, cpu, &proc0);
@@ -262,14 +263,19 @@ smp_init()
 		__asm__("pause");
 }
 
+static kmutex_t mtx;
+
 static void fun2(void*arg)
 {
 	kprintf("Hello from thread B! My address: %p\n", curcpu()->running_thread);
 
 	while (true) {
-		for (int i = 0; i < 40000;i++)
+		int r= nk_wait(&mtx, "b_mutex", false, false, -1);
+		nk_dbg("Thread2 R: %d\n", r);
+		for (int i = 0; i < 400000;i++)
 			asm("pause");
 		kprintf("B");
+		nk_mutex_release(&mtx);
 	}
 
 
@@ -281,16 +287,22 @@ fun(void *arg)
 {
 	kprintf("Hello from thread A! My address; %p!\n", curcpu()->running_thread);
 
+	nk_mutex_init(&mtx);
+
 	kthread_t thread;
 	nk_thread_init(&proc0, &thread, fun2, 0xf008a1);
 	nk_thread_resume(&thread);
 
 	kprintf("Hello after thread B began!\n");
 
+
 	while (true) {
-		for (int i = 0; i < 40000;i++)
+		int r= nk_wait(&mtx, "a_mutex", false, false, -1);
+		nk_dbg("Thread1 R: %d\n", r);
+		for (int i = 0; i < 400000;i++)
 			asm("pause");
 		kprintf("A");
+		nk_mutex_release(&mtx);
 	}
 
 	#if 0

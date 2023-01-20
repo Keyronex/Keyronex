@@ -1,7 +1,8 @@
 #include <nanokern/kernmisc.h>
 #include <nanokern/thread.h>
-
 #include <string.h>
+
+#include "md/spl.h"
 
 static void
 wait_timeout_callback(void *arg)
@@ -26,6 +27,22 @@ nkx_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
 	}
 }
 
+/*! ipl = dispatch, nk_lock held */
+static void
+waiter_wake(kthread_t *thread, kwaitstatus_t result)
+{
+	thread->wait_result = result;
+	ipl_t ipl = nk_spinlock_acquire_at(&thread->cpu->sched_lock, kSPLHigh);
+	TAILQ_INSERT_HEAD(&thread->cpu->runqueue, thread, queue_link);
+	if (thread->cpu == curcpu()) {
+		nk_raise_dispatch_interrupt();
+	} else {
+		md_ipi_reschedule(thread->cpu);
+	}
+	nk_spinlock_release(&thread->cpu->sched_lock, ipl);
+}
+
+/*! ipl=dispatch, nk_lock held */
 bool
 nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 {
@@ -41,26 +58,28 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 			/* all acquirable, so remove thread from all waitblock
 			 * queues and acquire each waited object */
 			for (unsigned i = 0; i < thread->nwaits; i++) {
-				TAILQ_REMOVE(&thread->waitblocks[i].object
-                                    ->waitblock_queue, &thread->waitblocks[i],
-                                    queue_entry);
+				TAILQ_REMOVE(&thread->waitblocks[i]
+						  .object->waitblock_queue,
+				    &thread->waitblocks[i], queue_entry);
 				nkx_object_acquire(thread,
 				    thread->waitblocks[i].object);
 			}
+			waiter_wake(thread, kKernWaitStatusOK);
 			return true;
 		} else {
-                        return false;
-                }
+			return false;
+		}
 	} else {
 		/* waiting for any, so remove thread from all waitblock queues
 		 */
 		for (unsigned i = 0; i < thread->nwaits; i++) {
-			TAILQ_REMOVE(&thread->waitblocks[i].object
-			    ->waitblock_queue, &thread->waitblocks[i],
-			    queue_entry);
+			TAILQ_REMOVE(&thread->waitblocks[i]
+					  .object->waitblock_queue,
+			    &thread->waitblocks[i], queue_entry);
 		}
 
 		nkx_object_acquire(thread, hdr);
+		waiter_wake(thread, kKernWaitStatusOK);
 		return true;
 	}
 }
@@ -145,15 +164,27 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 		TAILQ_INSERT_TAIL(&hdr->waitblock_queue, wb, queue_entry);
 	}
 
+	thread->state = kThreadStateWaiting;
+	thread->wait_result = kKernWaitStatusWaiting;
+	thread->nwaits = nobjects;
+	thread->iswaitall = isWaitall;
 	thread->waitblocks = waitblocks;
+	thread->saved_ipl = ipl;
+	/* enqueue the timeout callout if needed */
+	if (timeout != -1 && timeout > 1000) {
+		nk_dbg("enqueueing a timeout %lu...!\n", timeout);
+		thread->wait_callout.dpc.arg = thread;
+		thread->wait_callout.dpc.callback = wait_timeout_callback;
+		thread->wait_callout.nanosecs = timeout;
+		nkx_callout_enqueue(&thread->wait_callout);
+	}
 
-	/* enqueue the timeout callout */
-	thread->wait_callout.dpc.arg = thread;
-	thread->wait_callout.dpc.callback = wait_timeout_callback;
-	thread->wait_callout.nanosecs = timeout;
-	nkx_callout_enqueue(&thread->wait_callout);
+	/* should we really be dropping the lock here? */
+#if DEBUG_SCHED == 1
+	nk_dbg("nk_wait_multi: going to sleep\n");
+#endif
+	nk_spinlock_release_nospl(&nk_lock);
+	nkx_do_reschedule(ipl);
 
-	nk_raise_dispatch_interrupt();
-
-	return kKernWaitStatusOK;
+	return thread->wait_result;
 }

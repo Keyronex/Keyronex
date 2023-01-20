@@ -9,6 +9,7 @@
 static void
 preempt_dpc(void *arg)
 {
+	/* xxx do we really need this? we are already servicing the soft int*/
 	nk_raise_dispatch_interrupt();
 }
 
@@ -27,11 +28,11 @@ next_thread(kcpu_t *cpu)
 }
 
 /* entered at ipl = dispatch */
-static void
-do_reschedule(ipl_t ipl)
+void
+nkx_do_reschedule(ipl_t ipl)
 {
 	/* time to reschedule */
-	kcpu_t *cpu = curcpu();
+	kcpu_t	  *cpu = curcpu();
 	bool	   iff;
 	kthread_t *cur, *next;
 
@@ -50,6 +51,11 @@ do_reschedule(ipl_t ipl)
 	} else if (cur->state == kThreadStateRunning) {
 		cur->state = kThreadStateRunnable;
 		TAILQ_INSERT_TAIL(&cpu->runqueue, cur, queue_link);
+	} else if (cur->state == kThreadStateWaiting) {
+#if DEBUG_SCHED == 1
+		nk_dbg("thread %p going to wait\n", cur);
+#endif
+		/* accounting? */
 	}
 
 	next = next_thread(cpu);
@@ -117,11 +123,17 @@ do_soft_int_dispatch()
 		curcpu()->soft_int_dispatch = 0;
 		while (true) {
 			ipl_t ipl = splhigh();
+			/* needed? */
+			nk_spinlock_acquire_nospl(&callouts_lock);
 
 			kdpc_t *dpc = TAILQ_FIRST(&curcpu()->dpc_queue);
-			if (dpc)
+			if (dpc) {
+				dpc->bound = false;
 				TAILQ_REMOVE(&curcpu()->dpc_queue, dpc,
 				    queue_entry);
+			}
+
+			nk_spinlock_release_nospl(&callouts_lock);
 			splx(ipl);
 
 			if (dpc == NULL)
@@ -132,7 +144,7 @@ do_soft_int_dispatch()
 	}
 
 	/* do_reschedule drops ipl */
-	do_reschedule(ipl);
+	nkx_do_reschedule(ipl);
 }
 
 ipl_t
@@ -148,7 +160,7 @@ splraise(ipl_t spl)
 void
 nkx_spl_lowered(ipl_t from, ipl_t to)
 {
-	if (to < kSPLDispatch &&curcpu()->soft_int_dispatch) {
+	if (to < kSPLDispatch && curcpu()->soft_int_dispatch) {
 		do_soft_int_dispatch();
 	}
 }
@@ -164,27 +176,29 @@ nk_raise_dispatch_interrupt(void)
 void
 nkx_callout_enqueue(kxcallout_t *callout)
 {
-	__auto_type queue = &curcpu()->callout_queue;
-	kxcallout_t *co;
-	ipl_t	     ipl;
+	struct kxcallout_queue *queue;
+	kxcallout_t	       *co;
+	kcpu_t		       *cpu = curcpu();
+	ipl_t			ipl;
 
 #if DEBUG_TIMERS == 1
 	nk_dbg("Enqueuing callout %p\n", callout);
 #endif
 
+	ipl = splhigh();
+	nk_spinlock_acquire_nospl(&callouts_lock);
+
 	nk_assert(callout->state == kCalloutDisabled);
 	nk_assert(callout->nanosecs > 0);
-	ipl = splhigh();
+	queue = &cpu->callout_queue;
 	co = TAILQ_FIRST(queue);
 
 	if (!co) {
 		TAILQ_INSERT_HEAD(queue, callout, queue_entry);
-		md_timer_set(callout->nanosecs);
-		uint64_t rem = md_timer_get_remaining();
-
+		md_timer_set(cpu, callout->nanosecs);
 		goto next;
 	} else {
-		uint64_t remains = md_timer_get_remaining();
+		uint64_t remains = md_timer_get_remaining(cpu);
 		/* XXX: at least on QEMU, often reading current count > initial
 		   count! */
 		nk_assert(remains < co->nanosecs);
@@ -196,7 +210,7 @@ nkx_callout_enqueue(kxcallout_t *callout)
 	if (co->nanosecs > callout->nanosecs) {
 		co->nanosecs -= callout->nanosecs;
 		TAILQ_INSERT_HEAD(queue, callout, queue_entry);
-		md_timer_set(callout->nanosecs);
+		md_timer_set(cpu, callout->nanosecs);
 		goto next;
 	}
 
@@ -213,17 +227,27 @@ nkx_callout_enqueue(kxcallout_t *callout)
 
 next:
 	callout->state = kCalloutPending;
+	callout->cpu = curcpu();
+	nk_spinlock_release_nospl(&callouts_lock);
 	splx(ipl);
 }
 
 void
 nkx_callout_dequeue(kxcallout_t *callout)
 {
-	__auto_type queue = &curcpu()->callout_queue;
-	kxcallout_t *co;
-	bool	     iff = md_intr_disable();
+	struct kxcallout_queue *queue;
+	kxcallout_t	       *co;
+	kcpu_t		       *cpu;
+	bool			iff = md_intr_disable();
+
+	nk_spinlock_acquire_nospl(&callouts_lock);
+
+	nk_assert(callout->state == kCalloutPending);
+	cpu = callout->cpu;
+	queue = &cpu->callout_queue;
 
 	// TODO(med): can have false wakeups if an interrupt is pending?
+	// need to maybe do timekeeping in hardclock or something
 
 	nk_assert(callout->state == kCalloutPending);
 
@@ -232,7 +256,7 @@ nkx_callout_dequeue(kxcallout_t *callout)
 	if (co != callout) {
 		TAILQ_REMOVE(queue, callout, queue_entry);
 	} else {
-		uint64_t remains = md_timer_get_remaining();
+		uint64_t remains = md_timer_get_remaining(cpu);
 		TAILQ_REMOVE(queue, callout, queue_entry);
 		/* XXX: at least on QEMU, often reading current count > initial
 		   count! */
@@ -241,12 +265,13 @@ nkx_callout_dequeue(kxcallout_t *callout)
 		co = TAILQ_FIRST(queue);
 		if (co) {
 			co->nanosecs += MIN(remains, co->nanosecs);
-			md_timer_set(co->nanosecs);
+			md_timer_set(cpu, co->nanosecs);
 		} else
 			/* nothing upcoming */
-			md_timer_set(0);
+			md_timer_set(cpu, 0);
 	}
 
+	nk_spinlock_release_nospl(&callouts_lock);
 	md_intr_x(iff);
 }
 
@@ -267,6 +292,8 @@ nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 	if (co == NULL)
 		return;
 
+	nk_spinlock_acquire_nospl(&callouts_lock);
+
 	TAILQ_REMOVE(queue, co, queue_entry);
 	/* ! do we want kCalloutElapsed? Do we need it? */
 	co->state = kCalloutDisabled;
@@ -276,7 +303,9 @@ nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 	/* now set up the next in sequence */
 	co = TAILQ_FIRST(queue);
 	if (co != NULL)
-		md_timer_set(co->nanosecs);
+		md_timer_set(curcpu(), co->nanosecs);
+
+	nk_spinlock_release_nospl(&callouts_lock);
 }
 
 void
@@ -298,6 +327,7 @@ nk_dpc_enqueue(kdpc_t *dpc)
 
 	ipl_t ipl = splhigh();
 	TAILQ_INSERT_TAIL(&curcpu()->dpc_queue, dpc, queue_entry);
+	dpc->bound = true;
 	curcpu()->soft_int_dispatch = true;
 	splx(ipl);
 }
