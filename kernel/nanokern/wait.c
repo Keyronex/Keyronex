@@ -4,12 +4,6 @@
 
 #include "md/spl.h"
 
-static void
-wait_timeout_callback(void *arg)
-{
-	nk_dbg("WAIT TIMED OUT\n");
-}
-
 void
 nkx_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
 {
@@ -23,6 +17,9 @@ nkx_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
 		hdr->signalled--;
 		mtx->owner = thread;
 		break;
+	}
+	case kDispatchTimer: {
+		/* epsilon, timers remain signalled until reset */
 	}
 	}
 }
@@ -42,6 +39,25 @@ waiter_wake(kthread_t *thread, kwaitstatus_t result)
 	nk_spinlock_release(&thread->cpu->sched_lock, ipl);
 }
 
+static void
+wait_timeout_callback(void *arg)
+{
+	kthread_t *thread = arg;
+	ipl_t	   ipl = nk_spinlock_acquire(&nk_lock);
+
+	nk_assert(thread->state == kThreadStateWaiting &&
+	    thread->wait_result == kKernWaitStatusWaiting);
+
+	for (unsigned i = 0; i < thread->nwaits; i++) {
+		TAILQ_REMOVE(&thread->waitblocks[i].object->waitblock_queue,
+		    &thread->waitblocks[i], queue_entry);
+	}
+
+	waiter_wake(thread, kKernWaitStatusTimedOut);
+
+	nk_spinlock_release(&nk_lock, ipl);
+}
+
 /*! ipl=dispatch, nk_lock held */
 bool
 nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
@@ -55,8 +71,10 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 		}
 
 		if (acquirable) {
-			/* all acquirable, so remove thread from all waitblock
-			 * queues and acquire each waited object */
+			/* all acquirable, so remove thread from all
+			 * waitblock queues and acquire each waited
+			 * object. and dequeue any wait. */
+			nkx_callout_dequeue(&thread->wait_callout);
 			for (unsigned i = 0; i < thread->nwaits; i++) {
 				TAILQ_REMOVE(&thread->waitblocks[i]
 						  .object->waitblock_queue,
@@ -70,7 +88,8 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 			return false;
 		}
 	} else {
-		/* waiting for any, so remove thread from all waitblock queues
+		/* waiting for any, so remove thread from all waitblock
+		 * queues
 		 */
 		for (unsigned i = 0; i < thread->nwaits; i++) {
 			TAILQ_REMOVE(&thread->waitblocks[i]
@@ -79,6 +98,7 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 		}
 
 		nkx_object_acquire(thread, hdr);
+		nkx_callout_dequeue(&thread->wait_callout);
 		waiter_wake(thread, kKernWaitStatusOK);
 		return true;
 	}
@@ -114,13 +134,14 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	nk_spinlock_acquire(&nk_lock);
 
 	/*
-	 * do an initial loop of the objects to determine whether any are
-	 * signalled, and if so and we are not isWaitall, then acquire and
-	 * break.
+	 * do an initial loop of the objects to determine whether any
+	 * are signalled, and if so and we are not isWaitall, then
+	 * acquire and break.
 	 *
-	 * we do not enqueue the waitblock on the object's queue yet, since we
-	 * may break early, or only be polling (timeout=0). we do set the other
-	 * fields of the waitblock appropriately because why not.
+	 * we do not enqueue the waitblock on the object's queue yet,
+	 * since we may break early, or only be polling (timeout=0). we
+	 * do set the other fields of the waitblock appropriately
+	 * because why not.
 	 */
 	for (int i = 0; i < nobjects; i++) {
 		kwaitblock_t	  *wb = &waitblocks[i];

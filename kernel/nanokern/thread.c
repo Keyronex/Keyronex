@@ -41,6 +41,7 @@ nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc)
 	thread->cpu = cpu;
 	thread->process = proc;
 	thread->saved_ipl = kSPL0;
+	thread->wait_callout.name = "thread_wait_callout";
 	ipl_t ipl = nk_spinlock_acquire(&proc->lock);
 	SLIST_INSERT_HEAD(&proc->threads, thread, proc_link);
 	nk_spinlock_release(&proc->lock, ipl);

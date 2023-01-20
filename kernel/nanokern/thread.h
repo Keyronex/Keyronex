@@ -28,6 +28,8 @@ typedef struct kdpc {
 typedef struct kxcallout {
 	/*! Linkage in kcpu_t::callout_queue */
 	TAILQ_ENTRY(kxcallout) queue_entry;
+	/*! Name for debugging */
+	const char *name;
 	/*! DPC to be enqueued on its elapsing */
 	kdpc_t dpc;
 	/*!
@@ -78,6 +80,7 @@ typedef struct kwaitblock {
 typedef enum kdispatchobjecttype {
 	kDispatchMutex,
 	kDispatchSemaphore,
+	kDispatchTimer,
 } kdispatchobjecttype_t;
 
 typedef struct kdispatchheader {
@@ -100,6 +103,13 @@ typedef struct kmutex {
 	/*! thread currently owning the mutex */
 	struct kthread *owner;
 } kmutex_t;
+
+typedef struct ktimer {
+	kdispatchheader_t hdr;
+
+	/*! callout associated */
+	kxcallout_t callout;
+} ktimer_t;
 
 typedef enum kthread_state {
 	kThreadStateSuspended,
@@ -324,6 +334,16 @@ void nk_semaphore_init(ksemaphore_t *sem, unsigned count);
  * \p adjustment Value to add to the semaphore count.
  */
 void nk_semaphore_release(ksemaphore_t *sem, unsigned adjustment);
+
+/*!
+ * Initialise a timer.
+ */
+void nk_timer_init(ktimer_t *timer);
+
+/*!
+ * Set a timer for a given time.
+ */
+void nk_timer_set(ktimer_t *timer, uint64_t nanosecs);
 
 /*!
  * Initialise a thread.

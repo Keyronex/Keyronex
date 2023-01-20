@@ -1,6 +1,6 @@
 kern_srcs = files(
-    'nanokern/clock.c', 'nanokern/mutex.c', 'nanokern/semaphore.c', 'nanokern/thread.c',
-    'nanokern/wait.c',
+    'nanokern/clock.c', 'nanokern/mutex.c', 'nanokern/semaphore.c',
+	'nanokern/thread.c', 'nanokern/timer.c', 'nanokern/wait.c',
 
     'kern/kmem_slab.c', 'kern/ksrv.c', 'kern/vmem.c',
 

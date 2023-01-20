@@ -68,6 +68,7 @@ nkx_do_reschedule(ipl_t ipl)
 	/* start timeslicing if needed ... */
 	if (next != cpu->idle_thread &&
 	    cpu->preempt_callout.state != kCalloutPending) {
+		cpu->preempt_callout.name = "preempt_callout";
 		cpu->preempt_callout.nanosecs = NS_PER_S / 20;
 		cpu->preempt_callout.dpc.callback = preempt_dpc;
 		nkx_callout_enqueue(&cpu->preempt_callout);
@@ -182,7 +183,8 @@ nkx_callout_enqueue(kxcallout_t *callout)
 	ipl_t			ipl;
 
 #if DEBUG_TIMERS == 1
-	nk_dbg("Enqueuing callout %p\n", callout);
+	nk_dbg("Enqueuing callout %s for %lu ns\n", callout->name,
+	    callout->nanosecs);
 #endif
 
 	ipl = splhigh();
@@ -203,12 +205,23 @@ nkx_callout_enqueue(kxcallout_t *callout)
 		   count! */
 		nk_assert(remains < co->nanosecs);
 		co->nanosecs = MIN(remains, co->nanosecs);
+#if DEBUG_TIMERS == 1
+		nk_dbg("(rema) extant callout %p to have %lu ns\n", co,
+		    co->nanosecs);
+#endif
 	}
 
 	nk_assert(co->nanosecs > 0);
 
+	/* is the next timeout set for further into the future than the new? */
 	if (co->nanosecs > callout->nanosecs) {
+		/* if so, reduce its timeout by the timeout of ours*/
 		co->nanosecs -= callout->nanosecs;
+#if DEBUG_TIMERS == 1
+		nk_dbg("(next) extant callout %p to have %lu ns\n", co,
+		    co->nanosecs);
+#endif
+
 		TAILQ_INSERT_HEAD(queue, callout, queue_entry);
 		md_timer_set(cpu, callout->nanosecs);
 		goto next;
@@ -221,9 +234,23 @@ nkx_callout_enqueue(kxcallout_t *callout)
 		if (next == NULL)
 			break;
 		co = next;
+#if DEBUG_TIMERS == 1
+		nk_dbg("next is %s with remaining time %luns\n", co->name,
+		    co->nanosecs);
+#endif
 	}
 
-	TAILQ_INSERT_AFTER(queue, co, callout, queue_entry);
+	if (co->nanosecs < callout->nanosecs) {
+#if DEBUG_TIMERS == 1
+		nk_dbg("inserting after %s\n", co->name);
+#endif
+		TAILQ_INSERT_AFTER(queue, co, callout, queue_entry);
+	} else {
+#if DEBUG_TIMERS == 1
+		nk_dbg("inserting before %s\n", co->name);
+#endif
+		TAILQ_INSERT_BEFORE(co, callout, queue_entry);
+	}
 
 next:
 	callout->state = kCalloutPending;
@@ -254,13 +281,20 @@ nkx_callout_dequeue(kxcallout_t *callout)
 	co = TAILQ_FIRST(queue);
 
 	if (co != callout) {
+		/* this is not the first */
+		kxcallout_t *next = TAILQ_NEXT(callout, queue_entry);
 		TAILQ_REMOVE(queue, callout, queue_entry);
+		/* add our wait to the next, if it exists */
+		if (next) {
+			next->nanosecs += co->nanosecs;
+		}
 	} else {
+		/* we are the first */
 		uint64_t remains = md_timer_get_remaining(cpu);
 		TAILQ_REMOVE(queue, callout, queue_entry);
 		/* XXX: at least on QEMU, often reading current count > initial
 		   count! */
-		// assert(remains < co->nanosecs);
+		nk_assert(remains < co->nanosecs);
 		callout->state = kCalloutDisabled;
 		co = TAILQ_FIRST(queue);
 		if (co) {
@@ -268,7 +302,7 @@ nkx_callout_dequeue(kxcallout_t *callout)
 			md_timer_set(cpu, co->nanosecs);
 		} else
 			/* nothing upcoming */
-			md_timer_set(cpu, 0);
+			md_timer_set(cpu, UINT32_MAX);
 	}
 
 	nk_spinlock_release_nospl(&callouts_lock);
