@@ -6,11 +6,13 @@
 #include "md/intr.h"
 #include "md/spl.h"
 
-static void
-preempt_dpc(void *arg)
+void
+nkx_preempt_dpc(void *arg)
 {
-	/* xxx do we really need this? we are already servicing the soft int*/
-	nk_raise_dispatch_interrupt();
+	if (!curcpu()->entering_scheduler) {
+		curcpu()->entering_scheduler = true;
+		nk_raise_dispatch_interrupt();
+	}
 }
 
 static kthread_t *
@@ -37,7 +39,7 @@ nkx_do_reschedule(ipl_t ipl)
 	kthread_t *cur, *next;
 
 #if DEBUG_SCHED == 1
-	nk_dbg("\n\nScheduler Entry\n");
+	nk_dbg("\n\nScheduler Entry on CPU %d\n", cpu->num);
 #endif
 
 	nk_assert(splget() == kSPLDispatch);
@@ -65,14 +67,13 @@ nkx_do_reschedule(ipl_t ipl)
 	nk_dbg("Current thread = %p, next = %p\n", cur, next);
 #endif
 
-	/* start timeslicing if needed ... */
-	if (next != cpu->idle_thread &&
-	    cpu->preempt_callout.state != kCalloutPending) {
-		cpu->preempt_callout.name = "preempt_callout";
-		cpu->preempt_callout.nanosecs = NS_PER_S / 20;
-		cpu->preempt_callout.dpc.callback = preempt_dpc;
-		nkx_callout_enqueue(&cpu->preempt_callout);
+	if (next != cpu->idle_thread) {
+		next->timeslice = 5;
+	} else {
+		next->timeslice = UINT64_MAX;
 	}
+	cpu->running_thread = next;
+	cpu->entering_scheduler = false;
 
 	if (next == cur) {
 		nk_spinlock_release_nospl(&cpu->sched_lock);
@@ -81,36 +82,15 @@ nkx_do_reschedule(ipl_t ipl)
 		return;
 	}
 
-	/* disable interrupts so we can return to IPL 0 */
+	/* disable interrupts for safety */
 	iff = md_intr_disable();
-	/* FIXME: xxx we lower and potentially risk more DPCs dispatched! */
-	/*  - this indeed proved to be a problem, SPL lowering moved to the
-	 * switcher
-	 *
-	 * i am now concerned that, when we replace md_switch() with a sane
-	 * implementation, that we might miss software interrupts happening
-	 * between end of DPC processing and beginning of rescheduling.
-	 *
-	 * a potential solution: disable interrupts prior to doing a check on
-	 * pending DPCs. if there are none more, then restore prior interrupt
-	 * state and return, lowering spl on close. this should work because
-	 * only an interrupt on a core (or indeed a manual request) can raise a
-	 * a software interrupt. and so with interrupts blocked, we are not
-	 * going to see one raised until we iret into the next thread..
-	 *
-	 * we might also improve things by deferring the actual lowering of SPL
-	 * below dispatch until we are out of that codepath?
-	 *
-	 * finally, should we save SPL in the thread on sleep? i think it might
-	 * be important for the case of waiting?
-	 */
-	// splx(ipl);
 
 	/* do the switch. It will release the CPU lock at an appropriate time
 	 * and lower IPL */
 	md_switch(ipl, cur, next);
 
 	/* back from the switch. Re-enable interrupts and return. */
+	splx(ipl);
 	md_intr_x(iff);
 }
 
@@ -140,12 +120,16 @@ do_soft_int_dispatch()
 			if (dpc == NULL)
 				break;
 
+			nk_assert(dpc->callback != NULL);
 			dpc->callback(dpc->arg);
 		}
 	}
 
 	/* do_reschedule drops ipl */
-	nkx_do_reschedule(ipl);
+	if (curcpu()->running_thread->timeslice <= 0)
+		nkx_do_reschedule(ipl);
+
+	splx(ipl);
 }
 
 ipl_t
@@ -174,6 +158,8 @@ nk_raise_dispatch_interrupt(void)
 		do_soft_int_dispatch();
 }
 
+#define DEBUG_TIMERS 0
+
 void
 nkx_callout_enqueue(kxcallout_t *callout)
 {
@@ -183,7 +169,7 @@ nkx_callout_enqueue(kxcallout_t *callout)
 	ipl_t			ipl;
 
 #if DEBUG_TIMERS == 1
-	nk_dbg("Enqueuing callout %s for %lu ns\n", callout->name,
+	nk_dbg(" -- callouts: Enqueuing %s for %lu ns\n", callout->name,
 	    callout->nanosecs);
 #endif
 
@@ -192,67 +178,28 @@ nkx_callout_enqueue(kxcallout_t *callout)
 
 	nk_assert(callout->state == kCalloutDisabled);
 	nk_assert(callout->nanosecs > 0);
+	callout->deadline = callout->nanosecs + cpu->ticks;
 	queue = &cpu->callout_queue;
-	co = TAILQ_FIRST(queue);
 
-	if (!co) {
-		TAILQ_INSERT_HEAD(queue, callout, queue_entry);
-		md_timer_set(cpu, callout->nanosecs);
-		goto next;
-	} else {
-		uint64_t remains = md_timer_get_remaining(cpu);
-		/* XXX: at least on QEMU, often reading current count > initial
-		   count! */
-		nk_assert(remains < co->nanosecs);
-		co->nanosecs = MIN(remains, co->nanosecs);
-#if DEBUG_TIMERS == 1
-		nk_dbg("(rema) extant callout %p to have %lu ns\n", co,
-		    co->nanosecs);
-#endif
+	TAILQ_FOREACH (co, queue, queue_entry) {
+		if (co->deadline > callout->deadline) {
+			TAILQ_INSERT_BEFORE(co, callout, queue_entry);
+			goto next;
+		}
 	}
-
-	nk_assert(co->nanosecs > 0);
-
-	/* is the next timeout set for further into the future than the new? */
-	if (co->nanosecs > callout->nanosecs) {
-		/* if so, reduce its timeout by the timeout of ours*/
-		co->nanosecs -= callout->nanosecs;
-#if DEBUG_TIMERS == 1
-		nk_dbg("(next) extant callout %p to have %lu ns\n", co,
-		    co->nanosecs);
-#endif
-
-		TAILQ_INSERT_HEAD(queue, callout, queue_entry);
-		md_timer_set(cpu, callout->nanosecs);
-		goto next;
-	}
-
-	while (co->nanosecs < callout->nanosecs) {
-		kxcallout_t *next;
-		callout->nanosecs -= co->nanosecs;
-		next = TAILQ_NEXT(co, queue_entry);
-		if (next == NULL)
-			break;
-		co = next;
-#if DEBUG_TIMERS == 1
-		nk_dbg("next is %s with remaining time %luns\n", co->name,
-		    co->nanosecs);
-#endif
-	}
-
-	if (co->nanosecs < callout->nanosecs) {
-#if DEBUG_TIMERS == 1
-		nk_dbg("inserting after %s\n", co->name);
-#endif
-		TAILQ_INSERT_AFTER(queue, co, callout, queue_entry);
-	} else {
-#if DEBUG_TIMERS == 1
-		nk_dbg("inserting before %s\n", co->name);
-#endif
-		TAILQ_INSERT_BEFORE(co, callout, queue_entry);
-	}
+	/* no callouts or it's the longest till elapsing */
+	TAILQ_INSERT_TAIL(queue, callout, queue_entry);
 
 next:
+#if 0
+	nk_dbg("---------timer list-----------\n") uint64_t cum = 0;
+	TAILQ_FOREACH (co, &cpu->callout_queue, queue_entry) {
+		cum += co->nanosecs;
+		nk_dbg("%s (%lumillis/cum %lumillis)\n", co->name,
+		    co->nanosecs / (NS_PER_S / 1000), cum / (NS_PER_S / 1000));
+	}
+	nk_dbg("---------ends-----------\n")
+#endif
 	callout->state = kCalloutPending;
 	callout->cpu = curcpu();
 	nk_spinlock_release_nospl(&callouts_lock);
@@ -269,41 +216,17 @@ nkx_callout_dequeue(kxcallout_t *callout)
 
 	nk_spinlock_acquire_nospl(&callouts_lock);
 
+#if DEBUG_TIMERS == 1
+	nk_dbg(" -- removing callout %s\n", callout->name);
+#endif
+
 	nk_assert(callout->state == kCalloutPending);
 	cpu = callout->cpu;
 	queue = &cpu->callout_queue;
 
-	// TODO(med): can have false wakeups if an interrupt is pending?
-	// need to maybe do timekeeping in hardclock or something
+	callout->state = kCalloutDisabled;
 
-	nk_assert(callout->state == kCalloutPending);
-
-	co = TAILQ_FIRST(queue);
-
-	if (co != callout) {
-		/* this is not the first */
-		kxcallout_t *next = TAILQ_NEXT(callout, queue_entry);
-		TAILQ_REMOVE(queue, callout, queue_entry);
-		/* add our wait to the next, if it exists */
-		if (next) {
-			next->nanosecs += co->nanosecs;
-		}
-	} else {
-		/* we are the first */
-		uint64_t remains = md_timer_get_remaining(cpu);
-		TAILQ_REMOVE(queue, callout, queue_entry);
-		/* XXX: at least on QEMU, often reading current count > initial
-		   count! */
-		nk_assert(remains < co->nanosecs);
-		callout->state = kCalloutDisabled;
-		co = TAILQ_FIRST(queue);
-		if (co) {
-			co->nanosecs += MIN(remains, co->nanosecs);
-			md_timer_set(cpu, co->nanosecs);
-		} else
-			/* nothing upcoming */
-			md_timer_set(cpu, UINT32_MAX);
-	}
+	TAILQ_REMOVE(queue, callout, queue_entry);
 
 	nk_spinlock_release_nospl(&callouts_lock);
 	md_intr_x(iff);
@@ -315,30 +238,34 @@ nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 	__auto_type queue = &curcpu()->callout_queue;
 	kxcallout_t *co;
 
-	co = TAILQ_FIRST(queue);
+	uint64_t ticks = atomic_fetch_add(&curcpu()->ticks, NS_PER_S / KERN_HZ);
 
-#if DEBUG_TIMERS == 1
-	nk_dbg("callout %p happened\n", co);
-#endif
-
-	nk_assert(co != NULL);
-
-	if (co == NULL)
-		return;
-
+	/* we are already at spl high */
 	nk_spinlock_acquire_nospl(&callouts_lock);
 
-	TAILQ_REMOVE(queue, co, queue_entry);
-	/* ! do we want kCalloutElapsed? Do we need it? */
-	co->state = kCalloutDisabled;
+	if (curcpu()->running_thread->timeslice-- <= 0 &&
+	    !curcpu()->entering_scheduler) {
+		nk_dpc_enqueue(&curcpu()->preempt_dpc);
+	}
 
-	nk_dpc_enqueue(&co->dpc);
+	while (true) {
+		co = TAILQ_FIRST(queue);
 
-	/* now set up the next in sequence */
-	co = TAILQ_FIRST(queue);
-	if (co != NULL)
-		md_timer_set(curcpu(), co->nanosecs);
+		if (co == NULL || co->deadline > ticks)
+			goto next;
 
+#if DEBUG_TIMERS == 1
+		nk_dbg(" -- callouts: callout %s happened\n", co->name);
+#endif
+
+		TAILQ_REMOVE(queue, co, queue_entry);
+		/* ! do we want kCalloutElapsed? Do we need it? */
+		co->state = kCalloutDisabled;
+
+		nk_dpc_enqueue(&co->dpc);
+	}
+
+next:
 	nk_spinlock_release_nospl(&callouts_lock);
 }
 
@@ -348,6 +275,7 @@ nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg)
 #if DEBUG_SCHED == 1
 	nk_dbg("Reschedule IPI received on cpu %lu\n", cpu->num);
 #endif
+	curcpu()->running_thread->timeslice = 0;
 	nk_raise_dispatch_interrupt();
 }
 

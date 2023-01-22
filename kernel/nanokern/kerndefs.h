@@ -17,6 +17,8 @@
 
 #define NS_PER_S 1000000000
 
+#define KERN_HZ 100
+
 #define elementsof(x)	( sizeof(x) / sizeof(x[0]) )
 
 typedef uint64_t nanosec_t;

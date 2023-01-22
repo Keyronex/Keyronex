@@ -41,7 +41,8 @@ nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc)
 	thread->cpu = cpu;
 	thread->process = proc;
 	thread->saved_ipl = kSPL0;
-	thread->wait_callout.name = "thread_wait_callout";
+	kmem_asprintf(&thread->wait_callout.name, "thread %p wait timeout", thread);
+	thread->wait_callout.state = kCalloutDisabled;
 	ipl_t ipl = nk_spinlock_acquire(&proc->lock);
 	SLIST_INSERT_HEAD(&proc->threads, thread, proc_link);
 	nk_spinlock_release(&proc->lock, ipl);
@@ -69,6 +70,7 @@ nk_thread_resume(kthread_t *thread)
         TAILQ_INSERT_HEAD(&thread->cpu->runqueue, thread, queue_link);
 
 	if (thread->cpu == curcpu()) {
+		curcpu()->running_thread->timeslice = 0;
 		nk_raise_dispatch_interrupt();
 	} else {
 		md_ipi_reschedule(thread->cpu);

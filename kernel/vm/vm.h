@@ -1,11 +1,12 @@
 #ifndef VM_H_
 #define VM_H_
 
-#include <md/vm.h>
-#include <nanokern/kerndefs.h>
-#include <stddef.h>
-#include <nanokern/thread.h>
 #include <kern/vmem_impl.h>
+#include <md/vm.h>
+
+#include <nanokern/kerndefs.h>
+#include <nanokern/thread.h>
+#include <stddef.h>
 
 #define VADDR_MAX (vaddr_t) UINT64_MAX
 
@@ -50,6 +51,8 @@ enum vm_page_queue {
 	kVMPagePMap = 5,
 };
 
+#include <nanokern/tree.h>
+
 /*!
  * Represents a physical page of useable general-purpose memory.
  *
@@ -65,7 +68,7 @@ typedef struct vm_page {
 
 	/*! for pageable mappings */
 	union {
-		struct vm_anon   *anon; /*! if belonging to an anon */
+		struct vm_anon	 *anon; /*! if belonging to an anon */
 		struct vm_object *obj;	/*! if belonging to non-anon object */
 	};
 
@@ -76,7 +79,7 @@ typedef struct vm_page {
 
 typedef struct vm_pagequeue {
 	TAILQ_HEAD(, vm_page) queue;
-	size_t	npages;
+	size_t npages;
 } vm_pagequeue_t;
 
 /*!
@@ -101,7 +104,6 @@ extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgactiveq,
 
 /*! Page region queue. */
 extern vm_pregion_queue_t vm_pregion_queue;
-
 
 /*! Allocate a new page. It is enqueued on the specified queue. */
 vm_page_t *vm_pagealloc(bool sleep, vm_pagequeue_t *queue);
@@ -145,7 +147,7 @@ typedef struct vm_map_entry {
 	TAILQ_ENTRY(vm_map_entry) queue;
 	vaddr_t			  start, end;
 	voff_t			  offset;
-	struct vm_Object		    *obj;
+	struct vm_Object	 *obj;
 } vm_map_entry_t;
 
 /*!
@@ -154,7 +156,7 @@ typedef struct vm_map_entry {
  */
 typedef struct vm_map {
 	TAILQ_HEAD(, vm_map_entry) entries;
-	kmutex_t	     lock;
+	kmutex_t     lock;
 	vmem_t	     vmem;
 	struct pmap *pmap;
 } vm_map_t;
@@ -172,8 +174,8 @@ void vm_activate(vm_map_t *map);
  *
  * @returns 0 for success.
  */
-int vm_allocate(vm_map_t *map,  struct vm_object **out,
-    vaddr_t *vaddrp, size_t size);
+int vm_allocate(vm_map_t *map, struct vm_object **out, vaddr_t *vaddrp,
+    size_t size);
 /*!
  * Deallocate address space from a given map. For now only handles deallocation
  * of whole objects; they are released and accordingly
@@ -183,8 +185,7 @@ int vm_deallocate(vm_map_t *map, vaddr_t start, size_t size);
 /*!
  * Handle a page fault.
  */
-int
-vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
+int vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
     vm_fault_flags_t flags);
 
 /**
@@ -200,8 +201,8 @@ vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
  * @param copy whether to copy \p obj instead of mapping it shared
  * (copy-on-write optimisation may be employed.)
  */
-int vm_map_object(vm_map_t *map, struct vm_object *obj, vaddr_t *vaddrp, size_t size,
-    voff_t offset, bool copy);
+int vm_map_object(vm_map_t *map, struct vm_object *obj, vaddr_t *vaddrp,
+    size_t size, voff_t offset, bool copy);
 
 /*! Global kernel map. */
 extern vm_map_t kmap;
@@ -240,7 +241,6 @@ void vm_kfree(vaddr_t addr, size_t pages);
 
 /*! @} */
 
-
 /*!
  * @name PMap
  */
@@ -275,7 +275,8 @@ void pmap_enter_kern(struct pmap *pmap, paddr_t phys, vaddr_t virt,
  * Reset the protection flags for an existing pageable mapping. Does not carry
  * out TLB shootdowns.
  */
-void pmap_reenter(vm_map_t *map, struct vm_page *page, vaddr_t virt, vm_prot_t prot);
+void pmap_reenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
+    vm_prot_t prot);
 
 /*!
  * Reenter all mappings of a page read-only. Carries out TLB shootdowns.
@@ -293,7 +294,8 @@ void pmap_reenter_all_readonly(struct vm_page *page);
  * @param pv optionally specify which pv_entry_t represents this mapping, if
  * already known, so it does not have to be found again.
  */
-void pmap_unenter(vm_map_t *map, struct vm_page *page, vaddr_t virt, pv_entry_t *pv);
+void pmap_unenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
+    pv_entry_t *pv);
 
 /*!
  * Low-level unmapping of a page. Invalidates local TLB but does not do a TLB

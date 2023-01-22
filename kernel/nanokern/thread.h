@@ -33,10 +33,13 @@ typedef struct kxcallout {
 	/*! DPC to be enqueued on its elapsing */
 	kdpc_t dpc;
 	/*!
-	 * Time (relative to now if head of queue, otherwise to previous
-	 * callout) in nanosecs till expiry.
+	 * Time (in terms of nanosecs) till expiry.
 	 */
 	nanosec_t nanosecs;
+	/*!
+	 * Absolute time (in terms of cpu->ticks) of expiry.
+	 */
+	nanosec_t deadline;
 	/*! State of the callout. */
 	enum {
 		kCalloutDisabled,
@@ -146,12 +149,16 @@ typedef struct kthread {
 	/*! (~) process to which it belongs */
 	struct kprocess *process;
 
+	/*! current thread state */
 	kthread_state_t state;
 
 	/*! thread saved frame */
 	md_intr_frame_t frame;
 	/*! saved IPL */
 	ipl_t saved_ipl;
+
+	/*! remaining timeslice in ticks */
+	uint64_t timeslice;
 } kthread_t;
 
 /*!
@@ -168,6 +175,7 @@ typedef struct kprocess {
 /*!
  * Describes a CPU core.
  * Locking:
+ * - a => atomic
  * - s => kcpu::sched_lock
  * - c => ::callouts_lock
  * - ~ => invariant
@@ -178,6 +186,9 @@ typedef struct kcpu {
 
 	/* acquired at IPL=dispatch */
 	kspinlock_t sched_lock;
+
+	/* (a) ticks (actually nanosecs) */
+	_Atomic nanosec_t ticks;
 
 	/*! (spldispatch,s) Thread run queue */
 	TAILQ_HEAD(, kthread) runqueue;
@@ -194,12 +205,14 @@ typedef struct kcpu {
 	/*! (~) the idle thread for the core */
 	kthread_t *idle_thread;
 
-	/*! (spldispatch?should it be high?,s) preemption callout */
-	kxcallout_t preempt_callout;
+	/*! (?) preemption dpc */
+	kdpc_t preempt_dpc;
 
 	bool
 	    /*! Soft interrupt at dispatch level  */
-	    soft_int_dispatch : 1;
+	    soft_int_dispatch : 1,
+	    /*! Entering scheduler soon. */
+	    entering_scheduler : 1;
 } kcpu_t;
 
 /*! Acquire a spinlock without SPL */
@@ -251,6 +264,10 @@ nk_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 	splx(oldipl);
 }
 
+/*!
+ * Preemption DPC callback
+ */
+void nkx_preempt_dpc(void *arg);
 /*!
  * ONLY TO BE CALLED BY MD (which does so at IPL=high.) Indicates that the per-
  * CPU clock has elapsed.

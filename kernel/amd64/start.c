@@ -185,7 +185,10 @@ common_init(struct limine_smp_info *smpi)
 	cpu->md.lapic_base = rdmsr(kAMD64MSRAPICBase);
 	lapic_enable(0xff);
 
+	/* nkx_thread_common_init allocates... */
+	nk_spinlock_acquire_nospl(&early_lock);
 	nkx_thread_common_init(thread, cpu, &proc0);
+	nk_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
 	setup_cpu_gdt(cpu);
@@ -199,6 +202,7 @@ common_init(struct limine_smp_info *smpi)
 	TAILQ_INIT(&cpu->callout_queue);
 	TAILQ_INIT(&cpu->dpc_queue);
 	cpu->soft_int_dispatch = false;
+	cpu->entering_scheduler = false;
 	cpu->idle_thread = thread;
 
 	/* enable SSE and SSE2 */
@@ -213,6 +217,7 @@ common_init(struct limine_smp_info *smpi)
 
 	asm("sti");
 	__atomic_add_fetch(&cpus_up, 1, __ATOMIC_RELAXED);
+	md_timeslicing_start();
 }
 
 static void
@@ -244,6 +249,9 @@ smp_init()
 		if (smpi->lapic_id == smpr->bsp_lapic_id) {
 			smpi->extra_argument = (uint64_t)&cpu0;
 			cpu0.num = i;
+
+			cpu0.preempt_dpc.arg = &cpu0;
+			cpu0.preempt_dpc.callback = nkx_preempt_dpc;
 			all_cpus[i] = &cpu0;
 			common_init(smpi);
 		} else {
@@ -252,6 +260,8 @@ smp_init()
 
 			cpu->num = i;
 			cpu->running_thread = thread;
+			cpu->preempt_dpc.arg = cpu;
+			cpu->preempt_dpc.callback = nkx_preempt_dpc;
 			all_cpus[i] = cpu;
 
 			smpi->extra_argument = (uint64_t)cpu;
@@ -263,21 +273,24 @@ smp_init()
 		__asm__("pause");
 }
 
-static kmutex_t mtx;
+static ksemaphore_t sem;
+static ktimer_t	    timer;
 
-static void fun2(void*arg)
+static void
+fun2(void *arg)
 {
-	kprintf("Hello from thread B! My address: %p\n", curcpu()->running_thread);
+	kprintf("Hello from thread B! My address: %p\n",
+	    curcpu()->running_thread);
+
+	nk_timer_init(&timer);
 
 	while (true) {
-		int r= nk_wait(&mtx, "b_mutex", false, false, -1);
-		nk_dbg("Thread2 R: %d\n", r);
-		for (int i = 0; i < 400000;i++)
-			asm("pause");
-		kprintf("B");
-		nk_mutex_release(&mtx);
+		nk_timer_set(&timer, NS_PER_S / 2);
+		int r = nk_wait(&timer, "b_timer", false, false, NS_PER_S);
+		nk_assert(r == kKernWaitStatusOK);
+		kprintf("B: Releasing Semaphore\n");
+		nk_semaphore_release(&sem, 1);
 	}
-
 
 	done();
 }
@@ -285,9 +298,11 @@ static void fun2(void*arg)
 static void
 fun(void *arg)
 {
-	kprintf("Hello from thread A! My address; %p!\n", curcpu()->running_thread);
+	kprintf("Hello from thread A! My address; %p!\n",
+	    curcpu()->running_thread);
 
-	nk_mutex_init(&mtx);
+	nk_semaphore_init(&sem, 0);
+	nk_timer_init(&timer);
 
 	kthread_t thread;
 	nk_thread_init(&proc0, &thread, fun2, 0xf008a1);
@@ -295,20 +310,17 @@ fun(void *arg)
 
 	kprintf("Hello after thread B began!\n");
 
-
 	while (true) {
-		int r= nk_wait(&mtx, "a_mutex", false, false, -1);
-		nk_dbg("Thread1 R: %d\n", r);
-		for (int i = 0; i < 400000;i++)
-			asm("pause");
-		kprintf("A");
-		nk_mutex_release(&mtx);
+		kprintf("A: Waiting on Semaphore\n");
+		int r = nk_wait(&sem, "a_", false, false, NS_PER_S);
+		nk_assert(r == kKernWaitStatusOK);
+		// nk_mutex_release(&mtx);
 	}
 
-	#if 0
+#if 0
 	char *nul = 0;
 	*nul = '\0';
-	#endif
+#endif
 	done();
 }
 
@@ -326,12 +338,11 @@ _start(void)
 		done();
 	}
 
-	/* setting up GSBase immediately so curcpu()/curthread() work */
+	/* setting up state immediately so curcpu()/curthread() work */
+	cpu0.running_thread = &thread0;
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 
 	nk_dbg("Keyronex\n");
-
-	cpu0.running_thread = &thread0;
 
 	spl0();
 	idt_setup();

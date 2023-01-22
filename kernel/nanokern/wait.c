@@ -32,6 +32,7 @@ waiter_wake(kthread_t *thread, kwaitstatus_t result)
 	ipl_t ipl = nk_spinlock_acquire_at(&thread->cpu->sched_lock, kSPLHigh);
 	TAILQ_INSERT_HEAD(&thread->cpu->runqueue, thread, queue_link);
 	if (thread->cpu == curcpu()) {
+		thread->cpu->running_thread->timeslice = 0;
 		nk_raise_dispatch_interrupt();
 	} else {
 		md_ipi_reschedule(thread->cpu);
@@ -91,14 +92,14 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 		/* waiting for any, so remove thread from all waitblock
 		 * queues
 		 */
+		nkx_callout_dequeue(&thread->wait_callout);
+
 		for (unsigned i = 0; i < thread->nwaits; i++) {
 			TAILQ_REMOVE(&thread->waitblocks[i]
 					  .object->waitblock_queue,
 			    &thread->waitblocks[i], queue_entry);
 		}
-
 		nkx_object_acquire(thread, hdr);
-		nkx_callout_dequeue(&thread->wait_callout);
 		waiter_wake(thread, kKernWaitStatusOK);
 		return true;
 	}
@@ -193,7 +194,6 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	thread->saved_ipl = ipl;
 	/* enqueue the timeout callout if needed */
 	if (timeout != -1 && timeout > 1000) {
-		nk_dbg("enqueueing a timeout %lu...!\n", timeout);
 		thread->wait_callout.dpc.arg = thread;
 		thread->wait_callout.dpc.callback = wait_timeout_callback;
 		thread->wait_callout.nanosecs = timeout;

@@ -31,6 +31,10 @@ enum {
 	kLAPICRegTimerDivider = 0x3e0,
 };
 
+enum {
+	kLAPICTimerPeriodic = 0x20000,
+};
+
 typedef struct {
 	uint16_t length;
 	uint16_t base_low;
@@ -161,7 +165,7 @@ idt_setup(void)
 	idt_load();
 	md_intr_register(14, kSPL0, pagefault, NULL);
 	md_intr_register(kIntNumLAPICTimer, kSPLHigh, nkx_cpu_hardclock, NULL);
-	md_intr_register(kIntNumRescheduleIPI, kSPLDispatch, nkx_reschedule_ipi,
+	md_intr_register(kIntNumRescheduleIPI, kSPLHigh, nkx_reschedule_ipi,
 	    NULL);
 }
 
@@ -190,7 +194,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	ipl_t		      ipl;
 	struct md_intr_entry *entry;
 
-	if (num == 240) {
+	if (num == kIntNumSwitch) {
 		/* here the context switch actually happens */
 		kthread_t *old = curcpu()->md.old, *next = curcpu()->md.new;
 
@@ -204,7 +208,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		*frame = next->frame;
 		// wrmsr(kAMD64MSRFSBase, next->md.fs);
 
-		curcpu()->running_thread = next;
+		//curcpu()->running_thread = next;
 
 		nk_spinlock_release_nospl(&curcpu()->sched_lock);
 		splx(curcpu()->md.switchipl);
@@ -377,6 +381,7 @@ md_ipi_reschedule(kcpu_t *cpu)
 	send_ipi(cpu->md.lapic_id, kIntNumRescheduleIPI);
 }
 
+#if 0
 void
 md_timer_set(struct kcpu *cpu, uint64_t nanos)
 {
@@ -388,8 +393,17 @@ md_timer_set(struct kcpu *cpu, uint64_t nanos)
 uint64_t
 md_timer_get_remaining(struct kcpu *cpu)
 {
-	return (lapic_read(cpu, kLAPICRegTimerCurrentCount) * NS_PER_S) /
+	return (((uint64_t)lapic_read(cpu, kLAPICRegTimerCurrentCount)) *
+		   NS_PER_S) /
 	    cpu->md.lapic_tps;
+}
+#endif
+
+void
+md_timeslicing_start()
+{
+	lapic_write(curcpu(), kLAPICRegTimer, kLAPICTimerPeriodic | kIntNumLAPICTimer);
+	lapic_write(curcpu(), kLAPICRegTimerInitial, curcpu()->md.lapic_tps / KERN_HZ);
 }
 
 void
