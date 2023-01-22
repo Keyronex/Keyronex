@@ -1,9 +1,10 @@
-#include <nanokern/kernmisc.h>
-#include <nanokern/thread.h>
+#include <kern/kmem.h>
 #include <md/intr.h>
 #include <md/spl.h>
 
-#include "vm/vm.h"
+#include <nanokern/kernmisc.h>
+#include <nanokern/thread.h>
+#include <vm/vm.h>
 
 kspinlock_t nk_lock = KSPINLOCK_INITIALISER;
 kspinlock_t callouts_lock = KSPINLOCK_INITIALISER;
@@ -41,7 +42,8 @@ nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc)
 	thread->cpu = cpu;
 	thread->process = proc;
 	thread->saved_ipl = kSPL0;
-	kmem_asprintf(&thread->wait_callout.name, "thread %p wait timeout", thread);
+	kmem_asprintf((char**)&thread->wait_callout.name, "thread %p wait timeout",
+	    thread);
 	thread->wait_callout.state = kCalloutDisabled;
 	ipl_t ipl = nk_spinlock_acquire(&proc->lock);
 	SLIST_INSERT_HEAD(&proc->threads, thread, proc_link);
@@ -67,7 +69,7 @@ nk_thread_resume(kthread_t *thread)
 	nk_assert(thread->state == kThreadStateSuspended);
 	ipl_t ipl = nk_spinlock_acquire(&thread->cpu->sched_lock);
 
-        TAILQ_INSERT_HEAD(&thread->cpu->runqueue, thread, queue_link);
+	TAILQ_INSERT_HEAD(&thread->cpu->runqueue, thread, queue_link);
 
 	if (thread->cpu == curcpu()) {
 		curcpu()->running_thread->timeslice = 0;
@@ -76,5 +78,5 @@ nk_thread_resume(kthread_t *thread)
 		md_ipi_reschedule(thread->cpu);
 	}
 
-        nk_spinlock_release(&thread->cpu->sched_lock, ipl);
+	nk_spinlock_release(&thread->cpu->sched_lock, ipl);
 }

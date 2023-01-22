@@ -12,6 +12,14 @@
 		npf_pprintf(md_dbg_putc, NULL, __VA_ARGS__);                \
 		nk_spinlock_release(&nk_dbg_lock, ipl);                     \
 	}
+#define kvpprintf(...)                                                      \
+	{                                                                   \
+		/* nk_dbg is usable everywhere, so need SPL high */         \
+		ipl_t ipl = nk_spinlock_acquire_at(&nk_dbg_lock, kSPLHigh); \
+		npf_vpprintf(md_dbg_putc, NULL, __VA_ARGS__);               \
+		nk_spinlock_release(&nk_dbg_lock, ipl);                     \
+	}
+#define ksnprintf(...) npf_snprintf(__VA_ARGS__)
 
 #define nk_fatal(...)                \
 	{                            \

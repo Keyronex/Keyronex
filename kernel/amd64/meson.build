@@ -9,5 +9,5 @@ vxkern = executable('keyronex', kern_srcs,
 	  '-Wl,-z,max-page-size=0x1000', '-Wl,--build-id=none',
 	  '-Wl,-T' + ldscript ],
 	include_directories: [ kernel_includes ],
-#    dependencies: [ libkobjc_dep ]
+	dependencies: [ libkobjc_dep ]
 )

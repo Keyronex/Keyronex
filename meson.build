@@ -1,4 +1,4 @@
-project('Keyronex', ['c', 'cpp'], default_options: [ 'cpp_std=gnu++20' ])
+project('Keyronex', ['c', 'cpp', 'objc'], default_options: [ 'cpp_std=gnu++20' ])
 
 arch = 'amd64'
 
@@ -19,4 +19,5 @@ libc_includes = mlibc.get_variable('libc_include_dirs')
 
 executable('limine-deploy', 'limine/limine-deploy.c', native: true)
 
+subdir('objfw/src')
 subdir('kernel')

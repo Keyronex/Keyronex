@@ -95,10 +95,15 @@ void md_ipi_invlpg(struct kcpu *cpu);
 /* send a reschedule IPI  to a particular CPU */
 void md_ipi_reschedule(struct kcpu *cpu);
 
+#if 0
 /*! set the per-cpu timer */
 void md_timer_set(struct kcpu *cpu, uint64_t nanos);
 /*! get remaining nanosecs on per-cpu timer */
 uint64_t md_timer_get_remaining(struct kcpu *cpu);
+#endif
+/*! begin the per-cpu timeslicing counter */
+void md_timeslicing_start();
+
 
 /* initialise a thread's state */
 void md_thread_init(struct kthread *thread, void (*start_fun)(void *),

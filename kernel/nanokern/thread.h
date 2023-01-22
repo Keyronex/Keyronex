@@ -107,6 +107,13 @@ typedef struct kmutex {
 	struct kthread *owner;
 } kmutex_t;
 
+#define KMUTEX_INITIALIZER(kmutex)                              \
+	{                                                       \
+		.hdr.type = kDispatchMutex, .hdr.signalled = 1, \
+		.hdr.waitblock_queue = TAILQ_HEAD_INITIALIZER(  \
+		    (kmutex).hdr.waitblock_queue)               \
+	}
+
 typedef struct ktimer {
 	kdispatchheader_t hdr;
 

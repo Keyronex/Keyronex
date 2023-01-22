@@ -358,9 +358,13 @@ _start(void)
 
 	smp_init();
 
+
+	setup_objc();
+
 	kthread_t thread;
 	nk_thread_init(&proc0, &thread, fun, 0xf008a1);
 	nk_thread_resume(&thread);
+
 
 #if 0
 	char *stuff = kmem_alloc(

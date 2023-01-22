@@ -210,7 +210,6 @@ void
 nkx_callout_dequeue(kxcallout_t *callout)
 {
 	struct kxcallout_queue *queue;
-	kxcallout_t	       *co;
 	kcpu_t		       *cpu;
 	bool			iff = md_intr_disable();
 

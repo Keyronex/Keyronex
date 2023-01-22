@@ -42,6 +42,7 @@ elf64_hashlookup(const Elf64_Sym *symtab, const char *strtab,
 	return NULL;
 }
 
+#if 0
 /*
  * Lookup a symbol, searching each kmod to check whether it contains it.
  *
@@ -89,6 +90,7 @@ kmod_lookupsym(const char *name)
 
 	return NULL;
 }
+#endif
 
 int
 ksrv_backtrace(vaddr_t vaddr, const char **name, size_t *offset)

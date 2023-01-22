@@ -5,3 +5,6 @@
 	path = limine
 	url = https://github.com/limine-bootloader/limine.git
 	branch = v4.x-branch-binary
+[submodule "objfw"]
+	path = objfw
+	url = ../keyronex-objfw
