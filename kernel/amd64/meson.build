@@ -1,5 +1,7 @@
 ldscript = meson.current_source_dir()/'linker.ld'
 
+kern_srcs += lai.get_variable('sources')
+kernel_includes += [ lai.get_variable('includes') ]
 kern_srcs += files( 'amd64.c', 'locore.S', 'start.c', 'vm_machdep.c' )
 
 vxkern = executable('keyronex', kern_srcs,

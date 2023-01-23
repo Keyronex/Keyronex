@@ -8,3 +8,6 @@
 [submodule "objfw"]
 	path = objfw
 	url = ../keyronex-objfw
+[submodule "subprojects/lai"]
+	path = subprojects/lai
+	url = https://github.com/managarm/lai.git

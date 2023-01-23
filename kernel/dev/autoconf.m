@@ -9,13 +9,14 @@
  */
 
 //#include <dev/LimineFB.h>
-//#include <dev/acpi/AcpiPC.h>
+#include <dev/ACPIPC.h>
+#include <kern/kmem.h>
+#include <amd64/amd64.h>
 //#include <dev/fbterm/FBTerminal.h>
 //#include <x86_64/boot.h>
 
 //#include "kern/kmem.h"
 
-#include "OFObject.h"
 extern void (*init_array_start)(void);
 extern void (*init_array_end)(void);
 
@@ -29,7 +30,6 @@ setup_objc(void)
 
 enum nodeKind { kRoot, kChild, kLastChild };
 
-#if 0
 static void
 printTree(DKDevice *dev, char *prefix, enum nodeKind kind)
 {
@@ -79,11 +79,12 @@ autoconf(void)
 	kprintf("DeviceKit version 0\n");
 
 	[AcpiPC probeWithRSDP:rsdp_request.response->address];
+#if 0
 	[LimineFB probeWithProvider:[AcpiPC instance]
 		   limineFBResponse:framebuffer_request.response];
 	[FBTerminal probeWithFB:sysfb];
+#endif
 
 	printTree([AcpiPC instance], indent, kRoot);
 	return 0;
 }
-#endif

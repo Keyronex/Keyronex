@@ -58,7 +58,7 @@ static volatile struct limine_smp_request smp_request = {
 	.revision = 0
 };
 
-static volatile struct limine_terminal_request terminal_request = {
+volatile struct limine_terminal_request terminal_request = {
 	.id = LIMINE_TERMINAL_REQUEST,
 	.revision = 0
 };
@@ -358,8 +358,9 @@ _start(void)
 
 	smp_init();
 
-
-	setup_objc();
+	int autoconf(void);
+	autoconf();
+	done();
 
 	kthread_t thread;
 	nk_thread_init(&proc0, &thread, fun, 0xf008a1);

@@ -1,5 +1,8 @@
 kern_srcs = files(
-	'dev/autoconf.m',
+	'dev/ACPIPC.m', 'dev/autoconf.m', 'dev/IOAPIC.m', 'dev/laiex.c',
+	'dev/PCIBus.m', 'dev/VirtIOBlockDevice.m', 'dev/VirtIODevice.m',
+
+	'devicekit/DKDevice.m',
 
     'nanokern/clock.c', 'nanokern/mutex.c', 'nanokern/semaphore.c',
 	'nanokern/thread.c', 'nanokern/timer.c', 'nanokern/wait.c',

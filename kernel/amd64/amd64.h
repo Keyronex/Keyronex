@@ -1,6 +1,7 @@
 #ifndef AMD64_H_
 #define AMD64_H_
 
+#include <limine.h>
 #include <stdint.h>
 
 enum {
@@ -39,7 +40,6 @@ typedef struct tss {
 	{                                                           \
 		asm volatile("mov %0, %%" #regname ::"a"(val));     \
 	}
-
 
 static inline void
 outb(uint16_t port, uint8_t data)
@@ -104,5 +104,10 @@ REG_FUNCS(uint64_t, cr0);
 REG_FUNCS(uint64_t, cr2);
 REG_FUNCS(uint64_t, cr3);
 REG_FUNCS(uint64_t, cr4);
+
+extern volatile struct limine_framebuffer_request framebuffer_request;
+extern volatile struct limine_module_request	  module_request;
+extern volatile struct limine_rsdp_request	  rsdp_request;
+extern volatile struct limine_terminal_request	  terminal_request;
 
 #endif /* AMD64_H_ */
