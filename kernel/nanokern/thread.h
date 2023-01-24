@@ -84,6 +84,7 @@ typedef enum kdispatchobjecttype {
 	kDispatchMutex,
 	kDispatchSemaphore,
 	kDispatchTimer,
+	kDispatchMsgQueue,
 } kdispatchobjecttype_t;
 
 typedef struct kdispatchheader {
@@ -121,6 +122,23 @@ typedef struct ktimer {
 	kxcallout_t callout;
 } ktimer_t;
 
+typedef struct kmsgqueue {
+	kdispatchheader_t hdr;
+
+	/* size (must be power of 2) */
+	size_t size;
+	/* write head */
+	size_t writehead;
+	/* read head */
+	size_t readhead;
+
+	/*! message enqueuing semaphore */
+	ksemaphore_t sem;
+
+	/*! message ringbuf */
+	void **messages;
+} kmsgqueue_t;
+
 typedef enum kthread_state {
 	kThreadStateSuspended,
 	kThreadStateRunnable,
@@ -152,6 +170,10 @@ typedef struct kthread {
 	kwaitstatus_t wait_result;
 	/*! wait timeout callout */
 	kxcallout_t wait_callout;
+
+	/* temporary for the sake of lwip */
+#undef errno
+	int errno;
 
 	/*! (~) process to which it belongs */
 	struct kprocess *process;
@@ -334,6 +356,23 @@ void nkx_do_reschedule(ipl_t ipl);
  * Enqueue a DPC. (It's run immediately if IPL <= kSPLDispatch)
  */
 void nk_dpc_enqueue(kdpc_t *dpc);
+
+/*!
+ * Initialise a nanokernel messagequeue with the given capacity.
+ */
+void nk_msgqueue_init(kmsgqueue_t *msgq, unsigned count);
+
+/*!
+ * Post a message to a nanokernel messagequeue. Waits until it can be done.
+ */
+void nk_msgq_post(kmsgqueue_t *queue, void *msg);
+
+/*!
+ * Read a message from a nanokernel messagequeue.
+ * @retval 0 a message was retrieved
+ * @retval 1 no messages were pending
+ */
+int nk_msgq_read(kmsgqueue_t *queue, void **msg);
 
 /*!
  * Initialise a mutex.

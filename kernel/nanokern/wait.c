@@ -21,6 +21,10 @@ nkx_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
 	case kDispatchTimer: {
 		/* epsilon, timers remain signalled until reset */
 	}
+
+	case kDispatchMsgQueue: {
+		/* epsilon, msgqueues remain signalled until posted */
+	}
 	}
 }
 
