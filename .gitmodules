@@ -11,3 +11,6 @@
 [submodule "subprojects/lai"]
 	path = subprojects/lai
 	url = https://github.com/managarm/lai.git
+[submodule "kernel/net/lwip"]
+	path = kernel/net/lwip
+	url = ../lwip
