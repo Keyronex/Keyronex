@@ -9,6 +9,7 @@
 
 typedef enum {
 	kSPLHigh = 15, /* blocks all */
+	kSPLBIO = 3, /* blocks block I/O */
 	kSPLDispatch = 2,
 	kSPL0 = 0, /* blocks none */
 } ipl_t;
@@ -41,6 +42,7 @@ splx(ipl_t spl)
 ipl_t splraise(ipl_t spl);
 
 #define splhigh() splraise(kSPLHigh)
+#define splbio() splraise(kSPLBIO)
 #define spldispatch() splraise(kSPLDispatch)
 
 /*! lower to IPL 0; use is sus, use splx instead */

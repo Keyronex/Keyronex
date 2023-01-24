@@ -324,6 +324,13 @@ fun(void *arg)
 	done();
 }
 
+void start(void*)
+{
+	int autoconf(void);
+	autoconf();
+	done();
+}
+
 // The following will be our kernel's entry point.
 void
 _start(void)
@@ -358,13 +365,9 @@ _start(void)
 
 	smp_init();
 
-	int autoconf(void);
-	autoconf();
-	done();
-
-	kthread_t thread;
-	nk_thread_init(&proc0, &thread, fun, 0xf008a1);
-	nk_thread_resume(&thread);
+	kthread_t start_thread;
+	nk_thread_init(&proc0, &start_thread, start, 0x0);
+	nk_thread_resume(&start_thread);
 
 
 #if 0

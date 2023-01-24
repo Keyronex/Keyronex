@@ -75,7 +75,8 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 			/* all acquirable, so remove thread from all
 			 * waitblock queues and acquire each waited
 			 * object. and dequeue any wait. */
-			nkx_callout_dequeue(&thread->wait_callout);
+			if (thread->wait_callout.state == kCalloutPending)
+				nkx_callout_dequeue(&thread->wait_callout);
 			for (unsigned i = 0; i < thread->nwaits; i++) {
 				TAILQ_REMOVE(&thread->waitblocks[i]
 						  .object->waitblock_queue,
@@ -92,7 +93,8 @@ nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 		/* waiting for any, so remove thread from all waitblock
 		 * queues
 		 */
-		nkx_callout_dequeue(&thread->wait_callout);
+		if (thread->wait_callout.state == kCalloutPending)
+			nkx_callout_dequeue(&thread->wait_callout);
 
 		for (unsigned i = 0; i < thread->nwaits; i++) {
 			TAILQ_REMOVE(&thread->waitblocks[i]
