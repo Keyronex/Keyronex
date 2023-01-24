@@ -1,7 +1,7 @@
-#include <nanokern/thread.h>
 #include <libkern/libkern.h>
 #include <vm/vm.h>
 
+#include <nanokern/thread.h>
 #include <string.h>
 
 #define PGQ_INITIALIZER(PGQ)                                             \
@@ -12,6 +12,7 @@
 vm_pagequeue_t vm_pgfreeq = PGQ_INITIALIZER(vm_pgfreeq),
 	       vm_pgkmemq = PGQ_INITIALIZER(vm_pgkmemq),
 	       vm_pgwiredq = PGQ_INITIALIZER(vm_pgwiredq),
+	       vm_pgdevbufq = PGQ_INITIALIZER(vm_pgdevbufq),
 	       vm_pgactiveq = PGQ_INITIALIZER(vm_pgactiveq),
 	       vm_pginactiveq = PGQ_INITIALIZER(vm_pginactiveq),
 	       vm_pgpmapq = PGQ_INITIALIZER(vm_pgpmapq);
@@ -43,6 +44,8 @@ vm_page_queue(vm_page_t *page)
 		return &vm_pgkmemq;
 	case kVMPageWired:
 		return &vm_pgactiveq;
+	case kVMPageDevBuf:
+		return &vm_pgdevbufq;
 	case kVMPageActive:
 		return &vm_pgactiveq;
 	case kVMPageInactive:
@@ -94,14 +97,13 @@ vm_page_free(vm_page_t *page)
 	vm_page_changequeue(page, NULL, &vm_pgfreeq);
 }
 
-
 void
 vm_pagedump(void)
 {
-	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "kmem",
-	    "wired", "active", "inactive", "pmap");
+	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "kmem",
+	    "wired", "devbuf", "active", "inactive", "pmap");
 
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu%-9zu\n", vm_pgfreeq.npages,
-	    vm_pgkmemq.npages, vm_pgwiredq.npages, vm_pgactiveq.npages,
-	    vm_pginactiveq.npages, vm_pgpmapq.npages);
+	    vm_pgkmemq.npages, vm_pgwiredq.npages, vm_pgdevbufq.npages,
+	    vm_pgactiveq.npages, vm_pginactiveq.npages, vm_pgpmapq.npages);
 }

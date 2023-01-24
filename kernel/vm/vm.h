@@ -46,9 +46,10 @@ enum vm_page_queue {
 	kVMPageFree = 0,
 	kVMPageKMem = 1,
 	kVMPageWired = 2,
-	kVMPageActive = 3,
-	kVMPageInactive = 4,
-	kVMPagePMap = 5,
+	kVMPageDevBuf = 3,
+	kVMPageActive = 4,
+	kVMPageInactive = 5,
+	kVMPagePMap = 6,
 };
 
 #include <nanokern/tree.h>
@@ -99,7 +100,7 @@ typedef struct vm_pregion {
 typedef TAILQ_HEAD(, vm_pregion) vm_pregion_queue_t;
 
 /*! The page queues. */
-extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgactiveq,
+extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgdevbufq, vm_pgactiveq,
     vm_pginactiveq, vm_pgpmapq;
 
 /*! Page region queue. */
