@@ -92,6 +92,7 @@ typedef struct dk_virtio_queue {
 -(void)submitDescNum: (uint16_t)descNum toQueue:(dk_virtio_queue_t*) queue;
 /*!
  * Notify a queue that new entries have been enqueued.
+ * \pre queue spinlock HELD
  */
 - (void)notifyQueue:(dk_virtio_queue_t *)queue;
 /*!

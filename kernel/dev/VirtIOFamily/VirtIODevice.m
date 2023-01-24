@@ -316,6 +316,7 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 - (void)handleInterrupt
 {
 	uint8_t isr_status = *info.isr;
+	(void)isr_status;
 
 	DKDevLog(self, "interrupted, processing VirtIO queues...\n");
 

@@ -1,4 +1,4 @@
-#include <dev/VirtIOBlockDevice.h>
+#include <dev/VirtIOFamily/VirtIOBlockDevice.h>
 
 #include "acpispec/resources.h"
 #include "dev/IOApic.h"

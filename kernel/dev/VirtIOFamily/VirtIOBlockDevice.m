@@ -3,18 +3,20 @@
 #include <kern/kmem.h>
 #include <vm/vm.h>
 
+#include <nanokern/thread.h>
+
 #include "VirtIOBlockDevice.h"
-#include "dev/virtioreg.h"
-#include "nanokern/thread.h"
+#include "nanokern/queue.h"
 #include "virtio_blk.h"
+#include "virtioreg.h"
 
 struct vioblk_request {
 	/* linkage in in_flight_reqs or free_reqs */
 	TAILQ_ENTRY(vioblk_request) queue_entry;
 	/* first descriptor */
-	struct virtio_blk_outhdr    hdr;
+	struct virtio_blk_outhdr hdr;
 	/* final descriptor */
-	uint8_t			    flags;
+	uint8_t flags;
 	/*! the first desc, by that this request is identified */
 	uint16_t first_desc_id;
 	/*! completion callback */
@@ -72,29 +74,32 @@ done_io(void *arg, ssize_t len)
 
 	vm_page_t *dataPage = vm_pagealloc(true, &vm_pgwiredq);
 
-	[self commonRequest:VIRTIO_BLK_T_IN
-		blocks:1
-		    at:0
-		buffer:dataPage->paddr
-	    completion:&comp];
+	for (int i = 0; i < 2; i++) {
+		[self commonRequest:VIRTIO_BLK_T_IN
+			     blocks:1
+				 at:i
+			     buffer:dataPage->paddr
+			 completion:&comp];
 
-	nk_wait(&sem, "test_virtio", false, false, -1);
+		nk_wait(&sem, "test_virtio", false, false, -1);
 
-	char *res = P2V(dataPage->paddr);
-	res[512] = '\0';
-	DKDevLog(self, "Block 0 contains: \"%s\"\n", res);
+		char *res = P2V(dataPage->paddr);
+		res[512] = '\0';
+		DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
+	}
 
 	[self registerDevice];
-	DKLogAttachExtra(self, "%lu MiB (%ld 512-byte sectors)", cfg->capacity * 512 / 1024 / 1024, cfg->capacity);
+	DKLogAttachExtra(self, "%lu MiB (%ld 512-byte sectors)",
+	    cfg->capacity * 512 / 1024 / 1024, cfg->capacity);
 
 	return self;
 }
 
 - (int)commonRequest:(int)kind
-	 blocks:(blkcnt_t)nblocks
-	     at:(blkoff_t)block
-	 buffer:(paddr_t)buf
-     completion:(struct dk_diskio_completion *)completion
+	      blocks:(blkcnt_t)nblocks
+		  at:(blkoff_t)block
+	      buffer:(paddr_t)buf
+	  completion:(struct dk_diskio_completion *)completion
 {
 	uint32_t virtq_desc[3];
 	ipl_t	 ipl;
@@ -118,7 +123,9 @@ done_io(void *arg, ssize_t len)
 	queue.desc[virtq_desc[0]].flags = VRING_DESC_F_NEXT;
 	queue.desc[virtq_desc[0]].next = virtq_desc[1];
 
-	queue.desc[virtq_desc[1]].len = kind == VIRTIO_BLK_T_GET_ID ? 20 : nblocks * 512;
+	queue.desc[virtq_desc[1]].len = kind == VIRTIO_BLK_T_GET_ID ?
+	    20 :
+	    nblocks * 512;
 	queue.desc[virtq_desc[1]].addr = buf;
 	queue.desc[virtq_desc[1]].flags = VRING_DESC_F_NEXT |
 	    VRING_DESC_F_WRITE;
@@ -154,6 +161,8 @@ done_io(void *arg, ssize_t len)
 	if (!req || req->first_desc_id != e->id)
 		kfatal("vioblk completion without a request\n");
 
+	TAILQ_REMOVE(&in_flight_reqs, req, queue_entry);
+
 	dout = &QUEUE_DESC_AT(&queue, e->id);
 	kassert(dout->flags & VRING_DESC_F_NEXT);
 	ddataidx = dout->next;
@@ -174,6 +183,8 @@ done_io(void *arg, ssize_t len)
 	}
 
 	req->completion->callback(req->completion->data, ddata->len);
+
+	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
 }
 
 @end

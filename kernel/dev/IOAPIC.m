@@ -56,7 +56,7 @@ ioapic_route(vaddr_t *vaddr, uint8_t i, uint8_t vec, bool lopol)
 	// ent |= kDestinationModeLogical << 11;
 	ent |= kDeliveryModeFixed << 8;
 	ent |= kDestinationModePhysical << 11;
-	ent |= 1ul << 56; /* lapic id 1 */
+	ent |= 0ul << 56; /* lapic id 0 */
 	if (lopol)
 		ent |= 1 << 13; /* polarity low */
 	ent |= 1 << 15;		/* level triggered */
@@ -107,7 +107,7 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 
 			assert(ioapic->redirs[intr] == 0 && "shared");
 
-			vec = md_intr_alloc(kSPL0, handler, arg);
+			vec = md_intr_alloc(prio, handler, arg);
 			if (vec < 0) {
 				DKDevLog(ioapic,
 				    "failed to register interrupt for GSI %d\n",

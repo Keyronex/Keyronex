@@ -1,7 +1,7 @@
 #ifndef VIRTIOBLOCKDEVICE_H_
 #define VIRTIOBLOCKDEVICE_H_
 
-#include <dev/VirtIODevice.h>
+#include <dev/VirtIOFamily/VirtIODevice.h>
 
 #include <devicekit/DKDisk.h>
 

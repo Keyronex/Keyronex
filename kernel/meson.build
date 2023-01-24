@@ -1,6 +1,7 @@
 kern_srcs = files(
 	'dev/ACPIPC.m', 'dev/autoconf.m', 'dev/IOAPIC.m', 'dev/laiex.c',
-	'dev/PCIBus.m', 'dev/VirtIOBlockDevice.m', 'dev/VirtIODevice.m',
+	'dev/PCIBus.m', 'dev/VirtIOFamily/VirtIOBlockDevice.m',
+	'dev/VirtIOFamily/VirtIODevice.m',
 
 	'devicekit/DKDevice.m',
 
