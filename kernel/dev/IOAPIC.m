@@ -1,5 +1,5 @@
 
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include "dev/IOApic.h"
 #include "dev/ACPIPC.h"
@@ -64,7 +64,7 @@ ioapic_route(vaddr_t *vaddr, uint8_t i, uint8_t vec, bool lopol)
 	ioapic_write(vaddr, redirection_register(i) + 1, ent >> 32);
 }
 
-static _TAILQ_HEAD(, IOApic, ) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
+static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 
 @implementation IOApic
 

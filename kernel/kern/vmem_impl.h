@@ -17,7 +17,7 @@
 #ifndef VMEM_IMPL_H_
 #define VMEM_IMPL_H_
 
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include <kern/vmem.h>
 

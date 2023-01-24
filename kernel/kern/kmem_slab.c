@@ -39,7 +39,7 @@
  * are therefore linked into a list of allocated bufctls in the kmem_zone.
  * [in the future this will be a hash table.]
  */
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include <stddef.h>
 #include <stdint.h>

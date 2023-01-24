@@ -638,6 +638,13 @@ struct name {								\
 	TRACEBUF							\
 }
 
+#define	TAILQ_TYPE_HEAD(name, type)					\
+struct name {								\
+	type *tqh_first;	/* first element */			\
+	type **tqh_last;	/* addr of last next element */		\
+	TRACEBUF							\
+}
+
 #define	TAILQ_HEAD_INITIALIZER(head)					\
 	{ NULL, &(head).tqh_first, TRACEBUF_INITIALIZER }
 
@@ -645,6 +652,13 @@ struct name {								\
 struct {								\
 	struct type *tqe_next;	/* next element */			\
 	struct type **tqe_prev;	/* address of previous next element */	\
+	TRACEBUF							\
+}
+
+#define	TAILQ_TYPE_ENTRY(type)						\
+struct {								\
+	type *tqe_next;		/* next element */			\
+	type **tqe_prev;	/* address of previous next element */	\
 	TRACEBUF							\
 }
 

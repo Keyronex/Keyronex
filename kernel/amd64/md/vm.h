@@ -1,7 +1,7 @@
 #ifndef AMD64_MD_VM_H_
 #define AMD64_MD_VM_H_
 
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 #include <stdint.h>
 
 #define PGSIZE 4096

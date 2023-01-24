@@ -1,4 +1,5 @@
 #include "VirtIODevice.h"
+#include "md/intr.h"
 #include "virtioreg.h"
 
 typedef uint8_t	 u8;
@@ -62,6 +63,11 @@ malloc(size_t size)
 	return liballoc_kmalloc(size);
 }
 
+static void virtio_intr(md_intr_frame_t *frame, void *arg) {
+	kprintf("GOT A VIRTIO INT!\n");
+	for (;;) ;
+}
+
 @implementation VirtIODevice
 
 void
@@ -97,6 +103,9 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 		break;
 
 	case VIRTIO_PCI_CAP_NOTIFY_CFG:
+		dev->notify_base = (vaddr_t)(P2V([PCIBus getBar:cap.bar
+							   info:pciInfo]) +
+		    cap.offset);
 		dev->m_notify_off_multiplier = PCIINFO_CFG_READ(d, pciInfo,
 		    pCap + sizeof(struct virtio_pci_cap));
 		break;
@@ -196,6 +205,8 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 
 	/* allocate a queue of total size 3336 bytes, to nicely fit in a page */
 
+	queue->num = index;
+
 	/* array of 128 vring_descs; amounts to 2048 bytes */
 	queue->desc = (void *)addr;
 	offs = sizeof(struct vring_desc) * 128;
@@ -224,13 +235,36 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 	return 0;
 }
 
--(void)enableDevice
+- (void)enableDevice
 {
 	info.m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
-		for (;;)
-		;
+
+	int r = [PCIBus handleInterruptOf:&info.pciInfo
+			  withHandler:virtio_intr
+			     argument:self
+			   atPriority:kSPL0];
+
+	if (r < 0) {
+		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
+	}
 }
 
+- (void)notifyQueue:(dk_virtio_queue_t *)queue
+{
+	/*
+	le32 {
+	vqn : 16;
+	next_off : 15;
+	next_wrap : 1;
+	};
+	*/
+	uint32_t value = queue->num << 16 | 0 << 1 | 0;
+	uint32_t *addr = (uint32_t*)(info.notify_base + 0 * info.m_notify_off_multiplier);
+	*addr = value;
+	__sync_synchronize();
+
+	for (;;) ;
+}
 
 @end

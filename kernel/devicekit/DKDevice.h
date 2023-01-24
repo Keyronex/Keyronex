@@ -1,7 +1,7 @@
 #ifndef DK_DKDEVICE_H_
 #define DK_DKDEVICE_H_
 
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include <OFObject.h>
 
@@ -31,8 +31,8 @@ struct dk_device_pci_info;
 /*! Represenst an offset in unit blocks of an underlying block device. */
 typedef int64_t blkoff_t;
 
-typedef _TAILQ_HEAD(, DKDevice, ) DKDevice_queue_t;
-typedef _TAILQ_ENTRY(DKDevice, ) DKDevice_queue_entry_t;
+typedef TAILQ_TYPE_HEAD(, DKDevice) DKDevice_queue_t;
+typedef TAILQ_TYPE_ENTRY(DKDevice) DKDevice_queue_entry_t;
 #if 0
 typedef _SLIST_HEAD(, DKDevice, ) DKDevice_slist_t;
 typedef _SLIST_ENTRY(DKDevice, ) DKDevice_slist_entry_t;

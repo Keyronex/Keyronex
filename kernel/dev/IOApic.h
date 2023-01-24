@@ -13,7 +13,7 @@
 	uint32_t _n_redirs;
 	uint8_t	 redirs[24]; /**< map APIC PIN to IDT vector */
 
-	_TAILQ_ENTRY(IOApic, ) _ioapics_entries;
+	TAILQ_TYPE_ENTRY(IOApic) _ioapics_entries;
 }
 
 /**

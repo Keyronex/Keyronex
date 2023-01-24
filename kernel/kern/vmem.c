@@ -87,7 +87,7 @@
  * @brief Implementation of the VMem resource allocator.
  */
 
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include <errno.h>
 #include <string.h>
