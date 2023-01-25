@@ -23,6 +23,7 @@ nk_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 		while ((block) != NULL && ((sem->hdr.signalled) > 0)) {
 			kwaitblock_t *next = TAILQ_NEXT(block, queue_entry);
 			int i = nkx_waiter_maybe_wakeup(block->thread, &sem->hdr);
+			(void)i;
 			block = next;
 		}
 	}

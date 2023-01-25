@@ -321,6 +321,8 @@ kmem_zonealloc(kmem_zone_t *zone)
 	__atomic_sub_fetch(&slab->nfree, 1, __ATOMIC_RELAXED);
 	entry = slab->firstfree;
 
+	kassert(entry != NULL);
+
 	next = entry->entrylist.sle_next;
 	if (next == NULL) {
 		/* slab is now empty; put it to the back of the slab queue */
@@ -328,7 +330,7 @@ kmem_zonealloc(kmem_zone_t *zone)
 		STAILQ_INSERT_TAIL(&zone->slablist, slab, slablist);
 		slab->firstfree = NULL;
 	} else {
-#ifdef KMEM_SANITY_CHECKS
+//#ifdef KMEM_SANITY_CHECKS
 		void *slab_base, *slab_end, *next_data;
 
 		if (zone->size <= kSmallSlabMax) {
@@ -347,7 +349,7 @@ kmem_zonealloc(kmem_zone_t *zone)
 		kassert(
 		    (uintptr_t)((void *)next_data - slab_base) % zone->size ==
 		    0);
-#endif
+//#endif
 
 		slab->firstfree = next;
 	}
@@ -369,6 +371,8 @@ kmem_zonefree(kmem_zone_t *zone, void *ptr)
 {
 	struct kmem_slab   *slab;
 	struct kmem_bufctl *newfree;
+
+	ASSERT_IN_KHEAP(ptr);
 
 	nk_wait(&zone->lock.hdr, "kmem_slab", false, false, -1);
 
@@ -470,8 +474,9 @@ _kmem_alloc(size_t size)
 	if (zoneidx == -1) {
 		size_t realsize = PGROUNDUP(size);
 		return (void *)vm_kalloc(realsize / PGSIZE, kVMKSleep);
-	} else
+	} else {
 		return kmem_zonealloc(kmem_alloc_zones[zoneidx]);
+	}
 }
 
 void *

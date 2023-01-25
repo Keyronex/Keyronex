@@ -37,7 +37,7 @@ nextcpu()
 }
 
 void
-nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc)
+nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc, const char *name)
 {
 	thread->cpu = cpu;
 	thread->process = proc;
@@ -52,11 +52,11 @@ nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc)
 
 void
 nk_thread_init(kprocess_t *proc, kthread_t *thread, void (*start_fun)(void *),
-    void *start_arg)
+    void *start_arg, const char *name)
 {
 	kcpu_t *cpu = nextcpu();
 
-	nkx_thread_common_init(thread, cpu, proc);
+	nkx_thread_common_init(thread, cpu, proc, name);
 	thread->state = kThreadStateSuspended;
 	thread->kstack = vm_kalloc(4, kVMKSleep) + 4 * PGSIZE;
 

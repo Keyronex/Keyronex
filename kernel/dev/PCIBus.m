@@ -1,12 +1,12 @@
 #include <dev/VirtIOFamily/VirtIOBlockDevice.h>
 #include <dev/VirtIOFamily/VirtIONetwork.h>
+#include <kern/kmem.h>
 
 #include "acpispec/resources.h"
+#include "dev/ACPIPC.h"
 #include "dev/IOApic.h"
 #include "dev/PCIBus.h"
 #include "dev/laiex.h"
-//#include "dev/NVMeController.h"
-#include "dev/ACPIPC.h"
 #include "lai/core.h"
 #include "lai/error.h"
 #include "lai/helpers/pci.h"
@@ -160,7 +160,7 @@ iterate(lai_nsnode_t *obj, size_t depth)
 + (void)enumerateCapabilitiesOf:(dk_device_pci_info_t *)pciInfo
 		   withCallback:(void (*)(dk_device_pci_info_t *, voff_t cap,
 				    void *))callback
-				    userData:(void*)userData
+		       userData:(void *)userData
 {
 	if (PCIINFO_CFG_READ(w, pciInfo, kStatus) & (1 << 4)) {
 		voff_t pCap = PCIINFO_CFG_READ(b, pciInfo,

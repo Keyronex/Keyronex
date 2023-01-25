@@ -78,7 +78,7 @@ void kmem_zonefree(kmem_zone_t *zone, void *ptr);
  * Allocate kernel wired memory. Memory will be aligned to zone's size (thus
  * power-of-2 allocations will be naturally aligned).
  */
-void *kmem_alloc(size_t size);
+void *kmem_alloc(size_t size) __attribute__ ((alloc_size (1)));
 
 /*!
  * Release memory allocated by kmem_alloc(). \p size must match the size that

@@ -1,10 +1,14 @@
 #define NANOPRINTF_IMPLEMENTATION
 #include <libkern/nanoprintf.h>
 
+/* separate */
+#include <libkern/libkern.h>
+
 #include <string.h>
 
 /* ctype.h */
-int isalpha(char c)
+int
+isalpha(char c)
 {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
@@ -26,20 +30,34 @@ isspace(char c)
 	return 0;
 }
 
-int isupper(char c)
+int
+isupper(char c)
 {
 	return (c >= 'A' && c <= 'Z');
 }
 
-int islower(char c)
+int
+islower(char c)
 {
 	return (c >= 'a' && c <= 'z');
 }
 
-
-int isxdigit(char c)
+int
+isxdigit(char c)
 {
-	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+	    (c >= 'A' && c <= 'F');
+}
+
+int
+tolower(int c)
+{
+	if (c <= 0x7F) {
+		if (c >= 'A' && c <= 'Z')
+			return c - 'A' + 'a';
+	} else
+		kprintf("tolower unicode: unimplemented\n");
+	return c;
 }
 
 /* stdlib.h */
@@ -64,7 +82,6 @@ atoi(const char *s)
 		n = 10 * n - (*s++ - '0');
 	return neg ? n : -n;
 }
-
 
 int
 memcmp(const void *str1, const void *str2, size_t count)
@@ -127,9 +144,7 @@ strcmp(const char *s1, const char *s2)
 }
 
 int
-		     strncmp(s1, s2, n)
-register const char *s1, *s2;
-register size_t	     n;
+strncmp(const char *s1, const char *s2, size_t n)
 {
 
 	if (n == 0)
@@ -160,6 +175,24 @@ strcpy(char *restrict dst, const char *restrict src)
 	return dst;
 }
 
+char *
+strncpy(char *restrict dst, const char *restrict src, size_t n)
+{
+	if (n != 0) {
+		register char	    *d = dst;
+		register const char *s = src;
+
+		do {
+			if ((*d++ = *s++) == 0) {
+				while (--n != 0)
+					*d++ = 0;
+				break;
+			}
+		} while (--n != 0);
+	}
+	return (dst);
+}
+
 size_t
 strlen(const char *str)
 {
@@ -168,4 +201,29 @@ strlen(const char *str)
 	for (s = str; *s; ++s)
 		continue;
 	return (s - str);
+}
+
+/* sys/select.h */
+void
+__FD_CLR(int fd, fd_set *set)
+{
+	set->__mlibc_elems[fd / 8] &= ~(1 << (fd % 8));
+}
+
+int
+__FD_ISSET(int fd, fd_set *set)
+{
+	return set->__mlibc_elems[fd / 8] & (1 << (fd % 8));
+}
+
+void
+__FD_SET(int fd, fd_set *set)
+{
+	set->__mlibc_elems[fd / 8] |= 1 << (fd % 8);
+}
+
+void
+__FD_ZERO(fd_set *set)
+{
+	memset(set->__mlibc_elems, 0, sizeof(fd_set));
 }

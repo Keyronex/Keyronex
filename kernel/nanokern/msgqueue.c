@@ -50,6 +50,7 @@ nk_msgq_read(kmsgqueue_t *queue, void **msg)
 	ipl_t ipl = nk_spinlock_acquire(&nk_lock);
 
 	if (queue->writehead == queue->readhead) {
+		nk_spinlock_release(&nk_lock, ipl);
 		return -1;
 	}
 

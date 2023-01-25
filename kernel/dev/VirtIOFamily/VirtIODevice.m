@@ -307,7 +307,7 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 #endif
 
 	uint32_t *addr = (uint32_t *)(info.notify_base +
-	    0 * info.m_notify_off_multiplier);
+	    queue->notify_off * info.m_notify_off_multiplier);
 	uint32_t  value = queue->num;
 	*addr = value;
 	__sync_synchronize();
@@ -318,7 +318,9 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 	uint8_t isr_status = *info.isr;
 	(void)isr_status;
 
+#if 0
 	DKDevLog(self, "interrupted, processing VirtIO queues...\n");
+#endif
 
 	for (int i = 0; i < info.num_queues; i++) {
 		dk_virtio_queue_t *queue = info.queues[i];
@@ -332,15 +334,16 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 		     i = (i + 1) % queue->length) {
 			struct vring_used_elem *e =
 			    &queue->used
-				 ->ring[queue->last_seen_used % queue->length];
+				 ->ring[i % queue->length];
 
 			/*
 			 * ugly hack, maybe a problem: but need to access sched
-			 * from our handlers, unfortunately. i think we can get
+			 * from our handlers for now. i think we can get
 			 * away without releasing the spinlock as we won't get
 			 * another interrupt for this device on this cpu.
+			 *
 			 * todo(med): refactor to use DPCs to do the scheduler
-			 * stuff (or require the completion callback to be happy
+			 * stuff (or require any completion callback to be happy
 			 * running at arbitrary IPL?)
 			 */
 			// nk_spinlock_release(&queue->spinlock, ipl);

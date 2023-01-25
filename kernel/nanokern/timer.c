@@ -24,6 +24,7 @@ nk_timer_init(ktimer_t *timer)
 {
 	timer->hdr.type = kDispatchTimer;
 	timer->hdr.signalled = 0;
+	timer->callout.state = kCalloutDisabled;
 	timer->callout.name = "ktimer_callout";
 	timer->callout.cpu = NULL;
 	timer->callout.dpc.arg = timer;

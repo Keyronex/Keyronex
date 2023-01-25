@@ -69,7 +69,7 @@
 #include <stdint.h>
 
 #define __packed __attribute__((packed))
-#define __BIT(__n)	(1U << (__n))
+#define __BIT(__n)	(1UL << (__n))
 
 /* Virtio product id (all subsystems) */
 #define VIRTIO_DEVICE_ID_NETWORK	 1

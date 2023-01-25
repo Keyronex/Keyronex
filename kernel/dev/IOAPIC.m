@@ -3,6 +3,7 @@
 
 #include "dev/IOApic.h"
 #include "dev/ACPIPC.h"
+#include <kern/kmem.h>
 #include "md/intr.h"
 
 enum {
@@ -33,7 +34,7 @@ redirection_register(uint32_t entry)
 }
 
 static uint32_t
-ioapic_read(vaddr_t *vaddr, uint32_t reg)
+ioapic_read(vaddr_t vaddr, uint32_t reg)
 {
 	volatile uint32_t *base = (volatile uint32_t *)vaddr;
 	base[0] = reg;
@@ -41,7 +42,7 @@ ioapic_read(vaddr_t *vaddr, uint32_t reg)
 }
 
 static void
-ioapic_write(vaddr_t *vaddr, uint32_t reg, uint32_t val)
+ioapic_write(vaddr_t vaddr, uint32_t reg, uint32_t val)
 {
 	volatile uint32_t *base = (volatile uint32_t *)vaddr;
 	base[0] = reg;
@@ -49,7 +50,7 @@ ioapic_write(vaddr_t *vaddr, uint32_t reg, uint32_t val)
 }
 
 static void
-ioapic_route(vaddr_t *vaddr, uint8_t i, uint8_t vec, bool lopol)
+ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol)
 {
 	uint64_t ent = vec;
 	// ent |= kDeliveryModeLowPriority << 8;
@@ -73,7 +74,7 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 	self = [super initWithProvider:[AcpiPC instance]];
 
 	_id = id;
-	_vaddr = P2V(paddr);
+	_vaddr = (vaddr_t)P2V(paddr);
 	_gsi_base = gsiBase;
 	_n_redirs = ((ioapic_read(_vaddr, kRegisterVersion) >> 16) & 0xff) + 1;
 	assert(_n_redirs <= 24);

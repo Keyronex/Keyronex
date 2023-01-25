@@ -345,7 +345,8 @@ bool nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr);
 /*!
  * Common initialisation for one of the idle threads or a regular thread.
  */
-void nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc);
+void nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
+    const char *name);
 
 /*!
  * Enter the scheduler (with old IPL provided)
@@ -412,7 +413,7 @@ void nk_timer_set(ktimer_t *timer, uint64_t nanosecs);
  * Initialise a thread.
  */
 void nk_thread_init(kprocess_t *proc, kthread_t *thread,
-    void (*start_fun)(void *), void		*start_arg);
+    void (*start_fun)(void *), void *start_arg, const char *name);
 
 /*!
  * Resume a suspended thread.

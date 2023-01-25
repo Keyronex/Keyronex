@@ -187,7 +187,7 @@ common_init(struct limine_smp_info *smpi)
 
 	/* nkx_thread_common_init allocates... */
 	nk_spinlock_acquire_nospl(&early_lock);
-	nkx_thread_common_init(thread, cpu, &proc0);
+	nkx_thread_common_init(thread, cpu, &proc0, "idle_thread");
 	nk_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
@@ -305,7 +305,7 @@ fun(void *arg)
 	nk_timer_init(&timer);
 
 	kthread_t thread;
-	nk_thread_init(&proc0, &thread, fun2, 0xf008a1);
+	nk_thread_init(&proc0, &thread, fun2, 0xf008a1, "fun2");
 	nk_thread_resume(&thread);
 
 	kprintf("Hello after thread B began!\n");
@@ -360,7 +360,7 @@ _start(void)
 
 	kthread_t start_thread;
 	void kstart(void*);
-	nk_thread_init(&proc0, &start_thread, kstart, 0x0);
+	nk_thread_init(&proc0, &start_thread, kstart, 0x0, "start_thread");
 	nk_thread_resume(&start_thread);
 
 

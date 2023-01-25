@@ -11,6 +11,10 @@
 #define KHEAP_BASE 0xffff800100000000
 #define KERN_BASE 0xffffffff80000000
 
+#define ASSERT_IN_KHEAP(PTR)                    \
+	kassert((uintptr_t)PTR >= KHEAP_BASE && \
+	    (uintptr_t)PTR < KHEAP_BASE + 0x100000000)
+
 #define USER_SIZE 0x100000000
 #define HHDM_SIZE 0x100000000  /* 4GiB */
 #define KHEAP_SIZE 0x100000000 /* 4GiB */

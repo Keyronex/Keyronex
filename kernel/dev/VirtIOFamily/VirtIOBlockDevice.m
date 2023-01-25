@@ -3,10 +3,10 @@
 #include <kern/kmem.h>
 #include <vm/vm.h>
 
+#include <nanokern/queue.h>
 #include <nanokern/thread.h>
 
 #include "VirtIOBlockDevice.h"
-#include "nanokern/queue.h"
 #include "virtio_blk.h"
 #include "virtioreg.h"
 

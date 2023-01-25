@@ -182,6 +182,7 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 
 	} else if (timeout == 0) {
 		/* only a poll */
+		nk_spinlock_release(&nk_lock, ipl);
 		return kKernWaitStatusTimedOut;
 	}
 
