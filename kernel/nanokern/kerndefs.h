@@ -15,6 +15,9 @@
 /*! parameter is nullable */
 #define kx_nullable
 
+/* calling function requires this lock to be held */
+#define LOCK_REQUIRES(lock)
+
 #define NS_PER_S 1000000000
 
 #define KERN_HZ 100
@@ -27,5 +30,6 @@ typedef uintptr_t vaddr_t;
 typedef uintptr_t paddr_t;
 typedef uintptr_t voff_t;
 typedef uintptr_t poff_t;
+typedef uintptr_t pgoff_t;
 
 #endif /* KERN_KERNDEFS_H_ */

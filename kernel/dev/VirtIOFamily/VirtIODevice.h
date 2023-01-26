@@ -96,9 +96,9 @@ typedef struct dk_virtio_queue {
  */
 - (void)notifyQueue:(dk_virtio_queue_t *)queue;
 /*!
- * Handle an interrupt. Called at IPL=dispatch
+ * Handle a line-based interrupt. Called at IPL=dispatch
  */
-- (void)handleInterrupt;
+- (bool)handleInterrupt;
 /*!
  * Subclass responsibility.
  */

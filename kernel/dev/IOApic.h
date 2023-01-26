@@ -22,13 +22,17 @@
  * The I/O APIC handling that GSI is identified and routes the interrupt; the
  * handler is then installed into the IDT by the kernel.
  *
+ * \p isEdgeTriggered whether the interrupt is edge-triggered. Edge-triggered
+ * interrupts cannot share a vector.
+ *
  * @returns 0 if handler installed successfully
  */
 + (int)handleGSI:(uint32_t)gsi
-     withHandler:(intr_handler_fn_t)handler
-	argument:(void *)arg
-     lowPolarity:(bool)lopol
-      atPriority:(ipl_t)prio;
+	withHandler:(intr_handler_fn_t)handler
+	   argument:(void *)arg
+      isLowPolarity:(bool)lopol
+    isEdgeTriggered:(bool)isEdgeTriggered
+	 atPriority:(ipl_t)prio;
 
 - initWithID:(uint32_t)id address:(paddr_t *)address gsiBase:(uint32_t)gsiBase;
 

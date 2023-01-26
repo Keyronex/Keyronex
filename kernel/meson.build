@@ -10,7 +10,7 @@ kern_srcs = files(
 	'nanokern/wait.c',
 
     'kern/kmem_slab.c', 'kern/kmem_liballoc.c', 'kern/liballoc_sysdep.c',
-	'kern/ksrv.c', 'kern/kstart.c', 'kern/vmem.c',
+	'kern/ksrv.c', 'kern/kstart.c', 'kern/obj.c', 'kern/vmem.c',
 
     'libkern/libkern.c',
 

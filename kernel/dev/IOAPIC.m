@@ -1,9 +1,10 @@
 
+#include <kern/kmem.h>
+
 #include <nanokern/queue.h>
 
-#include "dev/IOApic.h"
 #include "dev/ACPIPC.h"
-#include <kern/kmem.h>
+#include "dev/IOApic.h"
 #include "md/intr.h"
 
 enum {
@@ -50,7 +51,7 @@ ioapic_write(vaddr_t vaddr, uint32_t reg, uint32_t val)
 }
 
 static void
-ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol)
+ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol, bool edge)
 {
 	uint64_t ent = vec;
 	// ent |= kDeliveryModeLowPriority << 8;
@@ -60,7 +61,8 @@ ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol)
 	ent |= 0ul << 56; /* lapic id 0 */
 	if (lopol)
 		ent |= 1 << 13; /* polarity low */
-	ent |= 0 << 15;		/* edge triggered */
+	if (!edge)
+		ent |= 1 << 15; /* level triggered */
 	ioapic_write(vaddr, redirection_register(i), ent);
 	ioapic_write(vaddr, redirection_register(i) + 1, ent >> 32);
 }
@@ -92,10 +94,11 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 }
 
 + (int)handleGSI:(uint32_t)gsi
-     withHandler:(intr_handler_fn_t)handler
-	argument:(void *)arg
-     lowPolarity:(bool)lopol
-      atPriority:(ipl_t)prio;
+	withHandler:(intr_handler_fn_t)handler
+	   argument:(void *)arg
+      isLowPolarity:(bool)lopol
+    isEdgeTriggered:(bool)isEdgeTriggered
+	 atPriority:(ipl_t)prio;
 {
 	IOApic *ioapic;
 	bool	found = false;
@@ -108,7 +111,8 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 
 			assert(ioapic->redirs[intr] == 0 && "shared");
 
-			vec = md_intr_alloc(prio, handler, arg);
+			vec = md_intr_alloc(prio, handler, arg,
+			    isEdgeTriggered ? false : true);
 			if (vec < 0) {
 				DKDevLog(ioapic,
 				    "failed to register interrupt for GSI %d\n",
@@ -116,7 +120,8 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 				return -1;
 			}
 
-			ioapic_route(ioapic->_vaddr, intr, vec, lopol);
+			ioapic_route(ioapic->_vaddr, intr, vec, lopol,
+			    isEdgeTriggered);
 			ioapic->redirs[intr] = vec;
 
 			found = true;

@@ -231,7 +231,7 @@ nkx_callout_dequeue(kxcallout_t *callout)
 	md_intr_x(iff);
 }
 
-void
+bool
 nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 {
 	__auto_type queue = &curcpu()->callout_queue;
@@ -266,9 +266,11 @@ nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 
 next:
 	nk_spinlock_release_nospl(&callouts_lock);
+
+	return true;
 }
 
-void
+bool
 nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg)
 {
 #if DEBUG_SCHED == 1
@@ -276,6 +278,7 @@ nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg)
 #endif
 	curcpu()->running_thread->timeslice = 0;
 	nk_raise_dispatch_interrupt();
+	return true;
 }
 
 void

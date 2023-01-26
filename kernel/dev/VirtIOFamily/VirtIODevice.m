@@ -67,11 +67,11 @@ malloc(size_t size)
 	return liballoc_kmalloc(size);
 }
 
-static void
+static bool
 virtio_intr(md_intr_frame_t *frame, void *arg)
 {
 	VirtIODevice *dev = arg;
-	[dev handleInterrupt];
+	return [dev handleInterrupt];
 }
 
 @implementation VirtIODevice
@@ -313,10 +313,13 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 	__sync_synchronize();
 }
 
-- (void)handleInterrupt
+- (bool)handleInterrupt
 {
 	uint8_t isr_status = *info.isr;
-	(void)isr_status;
+
+	if ((isr_status & 3) == 0)
+		/* not for us */
+		return false;
 
 #if 0
 	DKDevLog(self, "interrupted, processing VirtIO queues...\n");
@@ -333,8 +336,7 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 		     i != queue->used->idx % queue->length;
 		     i = (i + 1) % queue->length) {
 			struct vring_used_elem *e =
-			    &queue->used
-				 ->ring[i % queue->length];
+			    &queue->used->ring[i % queue->length];
 
 			/*
 			 * ugly hack, maybe a problem: but need to access sched
@@ -342,9 +344,9 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 			 * away without releasing the spinlock as we won't get
 			 * another interrupt for this device on this cpu.
 			 *
-			 * todo(med): refactor to use DPCs to do the scheduler
-			 * stuff (or require any completion callback to be happy
-			 * running at arbitrary IPL?)
+			 * todo(med): refactor the processBuffer:onQueue:
+			 * implementations to use DPCs to do any scheduler
+			 * stuff.
 			 */
 			// nk_spinlock_release(&queue->spinlock, ipl);
 			splx(kSPLDispatch);
@@ -358,6 +360,8 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 
 		queue->last_seen_used = i;
 	}
+
+	return true;
 }
 
 - (void)processBuffer:(struct vring_used_elem *)e

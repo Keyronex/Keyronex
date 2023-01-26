@@ -87,7 +87,7 @@ IncludeCategories:
   - Regex: '^<vm/'
     Priority: 3
     SortPriority: 31
-  - Regex: '^<(machine|kern|libkern|posix|ext2fs|tmpfs|md)/'
+  - Regex: '^<(machine|kern|libkern|nanokern|posix|ext2fs|tmpfs|md)/'
     Priority: 3
     SortPriority: 40
   - Regex: '^<(x86|amd64|i386|xen|x86_64)/'

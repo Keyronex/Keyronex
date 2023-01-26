@@ -87,12 +87,16 @@ iterate(lai_nsnode_t *obj, size_t depth)
 	if (r != LAI_ERROR_NONE)
 		return -r;
 
-	// TODO: res.irq_flags & ACPI_SMALL_IRQ_EDGE_TRIGGERED?
+	/*
+	 * I don't think these line-based interrupts can ever have
+	 * res.irq_flags & ACPI_SMALL_IRQ_EDGE_TRIGGERED anyway
+	 */
 
 	r = [IOApic handleGSI:res.base
 		  withHandler:handler
 		     argument:arg
-		  lowPolarity:res.irq_flags & ACPI_SMALL_IRQ_ACTIVE_LOW
+		isLowPolarity:res.irq_flags & ACPI_SMALL_IRQ_ACTIVE_LOW
+	      isEdgeTriggered:res.irq_flags & ACPI_SMALL_IRQ_EDGE_TRIGGERED
 		   atPriority:priority];
 	if (r < 0)
 		return r;

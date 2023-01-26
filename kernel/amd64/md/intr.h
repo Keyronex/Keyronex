@@ -45,7 +45,11 @@ typedef struct md_cpu {
 	struct kthread *old, *new;
 } md_cpu_t;
 
-typedef void (*intr_handler_fn_t)(md_intr_frame_t *frame, void *arg);
+/*!
+ * Type of an interrupt service routine. It should return true if it handled
+ * the interrupt, and false otherwise.
+ */
+typedef bool (*intr_handler_fn_t)(md_intr_frame_t *frame, void *arg);
 
 static inline struct kcpu *
 curcpu()
@@ -83,7 +87,8 @@ md_intr_x(bool en)
 }
 
 /*! allocate and register a suitable interrupt vector, returns vector number */
-uint8_t md_intr_alloc(ipl_t prio, intr_handler_fn_t handler, void *arg);
+uint8_t md_intr_alloc(ipl_t prio, intr_handler_fn_t handler, void *arg,
+    bool canShare);
 /*! register a handler for a given interrupt vector at a given priority */
 void md_intr_register(int vec, ipl_t prio, intr_handler_fn_t handler,
     void *arg);
@@ -103,7 +108,6 @@ uint64_t md_timer_get_remaining(struct kcpu *cpu);
 #endif
 /*! begin the per-cpu timeslicing counter */
 void md_timeslicing_start();
-
 
 /* initialise a thread's state */
 void md_thread_init(struct kthread *thread, void (*start_fun)(void *),

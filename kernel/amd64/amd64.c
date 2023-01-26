@@ -87,7 +87,7 @@ struct md_intr_entry {
 	void		 *arg;
 };
 
-static void pagefault(md_intr_frame_t *frame, void *arg);
+static bool pagefault(md_intr_frame_t *frame, void *arg);
 void	    idt_load(void);
 void	    lapic_eoi();
 
@@ -180,7 +180,7 @@ idt_load(void)
 	asm volatile("lidt %0" : : "m"(idtr));
 }
 
-static void
+static bool
 pagefault(md_intr_frame_t *frame, void *arg)
 {
 	nk_dbg("PAGE FAULT at vaddr 0x%lx\n", read_cr2());
@@ -208,7 +208,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		*frame = next->frame;
 		// wrmsr(kAMD64MSRFSBase, next->md.fs);
 
-		//curcpu()->running_thread = next;
+		// curcpu()->running_thread = next;
 
 		nk_spinlock_release_nospl(&curcpu()->sched_lock);
 		splx(curcpu()->md.switchipl);
@@ -310,11 +310,12 @@ lapic_timer_calibrate()
 }
 
 uint8_t
-md_intr_alloc(ipl_t prio, intr_handler_fn_t handler, void *arg)
+md_intr_alloc(ipl_t prio, intr_handler_fn_t handler, void *arg, bool canShare)
 {
 	uint8_t vec = 0;
 
-	for (int i = MAX(prio << 4, 32); i < 256; i++)
+	/* find a vector appropriate to the priority */
+	for (int i = MAX(prio << 4, 32); i < (prio << 4) + 16; i++)
 		if (md_intrs[i].handler == NULL) {
 			vec = i;
 			break;
@@ -402,8 +403,10 @@ md_timer_get_remaining(struct kcpu *cpu)
 void
 md_timeslicing_start()
 {
-	lapic_write(curcpu(), kLAPICRegTimer, kLAPICTimerPeriodic | kIntNumLAPICTimer);
-	lapic_write(curcpu(), kLAPICRegTimerInitial, curcpu()->md.lapic_tps / KERN_HZ);
+	lapic_write(curcpu(), kLAPICRegTimer,
+	    kLAPICTimerPeriodic | kIntNumLAPICTimer);
+	lapic_write(curcpu(), kLAPICRegTimerInitial,
+	    curcpu()->md.lapic_tps / KERN_HZ);
 }
 
 void

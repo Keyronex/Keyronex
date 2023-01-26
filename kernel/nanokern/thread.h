@@ -301,12 +301,12 @@ void nkx_preempt_dpc(void *arg);
  * ONLY TO BE CALLED BY MD (which does so at IPL=high.) Indicates that the per-
  * CPU clock has elapsed.
  */
-void nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg);
+bool nkx_cpu_hardclock(md_intr_frame_t *frame, void *arg);
 /*!
  * ONLY TO BE CALLED BY MD (which does so at IPL=dispatch). Indicates that a
  * reschedule IPI was received.
  */
-void nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg);
+bool nkx_reschedule_ipi(md_intr_frame_t *frame, void *arg);
 /*!
  * Enqueue a callout on the local CPU.
  */

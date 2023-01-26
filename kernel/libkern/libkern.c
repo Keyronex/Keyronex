@@ -3,6 +3,7 @@
 
 /* separate */
 #include <libkern/libkern.h>
+#include <kern/kmem.h>
 
 #include <string.h>
 
