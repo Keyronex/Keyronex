@@ -60,7 +60,7 @@ ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol)
 	ent |= 0ul << 56; /* lapic id 0 */
 	if (lopol)
 		ent |= 1 << 13; /* polarity low */
-	ent |= 1 << 15;		/* level triggered */
+	ent |= 0 << 15;		/* edge triggered */
 	ioapic_write(vaddr, redirection_register(i), ent);
 	ioapic_write(vaddr, redirection_register(i) + 1, ent >> 32);
 }

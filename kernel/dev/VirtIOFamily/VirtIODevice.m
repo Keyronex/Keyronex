@@ -247,9 +247,6 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 
 - (void)enableDevice
 {
-	info.m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
-	__sync_synchronize();
-
 	int r = [PCIBus handleInterruptOf:&info.pciInfo
 			      withHandler:virtio_intr
 				 argument:self
@@ -258,6 +255,9 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
 	}
+
+	info.m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
+	__sync_synchronize();
 }
 
 - (uint16_t)allocateDescNumOnQueue:(dk_virtio_queue_t *)queue
@@ -268,7 +268,7 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 	r = nk_wait(&queue->free_sem, "virtio_queue_free", false, false, -1);
 	kassert(r == kKernWaitStatusOK);
 
-	ipl = nk_spinlock_acquire(&queue->spinlock);
+	ipl = nk_spinlock_acquire_at(&queue->spinlock, kSPLBIO);
 	r = queue->free_desc_index;
 	kassert(r != queue->length);
 	queue->free_desc_index = QUEUE_DESC_AT(queue, r).next;

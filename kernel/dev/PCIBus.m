@@ -87,7 +87,7 @@ iterate(lai_nsnode_t *obj, size_t depth)
 	if (r != LAI_ERROR_NONE)
 		return -r;
 
-	// TODO: res.irq_flags & ACPI_SMALL_IRQ_EDGE_TRIGGERED
+	// TODO: res.irq_flags & ACPI_SMALL_IRQ_EDGE_TRIGGERED?
 
 	r = [IOApic handleGSI:res.base
 		  withHandler:handler

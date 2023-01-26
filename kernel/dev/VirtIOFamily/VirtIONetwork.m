@@ -18,6 +18,7 @@
 #include "lwip/pbuf.h"
 #include "lwip/snmp.h"
 #include "lwip/stats.h"
+#include "md/spl.h"
 #include "netif/ethernet.h"
 #include "netif/ppp/pppoe.h"
 #include "virtio_net.h"
@@ -97,14 +98,14 @@ vif_output(struct netif *netif, struct pbuf *p)
 	dhdr->next = ddataidx;
 	dhdr->flags = VRING_DESC_F_NEXT;
 
-	ddata->len = 2048;
+	ddata->len = p->tot_len;
 	ddata->addr = packet_bufs_pages[32 + i / 2]->paddr + (i % 2) * 2048;
 	ddata->flags = 0;
 
 	memcpy(P2V(ddata->addr), p->payload, p->len);
 	kassert(!p->next);
 
-	ipl_t ipl = nk_spinlock_acquire(&tx_queue.spinlock);
+	ipl_t ipl = nk_spinlock_acquire_at(&tx_queue.spinlock, kSPLBIO);
 	[self submitDescNum:dhdridx toQueue:&tx_queue];
 	[self notifyQueue:&tx_queue];
 	nk_spinlock_release(&tx_queue.spinlock, ipl);
@@ -202,16 +203,24 @@ vif_output(struct netif *netif, struct pbuf *p)
 
 	DKLogAttachExtra(self, "MAC address: " MAC_FMT, net_cfg->mac[0],
 	    net_cfg->mac[1], net_cfg->mac[2], net_cfg->mac[3], net_cfg->mac[4],
-	    net_cfg->mac[5])
+	    net_cfg->mac[5]);
 
-#if 0
-	netifapi_dhcp_start(&netif);
-
+#if 1
 	ktimer_t timer;
 	nk_timer_init(&timer);
-	nk_timer_set(&timer, (uint64_t)NS_PER_S * 8);
+	nk_timer_set(&timer, (uint64_t)NS_PER_S * 30);
 
 	nk_wait(&timer, "before_lookup", false, false, -1);
+
+	asm("cli");
+	netifapi_dhcp_start(&netif);
+	asm("sti");
+
+	nk_timer_set(&timer, (uint64_t)NS_PER_S * 4);
+
+	nk_wait(&timer, "before_lookup", false, false, -1);
+
+	kprintf("IP: %x\n", netif.ip_addr.addr);
 
 	struct addrinfo *res;
 	asm("cli");
@@ -220,14 +229,18 @@ vif_output(struct netif *netif, struct pbuf *p)
 	kprintf("getaddrinfo returned %d, errno %d\n", r, errno);
 	asm("sti");
 
-	char		    ipv4[INET_ADDRSTRLEN];
-	struct sockaddr_in *addr4;
-	addr4 = (struct sockaddr_in *)res->ai_addr;
-	inet_ntop(AF_INET, &addr4->sin_addr, ipv4, INET_ADDRSTRLEN);
-	printf("IP: %s\n", ipv4);
+	if (res == NULL) {
+		kprintf("failed to lookup host\n")
+	} else {
+		char		    ipv4[INET_ADDRSTRLEN];
+		struct sockaddr_in *addr4;
+		addr4 = (struct sockaddr_in *)res->ai_addr;
+		inet_ntop(AF_INET, &addr4->sin_addr, ipv4, INET_ADDRSTRLEN);
+		printf("IP: %s\n", ipv4);
+	}
 #endif
 
-	    return self;
+	return self;
 }
 
 - (void)processBufferOnRXQueue:(struct vring_used_elem *)e
@@ -257,7 +270,7 @@ vif_output(struct netif *netif, struct pbuf *p)
 		LINK_STATS_INC(link.recv);
 
 		if (netif.input(p, &netif) != ERR_OK) {
-			DKDevLog(self, "ip input erro");
+			DKDevLog(self, "ip input error");
 			pbuf_free(p);
 			p = NULL;
 		}
