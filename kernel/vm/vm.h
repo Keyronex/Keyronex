@@ -6,7 +6,10 @@
 
 #include <nanokern/kerndefs.h>
 #include <nanokern/thread.h>
+#include <nanokern/tree.h>
 #include <stddef.h>
+
+#include "kern/obj.h"
 
 #define VADDR_MAX (vaddr_t) UINT64_MAX
 
@@ -51,8 +54,6 @@ enum vm_page_queue {
 	kVMPageInactive = 5,
 	kVMPagePMap = 6,
 };
-
-#include <nanokern/tree.h>
 
 /*!
  * Represents a physical page of useable general-purpose memory.
@@ -100,8 +101,8 @@ typedef struct vm_pregion {
 typedef TAILQ_HEAD(, vm_pregion) vm_pregion_queue_t;
 
 /*! The page queues. */
-extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgdevbufq, vm_pgactiveq,
-    vm_pginactiveq, vm_pgpmapq;
+extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgdevbufq,
+    vm_pgactiveq, vm_pginactiveq, vm_pgpmapq;
 
 /*! Page region queue. */
 extern vm_pregion_queue_t vm_pregion_queue;
@@ -148,7 +149,7 @@ typedef struct vm_map_entry {
 	TAILQ_ENTRY(vm_map_entry) queue;
 	vaddr_t			  start, end;
 	voff_t			  offset;
-	struct vm_Object	 *obj;
+	struct vm_object	 *obj;
 } vm_map_entry_t;
 
 /*!
@@ -207,6 +208,90 @@ int vm_map_object(vm_map_t *map, struct vm_object *obj, vaddr_t *vaddrp,
 
 /*! Global kernel map. */
 extern vm_map_t kmap;
+
+/*!
+ * @}
+ */
+
+/*!
+ * @name Objects
+ * @{
+ */
+/**
+ * Represents a pager-backed virtual memory object.
+ */
+typedef struct vm_object {
+	objectheader_t hdr;
+	kmutex_t lock;
+
+	enum {
+		kVMObjAnon,
+		kVMObjFile,
+	} type;
+	size_t size; /**< size in bytes */
+
+	union {
+		struct {
+			struct vm_amap *amap;
+			/** if not 0, the maximum size of this object */
+			size_t maxsize;
+			/*! parent vm object */
+			struct vm_object *parent;
+		} anon;
+	};
+} vm_object_t;
+
+/**
+ * Represents a logical page of pageable memory. May be resident or not.
+ */
+typedef struct vm_anon {
+	kmutex_t lock;
+	int refcnt : 24, /** number of amaps referencing it; if >1, must COW. */
+	    resident : 1; /** whether currently resident in memory */
+
+	union {
+		struct vm_page *physpage; /** physical page if resident */
+	};
+} vm_anon_t;
+
+#define kAMapChunkNPages 32
+
+/* Entry in a vm_amap_t. Locked by the vm_object's lock */
+typedef struct vm_amap_chunk {
+	vm_anon_t *anon[kAMapChunkNPages];
+} vm_amap_chunk_t;
+
+/**
+ * An anonymous map - map of anons. These are always paged by the default pager
+ * (vm_compressor).
+ */
+typedef struct vm_amap {
+	vm_amap_chunk_t **chunks;    /**< sparse array pointers to chunks */
+	size_t		  curnchunk; /**< number of slots in chunks */
+} vm_amap_t;
+
+/*! Release an anon. */
+void anon_release(vm_anon_t *anon);
+
+/*!
+ * Allocate a new anonymous VM object of size \p size bytes.
+ */
+vm_object_t *vm_aobj_new(size_t size);
+/*!
+ * Create a (copy-on-write optimised) copy of a VM object.
+
+ * The exact semantics of a copy vary depending on what sort of object is
+ * copied:
+ * - Copying an anonymous object copies all the pages belonging to that
+ * anonymous object (albeit with copy-on-write optimisation)
+ * - Copying another type of object yields a new anonymous object with no pages;
+ * the new object is assigned the copied object as parent, and when a page is
+ * absent from the copied object, its parent is checked to see whether it holds
+ * the page. Changes to the parent are therefore reflected in the copied object;
+ * unless and until the child object tries to write to one of these pages, which
+ * copies it.
+ */
+vm_object_t *vm_object_copy(vm_object_t *obj);
 
 /*!
  * @}
