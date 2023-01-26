@@ -25,6 +25,11 @@ enum { kPortCOM1 = 0x3f8 };
 // the compiler does not optimise them away, so, usually, they should
 // be made volatile or equivalent.
 
+volatile struct limine_framebuffer_request framebuffer_request = {
+	.id = LIMINE_FRAMEBUFFER_REQUEST,
+	.revision = 0
+};
+
 static volatile struct limine_hhdm_request hhdm_request = {
 	.id = LIMINE_HHDM_REQUEST,
 	.revision = 0
@@ -324,6 +329,37 @@ fun(void *arg)
 	done();
 }
 
+void
+draw_logo(void)
+{
+	struct limine_framebuffer *fbs =
+	    terminal_request.response->terminals[0]->framebuffer;
+	size_t	 fbw = fbs->width;
+	uint8_t *fb = fbs->address;
+
+	extern char keynex[62500];
+
+#define fb_at(x, y) &fb[y * 4 * fbw + x * 4];
+	size_t startx = fbw - 125, starty = 0;
+	size_t x = startx, y = starty;
+	for (unsigned i = 0; i < sizeof(keynex); i += 4) {
+		if (i % (125 * 4) == 0) {
+			y++;
+			x = startx;
+		}
+
+		uint8_t *fba = (uint8_t *)fb_at(x, y);
+		uint8_t *pica = (uint8_t *)&keynex[i];
+
+		*fba++ = *(pica + 2);
+		*fba++ = *(pica + 0);
+		*fba++ = *(pica + 1);
+		*fba++ = *(pica + 3);
+
+		x++;
+	}
+}
+
 // The following will be our kernel's entry point.
 void
 _start(void)
@@ -344,6 +380,8 @@ _start(void)
 
 	nk_dbg("Keyronex\n");
 
+	draw_logo();
+
 	spl0();
 	idt_setup();
 	idt_load();
@@ -359,10 +397,9 @@ _start(void)
 	smp_init();
 
 	kthread_t start_thread;
-	void kstart(void*);
+	void	  kstart(void *);
 	nk_thread_init(&proc0, &start_thread, kstart, 0x0, "start_thread");
 	nk_thread_resume(&start_thread);
-
 
 #if 0
 	char *stuff = kmem_alloc(

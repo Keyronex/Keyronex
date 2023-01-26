@@ -108,6 +108,13 @@ kern_srcs += files (
 	'net/lwip/core/udp.c'
 	)
 
+gen = generator(bin2c,
+    output : '@PLAINNAME@.c',
+    arguments : [ '-i', '@INPUT@', '-o', '@OUTPUT@', '-s', '@BASENAME@'  ]
+)
+
+kern_srcs += gen.process(['keynex.data'])
+
 kernel_includes += [ include_directories('net/lwip/include') ]
 
 subdir(arch)

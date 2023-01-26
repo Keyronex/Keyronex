@@ -18,6 +18,8 @@ mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
 lai = subproject('lai')
 libc_includes = mlibc.get_variable('libc_include_dirs')
 
+bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
+
 executable('limine-deploy', 'limine/limine-deploy.c', native: true)
 
 subdir('objfw/src')

@@ -21,7 +21,7 @@
 #define DKLogAttachExtra(DEV, FMT, ...)                        \
 	kprintf(kAnsiYellow "%s" kAnsiReset " at " kAnsiYellow \
 			    "%s: " kAnsiReset FMT "\n",        \
-	    [DEV name], [[DEV provider] name], ##__VA_ARGS__);
+	    [DEV name], [[DEV provider] name], ##__VA_ARGS__)
 #define DKDevLog(DEV, ...) DKLog([DEV name], __VA_ARGS__)
 
 @class DKDevice;
