@@ -8,7 +8,7 @@
 
 #define USER_BASE 0x1000
 #define HHDM_BASE 0xffff800000000000
-#define KHEAP_BASE 0xffff800100000000
+#define KHEAP_BASE 0xffff810000000000
 #define KERN_BASE 0xffffffff80000000
 
 #define ASSERT_IN_KHEAP(PTR)                    \

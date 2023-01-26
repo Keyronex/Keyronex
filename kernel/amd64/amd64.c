@@ -186,6 +186,7 @@ pagefault(md_intr_frame_t *frame, void *arg)
 	nk_dbg("PAGE FAULT at vaddr 0x%lx\n", read_cr2());
 	md_intr_frame_trace(frame);
 	nk_fatal("halting\n");
+	return true;
 }
 
 void
@@ -223,8 +224,12 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		nk_fatal("unhandled interrupt %lu\n", num);
 	}
 
+	if (splget() > entry->prio) {
+		nk_dbg("SPL not less or equal (was at %u, need %u)\n", splget(), entry->prio);
+		md_intr_frame_trace(frame);
+		nk_fatal("halting\n");
+	}
 	ipl = splraise(entry->prio);
-	nk_assert(ipl <= entry->prio);
 
 	entry->handler(frame, entry->arg);
 

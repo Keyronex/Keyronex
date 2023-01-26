@@ -1,11 +1,11 @@
 #include <amd64/amd64.h>
 #include <kern/kmem.h>
 #include <kern/ksrv.h>
+#include <nanokern/kernmisc.h>
+#include <nanokern/thread.h>
 #include <vm/vm.h>
 
 #include <limine.h>
-#include <nanokern/kernmisc.h>
-#include <nanokern/thread.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -126,12 +126,11 @@ mem_init()
 			sizeof(vm_page_t) * bm->npages,
 		    PGSIZE);
 
-		kprintf("used %lu KiB for resident pagetable\n", used / 1024);
-
 		kprintf("Usable memory area: 0x%lx "
-			"(%lu mb long, %lu pages)\n",
+			"(%lu MiB, %lu pages)\n",
 		    entries[i]->base, entries[i]->length / (1024 * 1024),
 		    entries[i]->length / PGSIZE);
+		kprintf("%lu KiB for resident pagetable part\n", used / 1024);
 
 		/* initialise pages */
 		for (b = 0; b < bm->npages; b++) {
@@ -204,11 +203,13 @@ common_init(struct limine_smp_info *smpi)
 	for (int i = 0; i < 3; i++)
 		cpu->md.lapic_tps += lapic_timer_calibrate() / 3;
 
+	TAILQ_INIT(&cpu->runqueue);
 	TAILQ_INIT(&cpu->callout_queue);
 	TAILQ_INIT(&cpu->dpc_queue);
 	cpu->soft_int_dispatch = false;
 	cpu->entering_scheduler = false;
 	cpu->idle_thread = thread;
+	nk_spinlock_init(&cpu->sched_lock);
 
 	/* enable SSE and SSE2 */
 	uint64_t cr0 = read_cr0();

@@ -205,7 +205,7 @@ vif_output(struct netif *netif, struct pbuf *p)
 	    net_cfg->mac[1], net_cfg->mac[2], net_cfg->mac[3], net_cfg->mac[4],
 	    net_cfg->mac[5]);
 
-#if 1
+#if 0
 	ktimer_t timer;
 	nk_timer_init(&timer);
 	nk_timer_set(&timer, (uint64_t)NS_PER_S * 30);
