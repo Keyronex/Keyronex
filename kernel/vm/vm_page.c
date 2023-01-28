@@ -19,6 +19,10 @@ vm_pagequeue_t vm_pgfreeq = PGQ_INITIALIZER(vm_pgfreeq),
 
 vm_pregion_queue_t vm_pregion_queue = TAILQ_HEAD_INITIALIZER(vm_pregion_queue);
 
+kspinlock_t vm_pgq_lock = KSPINLOCK_INITIALISER;
+
+size_t vm_npages = 0;
+
 vm_page_t *
 vm_page_from_paddr(paddr_t paddr)
 {
@@ -78,7 +82,7 @@ vm_pagealloc(bool sleep, vm_pagequeue_t *queue)
 {
 	vm_page_t *page;
 
-	// ipl_t ipl = nk_spinlock_acquire(&pages_lock)
+	ipl_t ipl = VM_PGQ_LOCK();
 	page = TAILQ_FIRST(&vm_pgfreeq.queue);
 	if (!page) {
 		kfatal("vm_allocpage: oom not yet handled\n");
@@ -86,6 +90,7 @@ vm_pagealloc(bool sleep, vm_pagequeue_t *queue)
 	vm_page_changequeue(page, &vm_pgfreeq, queue);
 
 	memset(P2V(page->paddr), 0x0, PGSIZE);
+	VM_PGQ_UNLOCK(ipl);
 
 	return page;
 }
@@ -94,7 +99,9 @@ void
 vm_page_free(vm_page_t *page)
 {
 	kassert(page != NULL);
+	ipl_t ipl = VM_PGQ_LOCK();
 	vm_page_changequeue(page, NULL, &vm_pgfreeq);
+	VM_PGQ_UNLOCK(ipl);
 }
 
 void
@@ -103,7 +110,7 @@ vm_pagedump(void)
 	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "kmem",
 	    "wired", "devbuf", "active", "inactive", "pmap");
 
-	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu%-9zu\n", vm_pgfreeq.npages,
+	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu%-9zu%-9zu\n", vm_pgfreeq.npages,
 	    vm_pgkmemq.npages, vm_pgwiredq.npages, vm_pgdevbufq.npages,
 	    vm_pgactiveq.npages, vm_pginactiveq.npages, vm_pgpmapq.npages);
 }

@@ -158,6 +158,8 @@ mem_init()
 		TAILQ_INSERT_TAIL(&vm_pregion_queue, bm, queue);
 	}
 
+	vm_npages = vm_pgfreeq.npages;
+
 	x64_vm_init((paddr_t)kernel_address_request.response->physical_base);
 }
 
@@ -279,6 +281,7 @@ smp_init()
 		__asm__("pause");
 }
 
+#if 0
 static ksemaphore_t sem;
 static ktimer_t	    timer;
 
@@ -311,7 +314,7 @@ fun(void *arg)
 	nk_timer_init(&timer);
 
 	kthread_t thread;
-	nk_thread_init(&proc0, &thread, fun2, 0xf008a1, "fun2");
+	nk_thread_init(&proc0, &thread, fun2, (void*)0xf008a1, "fun2");
 	nk_thread_resume(&thread);
 
 	kprintf("Hello after thread B began!\n");
@@ -329,6 +332,7 @@ fun(void *arg)
 #endif
 	done();
 }
+#endif
 
 void
 draw_logo(void)

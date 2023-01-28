@@ -22,6 +22,11 @@ nanokernel is only minimally dependent on the higher services, but the Portable
 Applications Subsystem and DeviceKit interdepend on each other and on the
 nanokernel.
 
+Goals
+-----
+
+
+
 Building
 --------
 

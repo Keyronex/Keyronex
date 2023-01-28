@@ -6,7 +6,6 @@
 void kstart(void) {
 	tcpip_init(NULL, NULL);
 
-
 	int autoconf(void);
 	autoconf();
 	vm_pagedump();

@@ -1,9 +1,9 @@
-#include <vm/vm.h>
-#include <md/spl.h>
 #include <amd64/amd64.h>
-#include <libkern/libkern.h>
-#include <nanokern/thread.h>
 #include <kern/kmem.h>
+#include <libkern/libkern.h>
+#include <md/spl.h>
+#include <nanokern/thread.h>
+#include <vm/vm.h>
 
 enum {
 	kPML4Shift = 0x39,
@@ -18,7 +18,8 @@ enum {
 	kMMUUser = 0x4,
 	kMMUWriteThrough = 0x8,
 	kMMUCacheDisable = 0x10,
-	kMMUAccessed = 0x40,
+	kMMUAccessed = 0x20, /* bit 5*/
+	kMMUDirty = 0x40,    /* bit 6 */
 	kPageGlobal = 0x100,
 
 	kMMUDefaultProt = kMMUPresent | kMMUWrite | kMMUUser,
@@ -159,14 +160,14 @@ pte_t *
 pmap_fully_descend(pmap_t *pmap, vaddr_t virt)
 {
 	uintptr_t virta = (uintptr_t)virt;
-	pml4e_t	*pml4 = (void*)pmap->pml4;
+	pml4e_t	 *pml4 = (void *)pmap->pml4;
 	int	  pml4i = ((virta >> 39) & 0x1FF);
 	int	  pdpti = ((virta >> 30) & 0x1FF);
 	int	  pdi = ((virta >> 21) & 0x1FF);
 	int	  pti = ((virta >> 12) & 0x1FF);
-	pdpte_t	*pdptes;
-	pde_t    *pdes;
-	pte_t    *ptes;
+	pdpte_t	 *pdptes;
+	pde_t	 *pdes;
+	pte_t	 *ptes;
 
 	pdptes = pmap_descend(pml4, pml4i, false, 0);
 	if (!pdptes) {
@@ -190,7 +191,7 @@ paddr_t
 pmap_trans(pmap_t *pmap, vaddr_t virt)
 {
 	uintptr_t virta = (uintptr_t)virt;
-	pml4e_t	*pml4 = (void*)pmap->pml4;
+	pml4e_t	 *pml4 = (void *)pmap->pml4;
 	int	  pml4i = ((virta >> 39) & 0x1FF);
 	int	  pdpti = ((virta >> 30) & 0x1FF);
 	int	  pdi = ((virta >> 21) & 0x1FF);
@@ -198,8 +199,8 @@ pmap_trans(pmap_t *pmap, vaddr_t virt)
 	int	  pi = ((virta)&0xFFF);
 
 	pdpte_t *pdpte;
-	pde_t   *pde;
-	pte_t   *pte;
+	pde_t	*pde;
+	pte_t	*pte;
 
 	pdpte = pmap_descend(pml4, pml4i, false, 0);
 	if (!pdpte) {
@@ -247,11 +248,11 @@ pmap_enter_kern(pmap_t *pmap, paddr_t phys, vaddr_t virt, vm_prot_t prot)
 	int	  pdpti = ((virta >> 30) & 0x1FF);
 	int	  pdi = ((virta >> 21) & 0x1FF);
 	int	  pti = ((virta >> 12) & 0x1FF);
-	pml4e_t	*pml4 = (void*)pmap->pml4;
-	pdpte_t	*pdpte;
-	pde_t    *pde;
-	pte_t    *pte;
-	pte_t    *pti_virt;
+	pml4e_t	 *pml4 = (void *)pmap->pml4;
+	pdpte_t	 *pdpte;
+	pde_t	 *pde;
+	pte_t	 *pte;
+	pte_t	 *pti_virt;
 
 	pdpte = pmap_descend(pml4, pml4i, true, kMMUDefaultProt);
 	pde = pmap_descend(pdpte, pdpti, true, kMMUDefaultProt);
@@ -275,20 +276,12 @@ pmap_reenter(vm_map_t *map, vm_page_t *page, vaddr_t virt, vm_prot_t prot)
 void
 pmap_reenter_all_readonly(vm_page_t *page)
 {
-#if 0
 	pv_entry_t *pv, *tmp;
 
-	mutex_lock(&page->lock);
-
 	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
-		mutex_lock(&pv->map->lock);
 		pmap_reenter(pv->map, page, pv->vaddr, kVMRead | kVMExecute);
 		pmap_global_invlpg(pv->vaddr);
-		mutex_unlock(&pv->map->lock);
 	}
-	mutex_unlock(&page->lock);
-#endif
-        kfatal("pmap_enter_all_readonly: UNIMOPLEMENTED\n");
 }
 
 void
@@ -338,10 +331,47 @@ next:
 	kmem_free(pv, sizeof(*pv));
 }
 
+void
+pmap_unenter_all(vm_page_t *page)
+{
+	pv_entry_t *pv, *tmp;
+
+	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
+		pmap_unenter(pv->map, page, pv->vaddr, pv);
+		pmap_global_invlpg(pv->vaddr);
+	}
+}
+
+bool
+pmap_page_accessed(struct vm_page *page, bool reset)
+{
+	pv_entry_t *pv, *tmp;
+	bool	    accessed = false;
+
+	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
+		pte_t *pte = pmap_fully_descend(pv->map->pmap, pv->vaddr);
+		nk_assert(pte != NULL);
+		pte = P2V(pte);
+
+		if (!(*pte & kMMUAccessed))
+			continue;
+
+		accessed = true;
+
+		if (reset) {
+			*pte = *pte & ~kMMUAccessed;
+			pmap_global_invlpg(pv->vaddr);
+		} else
+			return true; /* no need to scan all in this case */
+	}
+
+	return accessed;
+}
+
 vm_page_t *
 pmap_unenter_kern(vm_map_t *map, vaddr_t vaddr)
 {
-	pte_t     *pte = pmap_fully_descend(map->pmap, vaddr);
+	pte_t	  *pte = pmap_fully_descend(map->pmap, vaddr);
 	paddr_t	   paddr;
 	vm_page_t *page;
 
@@ -378,8 +408,9 @@ pmap_invlpg(vaddr_t addr)
 	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
 }
 
-static kspinlock_t invlpg_global_lock = KSPINLOCK_INITIALISER;
-vaddr_t		  invlpg_addr;
+/* todo(low) probably unnecessary now that pgq lock held for un/mapping */
+static kspinlock_t  invlpg_global_lock = KSPINLOCK_INITIALISER;
+vaddr_t		    invlpg_addr;
 volatile atomic_int invlpg_done_cnt;
 
 void

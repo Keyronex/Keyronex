@@ -3,10 +3,10 @@
 
 #include <kern/vmem_impl.h>
 #include <md/vm.h>
-
 #include <nanokern/kerndefs.h>
 #include <nanokern/thread.h>
 #include <nanokern/tree.h>
+
 #include <stddef.h>
 
 #include "kern/obj.h"
@@ -22,6 +22,8 @@
 
 #define PGROUNDUP(addr) ROUNDUP(addr, PGSIZE)
 #define PGROUNDDOWN(addr) ROUNDDOWN(addr, PGSIZE)
+
+typedef uintptr_t drumslot_t;
 
 /*!
  * Fault flags (matches i386 MMU)
@@ -60,28 +62,46 @@ enum vm_page_queue {
  *
  * If neither anon nor obj are set, it may be internally managed (kmem).
  * In the case of tmpfs, both may be set.
+ *
+ * (~) constant
+ * (q) vm_pgq_lock
  */
 typedef struct vm_page {
-	/*! Links to its queue: kmem, wired, active, . */
+	/*! (q) Links to its queue: kmem, wired, active, . */
 	TAILQ_ENTRY(vm_page) pagequeue;
 
-	/*! Page state. */
+	/*! (q) Page state. */
 	enum vm_page_queue queue : 4;
 
-	/*! for pageable mappings */
+	bool
+	    /*! (q) Has it been written to since page-in/allocation? */
+	    dirty : 1,
+	    /*! (q) Has it been read since going on its queue? */
+	    accessed : 1,
+	    /*! (q) Is it being paged in/out? */
+	    busy : 1,
+	    /*!
+	     * (q) If it's on a pageable queue, is it an anon's page? (if not,
+	     * it must be a regular VM object's page)
+	     */
+	    is_anon : 1;
+
 	union {
-		struct vm_anon	 *anon; /*! if belonging to an anon */
-		struct vm_object *obj;	/*! if belonging to non-anon object */
+		struct vm_anon *anon; /*! (q) if belonging to an anon */
+		struct vm_object
+		    *obj; /*! (q) if belonging to non-anon object */
 	};
 
-	LIST_HEAD(, pv_entry) pv_table; /*! physical page -> virtual mappings */
+	/*! (q) physical page -> virtual mappings */
+	LIST_HEAD(, pv_entry) pv_table;
 
-	paddr_t paddr; /*! physical address of page */
+	/*! (~) physical address of page */
+	paddr_t paddr;
 } vm_page_t;
 
 typedef struct vm_pagequeue {
-	TAILQ_HEAD(, vm_page) queue;
-	size_t npages;
+	TAILQ_HEAD(pagequeue, vm_page) queue;
+	size_t			       npages;
 } vm_pagequeue_t;
 
 /*!
@@ -107,6 +127,12 @@ extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgdevbufq,
 /*! Page region queue. */
 extern vm_pregion_queue_t vm_pregion_queue;
 
+/*! Page queues lock. */
+extern kspinlock_t vm_pgq_lock;
+
+#define VM_PGQ_LOCK() nk_spinlock_acquire(&vm_pgq_lock)
+#define VM_PGQ_UNLOCK(IPL) nk_spinlock_release(&vm_pgq_lock, IPL)
+
 /*! Allocate a new page. It is enqueued on the specified queue. */
 vm_page_t *vm_pagealloc(bool sleep, vm_pagequeue_t *queue);
 
@@ -122,6 +148,7 @@ vm_page_t *vm_page_from_paddr(paddr_t paddr);
  * @param from page queue to move it from. Usually should be NULL (it is
  * determined by this function from the page's flags)
  * @param to page queue to move it to.
+ * \pre vm_pgq_lock held
  */
 void vm_page_changequeue(vm_page_t *page, kx_nullable vm_pagequeue_t *from,
     vm_pagequeue_t *to);
@@ -132,6 +159,9 @@ extern vm_pagequeue_t vm_pgfreeq, vm_pgkmemq, vm_pgwiredq, vm_pgactiveq,
 
 /*! Page region queue. */
 extern vm_pregion_queue_t vm_pregion_queue;
+
+/*! Total number of usable main-memory pages. */
+extern size_t vm_npages;
 
 /*!
  * @}
@@ -222,7 +252,7 @@ extern vm_map_t kmap;
  */
 typedef struct vm_object {
 	objectheader_t hdr;
-	kmutex_t lock;
+	kmutex_t       lock;
 
 	enum {
 		kVMObjAnon,
@@ -250,7 +280,8 @@ typedef struct vm_anon {
 	    resident : 1; /** whether currently resident in memory */
 
 	union {
-		struct vm_page *physpage; /** physical page if resident */
+		struct vm_page *physpage; /*!< physical page if resident */
+		drumslot_t	drumslot; /*!< drumslot if nonresident */
 	};
 } vm_anon_t;
 
@@ -346,6 +377,7 @@ void pmap_free(pmap_t *pmap);
 
 /*!
  * Pageable mapping of a virtual address to a page.
+ * \pre vm_pgq_lock held
  */
 void pmap_enter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
     vm_prot_t prot);
@@ -360,17 +392,19 @@ void pmap_enter_kern(struct pmap *pmap, paddr_t phys, vaddr_t virt,
 /**
  * Reset the protection flags for an existing pageable mapping. Does not carry
  * out TLB shootdowns.
+ * \pre vm_pgq_lock held
  */
 void pmap_reenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
     vm_prot_t prot);
 
 /*!
  * Reenter all mappings of a page read-only. Carries out TLB shootdowns.
+ * \pre vm_pgq_lock held
  */
 void pmap_reenter_all_readonly(struct vm_page *page);
 
 /*!
- * Unmap a single page of a pageable mapping. CPU local TLB invalidated; not
+ * Unmap a single mapping of a pageable page. CPU local TLB invalidated; not
  * others. TLB shootdown may therefore be required afterwards. Page's pv_table
  * updated accordingly.
  *
@@ -379,9 +413,20 @@ void pmap_reenter_all_readonly(struct vm_page *page);
  * @param virt virtual address to be unmapped from \p map.
  * @param pv optionally specify which pv_entry_t represents this mapping, if
  * already known, so it does not have to be found again.
+ *
+ * \pre vm_pgq_lock held
  */
 void pmap_unenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
     pv_entry_t *pv);
+
+/*!
+ * Unmap all mappings of a pageable page. TLB shootdown will be issued.
+ *
+ * @param page which page to unmap
+ *
+ * \pre vm_pgq_lock held
+ */
+void pmap_unenter_all(struct vm_page *page);
 
 /*!
  * Low-level unmapping of a page. Invalidates local TLB but does not do a TLB
@@ -390,8 +435,17 @@ void pmap_unenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
 struct vm_page *pmap_unenter_kern(struct vm_map *map, vaddr_t virt);
 
 /*!
+ * Check if a page was accessed. Returns true if it was.
+ * @param reset whether to reset this bit to 0 in all mappings (and issue
+ * appropriate TLB shootdowns.)
+ * \pre vm_pgq_lock held
+ */
+bool pmap_page_accessed(struct vm_page *page, bool reset);
+
+/*!
  * Invalidate a page mapping for the virtual address \p addr in the current
  * address space.
+ * \pre vm_pgq_lock held
  */
 void pmap_invlpg(vaddr_t addr);
 
@@ -399,6 +453,18 @@ void pmap_invlpg(vaddr_t addr);
  * Invalidate a page mapping for virtual address \p addr in all address spaces.
  */
 void pmap_global_invlpg(vaddr_t vaddr);
+
+/*!
+ * @}
+ */
+
+/*!
+ * Paging
+ * @{
+ */
+
+/*! The page daemon thread entry point. Only to be used once, in start(). */
+void vm_pdaemon(void *unused);
 
 /*!
  * @}
