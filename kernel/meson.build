@@ -2,6 +2,7 @@ kern_srcs = files(
 	'dev/ACPIPC.m', 'dev/autoconf.m', 'dev/IOAPIC.m', 'dev/laiex.c',
 	'dev/PCIBus.m', 'dev/VirtIOFamily/VirtIOBlockDevice.m',
 	'dev/VirtIOFamily/VirtIODevice.m', 'dev/VirtIOFamily/VirtIONetwork.m',
+	'dev/dev.c',
 
 	'devicekit/DKDevice.m',
 
@@ -15,6 +16,12 @@ kern_srcs = files(
     'libkern/libkern.c',
 
 	'net/lwip_sup.c',
+
+	'tmpfs/tmp_vfsops.c',
+	'tmpfs/tmpfs.c',
+	'tmpfs/tmpfs.h',
+
+	'vfs/vfs.c',
 
     'vm/vm_kernel.c', 'vm/vm_page.c', 'vm/vm_pdaemon.c', 'vm/vm.c'
 )

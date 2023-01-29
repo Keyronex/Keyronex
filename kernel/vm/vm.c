@@ -1,9 +1,9 @@
 #include <kern/kmem.h>
 #include <kern/obj.h>
 #include <libkern/libkern.h>
+#include <nanokern/thread.h>
 #include <vm/vm.h>
 
-#include <nanokern/thread.h>
 #include <string.h>
 
 /*!
@@ -126,7 +126,6 @@ fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
 
 	/* can just map in readwrite as it's new thus refcnt = 1 */
 	pmap_enter(map, anon->physpage, vaddr, kVMAll);
-	nk_mutex_release(&anon->lock);
 
 	return 0;
 }
@@ -494,7 +493,7 @@ vm_aobj_new(size_t size)
 {
 	vm_object_t *obj = kmem_alloc(sizeof(*obj));
 
-	obj_init(&obj->hdr, kVMObject);
+	obj_init(&obj->hdr, kOTObject);
 	nk_mutex_init(&obj->lock);
 	obj->type = kVMObjAnon;
 	obj->anon.parent = NULL;
@@ -518,7 +517,7 @@ vm_object_copy(vm_object_t *obj)
 		    "vm_object_copy: only implemented for anons as of yet\n");
 	}
 
-	obj_init(&obj->hdr, kVMObject);
+	obj_init(&obj->hdr, kOTObject);
 	nk_mutex_init(&newobj->lock);
 	newobj->size = obj->size;
 	newobj->type = obj->type;

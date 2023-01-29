@@ -5,10 +5,10 @@
 #include <kern/ksrv.h>
 #include <md/intr.h>
 #include <md/vm.h>
-
 #include <nanokern/kerndefs.h>
 #include <nanokern/kernmisc.h>
 #include <nanokern/thread.h>
+#include <vm/vm.h>
 
 enum {
 	kIntNumSyscall = 128,
@@ -183,9 +183,12 @@ idt_load(void)
 static bool
 pagefault(md_intr_frame_t *frame, void *arg)
 {
-	nk_dbg("PAGE FAULT at vaddr 0x%lx\n", read_cr2());
-	md_intr_frame_trace(frame);
-	nk_fatal("halting\n");
+	int r = vm_fault(frame, &kmap, (vaddr_t)read_cr2(), frame->code);
+	if (r < 0) {
+		nk_dbg("unhandled page fault:\n");
+		md_intr_frame_trace(frame);
+		nk_fatal("halting\n");
+	}
 	return true;
 }
 
@@ -225,7 +228,9 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	}
 
 	if (splget() > entry->prio) {
-		nk_dbg("SPL not less or equal (was at %u, need %u)\n", splget(), entry->prio);
+		nk_dbg("In trying to handle interrupt %lu:\n"
+		"SPL not less or equal (was at %u, need %u)\n", num, splget(),
+		    entry->prio);
 		md_intr_frame_trace(frame);
 		nk_fatal("halting\n");
 	}

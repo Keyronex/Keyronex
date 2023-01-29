@@ -1,7 +1,7 @@
 #include <libkern/libkern.h>
+#include <nanokern/thread.h>
 #include <vm/vm.h>
 
-#include <nanokern/thread.h>
 #include <string.h>
 
 #define PGQ_INITIALIZER(PGQ)                                             \

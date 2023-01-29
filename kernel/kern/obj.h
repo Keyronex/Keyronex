@@ -8,7 +8,9 @@
  */
 typedef enum objecttype {
 	/*! a mappable virtual memory object */
-	kVMObject,
+	kOTObject,
+	/*! a virtual node */
+	kOTVNode,
 } objecttype_t;
 
 /*!

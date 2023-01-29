@@ -42,6 +42,7 @@ static pmap_t kpmap;
 void
 x64_vm_init(paddr_t kphys)
 {
+	nk_mutex_init(&kmap.lock);
 	TAILQ_INIT(&kmap.entries);
 	kmap.pmap = &kpmap;
 	kpmap.pml4 = (paddr_t)read_cr3();
