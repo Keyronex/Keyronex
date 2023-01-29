@@ -1,7 +1,6 @@
 #include <kern/kmem.h>
 #include <md/intr.h>
 #include <md/spl.h>
-
 #include <nanokern/kernmisc.h>
 #include <nanokern/thread.h>
 #include <vm/vm.h>
@@ -37,13 +36,16 @@ nextcpu()
 }
 
 void
-nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc, const char *name)
+nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
+    const char *name)
 {
 	thread->cpu = cpu;
 	thread->process = proc;
 	thread->saved_ipl = kSPL0;
-	kmem_asprintf((char**)&thread->wait_callout.name, "thread %p wait timeout",
-	    thread);
+	thread->name = name;
+	thread->in_pagefault = false;
+	kmem_asprintf((char **)&thread->wait_callout.name,
+	    "thread %p wait timeout", thread);
 	thread->wait_callout.state = kCalloutDisabled;
 	ipl_t ipl = nk_spinlock_acquire(&proc->lock);
 	SLIST_INSERT_HEAD(&proc->threads, thread, proc_link);
@@ -79,4 +81,19 @@ nk_thread_resume(kthread_t *thread)
 	}
 
 	nk_spinlock_release(&thread->cpu->sched_lock, ipl);
+}
+
+void
+dbg_dump_threads(void)
+{
+	kthread_t *thr;
+	SLIST_FOREACH(thr, &proc0.threads, proc_link)
+	{
+		nk_dbg("thread %s <%p>: ", thr->name, thr);
+		if (thr->state == kThreadStateWaiting) {
+			nk_dbg("waiting (%s)", thr->wait_reason);
+		} else
+			nk_dbg("state: %d", thr->state);
+		nk_dbg("\n");
+	}
 }

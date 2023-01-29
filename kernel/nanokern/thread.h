@@ -155,6 +155,9 @@ typedef struct kthread {
 	/*! cpu to which it's bound */
 	struct kcpu *cpu;
 
+	/*! is it in a pagefault currently? */
+	bool in_pagefault;
+
 	/*! kernel stack */
 	vaddr_t kstack;
 
@@ -170,6 +173,10 @@ typedef struct kthread {
 	kwaitstatus_t wait_result;
 	/*! wait timeout callout */
 	kxcallout_t wait_callout;
+	/*! name */
+	const char *name;
+	/*! wait reason */
+	const char *wait_reason;
 
 	/* temporary for the sake of lwip */
 #undef errno

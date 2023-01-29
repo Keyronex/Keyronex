@@ -36,6 +36,15 @@ typedef enum vm_fault_flags {
 } vm_fault_flags_t;
 
 /*!
+ * Fault return values.
+ */
+typedef enum vm_fault_ret {
+	kVMFaultRetOK = 0,
+	kVMFaultRetFailure = -1,
+	kVMFaultRetPageShortage = -2,
+} vm_fault_ret_t;
+
+/*!
  * Protection flags for mappings.
  */
 typedef enum vm_prot {
@@ -217,7 +226,7 @@ int vm_deallocate(vm_map_t *map, vaddr_t start, size_t size);
 /*!
  * Handle a page fault.
  */
-int vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
+vm_fault_ret_t vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
     vm_fault_flags_t flags);
 
 /**
@@ -465,6 +474,12 @@ void pmap_global_invlpg(vaddr_t vaddr);
 
 /*! The page daemon thread entry point. Only to be used once, in start(). */
 void vm_pdaemon(void *unused);
+
+/*! Are there enough free pages according to the pagedaemon's criterion? */
+bool vm_enoughfree(void);
+
+/*! Fallible allocation of a page. */
+vm_fault_ret_t vm_pagetryalloc(vm_page_t **out, vm_pagequeue_t *queue);
 
 /*!
  * @}

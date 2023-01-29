@@ -5,6 +5,7 @@
 
 #include <nanokern/kernmisc.h>
 #include <vm/vm.h>
+#include "nanokern/thread.h"
 
 #define VM_PAGEFILE_SIZE(NPAGES) \
 	sizeof(struct vm_pagefile) + ROUNDUP(npages, 8) / 8
@@ -180,6 +181,8 @@ vm_pdaemon(void *unused)
 {
 	/* this stupid algorithm will at least let us test the paging code */
 
+	nk_msgqueue_init(&pgd_state.wanted, 8);
+
 	/* begin swapping heavily at 10% total pages free */
 	pgd_state.free_lowat = vm_npages / 10;
 	/* stop swapping at 14.5%ish total pages free */
@@ -195,9 +198,16 @@ vm_pdaemon(void *unused)
 	 */
 	pgd_state.inactive_hiwat = vm_npages / 4;
 
+	nk_dbg(
+	    "pagedaemon: free lowat %lu, hiwat %lu; inactive lowat %lu, hiwat %lu\n",
+	    pgd_state.free_lowat, pgd_state.free_hiwat,
+	    pgd_state.inactive_lowat, pgd_state.inactive_hiwat);
+
 	while (true) {
 		nk_wait(&pgd_state.wanted, "pagedaemon: wait for need", false,
 		    false, -1);
+
+		nk_dbg("vm_pagedaemon: awake\n");
 
 		if (vm_pginactiveq.npages <= pgd_state.inactive_lowat) {
 			scan_active();
@@ -206,4 +216,9 @@ vm_pdaemon(void *unused)
 			scan_inactive();
 		}
 	}
+}
+
+bool vm_enoughfree(void)
+{
+	return vm_pgfreeq.npages > pgd_state.free_lowat;
 }

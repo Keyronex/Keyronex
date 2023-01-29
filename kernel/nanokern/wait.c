@@ -194,6 +194,7 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	}
 
 	thread->state = kThreadStateWaiting;
+	thread->wait_reason = reason;
 	thread->wait_result = kKernWaitStatusWaiting;
 	thread->nwaits = nobjects;
 	thread->iswaitall = isWaitall;

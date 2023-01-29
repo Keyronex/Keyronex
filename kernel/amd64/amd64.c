@@ -183,12 +183,35 @@ idt_load(void)
 static bool
 pagefault(md_intr_frame_t *frame, void *arg)
 {
+	if (curcpu()->running_thread->in_pagefault) {
+		nk_dbg("nested pagefault in %s\n",
+		    curcpu()->running_thread->name);
+		goto fail;
+	}
+
+	curcpu()->running_thread->in_pagefault = true;
 	int r = vm_fault(frame, &kmap, (vaddr_t)read_cr2(), frame->code);
-	if (r < 0) {
-		nk_dbg("unhandled page fault:\n");
+	curcpu()->running_thread->in_pagefault = false;
+
+	switch (r) {
+	case kVMFaultRetOK:
+		/* epsilon*/
+		break;
+
+	case kVMFaultRetPageShortage:
+		/* */
+		nk_fatal("going to sleep on pagedaemon.free_event\n");
+		break;
+
+	case kVMFaultRetFailure:
+		nk_dbg("unhandled page fault in thraed:\n",
+		    curcpu()->running_thread->name);
+
+	fail:
 		md_intr_frame_trace(frame);
 		nk_fatal("halting\n");
 	}
+
 	return true;
 }
 
@@ -229,8 +252,11 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 
 	if (splget() > entry->prio) {
 		nk_dbg("In trying to handle interrupt %lu:\n"
-		"SPL not less or equal (was at %u, need %u)\n", num, splget(),
-		    entry->prio);
+		       "SPL not less or equal (was at %u, need %u)\n",
+		    num, splget(), entry->prio);
+		if (num == 14) {
+			nk_dbg("(CR2: 0x%lx)\n", read_cr2());
+		}
 		md_intr_frame_trace(frame);
 		nk_fatal("halting\n");
 	}

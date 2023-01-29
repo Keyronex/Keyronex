@@ -95,6 +95,28 @@ vm_pagealloc(bool sleep, vm_pagequeue_t *queue)
 	return page;
 }
 
+vm_fault_ret_t
+vm_pagetryalloc(vm_page_t **out, vm_pagequeue_t *queue)
+{
+	vm_page_t     *page;
+	vm_fault_ret_t r = kVMFaultRetOK;
+
+	ipl_t ipl = VM_PGQ_LOCK();
+	if (!vm_enoughfree()) {
+		nk_dbg("in vm_pagetryalloc, shortage\n");
+		r = kVMFaultRetPageShortage;
+	} else {
+		page = TAILQ_FIRST(&vm_pgfreeq.queue);
+		nk_assert(page != NULL);
+		vm_page_changequeue(page, &vm_pgfreeq, queue);
+		memset(P2V(page->paddr), 0x0, PGSIZE);
+		*out = page;
+	}
+	VM_PGQ_UNLOCK(ipl);
+
+	return r;
+}
+
 void
 vm_page_free(vm_page_t *page)
 {

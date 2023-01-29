@@ -13,10 +13,13 @@
 static vm_anon_t **amap_anon_at(vm_amap_t *amap, pgoff_t page);
 
 /**
- * Create a new anon for a given offset.
- * @returns new anon
+ * Create a new anon and allocate it a page.
+ * @param out where to write the newly-created anon to.
+ * @retval kVMFaultRetOK if allocated successfully,
+ * @retval kvMFaultRetPageShortage if a backing page could not be gotten due to
+ * a shortage.
  */
-vm_anon_t *anon_new();
+vm_fault_ret_t anon_new(vm_anon_t **out);
 
 /**
  * Copy an anon, yielding a new anon.
@@ -35,11 +38,12 @@ static vm_map_entry_t *map_entry_for_addr(vm_map_t *map, vaddr_t addr)
 /*
  * faults
  */
-static int
+static vm_fault_ret_t
 fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
     vm_fault_flags_t flags) LOCK_REQUIRES(map->lock) LOCK_REQUIRES(aobj->lock)
 {
 	vm_anon_t **pAnon, *anon;
+	vm_fault_ret_t r;
 
 	/* first, check if we have an anon already */
 	pAnon = amap_anon_at(aobj->anon.amap, (voff / PGSIZE));
@@ -53,7 +57,7 @@ fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
 			/* paging in will set the page wired */
 			kassert(!(flags & kVMFaultPresent));
 			nk_mutex_release(&anon->lock);
-			return -1;
+			return kVMFaultRetFailure;
 		}
 
 		if (anon->refcnt > 1) {
@@ -107,34 +111,36 @@ fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
 				 * refcnt of 1 suggests it has been moved to the
 				 * inactive queue
 				 */
-				/** XXX FIXME: is this legal? */
+				/** XXX FIXME: (URGENT!) is this legal? */
 				pmap_enter(map, anon->physpage, vaddr, kVMAll);
 			}
 		}
 
 		nk_mutex_release(&anon->lock);
-		return 0;
+		return kVMFaultRetOK;
 	} else if (aobj->anon.parent) {
 		kprintf("vm_fault: fetch from parent is not yet supported\n");
 		/* does this need some thought to do properly? */
-		return -1;
+		return kVMFaultRetOK;
 	}
 
 	/* page not present locally, nor in parent => map new zero page */
-	anon = anon_new(/* voff / PGSIZE */);
+	r = anon_new(&anon);
+	if (r != kVMFaultRetOK)
+		return r;
 	*pAnon = anon;
 
 	/* can just map in readwrite as it's new thus refcnt = 1 */
 	pmap_enter(map, anon->physpage, vaddr, kVMAll);
 
-	return 0;
+	return kVMFaultRetOK;
 }
 
-int
+vm_fault_ret_t
 vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
     vm_fault_flags_t flags)
 {
-	int		r;
+	vm_fault_ret_t		r;
 	vm_map_entry_t *ent;
 	voff_t		obj_off;
 
@@ -155,7 +161,7 @@ vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
 	if (!ent) {
 		kprintf("vm_fault: no object at vaddr 0x%lx in map %p\n", vaddr,
 		    map);
-		r = -1;
+		r = kVMFaultRetFailure;
 		goto unlockmap;
 	}
 
@@ -169,7 +175,6 @@ vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
 	}
 
 	obj_off = vaddr - ent->start;
-
 	r = fault_aobj(map, ent->obj, vaddr, obj_off + ent->offset, flags);
 
 unlockall:
@@ -432,24 +437,36 @@ amap_release(vm_amap_t *amap)
 	kmem_free(amap, sizeof(*amap));
 }
 
-vm_anon_t *
-anon_new()
+vm_fault_ret_t
+anon_new(vm_anon_t **out)
 {
+	vm_page_t     *page;
+	vm_fault_ret_t r = vm_pagetryalloc(&page, &vm_pgactiveq);
+	if (r != kVMFaultRetOK) {
+		return r;
+	}
+
 	vm_anon_t *newanon = kmem_alloc(sizeof *newanon);
 	newanon->refcnt = 1;
 	nk_mutex_init(&newanon->lock);
 	newanon->resident = true;
-	newanon->physpage = vm_pagealloc(1, &vm_pgactiveq);
+	newanon->physpage = page;
 	newanon->physpage->anon = newanon;
-	return newanon;
+
+	*out = newanon;
+
+	return r;
 }
 
 vm_anon_t *
 anon_copy(vm_anon_t *anon) LOCK_REQUIRES(anon->lock)
 {
+#if 0
 	vm_anon_t *newanon = anon_new();
 	copyphyspage(newanon->physpage->paddr, anon->physpage->paddr);
 	return newanon;
+#endif
+	nk_fatal("anon_copy: unimplemented\n");
 }
 
 void
