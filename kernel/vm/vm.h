@@ -481,6 +481,12 @@ bool vm_enoughfree(void);
 /*! Fallible allocation of a page. */
 vm_fault_ret_t vm_pagetryalloc(vm_page_t **out, vm_pagequeue_t *queue);
 
+/*! Signal the pagedaemon that a low-free-pages situation has developed. */
+void vm_pd_signal(void);
+
+/*! Wait for the pagedaemon to notify that memory is free. */
+void vm_pd_wait(void);
+
 /*!
  * @}
  */

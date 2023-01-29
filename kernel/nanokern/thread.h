@@ -85,6 +85,7 @@ typedef enum kdispatchobjecttype {
 	kDispatchSemaphore,
 	kDispatchTimer,
 	kDispatchMsgQueue,
+	kDispatchEvent,
 } kdispatchobjecttype_t;
 
 typedef struct kdispatchheader {
@@ -96,6 +97,10 @@ typedef struct kdispatchheader {
 	/*! signalled status */
 	int signalled;
 } kdispatchheader_t;
+
+typedef struct kevent {
+	kdispatchheader_t hdr;
+} kevent_t;
 
 typedef struct ksemaphore {
 	kdispatchheader_t hdr;
@@ -364,6 +369,22 @@ void nkx_do_reschedule(ipl_t ipl);
  * Enqueue a DPC. (It's run immediately if IPL <= kSPLDispatch)
  */
 void nk_dpc_enqueue(kdpc_t *dpc);
+
+/*!
+ * Initialise a nanokernel event. Set its signalled state as requested.
+ */
+void nk_event_init(kevent_t *ev, bool signalled);
+
+/*!
+ * Signal a nanokernel event.
+ */
+void nk_event_signal(kevent_t *ev);
+
+/*!
+ * Clear a nanokernel event, resetting it to nonsignalled state.
+ * @returns the previous signal state of the event.
+ */
+bool nk_event_clear(kevent_t *ev);
 
 /*!
  * Initialise a nanokernel messagequeue with the given capacity.

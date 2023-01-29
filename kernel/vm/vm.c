@@ -42,7 +42,7 @@ static vm_fault_ret_t
 fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
     vm_fault_flags_t flags) LOCK_REQUIRES(map->lock) LOCK_REQUIRES(aobj->lock)
 {
-	vm_anon_t **pAnon, *anon;
+	vm_anon_t    **pAnon, *anon;
 	vm_fault_ret_t r;
 
 	/* first, check if we have an anon already */
@@ -140,7 +140,7 @@ vm_fault_ret_t
 vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
     vm_fault_flags_t flags)
 {
-	vm_fault_ret_t		r;
+	vm_fault_ret_t	r;
 	vm_map_entry_t *ent;
 	voff_t		obj_off;
 
@@ -446,11 +446,16 @@ anon_new(vm_anon_t **out)
 		return r;
 	}
 
+	/*!
+	 * xxx FIXME: URGENT! do we have a race condition here?
+	 * pagedaemon might try to deal with the active page!!
+	 */
 	vm_anon_t *newanon = kmem_alloc(sizeof *newanon);
 	newanon->refcnt = 1;
 	nk_mutex_init(&newanon->lock);
 	newanon->resident = true;
 	newanon->physpage = page;
+	page->is_anon = true;
 	newanon->physpage->anon = newanon;
 
 	*out = newanon;

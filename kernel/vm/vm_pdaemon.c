@@ -5,6 +5,7 @@
 
 #include <nanokern/kernmisc.h>
 #include <vm/vm.h>
+
 #include "nanokern/thread.h"
 
 #define VM_PAGEFILE_SIZE(NPAGES) \
@@ -48,7 +49,11 @@ struct vm_pdaemon {
 	/*!
 	 * event to wait on before activating pagedaemon
 	 */
-	kmsgqueue_t wanted;
+	kevent_t wanted;
+	/*!
+	 * event to wait on to wait for free pages
+	 */
+	kevent_t free_event;
 
 	struct vm_pagefile *pagefile;
 };
@@ -94,6 +99,8 @@ scan_active(void)
 {
 	vm_page_t *page;
 
+	nk_dbg("scan_active()\n");
+
 	/* sweep 1; if accessed, then skip */
 	while (true) {
 		ipl_t ipl;
@@ -114,6 +121,7 @@ scan_active(void)
 				/* replace it to head of active queue */
 				vm_page_changequeue(page, &vm_pgactiveq,
 				    &vm_pgactiveq);
+				nk_dbg("keeping active page %p\n", page);
 			} else {
 				/* put to head of inactive queue*/
 				vm_page_changequeue(page, &vm_pgactiveq,
@@ -133,6 +141,8 @@ scan_inactive(void)
 {
 	vm_page_t *page;
 
+	nk_dbg("scan_inactive()\n");
+
 	/* sweep 1; if accessed, then skip */
 	while (true) {
 		ipl_t ipl;
@@ -143,7 +153,7 @@ scan_inactive(void)
 			break;
 
 		ipl = VM_PGQ_LOCK();
-		page = TAILQ_LAST(&vm_pgfreeq.queue, pagequeue);
+		page = TAILQ_LAST(&vm_pginactiveq.queue, pagequeue);
 
 		if (page->busy)
 			goto next;
@@ -156,10 +166,11 @@ scan_inactive(void)
 				    &vm_pgactiveq);
 				/* reset accessed bits for tracking */
 				(void)pmap_page_accessed(page, true);
+				nk_dbg("keeping inactive page %p\n", page);
 
 			} else {
 				page->busy = true;
-				nk_dbg("Page out 0x%lx\n", page->paddr);
+				nk_fatal("Page out 0x%lx\n", page->paddr);
 				/* remove mappings */
 				pmap_unenter_all(page);
 
@@ -167,6 +178,9 @@ scan_inactive(void)
 
 				/* unbusy page etc */
 			}
+		} else {
+			nk_dbg("failed to lock owner of page %p, continuing\n",
+			    page);
 		}
 
 		page_unlock_owner(page);
@@ -181,7 +195,8 @@ vm_pdaemon(void *unused)
 {
 	/* this stupid algorithm will at least let us test the paging code */
 
-	nk_msgqueue_init(&pgd_state.wanted, 8);
+	nk_event_init(&pgd_state.wanted, false);
+	nk_event_init(&pgd_state.free_event, true);
 
 	/* begin swapping heavily at 10% total pages free */
 	pgd_state.free_lowat = vm_npages / 10;
@@ -207,18 +222,51 @@ vm_pdaemon(void *unused)
 		nk_wait(&pgd_state.wanted, "pagedaemon: wait for need", false,
 		    false, -1);
 
-		nk_dbg("vm_pagedaemon: awake\n");
+		nk_dbg("vm_pagedaemon: scanning queues\n");
+
+		nk_dbg(
+		    "pagedaemon: free lowat %lu, hiwat %lu; inactive lowat %lu, hiwat %lu\n",
+		    pgd_state.free_lowat, pgd_state.free_hiwat,
+		    pgd_state.inactive_lowat, pgd_state.inactive_hiwat);
+		nk_dbg("active: %lu inactive: %lu free: %lu\n",
+		    vm_pgactiveq.npages, vm_pginactiveq.npages,
+		    vm_pgfreeq.npages);
 
 		if (vm_pginactiveq.npages <= pgd_state.inactive_lowat) {
 			scan_active();
 		}
-		if (vm_pgfreeq.npages < pgd_state.free_lowat) {
+		if (vm_pgfreeq.npages < pgd_state.free_hiwat) {
 			scan_inactive();
+		}
+
+		if (vm_pgfreeq.npages > pgd_state.free_hiwat) {
+			nk_event_signal(&pgd_state.free_event);
+		} else {
+			// nk_fatal("failed to free enough memory\n");
+			/* carry on */
 		}
 	}
 }
 
-bool vm_enoughfree(void)
+bool
+vm_enoughfree(void)
 {
-	return vm_pgfreeq.npages > pgd_state.free_lowat;
+	if (vm_pgfreeq.npages <= pgd_state.free_lowat) {
+		vm_pd_signal();
+		return false;
+	}
+	return true;
+}
+
+void
+vm_pd_signal(void)
+{
+	nk_event_clear(&pgd_state.free_event);
+	nk_event_signal(&pgd_state.wanted);
+}
+
+void
+vm_pd_wait(void)
+{
+	nk_wait(&pgd_state.free_event, "vm_pd_wait", false, false, -1);
 }

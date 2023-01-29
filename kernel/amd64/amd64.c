@@ -189,6 +189,8 @@ pagefault(md_intr_frame_t *frame, void *arg)
 		goto fail;
 	}
 
+
+retry:
 	curcpu()->running_thread->in_pagefault = true;
 	int r = vm_fault(frame, &kmap, (vaddr_t)read_cr2(), frame->code);
 	curcpu()->running_thread->in_pagefault = false;
@@ -200,8 +202,9 @@ pagefault(md_intr_frame_t *frame, void *arg)
 
 	case kVMFaultRetPageShortage:
 		/* */
-		nk_fatal("going to sleep on pagedaemon.free_event\n");
-		break;
+		nk_dbg("going to sleep on pagedaemon.free_event\n");
+		vm_pd_wait();
+		goto retry;
 
 	case kVMFaultRetFailure:
 		nk_dbg("unhandled page fault in thraed:\n",

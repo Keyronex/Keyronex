@@ -1,5 +1,6 @@
 #include <nanokern/kernmisc.h>
 #include <nanokern/thread.h>
+
 #include <string.h>
 
 #include "md/spl.h"
@@ -22,6 +23,7 @@ nkx_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
 		/* epsilon, timers remain signalled until reset */
 	}
 
+	case kDispatchEvent:
 	case kDispatchMsgQueue: {
 		/* epsilon, msgqueues remain signalled until posted */
 	}

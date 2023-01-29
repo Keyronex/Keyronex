@@ -1,8 +1,47 @@
 #include <kern/kmem.h>
-
 #include <nanokern/kernmisc.h>
 #include <nanokern/thread.h>
+
 #include <stdbool.h>
+
+void
+nk_event_init(kevent_t *ev, bool signalled)
+{
+	ev->hdr.type = kDispatchMsgQueue;
+	ev->hdr.signalled = signalled;
+	TAILQ_INIT(&ev->hdr.waitblock_queue);
+}
+
+void
+nk_event_signal(kevent_t *ev)
+{
+	ipl_t ipl = nk_spinlock_acquire(&nk_lock);
+
+	ev->hdr.signalled = true;
+
+	kwaitblock_t *block = TAILQ_FIRST(&ev->hdr.waitblock_queue);
+	while ((block) != NULL) {
+		kwaitblock_t *next = TAILQ_NEXT(block, queue_entry);
+		if (nkx_waiter_maybe_wakeup(block->thread, &ev->hdr))
+			break;
+		block = next;
+	}
+
+	nk_spinlock_release(&nk_lock, ipl);
+}
+
+bool
+nk_event_clear(kevent_t *ev)
+{
+	ipl_t ipl = nk_spinlock_acquire(&nk_lock);
+	bool  signalled;
+
+	signalled = ev->hdr.signalled;
+	ev->hdr.signalled = false;
+	nk_spinlock_release(&nk_lock, ipl);
+
+	return signalled;
+}
 
 void
 nk_msgqueue_init(kmsgqueue_t *msgq, unsigned count)
