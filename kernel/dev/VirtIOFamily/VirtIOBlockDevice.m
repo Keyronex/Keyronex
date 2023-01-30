@@ -1,10 +1,9 @@
 #include <sys/types.h>
 
 #include <kern/kmem.h>
-#include <vm/vm.h>
-
 #include <nanokern/queue.h>
 #include <nanokern/thread.h>
+#include <vm/vm.h>
 
 #include "VirtIOBlockDevice.h"
 #include "virtio_blk.h"
@@ -67,6 +66,7 @@ done_io(void *arg, ssize_t len)
 
 	[self enableDevice];
 
+#if 0
 	struct dk_diskio_completion comp;
 	comp.callback = done_io;
 
@@ -87,10 +87,20 @@ done_io(void *arg, ssize_t len)
 		res[512] = '\0';
 		DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
 	}
+#endif
 
 	[self registerDevice];
-	DKLogAttachExtra(self, "%lu MiB (%ld 512-byte sectors)",
-	    cfg->capacity * 512 / 1024 / 1024, cfg->capacity);
+	DKLogAttach(self);
+
+	struct virtio_drive_attachment_info driveInfo;
+	driveInfo.blocksize = 512;
+	driveInfo.provider = self;
+	driveInfo.maxBlockTransfer = PGSIZE / 512;
+	driveInfo.nBblocks = cfg->capacity;
+	driveInfo.controllerNum = 0;
+
+	VirtIODrive *disk = [[VirtIODrive alloc] initWithInfo:&driveInfo];
+	(void)disk;
 
 	return self;
 }
@@ -185,6 +195,35 @@ done_io(void *arg, ssize_t len)
 	req->completion->callback(req->completion->data, ddata->len);
 
 	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
+}
+
+@end
+
+#define DEVICE ((VirtIOBlockDevice *)provider)
+
+@implementation VirtIODrive
+
+- initWithInfo:(struct virtio_drive_attachment_info *)info;
+{
+	self = [super initWithProvider:info->provider];
+
+	kmem_asprintf(&m_name, "VirtIODrive", info->controllerNum);
+	m_nBlocks = info->nBblocks;
+	m_blockSize = info->blocksize;
+	m_maxBlockTransfer = info->maxBlockTransfer;
+	[self registerDevice];
+
+	DKLogAttachExtra(self, "%lu MiB (blocksize %ld, blocks %ld)\n",
+	    m_nBlocks * m_blockSize / 1024 / 1024, m_blockSize, m_nBlocks);
+
+	[[DKLogicalDisk alloc] initWithUnderlyingDisk:self
+						 base:0
+						 size:m_nBlocks * m_blockSize
+						 name:[info->provider name]
+					     location:0
+					     provider:self];
+
+	return self;
 }
 
 @end

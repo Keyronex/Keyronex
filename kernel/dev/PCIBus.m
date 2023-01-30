@@ -235,9 +235,9 @@ doFunction(PCIBus *bus, uint16_t seg, uint8_t busNum, uint8_t slot, uint8_t fun)
 		//[NVMeController probeWithPCIInfo:&pciInfo];
 		return;
 	} else if (vendorId == 0x1af4 && deviceId == 0x1001) {
-		//[VirtIOBlockDevice probeWithPCIInfo:&pciInfo];
+		[VirtIOBlockDevice probeWithPCIInfo:&pciInfo];
 	} else if (vendorId == 0x1af4 && deviceId == 0x1000) {
-		[VirtIONetwork probeWithPCIInfo:&pciInfo];
+		//[VirtIONetwork probeWithPCIInfo:&pciInfo];
 	}
 }
 

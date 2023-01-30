@@ -2,7 +2,6 @@
 #define VIRTIOBLOCKDEVICE_H_
 
 #include <dev/VirtIOFamily/VirtIODevice.h>
-
 #include <devicekit/DKDisk.h>
 
 @interface VirtIOBlockDevice : VirtIODevice {
@@ -19,6 +18,20 @@
 
 - (void)processBuffer:(struct vring_used_elem *)e
 	      onQueue:(dk_virtio_queue_t *)queue;
+
+@end
+
+struct virtio_drive_attachment_info {
+	VirtIOBlockDevice *provider;
+	unsigned	   controllerNum;
+	blksize_t	   blocksize;
+	blksize_t	   maxBlockTransfer;
+	blkcnt_t	   nBblocks;
+};
+
+@interface VirtIODrive : DKDrive
+
+- initWithInfo:(struct virtio_drive_attachment_info *)info;
 
 @end
 

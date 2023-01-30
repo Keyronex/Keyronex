@@ -73,8 +73,6 @@ static int minor = 0;
 		return NULL;
 	}
 
-	// vnode_t *node;
-
 	kmem_asprintf(&m_name, "%s Disk", aname);
 	[self registerDevice];
 	DKLogAttach(self);

@@ -53,27 +53,12 @@ oct2i(unsigned char *s, int size)
 static void
 unpack_ramdisk(void)
 {
-	void   *initbin;
-	size_t	size;
-	int	r;
-	vattr_t devattr = { .mode = 0755 | S_IFDIR, .size = 0, .type = VDIR };
+	void  *initbin;
+	size_t size;
 
 	if (module_request.response->module_count != 1) {
 		kfatal("No initrd module.\n");
 	}
-
-	/*! create the root tmpfs */
-	root_vfs.ops = &tmpfs_vfsops;
-
-	r = root_vfs.ops->mount(&root_vfs, NULL, NULL);
-	kassert(r >= 0);
-
-	root_vfs.ops->root(&root_vfs, &root_vnode);
-
-	kprintf("Creating dev vnode\n");
-	r = root_vnode->ops->create(root_vnode, &dev_vnode, "dev", &devattr);
-	kassert(r >= 0);
-	kprintf("Created vnode %p\n", dev_vnode);
 
 	/*! now actually unpack the initrd into the tmpfs */
 	initbin = module_request.response->modules[0]->address;
@@ -95,7 +80,9 @@ unpack_ramdisk(void)
 		    sizeof(star->mode) - 1);
 		attr.mode = attr.mode & ~(S_IFMT);
 
+#if 0
 		kprintf("Create %s, mode %s\n", star->filename, star->mode);
+#endif
 
 		switch (star->type) {
 		case kUStarDirectory: {
@@ -125,6 +112,8 @@ unpack_ramdisk(void)
 			}
 
 			r = vn->ops->write(vn, initbin + i + 512, fsize, 0);
+
+			kassert(r >= 0);
 			break;
 		}
 
@@ -139,9 +128,33 @@ unpack_ramdisk(void)
 }
 
 void
+makeroot(void)
+{
+
+	int	r;
+	vattr_t devattr = { .mode = 0755 | S_IFDIR, .size = 0, .type = VDIR };
+
+	/*! create the root tmpfs */
+	root_vfs.ops = &tmpfs_vfsops;
+
+	r = root_vfs.ops->mount(&root_vfs, NULL, NULL);
+	kassert(r >= 0);
+
+	root_vfs.ops->root(&root_vfs, &root_vnode);
+
+	kprintf("Creating dev vnode\n");
+	r = root_vnode->ops->create(root_vnode, &dev_vnode, "dev", &devattr);
+	kassert(r >= 0);
+	kprintf("Created vnode %p\n", dev_vnode);
+}
+
+void
 kstart(void)
 {
 	kthread_t pd_thread;
+
+	makeroot();
+
 	tcpip_init(NULL, NULL);
 
 	int autoconf(void);
