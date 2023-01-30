@@ -9,7 +9,7 @@
  */
 
 #include <sys/param.h>
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include <dev/dev.h>
 #include <kern/kmem.h>

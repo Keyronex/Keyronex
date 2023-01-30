@@ -4,7 +4,8 @@ kern_srcs = files(
 	'dev/VirtIOFamily/VirtIODevice.m', 'dev/VirtIOFamily/VirtIONetwork.m',
 	'dev/dev.c',
 
-	'devicekit/DKDevice.m',
+	'devicekit/DKDevice.m', 'devicekit/DKDisk.m',
+	'devicekit/DKGPTVolumeManager.m', 'devicekit/DKLogicalDisk.m',
 
     'nanokern/clock.c', 'nanokern/msgqueue.c', 'nanokern/mutex.c',
 	'nanokern/semaphore.c', 'nanokern/thread.c', 'nanokern/timer.c',
@@ -13,7 +14,7 @@ kern_srcs = files(
     'kern/kmem_slab.c', 'kern/kmem_liballoc.c', 'kern/liballoc_sysdep.c',
 	'kern/ksrv.c', 'kern/kstart.c', 'kern/obj.c', 'kern/vmem.c',
 
-    'libkern/libkern.c',
+    'libkern/libkern.c', 'libkern/uuid.c',
 
 	'net/lwip_sup.c',
 

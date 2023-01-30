@@ -11,7 +11,7 @@ if (arch == 'amd64')
 	  '-mcmodel=kernel', '-D_KERNEL' ]
 endif
 
-kernel_objc_args = kernel_c_args
+kernel_objc_args = [ kernel_c_args, '--sysroot=/tmp/keyronex-sysroot' ]
 kernel_includes = [ include_directories('kernel/' + arch, 'limine', 'kernel') ]
 
 mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])

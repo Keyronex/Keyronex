@@ -451,7 +451,7 @@ void nk_thread_resume(kthread_t *thread);
 /*!
  * Wait for a nanokernel object to become signalled.
  *
- * \p objecs pointers to object to wait for.
+ * \p objecs pointer to object to wait for.
  * \p reason a constant string describing the purpose of the wait
  * \p isAlertable whether the wait can be interrupted by an alert
  * \p timeout either -1 for no timeout, 0 for instant (called a poll, because it

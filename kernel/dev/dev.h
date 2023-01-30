@@ -12,7 +12,7 @@
 #define DEV_H_
 
 #include <sys/types.h>
-#include <sys/queue.h>
+#include <nanokern/queue.h>
 
 #include <stdbool.h>
 

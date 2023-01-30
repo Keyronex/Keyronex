@@ -62,6 +62,7 @@ unpack_ramdisk(void)
 		kfatal("No initrd module.\n");
 	}
 
+	/*! create the root tmpfs */
 	root_vfs.ops = &tmpfs_vfsops;
 
 	r = root_vfs.ops->mount(&root_vfs, NULL, NULL);
@@ -74,6 +75,7 @@ unpack_ramdisk(void)
 	kassert(r >= 0);
 	kprintf("Created vnode %p\n", dev_vnode);
 
+	/*! now actually unpack the initrd into the tmpfs */
 	initbin = module_request.response->modules[0]->address;
 	size = module_request.response->modules[0]->size;
 

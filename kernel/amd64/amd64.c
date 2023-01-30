@@ -207,7 +207,7 @@ retry:
 		goto retry;
 
 	case kVMFaultRetFailure:
-		nk_dbg("unhandled page fault in thraed:\n",
+		nk_dbg("unhandled page fault in thread %s:\n",
 		    curcpu()->running_thread->name);
 
 	fail:
