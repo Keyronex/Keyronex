@@ -170,9 +170,11 @@ scan_inactive(void)
 
 			} else {
 				page->busy = true;
-				nk_fatal("Page out 0x%lx\n", page->paddr);
 				/* remove mappings */
 				pmap_unenter_all(page);
+
+
+				nk_fatal("Page out 0x%lx\n", page->paddr);
 
 				/* page out .... */
 

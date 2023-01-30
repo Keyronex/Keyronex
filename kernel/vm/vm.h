@@ -177,6 +177,64 @@ extern size_t vm_npages;
  */
 
 /*!
+ * @name Memory Descriptor Lists
+ * @{
+ */
+
+/*!
+ * A Memory Descriptor List (MDL) - handle to a set of pages which represent a
+ * virtually contiguous region of some sort. The pages are busied while
+ * referenced by an MDL (XXX so a page can only belong to one MDL at a time? is
+ * that a good policy, and should we ensure it, i.e. test for page business
+ * before putting one in an MDL? I think we ought to test that anyway.)
+ * guaranteeing they remain resident.
+ *
+ * An MDL is the only means by which busy pages contents may legitimately be
+ * written to.
+ *
+ * @todo vm_mdl_new_with_range(map, object, start, end)
+ */
+typedef struct vm_mdl {
+	voff_t		offset;
+	size_t		nBytes;
+	size_t		nPages;
+	struct vm_page *pages[0];
+} vm_mdl_t;
+
+/*!
+ * Expand (if necessary) a buffer MDL such that it's large enough to store
+ * \p nBytes bytes.
+ *
+ * @returns -ENOMEM if there wasn't enough memory to expand it.
+ */
+int vm_mdl_expand(vm_mdl_t **mdl, size_t nBytes);
+
+/*!
+ * Create a buffer MDL large enough to store \p nBytes bytes.
+ * @todo accept options to be given to vm_pagealloc
+ */
+int vm_mdl_new_with_capacity(vm_mdl_t **mdl, size_t nBytes);
+
+/*!
+ * Get the capacity in bytes of an MDL.
+ */
+size_t vm_mdl_capacity(vm_mdl_t *mdl);
+
+/*!
+ * Copy data from an MDL into a buffer.
+ */
+void vm_mdl_copy(vm_mdl_t *mdl, void *buf, size_t nBytes, voff_t off);
+
+/*!
+ * Zero out an entire MDL.
+ */
+void vm_mdl_zero(vm_mdl_t *mdl);
+
+/*!
+ * @} ()
+ */
+
+/*!
  * @name Maps
  * @{
  */
