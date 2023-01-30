@@ -6,6 +6,17 @@
 #include <devicekit/DKDevice.h>
 #include <vm/vm.h>
 
+@class DKDrive;
+@protocol DKDriveMethods;
+
+/*!
+ * Kind of block I/O.
+ */
+typedef enum dk_strategy {
+	kDKRead,
+	kDKWrite,
+} dk_strategy_t;
+
 /*!
  * Represents an I/O operation. The initiator of the operation allocates one of
  * these and passes it to a method; the initiator is responsible for freeing the
@@ -20,15 +31,25 @@ struct dk_diskio_completion {
 	void (*callback)(void *data, ssize_t result);
 	/*! Opaque data passed to callback. */
 	void *data;
-};
 
-/*!
- * Kind of block I/O.
- */
-typedef enum dk_strategy {
-	kDKRead,
-	kDKWrite,
-} dk_strategy_t;
+	/*! These fields are for use by DKDrive only. */
+	/*! Drive we are acting on. */
+	DKDrive<DKDriveMethods> * drive;
+	/*! Strategy */
+	dk_strategy_t strategy;
+	/*! Initial block. */
+	blkoff_t initial;
+	/*! Buffer */
+	vm_mdl_t *buf;
+	/*! Storage for final callback during split-up I/O. */
+	void (*final_callback)(void *data, ssize_t result);
+	/*! Storage for final data during split-up I/O. */
+	void *final_data;
+	/*! Bytes remaining to read/write. */
+	size_t bytes_left;
+	/*! Bytes total to do. */
+	size_t bytes_total;
+};
 
 /*!
  * Protocol common to physical and logical drives.
@@ -54,10 +75,10 @@ typedef enum dk_strategy {
  */
 @protocol DKDriveMethods
 
-- (int)strategy:(dk_strategy_t) strategy
+- (int)strategy:(dk_strategy_t)strategy
 	 blocks:(blksize_t)nBlocks
 	     at:(blkoff_t)offset
-     buffer:(vm_mdl_t *)buf
+	 buffer:(vm_mdl_t *)buf
      completion:(struct dk_diskio_completion *)completion;
 
 @end

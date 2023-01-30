@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <sys/param.h>
 
 #include <kern/kmem.h>
 #include <nanokern/queue.h>
@@ -6,6 +7,7 @@
 #include <vm/vm.h>
 
 #include "VirtIOBlockDevice.h"
+#include "md/vm.h"
 #include "virtio_blk.h"
 #include "virtioreg.h"
 
@@ -26,12 +28,14 @@ ksemaphore_t sem;
 
 @implementation VirtIOBlockDevice
 
+#if 0
 static void
 done_io(void *arg, ssize_t len)
 {
 	kprintf("done async I/O, signalling waiters\n");
 	nk_semaphore_release(&sem, 1);
 }
+#endif
 
 - initWithVirtIOInfo:(struct dk_virtio_info *)vioInfo
 {
@@ -95,7 +99,7 @@ done_io(void *arg, ssize_t len)
 	struct virtio_drive_attachment_info driveInfo;
 	driveInfo.blocksize = 512;
 	driveInfo.provider = self;
-	driveInfo.maxBlockTransfer = PGSIZE / 512;
+	driveInfo.maxBlockTransfer = PGSIZE * 4 / 512;
 	driveInfo.nBblocks = cfg->capacity;
 	driveInfo.controllerNum = 0;
 
@@ -111,13 +115,17 @@ done_io(void *arg, ssize_t len)
 	 buffer:(vm_mdl_t *)buf
      completion:(struct dk_diskio_completion *)completion;
 {
-	uint32_t virtq_desc[3];
+	uint32_t virtq_desc[7];
 	ipl_t	 ipl;
+	size_t	 i = 0;
+	size_t	 ndatadescs;
 
 	DKDevLog(self, "Strategy...\n");
 
-	for (int i = 0; i < 3; i++) {
-		virtq_desc[i] = i;//[self allocateDescNumOnQueue:&queue]; // i;
+	ndatadescs = ROUNDUP(nblocks * 512, PGSIZE) / PGSIZE;
+
+	for (int i = 0; i < 2 + ndatadescs; i++) {
+		virtq_desc[i] = [self allocateDescNumOnQueue:&queue]; // i;
 	}
 
 	ipl = nk_spinlock_acquire_at(&queue.spinlock, kSPLBIO);
@@ -131,22 +139,26 @@ done_io(void *arg, ssize_t len)
 	req->completion = completion;
 	req->first_desc_id = virtq_desc[0];
 
-	queue.desc[virtq_desc[0]].len = sizeof(struct virtio_blk_outhdr);
-	queue.desc[virtq_desc[0]].addr = (uint64_t)V2P(&req->hdr);
-	queue.desc[virtq_desc[0]].flags = VRING_DESC_F_NEXT;
-	queue.desc[virtq_desc[0]].next = virtq_desc[1];
+	queue.desc[virtq_desc[i]].len = sizeof(struct virtio_blk_outhdr);
+	queue.desc[virtq_desc[i]].addr = (uint64_t)V2P(&req->hdr);
+	queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
+	queue.desc[virtq_desc[i]].next = virtq_desc[1];
 
-	queue.desc[virtq_desc[1]].len = strategy == /*VIRTIO_BLK_T_GET_ID*/ -1 ?
-	    20 :
-	    nblocks * 512;
-	queue.desc[virtq_desc[1]].addr = buf->pages[0]->paddr;
-	queue.desc[virtq_desc[1]].flags = VRING_DESC_F_NEXT |
-	    VRING_DESC_F_WRITE;
-	queue.desc[virtq_desc[1]].next = virtq_desc[2];
+	size_t nbytes = nblocks * 512;
 
-	queue.desc[virtq_desc[2]].len = 1;
-	queue.desc[virtq_desc[2]].addr = (uint64_t)V2P(&req->flags);
-	queue.desc[virtq_desc[2]].flags = VRING_DESC_F_WRITE;
+	for (i = 1; i < 1 + ndatadescs; i++) {
+		size_t len = MIN(nbytes, PGSIZE);
+		nbytes -= PGSIZE;
+		queue.desc[virtq_desc[i]].len = len;
+		queue.desc[virtq_desc[i]].addr = buf->pages[i - 1]->paddr;
+		queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT |
+		    VRING_DESC_F_WRITE;
+		queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];
+	}
+
+	queue.desc[virtq_desc[i]].len = 1;
+	queue.desc[virtq_desc[i]].addr = (uint64_t)V2P(&req->flags);
+	queue.desc[virtq_desc[i]].flags = VRING_DESC_F_WRITE;
 
 	[self submitDescNum:virtq_desc[0] toQueue:&queue];
 
@@ -162,9 +174,10 @@ done_io(void *arg, ssize_t len)
 - (void)processBuffer:(struct vring_used_elem *)e
 	      onQueue:(dk_virtio_queue_t *)aQueue
 {
-	struct vring_desc     *dout, *ddata;
-	uint16_t	       ddataidx, dtailidx;
+	struct vring_desc     *dout, *dnext;
+	uint16_t	       dnextidx;
 	struct vioblk_request *req;
+	size_t		       bytes = 0;
 
 	TAILQ_FOREACH (req, &in_flight_reqs, queue_entry) {
 		if (req->first_desc_id == e->id)
@@ -178,25 +191,33 @@ done_io(void *arg, ssize_t len)
 
 	dout = &QUEUE_DESC_AT(&queue, e->id);
 	kassert(dout->flags & VRING_DESC_F_NEXT);
-	ddataidx = dout->next;
-	ddata = &QUEUE_DESC_AT(&queue, ddataidx);
-	kassert(ddata->flags & VRING_DESC_F_NEXT);
-	dtailidx = ddata->next;
-#if 0
-	dtail = &QUEUE_DESC_AT(&queue, dtailidx);
-#endif
+
+	dnextidx = dout->next;
+	while (true) {
+		dnext = &QUEUE_DESC_AT(&queue, dnextidx);
+
+		if (!(dnext->flags & VRING_DESC_F_NEXT)) {
+			break;
+		} else {
+			uint16_t old_idx = dnextidx;
+			bytes += dnext->len;
+			dnextidx = dnext->next;
+			[self freeDescNum:old_idx onQueue:&queue];
+		}
+	}
 
 	[self freeDescNum:e->id onQueue:&queue];
-	[self freeDescNum:ddataidx onQueue:&queue];
-	[self freeDescNum:dtailidx onQueue:&queue];
+	[self freeDescNum:dnextidx onQueue:&queue];
 
-	if (req->flags & VIRTIO_BLK_S_IOERR) {
+	if (req->flags & VIRTIO_BLK_S_IOERR ||
+	    req->flags & VIRTIO_BLK_S_UNSUPP) {
 		DKDevLog(self, "I/O error\n");
-		for (;;) ;
+		for (;;)
+			;
 		return;
 	}
 
-	req->completion->callback(req->completion->data, ddata->len);
+	req->completion->callback(req->completion->data, bytes);
 
 	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
 }
