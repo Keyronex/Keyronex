@@ -93,7 +93,7 @@ IncludeCategories:
   - Regex: '^<(x86|amd64|i386|xen|x86_64)/'
     Priority: 3
     SortPriority: 40
-  - Regex: '^<dev/'
+  - Regex: '^<dev|devicekit/'
     Priority: 3
     SortPriority: 40
   - Regex: '^<net.*/'

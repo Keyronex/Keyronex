@@ -1,1 +1,2 @@
 kernel/net/lwip/* linguist-vendored
+kernel/libkern/uuid* linguist-vendored
