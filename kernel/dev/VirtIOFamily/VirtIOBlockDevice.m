@@ -105,17 +105,19 @@ done_io(void *arg, ssize_t len)
 	return self;
 }
 
-- (int)commonRequest:(int)kind
-	      blocks:(blkcnt_t)nblocks
-		  at:(blkoff_t)block
-	      buffer:(paddr_t)buf
-	  completion:(struct dk_diskio_completion *)completion
+- (int)strategy:(dk_strategy_t)strategy
+	 blocks:(blksize_t)nblocks
+	     at:(blkoff_t)block
+	 buffer:(vm_mdl_t *)buf
+     completion:(struct dk_diskio_completion *)completion;
 {
 	uint32_t virtq_desc[3];
 	ipl_t	 ipl;
 
+	DKDevLog(self, "Strategy...\n");
+
 	for (int i = 0; i < 3; i++) {
-		virtq_desc[i] = i; //[self allocateDesc];
+		virtq_desc[i] = i;//[self allocateDescNumOnQueue:&queue]; // i;
 	}
 
 	ipl = nk_spinlock_acquire_at(&queue.spinlock, kSPLBIO);
@@ -124,7 +126,8 @@ done_io(void *arg, ssize_t len)
 	TAILQ_REMOVE(&free_reqs, req, queue_entry);
 
 	req->hdr.sector = block;
-	req->hdr.type = kind;
+	req->hdr.type = strategy == kDKRead ? VIRTIO_BLK_T_IN :
+					      VIRTIO_BLK_T_OUT;
 	req->completion = completion;
 	req->first_desc_id = virtq_desc[0];
 
@@ -133,10 +136,10 @@ done_io(void *arg, ssize_t len)
 	queue.desc[virtq_desc[0]].flags = VRING_DESC_F_NEXT;
 	queue.desc[virtq_desc[0]].next = virtq_desc[1];
 
-	queue.desc[virtq_desc[1]].len = kind == VIRTIO_BLK_T_GET_ID ?
+	queue.desc[virtq_desc[1]].len = strategy == /*VIRTIO_BLK_T_GET_ID*/ -1 ?
 	    20 :
 	    nblocks * 512;
-	queue.desc[virtq_desc[1]].addr = buf;
+	queue.desc[virtq_desc[1]].addr = buf->pages[0]->paddr;
 	queue.desc[virtq_desc[1]].flags = VRING_DESC_F_NEXT |
 	    VRING_DESC_F_WRITE;
 	queue.desc[virtq_desc[1]].next = virtq_desc[2];
@@ -189,6 +192,7 @@ done_io(void *arg, ssize_t len)
 
 	if (req->flags & VIRTIO_BLK_S_IOERR) {
 		DKDevLog(self, "I/O error\n");
+		for (;;) ;
 		return;
 	}
 
@@ -224,6 +228,19 @@ done_io(void *arg, ssize_t len)
 					     provider:self];
 
 	return self;
+}
+
+- (int)strategy:(dk_strategy_t)strategy
+	 blocks:(blksize_t)nblocks
+	     at:(blkoff_t)block
+	 buffer:(vm_mdl_t *)buf
+     completion:(struct dk_diskio_completion *)completion
+{
+	return [(VirtIOBlockDevice *)m_provider strategy:strategy
+						  blocks:nblocks
+						      at:block
+						  buffer:buf
+					      completion:completion];
 }
 
 @end

@@ -16,11 +16,6 @@
 
 #define selfDelegate ((DKDrive<DKDriveMethods> *)self)
 
-typedef enum dk_strategy {
-	kDKRead,
-	kDKWrite,
-} dk_strategy_t;
-
 static int driveIDCounter = 0;
 
 @implementation DKDrive
@@ -70,25 +65,35 @@ complete_sync(void *data, ssize_t result)
 	} else
 		comp.data = NULL;
 
+	if (offset % m_blockSize != 0 || nBytes % m_blockSize != 0) {
+		DKDevLog(self,
+		    "(DKDrive) Strategy request with non-block-aligned"
+		    "offset or size received - not yet handled.\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (buf->offset % PGSIZE != 0) {
+		DKDevLog(self,
+		    "(DKDrive) Strategy request with non-page-aligned"
+		    "offset received - not yet handled.\n");
+		return -EOPNOTSUPP;
+	}
+
 	if (nBytes > m_maxBlockTransfer * m_blockSize) {
 		DKDevLog(self, "Excessive request received - not yet handled.");
 		return -EOPNOTSUPP;
 	}
 
-	if (offset % m_blockSize != 0 || nBytes % m_blockSize != 0) {
-		DKDevLog(self,
-		    "Unaligned read request received - not yet handled.\n");
-		return -EOPNOTSUPP;
-	}
-
-	r = strategy == kDKRead ? [selfDelegate readBlocks:nBytes / m_blockSize
-							at:offset / m_blockSize
-						intoBuffer:buf
-						completion:completion] :
-				  [selfDelegate writeBlocks:nBytes / m_blockSize
-							 at:offset / m_blockSize
-						 fromBuffer:buf
-						 completion:completion];
+	r = strategy == kDKRead ? [selfDelegate strategy:kDKRead
+						  blocks:nBytes / m_blockSize
+						      at:offset / m_blockSize
+						  buffer:buf
+					      completion:completion] :
+				  [selfDelegate strategy:kDKWrite
+						  blocks:nBytes / m_blockSize
+						      at:offset / m_blockSize
+						  buffer:buf
+					      completion:completion];
 
 	if (r != 0)
 		return r;

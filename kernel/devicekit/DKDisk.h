@@ -23,7 +23,15 @@ struct dk_diskio_completion {
 };
 
 /*!
- * Protocol common to physical and logical disks.
+ * Kind of block I/O.
+ */
+typedef enum dk_strategy {
+	kDKRead,
+	kDKWrite,
+} dk_strategy_t;
+
+/*!
+ * Protocol common to physical and logical drives.
  */
 @protocol DKAbstractDiskMethods
 
@@ -46,14 +54,11 @@ struct dk_diskio_completion {
  */
 @protocol DKDriveMethods
 
-- (int)readBlocks:(blksize_t)nBlocks
-	       at:(blkoff_t)offset
-       intoBuffer:(vm_mdl_t *)buf
-       completion:(struct dk_diskio_completion *)completion;
-- (int)writeBlocks:(blksize_t)nBlocks
-		at:(blkoff_t)offset
-	fromBuffer:(vm_mdl_t *)buf
-	completion:(struct dk_diskio_completion *)completion;
+- (int)strategy:(dk_strategy_t) strategy
+	 blocks:(blksize_t)nBlocks
+	     at:(blkoff_t)offset
+     buffer:(vm_mdl_t *)buf
+     completion:(struct dk_diskio_completion *)completion;
 
 @end
 
@@ -62,8 +67,8 @@ struct dk_diskio_completion {
  * drive. The class provides methods which handle the generic aspects of block
  * I/O, such as deblocking.
  *
- * Implementors must implement the DKDriveMethods protocol; its methods carry out
- * the actual I/O.
+ * Implementors must implement the DKDriveMethods protocol; its methods carry
+ * out the actual I/O.
  */
 @interface DKDrive : DKDevice <DKAbstractDiskMethods> {
 	int	  m_driveID;
@@ -129,7 +134,7 @@ struct dk_diskio_completion {
 		    size:(size_t)size
 		    name:(const char *)name
 		location:(size_t)location
-		provider:(DKDevice*)provider;
+		provider:(DKDevice *)provider;
 
 @end
 
