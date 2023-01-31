@@ -24,7 +24,8 @@ kern_srcs = files(
 
 	'vfs/vfs.c',
 
-    'vm/vm_kernel.c', 'vm/vm_page.c', 'vm/vm_pdaemon.c', 'vm/vm.c'
+    'vm/vm_kernel.c', 'vm/vm_page.c', 'vm/vm_pdaemon.c', 'vm/vm_swap.c',
+	'vm/vm.c'
 )
 
 kern_srcs += files (

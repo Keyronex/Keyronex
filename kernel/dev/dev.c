@@ -14,8 +14,10 @@
 #include <sys/sysmacros.h>
 
 #include <kern/kmem.h>
+#include <libkern/libkern.h>
 #include <nanokern/thread.h>
 
+#include <errno.h>
 #include <vfs/vfs.h>
 
 #include "dev.h"
@@ -79,8 +81,10 @@ found:
 int
 spec_open(vnode_t *vn, vnode_t **out, int mode)
 {
-	return cdevsw[major(vn->specdev->dev)].open(vn->specdev->dev, out,
-	    mode);
+	cdevsw_t *sw = &cdevsw[major(vn->specdev->dev)];
+	if (!sw->open)
+		return -EOPNOTSUPP;
+	return sw->open(vn->specdev->dev, out, mode);
 }
 
 int

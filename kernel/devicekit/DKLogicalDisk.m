@@ -21,6 +21,9 @@
 static int major = -1;
 static int minor = 0;
 
+static TAILQ_TYPE_HEAD(ld_tailq,
+    DKLogicalDisk) ld_tailq = TAILQ_HEAD_INITIALIZER(ld_tailq);
+
 @implementation DKLogicalDisk
 
 @synthesize underlying = m_underlying;
@@ -28,11 +31,24 @@ static int minor = 0;
 @synthesize size = m_size;
 @synthesize location = m_location;
 
+static int
+ld_open(dev_t dev, struct vnode **out, int mode)
+{
+	DKLogicalDisk *ld;
+	TAILQ_FOREACH (ld, &ld_tailq, m_ld_tailq_entry) {
+		if (ld->m_minor == minor(dev)) {
+			return 0;
+		}
+	}
+	return -ENXIO;
+}
+
 + (void)initialize
 {
-	cdevsw_t cdev;
+	cdevsw_t cdev = { 0 };
 	cdev.is_tty = false;
 	cdev.private = self;
+	cdev.open = ld_open;
 	major = cdevsw_attach(&cdev);
 }
 
@@ -75,7 +91,7 @@ static int minor = 0;
 
 	kmem_asprintf(&m_name, "%s Disk", aname);
 	[self registerDevice];
-	DKLogAttach(self);
+	DKLogAttachExtra(self, "%lu MiB", size / 1024 / 1024);
 
 	m_underlying = underlying;
 	m_base = base;
@@ -85,7 +101,9 @@ static int minor = 0;
 	[self buildPosixDeviceName:nameBuf withMaxSize:63];
 
 	DKDevLog(self, "POSIX DevFS node: %s\n", nameBuf);
-	r = devfs_make_node(makedev(major, minor++), nameBuf);
+	m_minor = minor++;
+	TAILQ_INSERT_TAIL(&ld_tailq, self, m_ld_tailq_entry);
+	r = devfs_make_node(makedev(major, m_minor), nameBuf);
 	assert(r >= 0);
 
 	if (![m_underlying isKindOfClass:[DKDrive class]]) {

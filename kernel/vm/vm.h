@@ -530,6 +530,13 @@ void pmap_global_invlpg(vaddr_t vaddr);
  * @{
  */
 
+typedef enum vm_pager_ret {
+	/*! pager successfully paged in/out the page */
+	kVMPagerOK,
+	/*! pager has no space left */
+	kVMPagerExhausted,
+} vm_pager_ret_t;
+
 /*! The page daemon thread entry point. Only to be used once, in start(). */
 void vm_pdaemon(void *unused);
 
@@ -547,6 +554,21 @@ void vm_pd_wait(void);
 
 /*!
  * @}
+ */
+
+/*!
+ * @name swap
+ * @{
+ */
+
+int vm_swapon(const char *name);
+
+vm_pager_ret_t vm_swp_pageout(vm_page_t *page);
+
+void vm_swapstat(void);
+
+/*!
+ * @} (swap)
  */
 
 #endif /* VM_H_ */

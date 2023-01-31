@@ -1,0 +1,34 @@
+@startuml
+abstract DKDevice
+abstract PCIDevice
+class NVMEController
+abstract DKDrive
+class DKLogicalDisk
+protocol DKAbstractDiskMethods
+class NVMEDisk
+
+class VirtIOBlockDevice
+class VirtIODrive
+
+class GPTPartitionMapper
+protocol DKAbstractDiskMethods
+protocol DKDriveDelegateMethods
+@enduml
+
+DKDevice <|-- PCIDevice
+DKDevice <|-- DKDrive
+DKDevice <|-- DKLogicalDisk
+DKDevice <|-- GPTPartitionMapper
+PCIDevice <|-- NVMEController
+DKDrive <|-- NVMEDisk
+DKDriveDelegateMethods <|.left.. NVMEDisk
+
+
+PCIDevice <|-- VirtIOBlockDevice
+DKDrive <|-- VirtIODrive
+DKDriveDelegateMethods <|.left.. VirtIODrive
+
+
+DKLogicalDisk <|-- GPTPartition
+DKAbstractDiskMethods <|.. DKLogicalDisk
+DKAbstractDiskMethods <|.. DKDrive

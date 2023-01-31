@@ -60,7 +60,7 @@ nk_thread_init(kprocess_t *proc, kthread_t *thread, void (*start_fun)(void *),
 
 	nkx_thread_common_init(thread, cpu, proc, name);
 	thread->state = kThreadStateSuspended;
-	thread->kstack = vm_kalloc(4, kVMKSleep) + 4 * PGSIZE;
+	thread->kstack = vm_kalloc(6, kVMKSleep) + 6 * PGSIZE;
 
 	md_thread_init(thread, start_fun, start_arg);
 }

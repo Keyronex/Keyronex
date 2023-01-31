@@ -61,7 +61,7 @@ done_io(void *arg, ssize_t len)
 
 	/* minimum of 3 descriptors per request; allocate reqs accordingly */
 	/* TODO(high): ugly! do it better */
-	vm_page_t *page = vm_pagealloc(true, &vm_pgwiredq);
+	vm_page_t *page = vm_pagealloc(true, &vm_pgdevbufq);
 	vaddr_t	   addr = (vaddr_t)P2V(page->paddr);
 	for (int i = 0; i < ROUNDUP(queue.length, 3) / 3; i++) {
 		struct vioblk_request *req = (void *)(addr + sizeof(*req) * i);
@@ -238,7 +238,7 @@ done_io(void *arg, ssize_t len)
 	m_maxBlockTransfer = info->maxBlockTransfer;
 	[self registerDevice];
 
-	DKLogAttachExtra(self, "%lu MiB (blocksize %ld, blocks %ld)\n",
+	DKLogAttachExtra(self, "%lu MiB (blocksize %ld, blocks %ld)",
 	    m_nBlocks * m_blockSize / 1024 / 1024, m_blockSize, m_nBlocks);
 
 	[[DKLogicalDisk alloc] initWithUnderlyingDisk:self

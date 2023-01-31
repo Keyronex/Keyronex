@@ -164,8 +164,11 @@ kstart(void)
 	nk_thread_init(&proc0, &pd_thread, vm_pdaemon, NULL, "vm_pagedaemon");
 	nk_thread_resume(&pd_thread);
 
+	vm_swapon("dk0s2");
+
 	unpack_ramdisk();
 	vm_pagedump();
+	vm_swapstat();
 
 	for (;;)
 		asm("pause");

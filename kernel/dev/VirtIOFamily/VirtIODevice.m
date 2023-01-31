@@ -201,7 +201,7 @@ enumerateCaps(dk_device_pci_info_t *pciInfo, voff_t pCap, void *arg)
 
 - (int)setupQueue:(dk_virtio_queue_t *)queue index:(uint16_t)index
 {
-	queue->page = vm_pagealloc(true, &vm_pgkmemq);
+	queue->page = vm_pagealloc(true, &vm_pgdevbufq);
 	vaddr_t addr = (vaddr_t)P2V(queue->page->paddr);
 	vaddr_t offs;
 

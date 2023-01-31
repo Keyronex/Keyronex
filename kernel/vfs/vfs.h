@@ -42,17 +42,25 @@ typedef struct vattr {
 } vattr_t;
 
 /*!
+ * (fs) private to the filesystem
  * (~) invariant while referenced
+ * (m) TODO mount lock
  */
 typedef struct vnode {
-	// mutex_t	     lock;
 	objectheader_t hdr;
+	/*! (~) is it the root of a filesystem? */
 	bool	       isroot;
+	/*! (~) type of vnode */
 	vtype_t	       type;
-	vm_object_t   *vmobj;  /* page cache */
-	void	      *data;   /* fs-private data */
-	vfs_t	      *vfsp;   /* vfs to which this vnode belongs */
-	vfs_t *vfsmountedhere; /* if a mount point, vfs mounted over it */
+	/*! (~) page cache; usually a regular vm_object_t, for tmpfs, an anon */
+	vm_object_t   *vmobj;
+	/*! (fs) fs-private data */
+	void	      *data;
+	/*! (m) to which vfs does this vnode belong? */
+	vfs_t	      *vfsp;
+	/*! (m) if a mountpoint, the vfs mounted over it */
+	vfs_t *vfsmountedhere;
+	/*! (~) vnode ops vector */
 	const struct vnops *ops;
 	union {
 		struct {
@@ -83,8 +91,8 @@ struct vnops {
 	/**
 	 * Create a new vnode in the given directory.
 	 *
-	 * @param dvn LOCKED directory vnode
-	 * @param out [out] resultant vnode (add a ref for caller)
+	 * @param dvn directory vnode
+	 * @param out [out] resultant vnode
 	 * @param name new file name
 	 * @param attr attributes of file (including whether file, directory,
 	 * device node...)
@@ -101,19 +109,22 @@ struct vnops {
 	 * Lookup the vnode corresponding to the given file name in the given
 	 * direct vnode.
 	 *
-	 * @param dvn LOCKED directory vnode
-	 * @param out [out] resultant vnode (add a ref for caller)
+	 * @param dvn directory vnode
+	 * @param out $returns_retained resultant vnode
 	 * @param name filename
 	 */
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
 
 	/*!
-	 * Open a vnode. This may yield a different vnode.
+	 * Open a vnode. This may yield a different vnode. In any case, the
+	 * result is referenced.
+	 *
+	 * @param out $returns_retained resultant vnode
 	 */
 	int (*open)(vnode_t *vn, vnode_t **out, int mode);
 
 	/*!
-	 * Read uncached from a vnode.
+	 * Read (via cache) from a vnode.
 	 */
 	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
@@ -128,7 +139,7 @@ struct vnops {
 	    off_t seqno);
 
 	/*!
-	 * Write uncached to a vnode.
+	 * Write (via cache) to a vnode.
 	 */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 };
@@ -163,22 +174,24 @@ enum lookup_flags {
 
 /**
  * Lookup path \p path relative to @locked \p cwd and store the result in
- * \p out. Caller holds a reference to \p out thereafter.
+ * \p out. (Caller holds a reference to \p out thereafter.)
  * @param attr for the lookup modes that create, the mode to set.
  * If \p last2 is set, then returns the second-to-last component of the path.
  */
 int vfs_lookup(vnode_t *cwd, vnode_t **out, const char *path,
     enum lookup_flags flags, vattr_t *attr);
 
-/**
- * Read from @locked \p vn \p nbyte bytes at offset \p off into buffer \p buf.
- */
-int vfs_read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
-
-/**
- * Read into @locked \p vn \p nbyte bytes at offset \p off from buffer \p buf.
- */
-int vfs_write(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+#define VOP_OPEN(vnode, out, mode) \
+	vnode->ops->open(vnode, out, mode)
+#define VOP_READ(vnode, buf, nbyte, off) \
+	vnode->ops->read(vnode, buf, nbyte, off)
+#define VOP_WRITE(vnode, buf, nbyte, off) \
+	vnode->ops->write(vnode, buf, nbyte, off)
+#define VOP_CREAT(vnode, out, name, attr) \
+	vnode->ops->create(vnode, out, name, attr)
+#define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
+#define VOP_MKDIR(vnode, out, name, attr) \
+	vnode->ops->mkdir(vnode, out, name, attr)
 
 /*! the root filesystem; this will be a tmpfs */
 extern vfs_t root_vfs;

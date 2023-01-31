@@ -34,7 +34,7 @@ struct dk_diskio_completion {
 
 	/*! These fields are for use by DKDrive only. */
 	/*! Drive we are acting on. */
-	DKDrive<DKDriveMethods> * drive;
+	DKDrive<DKDriveMethods> *drive;
 	/*! Strategy */
 	dk_strategy_t strategy;
 	/*! Initial block. */
@@ -125,6 +125,11 @@ struct dk_diskio_completion {
 	off_t				 m_base;
 	size_t				 m_size;
 	size_t				 m_location;
+
+	/*! entry in ld_tailq */
+	TAILQ_TYPE_ENTRY(DKLogicalDisk) m_ld_tailq_entry;
+	/*! minor number */
+	int m_minor;
 }
 
 /*!

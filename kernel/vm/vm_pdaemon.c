@@ -4,19 +4,10 @@
  */
 
 #include <nanokern/kernmisc.h>
+#include <nanokern/thread.h>
 #include <vm/vm.h>
 
-#include "nanokern/thread.h"
 
-#define VM_PAGEFILE_SIZE(NPAGES) \
-	sizeof(struct vm_pagefile) + ROUNDUP(npages, 8) / 8
-
-struct vm_pagefile {
-	LIST_ENTRY(vm_page) list_entry;
-	drumslot_t	    first_slot;
-	size_t		    nslots;
-	uint8_t		    bitmap[0];
-};
 
 /*!
  * (~) => const forever
@@ -54,8 +45,6 @@ struct vm_pdaemon {
 	 * event to wait on to wait for free pages
 	 */
 	kevent_t free_event;
-
-	struct vm_pagefile *pagefile;
 };
 
 struct vm_pdaemon pgd_state;
@@ -155,8 +144,10 @@ scan_inactive(void)
 		ipl = VM_PGQ_LOCK();
 		page = TAILQ_LAST(&vm_pginactiveq.queue, pagequeue);
 
-		if (page->busy)
+		if (page->busy) {
+			nk_dbg("page 0x%lx is busy\n", page->paddr);
 			goto next;
+		}
 
 		if (page_lock_owner(page, true)) {
 			nk_assert(!page->busy);
@@ -166,23 +157,20 @@ scan_inactive(void)
 				    &vm_pgactiveq);
 				/* reset accessed bits for tracking */
 				(void)pmap_page_accessed(page, true);
-				nk_dbg("keeping inactive page %p\n", page);
+				nk_dbg("keeping inactive page 0x%lx\n", page->paddr);
 
 			} else {
 				page->busy = true;
 				/* remove mappings */
 				pmap_unenter_all(page);
-
-
-				nk_fatal("Page out 0x%lx\n", page->paddr);
-
 				/* page out .... */
-
+				vm_pager_ret_t r=  vm_swp_pageout(page);
 				/* unbusy page etc */
+				nk_dbg("swapping out page 0x%lx: %d\n", page->paddr, r);
 			}
 		} else {
-			nk_dbg("failed to lock owner of page %p, continuing\n",
-			    page);
+			nk_dbg("failed to lock owner of page 0x%lx, continuing\n",
+			    page->paddr);
 		}
 
 		page_unlock_owner(page);
@@ -241,7 +229,8 @@ vm_pdaemon(void *unused)
 			scan_inactive();
 		}
 
-		if (vm_pgfreeq.npages > pgd_state.free_hiwat) {
+		if (vm_pgfreeq.npages >= pgd_state.free_hiwat) {
+			nk_event_clear(&pgd_state.wanted);
 			nk_event_signal(&pgd_state.free_event);
 		} else {
 			// nk_fatal("failed to free enough memory\n");

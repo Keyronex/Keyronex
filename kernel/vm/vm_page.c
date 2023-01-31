@@ -130,9 +130,9 @@ vm_page_free(vm_page_t *page)
 void
 vm_pagedump(void)
 {
+	kprintf("                       Pagequeue Stats\n");
 	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "kmem",
 	    "wired", "devbuf", "active", "inactive", "pmap");
-
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu%-9zu%-9zu\n", vm_pgfreeq.npages,
 	    vm_pgkmemq.npages, vm_pgwiredq.npages, vm_pgdevbufq.npages,
 	    vm_pgactiveq.npages, vm_pginactiveq.npages, vm_pgpmapq.npages);

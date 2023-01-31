@@ -1,0 +1,35 @@
+@startuml
+
+skinparam componentStyle uml2
+
+title DeviceKit Storage Stack at Runtime
+
+[NVMEController] <<NVMe0>>
+[NVMEDisk] <<NVME0ns1: "Intel SSD">>
+' [DKDrive] */
+[DKLogicalDisk] as nvme0ld
+[DKGPTPartitionMapper] as gpt
+[DKLogicalDisk] <<EFI System Partition>> as gptp0
+[DKLogicalDisk] <<SCAL/UX Root>> as gptp1
+
+
+[NVMEDisk] -up-> [NVMEController]
+' [DKDrive] -up-> [NVMEDisk]
+' [nvme0ld] -up-> [DKDrive]
+[nvme0ld] -up-> [NVMEDisk]
+[gpt] -up-> [nvme0ld]
+
+gptp0 -up-> [gpt]
+gptp1 -up-> [gpt]
+gptp0 -[hidden]> gptp1
+
+() "/dev/disk0" as nvd0
+() "/dev/disk0s0" as nvd0p0
+() "/dev/disk0s1" as nvd0p1
+
+
+nvd0 -> nvme0ld
+nvd0p0 -up-> gptp0
+nvd0p1 -up-> gptp1
+
+@enduml
