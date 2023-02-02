@@ -189,7 +189,6 @@ pagefault(md_intr_frame_t *frame, void *arg)
 		goto fail;
 	}
 
-
 retry:
 	curcpu()->running_thread->in_pagefault = true;
 	int r = vm_fault(frame, &kmap, (vaddr_t)read_cr2(), frame->code);
@@ -398,6 +397,7 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 			ksrv_backtrace((vaddr_t)aframe->rip, &name, &offs);
 			nk_dbg(" - %p %s+%lu\n", (void *)aframe->rip,
 			    name ? name : "???", offs);
+			nk_dbg("stack depth: %lu\n", curcpu()->running_thread->kstack -  (uintptr_t)aframe)
 		} while ((aframe = aframe->rbp) /*&& (uint64_t)aframe >= KERN_BASE &&
 		    aframe->rip != 0x0*/);
 }

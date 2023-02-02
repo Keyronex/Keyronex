@@ -70,10 +70,11 @@ printTree(DKDevice *dev, char *prefix, enum nodeKind kind)
 	}
 }
 
+static  char indent[255] = { 0 };
+
 int
 autoconf(void)
 {
-	char indent[255] = { 0 };
 	setup_objc();
 
 	kprintf("DeviceKit version 0\n");

@@ -183,7 +183,9 @@ scan_inactive(void)
 void
 vm_pdaemon(void *unused)
 {
-	/* this stupid algorithm will at least let us test the paging code */
+	/* this stupid algorithm will at least let us test the paging code
+	 but come on, let's at least calculate our inactive target based on
+	 nactive + ninactive not all memory */
 
 	nk_event_init(&pgd_state.wanted, false);
 	nk_event_init(&pgd_state.free_event, true);

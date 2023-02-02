@@ -369,6 +369,32 @@ pmap_page_accessed(struct vm_page *page, bool reset)
 	return accessed;
 }
 
+bool
+pmap_page_dirty(struct vm_page *page, bool reset)
+{
+	pv_entry_t *pv, *tmp;
+	bool	    dirty = false;
+
+	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
+		pte_t *pte = pmap_fully_descend(pv->map->pmap, pv->vaddr);
+		nk_assert(pte != NULL);
+		pte = P2V(pte);
+
+		if (!(*pte & kMMUDirty))
+			continue;
+
+		dirty = true;
+
+		if (reset) {
+			*pte = *pte & ~kMMUDirty;
+			pmap_global_invlpg(pv->vaddr);
+		} else
+			return true; /* no need to scan all in this case */
+	}
+
+	return dirty;
+}
+
 vm_page_t *
 pmap_unenter_kern(vm_map_t *map, vaddr_t vaddr)
 {

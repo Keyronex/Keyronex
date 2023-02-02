@@ -370,6 +370,11 @@ void
 _start(void)
 {
 	void *pcpu0 = &cpu0;
+	thread0.kstack  = (vaddr_t)&pcpu0;
+
+	/* setting up state immediately so curcpu()/curthread() work */
+	cpu0.running_thread = &thread0;
+	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 
 	serial_init();
 
@@ -378,10 +383,6 @@ _start(void)
 	    terminal_request.response->terminal_count < 1) {
 		done();
 	}
-
-	/* setting up state immediately so curcpu()/curthread() work */
-	cpu0.running_thread = &thread0;
-	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 
 	nk_dbg("Keyronex\n");
 

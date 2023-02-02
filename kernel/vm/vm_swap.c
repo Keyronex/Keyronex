@@ -126,6 +126,6 @@ vm_swp_pageout(vm_page_t *page)
 void vm_swapstat(void) {
 
 	kprintf("       Swapdev Stats\n")
-	kprintf("\033[7m%-9s %-9s%-9s\033[m\n", "swapdev", "free", "used");
-	kprintf("%-9zu%-9zu%-9zu\n", 0, swapdev->npages - swapdev->nused, swapdev->nused);
+	kprintf("\033[7m%-9s%-9s%-9s\033[m\n", "swapdev", "free", "used");
+	kprintf("%-9zu%-9zu%-9zu\n", 0lu, swapdev->npages - swapdev->nused, swapdev->nused);
 }
