@@ -1,6 +1,7 @@
 #ifndef THREAD_H_
 #define THREAD_H_
 
+#include <sys/types.h>
 #include <md/intr.h>
 #include <md/spl.h>
 
@@ -204,13 +205,20 @@ typedef struct kthread {
 
 /*!
  * describes a process
- * (p) = its lock
+ * (p) = its spinlock
+ * (~) = invariant from creation
  */
 typedef struct kprocess {
 	kspinlock_t lock;
 
-	/* (p) */
+	/*! (~) process ID */
+	pid_t pid;
+
+	/*! (p) all threads attached to process */
 	SLIST_HEAD(, kthread) threads;
+
+	/*! (~) PAS process */
+	struct psxproc *psxproc;
 } kprocess_t;
 
 /*!
@@ -504,9 +512,9 @@ extern kspinlock_t nk_lock;
 /* callouts lock, acquired at IPL=high */
 extern kspinlock_t callouts_lock;
 /*! the first thread (idle on cpu0) */
-extern kthread_t thread0;
+extern kthread_t kthread0;
 /*! the kernel process */
-extern kprocess_t proc0;
+extern kprocess_t kproc0;
 /*! the bootstrap CPU */
 extern kcpu_t cpu0;
 

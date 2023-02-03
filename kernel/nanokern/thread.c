@@ -8,8 +8,8 @@
 kspinlock_t nk_lock = KSPINLOCK_INITIALISER;
 kspinlock_t callouts_lock = KSPINLOCK_INITIALISER;
 kspinlock_t nk_dbg_lock = KSPINLOCK_INITIALISER;
-kthread_t   thread0;
-kprocess_t  proc0;
+kthread_t   kthread0;
+kprocess_t  kproc0;
 kcpu_t	    cpu0;
 
 /*! array of all CPUs */
@@ -87,7 +87,7 @@ void
 dbg_dump_threads(void)
 {
 	kthread_t *thr;
-	SLIST_FOREACH(thr, &proc0.threads, proc_link)
+	SLIST_FOREACH(thr, &kproc0.threads, proc_link)
 	{
 		nk_dbg("thread %s <%p>: ", thr->name, thr);
 		if (thr->state == kThreadStateWaiting) {

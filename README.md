@@ -108,12 +108,12 @@ Several third-party components are used. These are some of them:
 <!--
  - liballoc: Provides one of the in-kernel allocators.
  - NetBSD:
-  - (`kernel-3/dev/fbterm/nbsdbold.psfu`): Bold8x16 font used for FBTerminal.
+  - (`kernel-3/dev/fbterm/nbsdbold.psfu`): Bold8x16 font used for FBConsole.
   - (`kernel-3/dev/nvmereg.h`): NVMe register definitions.
  - Solaris (`kernel-3/dev/fbterm/sun12x22.psfu`): Sun Demi Gallant font available
-  for FBTerminal
+  for FBConsole
  - limine/`limine-terminal-port` (some files in`kernel-3/dev/fbterm/`) used by
-  FBTerminal to provide a terminal.
+  FBConsole to provide a terminal.
  - LZ4 (`kernel-3/libkern/lz4.{c,h}`): Used by VM Compressor to ompress pages.
 - Linux (`kernel-3/ext2fs/ext2_fs.h`): Ext2 filesystem definitions
 -->

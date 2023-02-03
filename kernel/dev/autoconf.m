@@ -8,14 +8,11 @@
  * All rights reserved.
  */
 
-//#include <dev/LimineFB.h>
-#include <dev/ACPIPC.h>
-#include <kern/kmem.h>
 #include <amd64/amd64.h>
-//#include <dev/fbterm/FBTerminal.h>
-//#include <x86_64/boot.h>
-
-//#include "kern/kmem.h"
+#include <dev/ACPIPC.h>
+#include <dev/LimineFB.h>
+#include <dev/FBConsole/FBConsole.h>
+#include <kern/kmem.h>
 
 extern void (*init_array_start)(void);
 extern void (*init_array_end)(void);
@@ -43,7 +40,7 @@ printTree(DKDevice *dev, char *prefix, enum nodeKind kind)
 	const char *vline = "\e(0\x78\e(B";	  /* │ */
 #endif
 	DKDevice *child;
-	char     *newPrefix;
+	char	 *newPrefix;
 
 	if (kind == kRoot) {
 		/* epsilon */
@@ -70,7 +67,7 @@ printTree(DKDevice *dev, char *prefix, enum nodeKind kind)
 	}
 }
 
-static  char indent[255] = { 0 };
+static char indent[255] = { 0 };
 
 int
 autoconf(void)
@@ -80,11 +77,9 @@ autoconf(void)
 	kprintf("DeviceKit version 0\n");
 
 	[AcpiPC probeWithRSDP:rsdp_request.response->address];
-#if 0
 	[LimineFB probeWithProvider:[AcpiPC instance]
 		   limineFBResponse:framebuffer_request.response];
-	[FBTerminal probeWithFB:sysfb];
-#endif
+	[FBConsole probeWithFB:sysfb];
 
 	printTree([AcpiPC instance], indent, kRoot);
 	return 0;

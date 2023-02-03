@@ -1,2 +1,5 @@
 kernel/net/lwip/* linguist-vendored
 kernel/libkern/uuid* linguist-vendored
+kernel/dev/FBConsole/gterm.* linguist-vendored
+kernel/dev/FBConsole/image.* linguist-vendored
+kernel/dev/FBConsole/image.* linguist-vendored

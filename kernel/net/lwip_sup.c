@@ -158,7 +158,7 @@ sys_thread_new(const char *name, lwip_thread_fn thread, void *arg,
     int stacksize, int prio)
 {
 	kthread_t *thr = kmem_alloc(sizeof(*thr));
-	nk_thread_init(&proc0, thr, thread, arg, name);
+	nk_thread_init(&kproc0, thr, thread, arg, name);
 	nk_thread_resume(thr);
 	return thr;
 }

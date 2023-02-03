@@ -2,7 +2,7 @@ kern_srcs = files(
 	'dev/ACPIPC.m', 'dev/autoconf.m', 'dev/IOAPIC.m', 'dev/laiex.c',
 	'dev/PCIBus.m', 'dev/VirtIOFamily/VirtIOBlockDevice.m',
 	'dev/VirtIOFamily/VirtIODevice.m', 'dev/VirtIOFamily/VirtIONetwork.m',
-	'dev/dev.c',
+	'dev/LimineFB.m', 'dev/dev.c',
 
 	'devicekit/DKDevice.m', 'devicekit/DKDisk.m',
 	'devicekit/DKGPTVolumeManager.m', 'devicekit/DKLogicalDisk.m',
@@ -125,5 +125,7 @@ gen = generator(bin2c,
 kern_srcs += gen.process(['keynex.data'])
 
 kernel_includes += [ include_directories('net/lwip/include') ]
+
+subdir('dev/FBConsole')
 
 subdir(arch)

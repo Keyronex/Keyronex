@@ -161,7 +161,7 @@ kstart(void)
 	autoconf();
 	vm_pagedump();
 
-	nk_thread_init(&proc0, &pd_thread, vm_pdaemon, NULL, "vm_pagedaemon");
+	nk_thread_init(&kproc0, &pd_thread, vm_pdaemon, NULL, "vm_pagedaemon");
 	nk_thread_resume(&pd_thread);
 
 	vm_swapon("dk0s2");

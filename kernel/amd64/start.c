@@ -4,6 +4,8 @@
 #include <nanokern/kernmisc.h>
 #include <nanokern/thread.h>
 #include <vm/vm.h>
+#include <libkern/libkern.h>
+#include <dev/FBConsole/FBConsole.h>
 
 #include <limine.h>
 #include <stddef.h>
@@ -163,17 +165,32 @@ mem_init()
 	x64_vm_init((paddr_t)kernel_address_request.response->physical_base);
 }
 
+struct msgbuf msgbuf;
+
 /* put character to limine terminal + COM1 */
 void
 md_dbg_putc(int ch, void *ctx)
 {
-	struct limine_terminal *terminal =
-	    terminal_request.response->terminals[0];
-	terminal_request.response->write(terminal, (char *)&ch, 1);
+	/* put on msgbuf */
+	msgbuf.buf[msgbuf.write++] = ch;
+	if (msgbuf.write >= 4096)
+		msgbuf.write = 0;
+	if (msgbuf.read == msgbuf.write && ++msgbuf.read == msgbuf.write)
+		msgbuf.read = 0;
 
+	/* put to com1 */
 	while (!(inb(kPortCOM1 + 5) & 0x20))
 		;
 	outb(kPortCOM1, ch);
+
+	/* put to syscon/limine terminal */
+	if (!syscon) {
+		struct limine_terminal *terminal =
+		    terminal_request.response->terminals[0];
+		terminal_request.response->write(terminal, (char *)&ch, 1);
+	} else {
+		sysconputc(ch);
+	}
 }
 
 /* can't rely on mutexes until scheduling is up (and in any case not in idle
@@ -193,7 +210,7 @@ common_init(struct limine_smp_info *smpi)
 
 	/* nkx_thread_common_init allocates... */
 	nk_spinlock_acquire_nospl(&early_lock);
-	nkx_thread_common_init(thread, cpu, &proc0, "idle_thread");
+	nkx_thread_common_init(thread, cpu, &kproc0, "idle_thread");
 	nk_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
@@ -314,7 +331,7 @@ fun(void *arg)
 	nk_timer_init(&timer);
 
 	kthread_t thread;
-	nk_thread_init(&proc0, &thread, fun2, (void*)0xf008a1, "fun2");
+	nk_thread_init(&kproc0, &thread, fun2, (void*)0xf008a1, "fun2");
 	nk_thread_resume(&thread);
 
 	kprintf("Hello after thread B began!\n");
@@ -370,10 +387,10 @@ void
 _start(void)
 {
 	void *pcpu0 = &cpu0;
-	thread0.kstack  = (vaddr_t)&pcpu0;
+	kthread0.kstack  = (vaddr_t)&pcpu0;
 
 	/* setting up state immediately so curcpu()/curthread() work */
-	cpu0.running_thread = &thread0;
+	cpu0.running_thread = &kthread0;
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 
 	serial_init();
@@ -396,24 +413,17 @@ _start(void)
 	kmem_init();
 	ksrv_parsekern(kernel_file_request.response->kernel_file->address);
 
-	/* setup proc0 */
-	nk_spinlock_init(&proc0.lock);
-	SLIST_INIT(&proc0.threads);
+	/* setup kproc0 */
+	nk_spinlock_init(&kproc0.lock);
+	SLIST_INIT(&kproc0.threads);
+	kproc0.pid = 0;
 
 	smp_init();
 
 	kthread_t start_thread;
 	void	  kstart(void *);
-	nk_thread_init(&proc0, &start_thread, kstart, 0x0, "start_thread");
+	nk_thread_init(&kproc0, &start_thread, kstart, 0x0, "start_thread");
 	nk_thread_resume(&start_thread);
-
-#if 0
-	char *stuff = kmem_alloc(
-	    56); // kmem_asprintf("%s, %s!", "Hello", "World");
-	memcpy(stuff, "hello", 6);
-	char *test = 0x0;
-	*test = 'f';
-#endif
 
 	// We're done, just hang...
 	done();
