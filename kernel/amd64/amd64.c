@@ -242,11 +242,12 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 #endif
 
 		old->frame = *frame;
-		// old->md.fs = rdmsr(kAMD64MSRFSBase);
+		old->fs = rdmsr(kAMD64MSRFSBase);
 
 		*frame = next->frame;
-		// wrmsr(kAMD64MSRFSBase, next->md.fs);
+		wrmsr(kAMD64MSRFSBase, next->fs);
 
+		/* we already set next thread... */
 		// curcpu()->running_thread = next;
 		curcpu()->md.tss->rsp0 = next->kstack;
 

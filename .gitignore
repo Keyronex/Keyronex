@@ -24,3 +24,5 @@ outhtml
 epolltest.c
 test.c
 ldout
+libcout
+

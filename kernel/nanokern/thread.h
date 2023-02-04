@@ -196,6 +196,8 @@ typedef struct kthread {
 
 	/*! thread saved frame */
 	md_intr_frame_t frame;
+	/*! todo move to md_thread - TLS */
+	uint64_t fs;
 	/*! saved IPL */
 	ipl_t saved_ipl;
 

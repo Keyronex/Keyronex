@@ -50,8 +50,8 @@ Features & Goals
 ### Portable Applications Subsystem
 
  - [x] Unix-like libc (mlibc)
- - [*] VFS patterned after SunOS, with VMM integration.
- - [*] Efficient TmpFS - uses anonymous VM objects to store data, which are
+ - [x] VFS patterned after SunOS, with VMM integration.
+ - [x] Efficient TmpFS - uses anonymous VM objects to store data, which are
  `mmap()`'d directly to avoid page duplication.
  - [ ] Page cache with memory window cache.
  - [ ] Networking stack - early in progress, low priority
@@ -108,12 +108,12 @@ Several third-party components are used. These are some of them:
 <!--
  - liballoc: Provides one of the in-kernel allocators.
  - NetBSD:
-  - (`kernel-3/dev/fbterm/nbsdbold.psfu`): Bold8x16 font used for FBConsole.
+  - (`kernel-3/dev/fbterm/nbsdbold.psfu`): Bold8x16 font used for FBTerminal.
   - (`kernel-3/dev/nvmereg.h`): NVMe register definitions.
  - Solaris (`kernel-3/dev/fbterm/sun12x22.psfu`): Sun Demi Gallant font available
-  for FBConsole
+  for FBTerminal
  - limine/`limine-terminal-port` (some files in`kernel-3/dev/fbterm/`) used by
-  FBConsole to provide a terminal.
+  FBTerminal to provide a terminal.
  - LZ4 (`kernel-3/libkern/lz4.{c,h}`): Used by VM Compressor to ompress pages.
 - Linux (`kernel-3/ext2fs/ext2_fs.h`): Ext2 filesystem definitions
 -->
