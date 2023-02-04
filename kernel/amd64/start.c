@@ -393,6 +393,12 @@ _start(void)
 	cpu0.running_thread = &kthread0;
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 
+	/* setup kproc0 */
+	nk_spinlock_init(&kproc0.lock);
+	SLIST_INIT(&kproc0.threads);
+	kproc0.pid = 0;
+	kproc0.map = &kmap;
+
 	serial_init();
 
 	// Ensure we got a terminal
@@ -412,11 +418,6 @@ _start(void)
 	vm_kernel_init();
 	kmem_init();
 	ksrv_parsekern(kernel_file_request.response->kernel_file->address);
-
-	/* setup kproc0 */
-	nk_spinlock_init(&kproc0.lock);
-	SLIST_INIT(&kproc0.threads);
-	kproc0.pid = 0;
 
 	smp_init();
 

@@ -21,3 +21,6 @@ out
 outhtml
 *.elf
 *.o
+epolltest.c
+test.c
+ldout

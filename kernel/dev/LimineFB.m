@@ -1,4 +1,6 @@
 #include <dev/LimineFB.h>
+#include <kern/kmem.h>
+
 #include <limine.h>
 
 @implementation LimineFB
@@ -30,7 +32,7 @@ LimineFB  *sysfb = NULL;
 	height = fb->height;
 	pitch = fb->pitch;
 	bpp = fb->bpp;
-	base = fb->address;
+	base = (vaddr_t)fb->address;
 	DKLogAttachExtra(self, " %lux%lux%d", width, height, bpp);
 	return self;
 }

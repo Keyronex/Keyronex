@@ -44,11 +44,12 @@ nkx_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
 	thread->saved_ipl = kSPL0;
 	thread->name = name;
 	thread->in_pagefault = false;
+	thread->timeslice = 5;
 	kmem_asprintf((char **)&thread->wait_callout.name,
 	    "thread %p wait timeout", thread);
 	thread->wait_callout.state = kCalloutDisabled;
 	ipl_t ipl = nk_spinlock_acquire(&proc->lock);
-	SLIST_INSERT_HEAD(&proc->threads, thread, proc_link);
+	SLIST_INSERT_HEAD(&proc->threads, thread, kproc_link);
 	nk_spinlock_release(&proc->lock, ipl);
 }
 
@@ -87,7 +88,7 @@ void
 dbg_dump_threads(void)
 {
 	kthread_t *thr;
-	SLIST_FOREACH(thr, &kproc0.threads, proc_link)
+	SLIST_FOREACH(thr, &kproc0.threads, kproc_link)
 	{
 		nk_dbg("thread %s <%p>: ", thr->name, thr);
 		if (thr->state == kThreadStateWaiting) {

@@ -272,6 +272,7 @@ vm_map_new()
 	vm_map_t *newmap = kmem_alloc(sizeof *newmap);
 
 	newmap->pmap = pmap_new();
+	nk_mutex_init(&newmap->lock);
 	TAILQ_INIT(&newmap->entries);
 	vmem_init(&newmap->vmem, "task map", USER_BASE, USER_SIZE, PGSIZE, NULL,
 	    NULL, NULL, 0, 0, kSPL0);
@@ -295,7 +296,10 @@ vm_map_fork(vm_map_t *map)
 	vm_map_entry_t *ent;
 	int		r;
 
+	kassert(map != NULL);
+
 	newmap->pmap = pmap_new();
+	nk_mutex_init(&newmap->lock);
 	TAILQ_INIT(&newmap->entries);
 	vmem_init(&newmap->vmem, "task map", USER_BASE, USER_SIZE, PGSIZE, NULL,
 	    NULL, NULL, 0, 0, kSPL0);
@@ -515,7 +519,7 @@ vm_aobj_new(size_t size)
 {
 	vm_object_t *obj = kmem_alloc(sizeof(*obj));
 
-	obj_init(&obj->hdr, kOTObject);
+	obj_init(&obj->hdr, kOTVMObject);
 	nk_mutex_init(&obj->lock);
 	obj->type = kVMObjAnon;
 	obj->anon.parent = NULL;
@@ -539,7 +543,7 @@ vm_object_copy(vm_object_t *obj)
 		    "vm_object_copy: only implemented for anons as of yet\n");
 	}
 
-	obj_init(&obj->hdr, kOTObject);
+	obj_init(&obj->hdr, kOTVMObject);
 	nk_mutex_init(&newobj->lock);
 	newobj->size = obj->size;
 	newobj->type = obj->type;
@@ -552,4 +556,15 @@ vm_object_copy(vm_object_t *obj)
 	nk_mutex_release(&obj->lock);
 
 	return newobj;
+}
+
+void
+vmx_object_release(vm_object_t *obj)
+{
+	if (obj->type == kVMObjAnon)
+		amap_release(obj->anon.amap);
+	else
+		kfatal("vm_object_release: only implemented for anons\n");
+
+	kmem_free(obj, sizeof(*obj));
 }

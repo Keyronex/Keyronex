@@ -170,6 +170,6 @@ kstart(void)
 	vm_pagedump();
 	vm_swapstat();
 
-	for (;;)
-		asm("pause");
+	void posix_init(void);
+	posix_init();
 }

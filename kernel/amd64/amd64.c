@@ -87,6 +87,7 @@ struct md_intr_entry {
 	void		 *arg;
 };
 
+static bool intr_syscall(md_intr_frame_t *frame, void *arg);
 static bool pagefault(md_intr_frame_t *frame, void *arg);
 void	    idt_load(void);
 void	    lapic_eoi();
@@ -167,6 +168,7 @@ idt_setup(void)
 	md_intr_register(kIntNumLAPICTimer, kSPLHigh, nkx_cpu_hardclock, NULL);
 	md_intr_register(kIntNumRescheduleIPI, kSPLHigh, nkx_reschedule_ipi,
 	    NULL);
+	md_intr_register(kIntNumSyscall, kSPL0, intr_syscall, NULL);
 }
 
 void
@@ -191,7 +193,7 @@ pagefault(md_intr_frame_t *frame, void *arg)
 
 retry:
 	curcpu()->running_thread->in_pagefault = true;
-	int r = vm_fault(frame, &kmap, (vaddr_t)read_cr2(), frame->code);
+	int r = vm_fault(frame, curthread()->process->map, (vaddr_t)read_cr2(), frame->code);
 	curcpu()->running_thread->in_pagefault = false;
 
 	switch (r) {
@@ -217,6 +219,14 @@ retry:
 	return true;
 }
 
+static bool
+intr_syscall(md_intr_frame_t *frame, void *arg)
+{
+	int posix_syscall(md_intr_frame_t * frame);
+	posix_syscall(frame);
+	return true;
+}
+
 void
 handle_int(md_intr_frame_t *frame, uintptr_t num)
 {
@@ -238,6 +248,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		// wrmsr(kAMD64MSRFSBase, next->md.fs);
 
 		// curcpu()->running_thread = next;
+		curcpu()->md.tss->rsp0 = next->kstack;
 
 		nk_spinlock_release_nospl(&curcpu()->sched_lock);
 		splx(curcpu()->md.switchipl);
@@ -397,9 +408,11 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 			ksrv_backtrace((vaddr_t)aframe->rip, &name, &offs);
 			nk_dbg(" - %p %s+%lu\n", (void *)aframe->rip,
 			    name ? name : "???", offs);
-			nk_dbg("stack depth: %lu\n", curcpu()->running_thread->kstack -  (uintptr_t)aframe)
-		} while ((aframe = aframe->rbp) /*&& (uint64_t)aframe >= KERN_BASE &&
-		    aframe->rip != 0x0*/);
+			//nk_dbg("stack depth: %lu\n",
+			//    curcpu()->running_thread->kstack -
+			//	(uintptr_t)aframe)
+		} while ((aframe = aframe->rbp) && //(uint64_t)aframe >= KERN_BASE &&
+		    aframe->rip != 0x0);
 }
 
 static void

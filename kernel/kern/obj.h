@@ -9,7 +9,7 @@
 typedef enum objecttype {
 	/*! the below can be found in a process' handle table */
 	/*! a mappable virtual memory object */
-	kOTObject,
+	kOTVMObject,
 	/*! kernel file descriptor - file_t */
 	kOTFile,
 	/*! PAS process */

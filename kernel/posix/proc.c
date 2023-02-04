@@ -2,13 +2,62 @@
 
 #include <libkern/libkern.h>
 #include <posix/proc.h>
+#include <posix/sys.h>
 
 #include <string.h>
-#include "nanokern/thread.h"
 
 /* use reason 'acquire proclock' to make clearer (easy to confuse proc_lock with
  * proc->lock)*/
-kmutex_t proc_lock;
+kmutex_t   proc_lock;
+kprocess_t kproc1;
+proc_t	   proc0, proc1;
+
+uint64_t pidrotor = 2;
+
+void
+exec_init(void)
+{
+	const char *argv[] = { "hello", NULL };
+	const char *envp[] = { NULL };
+	uintptr_t   err;
+	int r;
+
+	r = syscall3(kPXSysExecVE, (uintptr_t)"/hello", (uintptr_t)argv,
+	    (uintptr_t)envp, &err);
+
+	kfatal("failed to exec init: r %d, err %lu\n", r, err);
+}
+
+void
+posix_init(void)
+{
+	ipl_t ipl;
+
+	/*
+	 * setup posix state for kprocs 0 and 1, dissociate this thread from
+	 * kproc0, and associate it with kproc1
+	 */
+
+	kproc0.psxproc = &proc0;
+	proc0.kproc = &kproc0;
+	procx_init(&proc0, NULL);
+
+	proc1.kproc = &kproc1;
+	kproc1.pid = 1;
+	kproc1.psxproc = &proc1;
+	nk_spinlock_init(&kproc1.lock);
+	kproc1.map = vm_map_fork(kproc0.map);
+
+	ipl = splhigh();
+	SLIST_REMOVE(&kproc0.threads, curthread(), kthread, kproc_link);
+	SLIST_INSERT_HEAD(&kproc1.threads, curthread(), kproc_link);
+	curthread()->process = &kproc1;
+	vm_activate(kproc1.map);
+	splx(ipl);
+
+	kprintf("POSIX: loading init\n");
+	exec_init();
+}
 
 void
 procx_init(proc_t *proc, proc_t *super) LOCK_REQUIRES(super->lock)
@@ -50,7 +99,8 @@ sys_waitpid(proc_t *proc, pid_t pid, int *status, int flags, uintptr_t *errp)
 
 		nk_mutex_release(&proc->lock);
 
-		ws = nk_wait(&proc->statechange, "waitpid: proc->statechange", true, true, -1);
+		ws = nk_wait(&proc->statechange, "waitpid: proc->statechange",
+		    true, true, -1);
 		kassert(ws == kKernWaitStatusOK);
 	}
 }

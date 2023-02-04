@@ -1,6 +1,8 @@
 #include <kern/obj.h>
 #include <libkern/libkern.h>
 
+#include "vm/vm.h"
+
 void
 obj_init(objectheader_t *hdr, objecttype_t type)
 {
@@ -18,6 +20,11 @@ void
 obj_release(objectheader_t *hdr)
 {
 	if (atomic_fetch_sub(&hdr->refcount, 1) == 1) {
-		kprintf("free object %p\n", hdr);
+		switch (hdr->type) {
+		case kOTVMObject:
+			return vmx_object_release((vm_object_t *)hdr);
+		default:
+			kfatal("obj_release: unhandled type %d\n", hdr->type);
+		}
 	}
 }

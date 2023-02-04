@@ -303,6 +303,17 @@ vm_fault_ret_t vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
 int vm_map_object(vm_map_t *map, struct vm_object *obj, vaddr_t *vaddrp,
     size_t size, voff_t offset, bool copy);
 
+/*!
+ * Fork a VM map.
+ */
+vm_map_t *vm_map_fork(vm_map_t *map);
+
+/*! Release and free a VM map. */
+void vm_map_release(vm_map_t *map);
+
+/*! Create a new empty vm_map. */
+vm_map_t *vm_map_new();
+
 /*! Global kernel map. */
 extern vm_map_t kmap;
 
@@ -377,7 +388,7 @@ void anon_release(vm_anon_t *anon);
 vm_object_t *vm_aobj_new(size_t size);
 /*!
  * Create a (copy-on-write optimised) copy of a VM object.
-
+ *
  * The exact semantics of a copy vary depending on what sort of object is
  * copied:
  * - Copying an anonymous object copies all the pages belonging to that
@@ -390,6 +401,12 @@ vm_object_t *vm_aobj_new(size_t size);
  * copies it.
  */
 vm_object_t *vm_object_copy(vm_object_t *obj);
+/*!
+ * Free a VM object. This is only used by the refcounted objects mechanism,
+ * not directly, so by this point the object is no longer referenced by any maps
+ * or indeed anything else.
+ */
+void vmx_object_release(vm_object_t *obj);
 
 /*!
  * @}

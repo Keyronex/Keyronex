@@ -155,6 +155,12 @@ wait:
 			 * me we need to get revents from the vnode.
 			 *
 			 * we MAY want to reset state if EPOLLET is set?
+			 *
+			 * chatgpt said: To support multiple pollers, you would
+			 * need to maintain a separate revents value for each
+			 * poller and reset the value only for the specific
+			 * poller that retrieved the events.
+			 * can we trust chatgpt? lmao
 			 */
 			watch->revents = 0;
 

@@ -77,4 +77,7 @@ void procx_init(proc_t *proc, proc_t *super) LOCK_REQUIRES(proc_lock);
  */
 proc_t *proc_fork(uintptr_t *errp);
 
+int sys_exec(proc_t *proc, const char *u_path, const char *u_argp[],
+    const char *u_envp[], md_intr_frame_t *frame);
+
 #endif /* PROC_H_ */

@@ -70,7 +70,7 @@ nkx_do_reschedule(ipl_t ipl)
 	if (next != cpu->idle_thread) {
 		next->timeslice = 5;
 	} else {
-		next->timeslice = UINT64_MAX;
+		next->timeslice = INT64_MAX;
 	}
 	cpu->running_thread = next;
 	cpu->entering_scheduler = false;

@@ -156,7 +156,7 @@ typedef struct kthread {
 	/*! link in kcpu_t::run_queue, or a wait queue, etc */
 	TAILQ_ENTRY(kthread) queue_link;
 	/*! link in kprocess_t::thread_list */
-	SLIST_ENTRY(kthread) proc_link;
+	SLIST_ENTRY(kthread) kproc_link;
 
 	/*! cpu to which it's bound */
 	struct kcpu *cpu;
@@ -200,7 +200,7 @@ typedef struct kthread {
 	ipl_t saved_ipl;
 
 	/*! remaining timeslice in ticks */
-	uint64_t timeslice;
+	int64_t timeslice;
 } kthread_t;
 
 /*!
@@ -217,8 +217,11 @@ typedef struct kprocess {
 	/*! (p) all threads attached to process */
 	SLIST_HEAD(, kthread) threads;
 
+	/*! (~) address space map */
+	struct vm_map *map;
+
 	/*! (~) PAS process */
-	struct psxproc *psxproc;
+	struct proc *psxproc;
 } kprocess_t;
 
 /*!
@@ -263,6 +266,10 @@ typedef struct kcpu {
 	    /*! Entering scheduler soon. */
 	    entering_scheduler : 1;
 } kcpu_t;
+
+static inline kthread_t *curthread(void) {
+	return curcpu()->running_thread;
+}
 
 /*! Acquire a spinlock without SPL */
 static inline void
