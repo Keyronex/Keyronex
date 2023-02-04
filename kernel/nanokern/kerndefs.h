@@ -18,6 +18,9 @@
 /* calling function requires this lock to be held */
 #define LOCK_REQUIRES(lock)
 
+/* calling function requires this lock to be held, and releases with lock unheld */
+#define LOCK_RELEASE(lock)
+
 #define NS_PER_S 1000000000
 
 #define KERN_HZ 100

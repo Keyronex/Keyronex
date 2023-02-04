@@ -7,9 +7,16 @@
  * object types
  */
 typedef enum objecttype {
+	/*! the below can be found in a process' handle table */
 	/*! a mappable virtual memory object */
 	kOTObject,
-	/*! a virtual node */
+	/*! kernel file descriptor - file_t */
+	kOTFile,
+	/*! PAS process */
+	kOTPASProcess,
+
+	/*! the below cannot be found in a process' handle table */
+	/*! a vnode */
 	kOTVNode,
 } objecttype_t;
 

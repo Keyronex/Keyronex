@@ -72,7 +72,6 @@ vm_swapon(const char *name)
 {
 	vnode_t	       *vn, *devvn = NULL;
 	int		r;
-	struct swapdev *pf;
 
 	kprintf("vm_swapon(%s)\n", name);
 

@@ -22,6 +22,8 @@
 #include <kern/obj.h>
 #include <vm/vm.h>
 
+#include "posix/event.h"
+
 struct knote;
 struct proc;
 struct specnode;
@@ -49,15 +51,15 @@ typedef struct vattr {
 typedef struct vnode {
 	objectheader_t hdr;
 	/*! (~) is it the root of a filesystem? */
-	bool	       isroot;
+	bool isroot;
 	/*! (~) type of vnode */
-	vtype_t	       type;
+	vtype_t type;
 	/*! (~) page cache; usually a regular vm_object_t, for tmpfs, an anon */
-	vm_object_t   *vmobj;
+	vm_object_t *vmobj;
 	/*! (fs) fs-private data */
-	void	      *data;
+	void *data;
 	/*! (m) to which vfs does this vnode belong? */
-	vfs_t	      *vfsp;
+	vfs_t *vfsp;
 	/*! (m) if a mountpoint, the vfs mounted over it */
 	vfs_t *vfsmountedhere;
 	/*! (~) vnode ops vector */
@@ -142,6 +144,13 @@ struct vnops {
 	 * Write (via cache) to a vnode.
 	 */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+
+	/*!
+	 * Change poll state on a vnode.
+	 * @retval 0 for poll added
+	 * @retval 1 for poll immediately satisfied; pollhead was not added
+	 */
+	int (*chpoll)(vnode_t *vn, struct epollhead *ph, enum chpoll_kind kind);
 };
 
 struct vfsops {
@@ -181,8 +190,7 @@ enum lookup_flags {
 int vfs_lookup(vnode_t *cwd, vnode_t **out, const char *path,
     enum lookup_flags flags, vattr_t *attr);
 
-#define VOP_OPEN(vnode, out, mode) \
-	vnode->ops->open(vnode, out, mode)
+#define VOP_OPEN(vnode, out, mode) vnode->ops->open(vnode, out, mode)
 #define VOP_READ(vnode, buf, nbyte, off) \
 	vnode->ops->read(vnode, buf, nbyte, off)
 #define VOP_WRITE(vnode, buf, nbyte, off) \
@@ -192,6 +200,8 @@ int vfs_lookup(vnode_t *cwd, vnode_t **out, const char *path,
 #define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
 #define VOP_MKDIR(vnode, out, name, attr) \
 	vnode->ops->mkdir(vnode, out, name, attr)
+#define VOP_POLL(VNODE, POLLHEAD, CHPOLL_KIND) \
+	(VNODE)->ops->chpoll(VNODE, POLLHEAD, CHPOLL_KIND)
 
 /*! the root filesystem; this will be a tmpfs */
 extern vfs_t root_vfs;
