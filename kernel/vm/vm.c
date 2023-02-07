@@ -82,6 +82,8 @@ fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
 
 				nk_mutex_release(&anon->lock);
 				anon = *pAnon;
+				nk_wait(&anon->lock, "fault_aobj:newanon->lock",
+				    false, false, -1);
 				pmap_enter(map, anon->physpage, vaddr, kVMAll);
 			} else {
 				/*
@@ -470,12 +472,12 @@ anon_new(vm_anon_t **out)
 vm_anon_t *
 anon_copy(vm_anon_t *anon) LOCK_REQUIRES(anon->lock)
 {
-#if 0
-	vm_anon_t *newanon = anon_new();
+	/* TODO(oom): handle low pages condition */
+	vm_anon_t *newanon;
+	int	   r = anon_new(&newanon);
+	kassert(r == 0);
 	copyphyspage(newanon->physpage->paddr, anon->physpage->paddr);
 	return newanon;
-#endif
-	nk_fatal("anon_copy: unimplemented\n");
 }
 
 void

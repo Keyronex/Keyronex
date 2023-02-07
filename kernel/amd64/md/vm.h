@@ -7,7 +7,10 @@
 #define PGSIZE 4096
 
 #define USER_BASE 0x1000
+/* beginning of higher half, which also begins the higher-half direct map */
 #define HHDM_BASE 0xffff800000000000
+/* addresses > this are not mapped user-accessible */
+#define KAREA_BASE HHDM_BASE
 #define KHEAP_BASE 0xffff810000000000
 #define KERN_BASE 0xffffffff80000000
 

@@ -461,7 +461,7 @@ void pmap_free(pmap_t *pmap);
 
 /*!
  * Pageable mapping of a virtual address to a page.
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 void pmap_enter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
     vm_prot_t prot);
@@ -469,6 +469,7 @@ void pmap_enter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
 /*!
  * Low-level mapping a single physical page to a virtual address. Mappings
  * are not tracked.
+ * \pre page object lock held (if relevant)
  */
 void pmap_enter_kern(struct pmap *pmap, paddr_t phys, vaddr_t virt,
     vm_prot_t prot);
@@ -476,14 +477,14 @@ void pmap_enter_kern(struct pmap *pmap, paddr_t phys, vaddr_t virt,
 /**
  * Reset the protection flags for an existing pageable mapping. Does not carry
  * out TLB shootdowns.
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 void pmap_reenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
     vm_prot_t prot);
 
 /*!
  * Reenter all mappings of a page read-only. Carries out TLB shootdowns.
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 void pmap_reenter_all_readonly(struct vm_page *page);
 
@@ -498,7 +499,7 @@ void pmap_reenter_all_readonly(struct vm_page *page);
  * @param pv optionally specify which pv_entry_t represents this mapping, if
  * already known, so it does not have to be found again.
  *
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 void pmap_unenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
     pv_entry_t *pv);
@@ -508,7 +509,7 @@ void pmap_unenter(vm_map_t *map, struct vm_page *page, vaddr_t virt,
  *
  * @param page which page to unmap
  *
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 void pmap_unenter_all(struct vm_page *page);
 
@@ -522,19 +523,20 @@ struct vm_page *pmap_unenter_kern(struct vm_map *map, vaddr_t virt);
  * Check if a page was accessed. Returns true if it was.
  * @param reset whether to reset this bit to 0 in all mappings (and issue
  * appropriate TLB shootdowns.)
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 bool pmap_page_accessed(struct vm_page *page, bool reset);
 
 /*!
  * Invalidate a page mapping for the virtual address \p addr in the current
  * address space.
- * \pre vm_pgq_lock held
+ * \pre page object lock held //vm_pgq_lock held
  */
 void pmap_invlpg(vaddr_t addr);
 
 /*!
  * Invalidate a page mapping for virtual address \p addr in all address spaces.
+ * \pre page object lock held for page to which this corresponds (if relevant)
  */
 void pmap_global_invlpg(vaddr_t vaddr);
 

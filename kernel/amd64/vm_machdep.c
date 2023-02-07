@@ -36,8 +36,9 @@ typedef uint64_t pml4e_t, pdpte_t, pde_t, pte_t;
 static uint64_t *pte_get_addr(uint64_t pte);
 static void	 pte_set(uint64_t *pte, paddr_t addr, uint64_t flags);
 
-vm_map_t      kmap;
-static pmap_t kpmap;
+vm_map_t	   kmap;
+static pmap_t	   kpmap;
+static kspinlock_t pmap_lock = KSPINLOCK_INITIALISER;
 
 void
 x64_vm_init(paddr_t kphys)
@@ -244,6 +245,7 @@ pmap_enter(vm_map_t *map, vm_page_t *page, vaddr_t virt, vm_prot_t prot)
 void
 pmap_enter_kern(pmap_t *pmap, paddr_t phys, vaddr_t virt, vm_prot_t prot)
 {
+	ipl_t	  ipl = nk_spinlock_acquire(&pmap_lock);
 	uintptr_t virta = (uintptr_t)virt;
 	int	  pml4i = ((virta >> 39) & 0x1FF);
 	int	  pdpti = ((virta >> 30) & 0x1FF);
@@ -261,11 +263,15 @@ pmap_enter_kern(pmap_t *pmap, paddr_t phys, vaddr_t virt, vm_prot_t prot)
 
 	pti_virt = P2V(&pte[pti]);
 
-	if (pte_get_addr(*pti_virt) != NULL)
+	if (pte_get_addr(*pti_virt) != NULL) {
+		nk_dbg("warning: remapping a PTE without explicit request\n");
 		/* TODO(med): do we care about this case? */
 		;
+	}
 
-	pte_set(pti_virt, phys, vm_prot_to_i386(prot));
+	pte_set(pti_virt, phys,
+	    vm_prot_to_i386(prot) | (virt < KAREA_BASE ? kMMUUser : 0));
+	nk_spinlock_release(&pmap_lock, ipl);
 }
 
 void
@@ -289,6 +295,7 @@ void
 pmap_unenter(vm_map_t *map, vm_page_t *page, vaddr_t vaddr, pv_entry_t *pv)
 {
 	/** \todo free no-longer-needed page tables */
+	ipl_t	ipl = nk_spinlock_acquire(&pmap_lock);
 	pte_t  *pte = pmap_fully_descend(map->pmap, vaddr);
 	paddr_t paddr;
 
@@ -303,8 +310,10 @@ pmap_unenter(vm_map_t *map, vm_page_t *page, vaddr_t vaddr, pv_entry_t *pv)
 
 	pte = P2V(pte);
 	paddr = (paddr_t)pte_get_addr(*pte);
-	if (*pte == 0)
+	if (*pte == 0) {
+		nk_spinlock_release(&pmap_lock, ipl);
 		return;
+	}
 	*pte = 0x0;
 
 	pmap_invlpg(vaddr);
@@ -322,13 +331,14 @@ pmap_unenter(vm_map_t *map, vm_page_t *page, vaddr_t vaddr, pv_entry_t *pv)
 			}
 		}
 
-		kfatal(
+		nk_fatal(
 		    "pmap_unenter: no mapping of frame 0x%lx at vaddr 0x%lx in map %p\n",
 		    page->paddr, vaddr, map);
 	}
 
 next:
 	LIST_REMOVE(pv, pv_entries);
+	nk_spinlock_release(&pmap_lock, ipl);
 	kmem_free(pv, sizeof(*pv));
 }
 
@@ -350,7 +360,9 @@ pmap_page_accessed(struct vm_page *page, bool reset)
 	bool	    accessed = false;
 
 	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
+		ipl_t  ipl = nk_spinlock_acquire(&pmap_lock);
 		pte_t *pte = pmap_fully_descend(pv->map->pmap, pv->vaddr);
+
 		nk_assert(pte != NULL);
 		pte = P2V(pte);
 
@@ -361,9 +373,13 @@ pmap_page_accessed(struct vm_page *page, bool reset)
 
 		if (reset) {
 			*pte = *pte & ~kMMUAccessed;
+			nk_spinlock_release(&pmap_lock, ipl);
 			pmap_global_invlpg(pv->vaddr);
-		} else
-			return true; /* no need to scan all in this case */
+		} else {
+			nk_spinlock_release(&pmap_lock, ipl);
+			return true; /* no need to scan all in this
+				       case */
+		}
 	}
 
 	return accessed;
@@ -376,7 +392,9 @@ pmap_page_dirty(struct vm_page *page, bool reset)
 	bool	    dirty = false;
 
 	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
+		ipl_t  ipl = nk_spinlock_acquire(&pmap_lock);
 		pte_t *pte = pmap_fully_descend(pv->map->pmap, pv->vaddr);
+
 		nk_assert(pte != NULL);
 		pte = P2V(pte);
 
@@ -387,9 +405,13 @@ pmap_page_dirty(struct vm_page *page, bool reset)
 
 		if (reset) {
 			*pte = *pte & ~kMMUDirty;
+			nk_spinlock_release(&pmap_lock, ipl);
 			pmap_global_invlpg(pv->vaddr);
-		} else
-			return true; /* no need to scan all in this case */
+		} else {
+			nk_spinlock_release(&pmap_lock, ipl);
+			return true; /* no need to scan all in this
+				       case */
+		}
 	}
 
 	return dirty;
@@ -398,6 +420,8 @@ pmap_page_dirty(struct vm_page *page, bool reset)
 vm_page_t *
 pmap_unenter_kern(vm_map_t *map, vaddr_t vaddr)
 {
+
+	ipl_t	   ipl = nk_spinlock_acquire(&pmap_lock);
 	pte_t	  *pte = pmap_fully_descend(map->pmap, vaddr);
 	paddr_t	   paddr;
 	vm_page_t *page;
@@ -407,6 +431,7 @@ pmap_unenter_kern(vm_map_t *map, vaddr_t vaddr)
 	paddr = (paddr_t)pte_get_addr(*pte);
 	kassert(*pte != 0x0);
 	*pte = 0x0;
+	nk_spinlock_release(&pmap_lock, ipl);
 
 	pmap_invlpg(vaddr);
 
@@ -446,6 +471,7 @@ pmap_global_invlpg(vaddr_t vaddr)
 	int iff = md_intr_disable();
 
 	nk_spinlock_acquire_nospl(&invlpg_global_lock);
+	nk_spinlock_acquire_nospl(&pmap_lock);
 	invlpg_addr = vaddr;
 	invlpg_done_cnt = 1;
 	for (int i = 0; i < ncpus; i++) {
@@ -457,6 +483,7 @@ pmap_global_invlpg(vaddr_t vaddr)
 	pmap_invlpg(vaddr);
 	while (invlpg_done_cnt != ncpus)
 		__asm__("pause");
+	nk_spinlock_release_nospl(&pmap_lock);
 	nk_spinlock_release_nospl(&invlpg_global_lock);
 
 	md_intr_x(iff);
