@@ -120,7 +120,10 @@ done_io(void *arg, ssize_t len)
 	size_t	 i = 0;
 	size_t	 ndatadescs;
 
-	DKDevLog(self, "Strategy...\n");
+#if DEBUG_DISK == 1
+	DKDevLog(self, "Strategy(%d, block %lx, blocks %d)\n", strategy, block,
+	    nblocks);
+#endif
 
 	ndatadescs = ROUNDUP(nblocks * 512, PGSIZE) / PGSIZE;
 
@@ -151,8 +154,9 @@ done_io(void *arg, ssize_t len)
 		nbytes -= PGSIZE;
 		queue.desc[virtq_desc[i]].len = len;
 		queue.desc[virtq_desc[i]].addr = buf->pages[i - 1]->paddr;
-		queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT |
-		    VRING_DESC_F_WRITE;
+		queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
+		if (strategy == kDKRead)
+			queue.desc[virtq_desc[i]].flags |= VRING_DESC_F_WRITE;
 		queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];
 	}
 

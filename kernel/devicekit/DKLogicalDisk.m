@@ -17,6 +17,8 @@
 #include <libkern/libkern.h>
 
 #include <errno.h>
+#include "md/vm.h"
+#include "vm/vm.h"
 
 static int major = -1;
 static int minor = 0;
@@ -43,12 +45,59 @@ ld_open(dev_t dev, struct vnode **out, int mode)
 	return -ENXIO;
 }
 
+
+static int
+ld_read(dev_t dev, void *buf, size_t nbyte, off_t off)
+{
+	DKLogicalDisk *ld;
+	TAILQ_FOREACH (ld, &ld_tailq, m_ld_tailq_entry) {
+		if (ld->m_minor == minor(dev)) {
+			/*! hacks */
+			vm_mdl_t mdl;
+			kassert(PGROUNDUP(buf) ==(vaddr_t) buf);
+			kassert (buf >= (void*)HHDM_BASE && buf <= (void*)KHEAP_BASE);
+			kassert (nbyte <= PGSIZE);
+			mdl.nBytes = nbyte;
+			mdl.nPages = 1;
+			mdl.offset = 0;
+			mdl.pages[0] = vm_page_from_paddr((paddr_t)V2P(buf));
+			return [ld readBytes:nbyte at:off intoBuffer:&mdl completion:NULL];
+		}
+	}
+	return -ENXIO;
+}
+
+
+static int
+ld_write(dev_t dev, void *buf, size_t nbyte, off_t off)
+{
+	DKLogicalDisk *ld;
+	TAILQ_FOREACH (ld, &ld_tailq, m_ld_tailq_entry) {
+		if (ld->m_minor == minor(dev)) {
+			/*! hacks */
+			vm_mdl_t mdl;
+			kassert(PGROUNDUP(buf) ==(vaddr_t) buf);
+			kassert (buf >= (void*)HHDM_BASE && buf <= (void*)KHEAP_BASE);
+			kassert (nbyte <= PGSIZE);
+			mdl.nBytes = nbyte;
+			mdl.nPages = 1;
+			mdl.offset = 0;
+			mdl.pages[0] = vm_page_from_paddr((paddr_t)V2P(buf));
+			return [ld writeBytes:nbyte at:off fromBuffer:&mdl completion:NULL];
+		}
+	}
+	return -ENXIO;
+}
+
+
 + (void)initialize
 {
 	cdevsw_t cdev = { 0 };
 	cdev.is_tty = false;
 	cdev.private = self;
 	cdev.open = ld_open;
+	cdev.read = ld_read;
+	cdev.write = ld_write;
 	major = cdevsw_attach(&cdev);
 }
 
@@ -141,7 +190,7 @@ ld_open(dev_t dev, struct vnode **out, int mode)
 		return -EINVAL;
 
 	return [m_underlying writeBytes:nBytes
-				     at:offset
+				     at:offset + m_base
 			     fromBuffer:buf
 			     completion:completion];
 }
