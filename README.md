@@ -45,7 +45,8 @@ Features & Goals
  - [x] High-level management abstracted from low-level MMU details.
  - [x] Virtual copy (copy-on-write) of VM objects
  - [x] Memory-mapped files
- - [ ] Anonymous page swapping and cached page replacement - in progress
+ - [X] Anonymous page swapping and cached page replacement - initial prototype
+ done, needs stress-testing.
 
 ### Portable Applications Subsystem
 
