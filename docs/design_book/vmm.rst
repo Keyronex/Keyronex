@@ -5,9 +5,13 @@ Overview
 --------
 
 The virtual memory (or VM) subsystem is the queen and mother of all Keyronex
-subsystems.
+subsystems. Virtual memory provides for memory as it appears to applications to
+be abstracted from underlying main memory, so that more memory can be apparently
+available to applications than there is main memory in the system, and so that
+things other than main memory can appear to the application as if they are main
+memory.
 
-It provides an implementation of virtual memory supporting all the
+The VM subsystem provides an implementation of virtual memory supporting all the
 features any virtual memory system should have - memory mapped files with page
 caching, anonymous memory, virtual copy with copy-on-write optimisation, and
 paging - the retrieval from and putting-back to disk of pages, both pages of
@@ -15,10 +19,10 @@ memory-mapped files and pages of anonymous memory, which are put back to a
 swapfile.
 
 .. note::
-	"Paging" and "virtual memory" are sometimes mistakenly used online as
-	simple synonyms of "virtual address translation", the process by which a
-	virtual memory address is translated to a physical address. This is a
-	misapprehension.
+	"Paging" (and "virtual memory") are sometimes used online as simple synonyms
+	of "virtual address translation", the process by which a virtual memory
+	address is translated to a physical address. Keyronex uses these terms in
+	their traditional sense.
 
 
 The Keyronex virtual memory manager has several responsibilities. Broadly, these
@@ -64,14 +68,18 @@ within that object. In either of these cases, it also contains a
 ``vm_map_t`` into which it is mapped and its virtual address within that
 map.
 
+`vm_page_t`s also carry a busy bit which is used in paging. That bit is guarded
+by the page queues lock. Some other fields of a `vm_page_t` are guarded by its
+owning object.
+
 ``vm_anon_t``
 ~~~~~~~~~~~~~
 
 A virtual page of anonymous memory. It may link to a ``vm_page_t`` if it
 is resident in memory, or if it has been swapped out, it stores an
-identifier by which its contents can be retrieved by the swap pager. It
-also stores a reference count used in copy-on-write logic, and a mutex
-lock.
+identifier by which its contents can be retrieved by the swap pager, called a
+*drum slot*. It also stores a reference count used in copy-on-write logic, and a
+mutex lock.
 
 It is hoped that ``vm_anon_t``\ s will themselves become pageable in the
 future, which will help to dissociate availability of virtual memory
@@ -94,7 +102,7 @@ These are mappable VM objects. They may be anonymous or vnode objects.
 If an anonymous object, it holds a pointer to a ``vm_amap_t``, otherwise
 it is a vnode object and contains a handle to the vnode it belongs to
 and the head of the RB tree of ``vm_page_t``\ s which store
-currently-resident data of the vnode VM object.
+currently-resident data of the vnode VM object. They also carry a mutex lock.
 
 ``vm_map_t``
 ~~~~~~~~~~~~
@@ -102,7 +110,7 @@ currently-resident data of the vnode VM object.
 Represents a virtual address space, composed of a splay tree of
 ``vm_map_entry_t``\ s. There is a special ``kmap`` which holds the kernel's
 mappings (these are mapped into all processes, but not
-usermode-accessible).
+usermode-accessible). They carry a mutex lock.
 
 A ``vm_map_entry_t`` is an entry within an address space map. They refer
 to a ``vm_object_t`` which they map, and also carry an offset (relative
@@ -146,13 +154,14 @@ time sleeping on an event.
 
 The event is signalled under two conditions:
 
-- there has been a request to allocate a physical page, but the numer of pages
+- there has been a request to allocate a physical page, but the number of pages
   on the free queue is less than the low watermark for the free page queue; or
 - greater than 75% of main memory is in use, and the number of pages on the
   inactive queue is less than the low watermark for the inactive queue.
 
 The page daemon will wake up and calculate new watermarks for the inactive
-queue; these aim to keep around 33% of pageable pages on the inactive queue.
+queue; these aim to keep around 33% of pageable pages - that is, the sum of the
+number of pages on the active and inactive queues - on the inactive queue.
 If the number of pages on the inactive queue is less than that of the low
 watermark, the page daemon will move pages from the tail of the active queue to
 the head of the inactive queue until the inactive queue high water mark is
@@ -179,17 +188,60 @@ pages on the free page queue reaches the high watermark.
 Pagers
 ~~~~~~
 
-.. todo::
-	describe the page-busying mechanism; how a page which is being paged in has
-	its page allocated and placed in the object, but marked busy, and likewise
-	pages being paged out have the same busy bit set, and page faults which
-	encounter this bit, they wait on an event and when the event is signalled
-	they reattempt the fault.
+Pagers are reponsible for carrying out the actual paging-in and paging-out of
+pages; page-in requests are generated by page faults, while page-out requests
+are generated by the page daemon. The interface is simple - just a page-out
+function to put a page to backing store, and a page-in function to retrieve a
+page from backing store.
 
-.. todo::
-	describes how the low watermark for free pages is there so that when pagers
-	need to run, it's still possible for them to allocate pages if need be.
+.. note::
+	Soon the page fault handler will release all locks after
+	allocating and inserting the `vm_page_t` to its owner and setting the busy
+	bit. Any new page fault that happens on the same page will notice the busy
+	bit is set, unlock everything, and wait on an event, just as in the case
+	where it finds a busy page because of page-out.
+	This will allow for multiple page-ins on a single object to be served
+	simultaneously. In NT this is called a collided page fault.
 
+Page-in takes just one argument - the `vm_page_t` to page in. The fault handler
+will have selected one already, and have inserted it into the owner. The owner
+is a `vm_object_t` directly for vnode objects, while for anonymous objects, the
+owner is a `vm_anon_t`. The page fault handler has locked the address space in
+which the fault occurred, the `vm_object_t` in which the fault occurred, and the
+page queues too, then it has set the busy bit in the page. The page-in routine
+must now carry out any I/O necessary to bring the page into memory, after which
+the busy bit can be unset and the page becomes subject to page replacement
+policy.
+
+Page-out also takes only one argument, the `vm_page_t` to page out. The page
+daemon will have set the busy bit of the page and unmapped it from all physical
+maps in which it is mapped. Note that the object is unlocked at the time of
+making the page-out request. The pager can then do any I/O necessary to put the
+page to its backing store, after which it can lock the owner and update its
+state appropriately - that is, remove the `vm_page_t` from the RB tree of its
+owning `vm_object_t`, or set the owning `vm_anon_t`'s state to 'nonresident' and
+set its drumslot appropriately.
+
+.. important::
+	Page fault code paths have a "top-down" lock ordering (they lock the address
+	space, then the object, then for anonymous mappings also the `vm_anon_t`,
+	then the page queues) while the page daemon code path has a "bottom-up" lock
+	ordering (it locks the page queues, then the `vm_anon_t` or `vm_object_t`
+	the page is owned by.)
+
+	This lock ordering violation is possible because of the busy bit. When the
+	page daemon wants to page out a page, it first sets the busy bit in a page
+	before it locks the owner. Page faults which find a page to be busy unlock
+	everything then wait on an event which is signalled when the page is
+	unbusied. They then restart the page fault, because the state might have
+	changed enough to make the work done hitherto no longer valid.
+
+Pagers may need to allocate memory themselves to carry out page-out even under
+low-memory conditions. This is why the low watermark for free pages is set to a
+number higher than zero. When that low watermark is reached, most page
+allocation attempts will sleep until an event is signalled indicating that there
+are sufficient free pages to proceed again. Pagers do not make these sleepable
+allocations.
 
 
 Anonymous mappings
