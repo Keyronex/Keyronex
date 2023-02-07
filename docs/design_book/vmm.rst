@@ -1,15 +1,39 @@
 Virtual Memory Manager
 ======================
 
-The Keyronex virtual memory manager is principally derived from the
-design of NetBSD's UVM. This provides for a flexible and portable
-system. VM management APIs are platform-independent, with abstract
-representation of address spaces, while the ``pmap`` module handles the
-translation of that abstract representation into the form demanded by a
-particular platform's memory management unit. The VMM is relatively
-sophisticated when compared to those of other hobby kernels, providing
-virtual memory proper (swap-backed anonymous memory) and page caching
-(in collaboration with the VFS).
+Overview
+--------
+
+The virtual memory (or VM) subsystem is the queen and mother of all Keyronex
+subsystems.
+
+It provides an implementation of virtual memory supporting all the
+features any virtual memory system should have - memory mapped files with page
+caching, anonymous memory, virtual copy with copy-on-write optimisation, and
+paging - the retrieval from and putting-back to disk of pages, both pages of
+memory-mapped files and pages of anonymous memory, which are put back to a
+swapfile.
+
+.. note::
+	"Paging" and "virtual memory" are sometimes mistakenly used online as
+	simple synonyms of "virtual address translation", the process by which a
+	virtual memory address is translated to a physical address. This is a
+	misapprehension.
+
+
+The Keyronex virtual memory manager has several responsibilities. Broadly, these
+are:
+
+- Page management: the allocation of pages of physical memory, reading contents
+  of pages in from their backing store, and putting them back to their backing
+  store, according to demand.
+- Address space management: maintaining an abstract, machine-independent
+  description of virtual memory state, and providing interfaces to alter this.
+- Physical mapping: Translating that abstract representation to the form
+  demanded by the platform's memory-management unit.
+
+The Keyronex virtual memory manager is principally derived from the design of
+NetBSD's UVM, a design that meets these three responsibilities well.
 
 Data Structures
 ---------------
@@ -26,8 +50,9 @@ queues, and others - queues (and ``vm_page_t`` in greater depth) are
 described in the section on paging. The set of all ``vm_page_t``\ s is
 collectively called the Resident Pagetable (or RPT).
 
-A ``vm_page_t`` is analogous to a ``struct page`` in GNU/Linux or a PFN
-database entry in NT.
+.. hint::
+   A ``vm_page_t`` is analogous to a ``struct page`` in GNU/Linux or a PFN
+   database entry in NT.
 
 If it is being used as a page to store part of anonymous memory, it
 holds a pointer to the ``vm_anon_t`` it belongs to; if it is being used
@@ -75,8 +100,8 @@ currently-resident data of the vnode VM object.
 ~~~~~~~~~~~~
 
 Represents a virtual address space, composed of a splay tree of
-``vm_map_entry_t``\ s. There is a special ``kmap`` which is the kernel's
-mappings (these are present in all processes, but not
+``vm_map_entry_t``\ s. There is a special ``kmap`` which holds the kernel's
+mappings (these are mapped into all processes, but not
 usermode-accessible).
 
 A ``vm_map_entry_t`` is an entry within an address space map. They refer
@@ -85,6 +110,87 @@ to which faults in the map entry are processed by the ``vm_object_t``),
 a size, and a maximum protection value - this allows for read-only or
 non-execute mappings (these are not properties of VM objects
 themselves).
+
+Page management
+---------------
+
+In any good virtual memory system, main memory is treated as the cache of
+secondary storage, so the virtual memory manager tries to ensure that a large
+amount of memory is used at all times, as unused memory is memory wasted. The
+technnique by which this is done in Keyronex is called paging - the movement of
+pages of data to and from the backing store with which that page is associated.
+Pages are associated with backing store according to which VM object they belong
+to; if they belong to a vnode VM object, their backing store is a file or block
+device, while if they belong to anonymous memory, their backing store is the
+swap space.
+
+.. note::
+	In the future Keyronex might support user-defined VM object types as well as
+	the built-in vnode and anonymous objects. A custom pager would be required
+	for these to carry out page-in and page-out. One use-case would be to allow
+	for a single-level store for the Oopsilon programming environment.
+
+Pages are paged-in from their backing store in response to page faults, and
+paged out according to a page replacement policy. Keyronex uses a simple global
+page replacement algorithm, the FIFO second-chance approach, a variant of the
+general category of Not Recently Used page replacement algorithms. This involves
+maintaining two queues of pageable pages - active and inactive.
+
+The page daemon
+~~~~~~~~~~~~~~~
+
+The page daemon, a kernel thread named `vm_pagedaemon`, is responsible for
+maintaining the page replacement policy. It maintains high and low watermarks
+for number of free pages and number of inactive pages, and spends most of its
+time sleeping on an event.
+
+The event is signalled under two conditions:
+
+- there has been a request to allocate a physical page, but the numer of pages
+  on the free queue is less than the low watermark for the free page queue; or
+- greater than 75% of main memory is in use, and the number of pages on the
+  inactive queue is less than the low watermark for the inactive queue.
+
+The page daemon will wake up and calculate new watermarks for the inactive
+queue; these aim to keep around 33% of pageable pages on the inactive queue.
+If the number of pages on the inactive queue is less than that of the low
+watermark, the page daemon will move pages from the tail of the active queue to
+the head of the inactive queue until the inactive queue high water mark is
+reached. Pages carry used bits to determine whether they have been accessed or
+not; this bit is reset when the page is moved to the inactive queue (this may
+involve a TLB shootdown; see the Physical Mapping section).
+
+If the number of free pages is below the free page low watermark, the pagedaemon
+will now also take pages from the tail of the inactive queue and check their
+used bit. If it is set, the pages get a second chance - they are replaced to
+the head of the active queue. Otherwise, they are put back to their backing
+store. This is done by invoking the relevant *pager* according to the VM object
+to which the page belongs. For vnode VM objects, the vnode pager is used, while
+for anonymous VM objects, the swap pager is used.
+
+After the pager has completed the put back to backing store, the page is placed
+on the free queue. This process will continue in a loop until the number of
+pages on the free page queue reaches the high watermark.
+
+.. todo::
+	describe what happens when no pages can be put back to backing store
+	anymore, e.g. when pagefile space is exhausted.
+
+Pagers
+~~~~~~
+
+.. todo::
+	describe the page-busying mechanism; how a page which is being paged in has
+	its page allocated and placed in the object, but marked busy, and likewise
+	pages being paged out have the same busy bit set, and page faults which
+	encounter this bit, they wait on an event and when the event is signalled
+	they reattempt the fault.
+
+.. todo::
+	describes how the low watermark for free pages is there so that when pagers
+	need to run, it's still possible for them to allocate pages if need be.
+
+
 
 Anonymous mappings
 ------------------
@@ -96,8 +202,9 @@ read-only, and if there is a write fault at an address which is
 represented by that ``vm_anon_t``, it must copy the ``vm_anon_t`` and
 its underlying page before mapping it read-write.
 
-todo: as well as the example below, fully detail the logic in an
-anonymous fault
+.. todo::
+	as well as the example below, fully detail the logic in an
+	anonymous fault?
 
 Consider a region of anonymous memory newly allocated in a process with
 PID 1. There are no ``vm_anon_t``\ s yet because they are lazily

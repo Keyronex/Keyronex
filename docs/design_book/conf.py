@@ -17,6 +17,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
+	'sphinx.ext.todo',
 ]
 
 intersphinx_mapping = {
@@ -29,6 +30,7 @@ templates_path = ['_templates']
 
 master_doc = 'index'
 
+todo_include_todos = 'true'
 
 # -- Options for HTML output
 html_theme = 'sphinx_rtd_theme'
