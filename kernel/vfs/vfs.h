@@ -30,7 +30,7 @@ struct specnode;
 struct stat;
 struct vnops;
 struct vfsops;
-typedef enum vtype { VNON, VREG, VDIR, VCHR } vtype_t;
+typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK } vtype_t;
 typedef struct vattr vattr_t;
 typedef struct vfs   vfs_t;
 typedef struct vnode vnode_t;
@@ -178,7 +178,8 @@ struct vfsops {
 
 enum lookup_flags {
 	kLookupCreat = 1 << 0,
-	kLookupMustDir = 1 << 1,
+	kLookupFollowSymlinks = 1 << 1,
+	kLookupMustDir = 1 << 2,
 };
 
 /**

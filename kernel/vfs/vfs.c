@@ -10,17 +10,35 @@
 
 #include <string.h>
 
-#include "vfs.h"
+#include <libkern/libkern.h>
+#include <vfs/vfs.h>
 
-vfs_t root_vfs;
+vfs_t	 root_vfs;
 vnode_t *dev_vnode = NULL;
 vnode_t *root_vnode = NULL;
 
-static vnode_t *
-reduce(vnode_t *vn)
+static int
+reduce(vnode_t *parent, vnode_t **vn)
 {
-	/* todo sym-links */
-	return vn;
+	vnode_t *rvn = *vn;
+
+	while (rvn->vfsmountedhere != NULL) {
+		vnode_t *root;
+		int	 r;
+
+		r = rvn->vfsmountedhere->ops->root(rvn->vfsmountedhere, &root);
+		if (r < 0)
+			return r;
+
+		// vn_unref(vn); todo
+		rvn = root;
+	}
+	if (rvn->type == VLNK) {
+		nk_fatal("handle symlinks in lookup please\n");
+	}
+
+	*vn = rvn;
+	return 0;
 }
 
 int
@@ -73,39 +91,23 @@ loop:
 	} else
 		*next = '\0';
 
-	/* reduce here? */
-
 	if (strcmp(sub, ".") == 0 || sublen == 0)
 		goto next; /* . or trailing */
 
 	prevvn = vn;
 
-	if (!last || !(flags & kLookupCreat))
+	if (!last || !(flags & kLookupCreat)) {
 		// kprintf("lookup %s in %p\n", sub, vn);
 		r = vn->ops->lookup(vn, &vn, sub);
-	else if (flags & kLookupCreat)
+		if (r == 0)
+			r = reduce(prevvn, &vn);
+	} else if (flags & kLookupCreat)
 		r = vn->ops->create(vn, &vn, sub, attr);
 
-	if (prevvn != vn)
-		// vn_unref(vn); TODO:
-		;
 
 	if (r < 0) {
 		// vn_unref(vn);
 		return r;
-	}
-
-	while (vn->vfsmountedhere != NULL) {
-		vnode_t *root;
-                int r;
-
-		r = vn->vfsmountedhere->ops->root(vn->vfsmountedhere, &root);
-                if (r < 0) {
-                        // vn_unref(vn);
-                        return r;
-                }
-                // vn_unref(vn); todo
-                vn = root;
 	}
 
 next:
@@ -113,11 +115,20 @@ next:
 		goto out;
 
 	sub += sublen + 1;
+	// vn_unref(prevvn)
 	goto loop;
 
 out:
-	if (mustdir)
-		vn = reduce(vn);
+	if (mustdir) {
+		r = reduce(prevvn, &vn);
+		if (r != 0) {
+			// vn_unref(prevvn);
+			// vn_unref(vn);
+			// return r;
+			kfatal("reduced failed\n");
+		}
+	}
+
 	*out = vn;
 	return 0;
 }
