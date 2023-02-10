@@ -237,7 +237,7 @@ pmap_enter(vm_map_t *map, vm_page_t *page, vaddr_t virt, vm_prot_t prot)
 
 	ent->map = map;
 	ent->vaddr = virt;
-
+	kassert(!page->busy);
 	pmap_enter_kern(map->pmap, page->paddr, virt, prot);
 	LIST_INSERT_HEAD(&page->pv_table, ent, pv_entries);
 }
@@ -277,6 +277,7 @@ pmap_enter_kern(pmap_t *pmap, paddr_t phys, vaddr_t virt, vm_prot_t prot)
 void
 pmap_reenter(vm_map_t *map, vm_page_t *page, vaddr_t virt, vm_prot_t prot)
 {
+	kassert(!page->busy);
 	pmap_enter_kern(map->pmap, page->paddr, virt, prot);
 }
 
@@ -284,6 +285,8 @@ void
 pmap_reenter_all_readonly(vm_page_t *page)
 {
 	pv_entry_t *pv, *tmp;
+
+	kassert(!page->busy);
 
 	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
 		pmap_reenter(pv->map, page, pv->vaddr, kVMRead | kVMExecute);
@@ -346,6 +349,7 @@ void
 pmap_unenter_all(vm_page_t *page)
 {
 	pv_entry_t *pv, *tmp;
+
 
 	LIST_FOREACH_SAFE (pv, &page->pv_table, pv_entries, tmp) {
 		pmap_unenter(pv->map, page, pv->vaddr, pv);

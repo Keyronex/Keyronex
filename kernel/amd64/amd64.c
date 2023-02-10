@@ -193,13 +193,14 @@ pagefault(md_intr_frame_t *frame, void *arg)
 
 retry:
 	curcpu()->running_thread->in_pagefault = true;
-	int r = vm_fault(frame, curthread()->process->map, (vaddr_t)read_cr2(), frame->code);
+	int r = vm_fault(frame, curthread()->process->map, (vaddr_t)read_cr2(),
+	    frame->code);
 	curcpu()->running_thread->in_pagefault = false;
 
 	switch (r) {
 	case kVMFaultRetOK:
 		/* epsilon*/
-		break;
+		return true;
 
 	case kVMFaultRetPageShortage:
 		/* */
@@ -210,13 +211,16 @@ retry:
 	case kVMFaultRetFailure:
 		nk_dbg("unhandled page fault in thread %s:\n",
 		    curcpu()->running_thread->name);
+		break;
 
-	fail:
-		md_intr_frame_trace(frame);
-		nk_fatal("halting\n");
+	case kVMFaultRetRetry:
+		nk_dbg("retrying pagefault...\n");
+		goto retry;
 	}
 
-	return true;
+fail:
+	md_intr_frame_trace(frame);
+	nk_fatal("halting\n");
 }
 
 static bool
@@ -409,10 +413,11 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 			ksrv_backtrace((vaddr_t)aframe->rip, &name, &offs);
 			nk_dbg(" - %p %s+%lu\n", (void *)aframe->rip,
 			    name ? name : "???", offs);
-			//nk_dbg("stack depth: %lu\n",
-			//    curcpu()->running_thread->kstack -
+			// nk_dbg("stack depth: %lu\n",
+			//     curcpu()->running_thread->kstack -
 			//	(uintptr_t)aframe)
-		} while ((aframe = aframe->rbp) && //(uint64_t)aframe >= KERN_BASE &&
+		} while (
+		    (aframe = aframe->rbp) && (uint64_t)aframe >= KERN_BASE &&
 		    aframe->rip != 0x0);
 }
 

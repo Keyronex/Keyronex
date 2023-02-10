@@ -38,6 +38,37 @@ static vm_map_entry_t *map_entry_for_addr(vm_map_t *map, vaddr_t addr)
 /*
  * faults
  */
+
+/*!
+ * call with all locks abandoned EXCEPT for anon->lock
+ */
+static vm_fault_ret_t fault_in_anon(vm_anon_t *anon)
+{
+	vm_page_t *page;
+	vm_fault_ret_t r =  vm_pagetryalloc(&page, &vm_pgactiveq);
+	vm_pager_ret_t pr;
+	drumslot_t slot;
+
+	kassert (r == kVMFaultRetOK);
+	page->busy = true;
+	page->is_anon = true;
+	page->anon = anon;
+
+	slot = anon->drumslot;
+	anon->resident = true;
+	anon->physpage = page;
+
+	nk_mutex_release(&anon->lock);
+
+#if DEBUG_SWAP == 1
+	nk_dbg("fault_in_anon(anon %p/slot %lu)\n", anon, slot);
+#endif
+	pr = vm_swp_pagein(page, slot);
+	kassert(pr == kVMPagerOK);
+
+	return kVMFaultRetRetry;
+}
+
 static vm_fault_ret_t
 fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
     vm_fault_flags_t flags) LOCK_REQUIRES(map->lock) LOCK_REQUIRES(aobj->lock)
@@ -53,11 +84,10 @@ fault_aobj(vm_map_t *map, vm_object_t *aobj, vaddr_t vaddr, voff_t voff,
 		nk_wait(&anon->lock, "fault_aobj:anon->lock", false, false, -1);
 
 		if (!anon->resident) {
-			kprintf("vm_fault: paging in not yet supported\n");
-			/* paging in will set the page wired */
 			kassert(!(flags & kVMFaultPresent));
-			nk_mutex_release(&anon->lock);
-			return kVMFaultRetFailure;
+			nk_mutex_release(&aobj->lock);
+			nk_mutex_release(&map->lock);
+			return fault_in_anon(anon);
 		}
 
 		if (anon->refcnt > 1) {
@@ -178,6 +208,8 @@ vm_fault(md_intr_frame_t *frame, vm_map_t *map, vaddr_t vaddr,
 
 	obj_off = vaddr - ent->start;
 	r = fault_aobj(map, ent->obj, vaddr, obj_off + ent->offset, flags);
+	if (r  == kVMFaultRetRetry)
+		return r;
 
 unlockall:
 	nk_mutex_release(&ent->obj->lock);
@@ -416,7 +448,8 @@ amap_copy(vm_amap_t *amap)
 			nk_wait(&oldanon->lock, "amap_copy:oldanon->lock",
 			    false, false, -1);
 			oldanon->refcnt++;
-			pmap_reenter_all_readonly(oldanon->physpage);
+			if (oldanon->resident)
+				pmap_reenter_all_readonly(oldanon->physpage);
 			nk_mutex_release(&oldanon->lock);
 		}
 	}
@@ -476,6 +509,7 @@ anon_copy(vm_anon_t *anon) LOCK_REQUIRES(anon->lock)
 	vm_anon_t *newanon;
 	int	   r = anon_new(&newanon);
 	kassert(r == 0);
+	kassert(anon->resident && newanon->resident);
 	copyphyspage(newanon->physpage->paddr, anon->physpage->paddr);
 	return newanon;
 }

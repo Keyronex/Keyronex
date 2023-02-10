@@ -42,6 +42,7 @@ typedef enum vm_fault_ret {
 	kVMFaultRetOK = 0,
 	kVMFaultRetFailure = -1,
 	kVMFaultRetPageShortage = -2,
+	kVMFaultRetRetry = -3,
 } vm_fault_ret_t;
 
 /*!
@@ -198,7 +199,7 @@ typedef struct vm_mdl {
 	voff_t		offset;
 	size_t		nBytes;
 	size_t		nPages;
-	struct vm_page *pages[0];
+	struct vm_page *pages[1];
 } vm_mdl_t;
 
 /*!
@@ -582,6 +583,7 @@ void vm_pd_wait(void);
 
 int vm_swapon(const char *name);
 
+vm_pager_ret_t vm_swp_pagein(vm_page_t *page, drumslot_t slot);
 vm_pager_ret_t vm_swp_pageout(vm_page_t *page);
 
 void vm_swapstat(void);

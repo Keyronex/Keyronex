@@ -7,8 +7,6 @@
 #include <nanokern/thread.h>
 #include <vm/vm.h>
 
-
-
 /*!
  * (~) => const forever
  */
@@ -157,19 +155,24 @@ scan_inactive(void)
 				    &vm_pgactiveq);
 				/* reset accessed bits for tracking */
 				(void)pmap_page_accessed(page, true);
-				nk_dbg("keeping inactive page 0x%lx\n", page->paddr);
+				nk_dbg("keeping inactive page 0x%lx\n",
+				    page->paddr);
 
 			} else {
 				page->busy = true;
 				/* remove mappings */
 				pmap_unenter_all(page);
+#if DEBUG_SWAP == 1
+				nk_dbg("swapping out page 0x%lx/anon %p\n",
+				    page->paddr, page->anon);
+#endif
 				/* page out .... */
-				vm_pager_ret_t r=  vm_swp_pageout(page);
-				/* unbusy page etc */
-				nk_dbg("swapping out page 0x%lx: %d\n", page->paddr, r);
+				vm_pager_ret_t r = vm_swp_pageout(page);
+				nk_assert(r == kVMPagerOK);
 			}
 		} else {
-			nk_dbg("failed to lock owner of page 0x%lx, continuing\n",
+			nk_dbg(
+			    "failed to lock owner of page 0x%lx, continuing\n",
 			    page->paddr);
 		}
 

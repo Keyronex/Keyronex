@@ -2,8 +2,9 @@
 #include <nanokern/thread.h>
 
 #include <string.h>
+#include "md/vm.h"
 
-#include "md/spl.h"
+#include <vm/vm.h>
 
 void
 nkx_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
@@ -69,6 +70,7 @@ wait_timeout_callback(void *arg)
 bool
 nkx_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
 {
+	nk_assert(thread >= KAREA_BASE);
 	if (thread->iswaitall) {
 		bool acquirable = true;
 
@@ -135,7 +137,7 @@ nk_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	if (nobjects > kNThreadWaitBlocks && waitblocks == NULL)
 		return kKernWaitStatusInvalidArgument;
 
-	if (!waitblocks)
+	if (waitblocks == NULL)
 		waitblocks = thread->integral_waitblocks;
 
 	memset(waitblocks, 0, sizeof(kwaitblock_t) * nobjects);

@@ -148,11 +148,11 @@ makeroot(void)
 	kprintf("Created vnode %p\n", dev_vnode);
 }
 
+kthread_t pd_thread;
+
 void
 kstart(void)
 {
-	kthread_t pd_thread;
-
 	makeroot();
 
 	tcpip_init(NULL, NULL);
