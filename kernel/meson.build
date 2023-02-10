@@ -19,7 +19,7 @@ kern_srcs = files(
 	'net/lwip_sup.c',
 
 	'posix/event.c', 'posix/exec.c', 'posix/proc.c', 'posix/sys.c',
-	'posix/vm_posix.c',
+	'posix/tty.c', 'posix/vm_posix.c',
 
 	'tmpfs/tmp_vfsops.c',
 	'tmpfs/tmpfs.c',

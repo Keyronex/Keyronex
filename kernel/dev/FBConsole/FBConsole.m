@@ -1,17 +1,19 @@
-#include <dev/dev.h>
-#include <dev/FBConsole/FBConsole.h>
+#include <sys/sysmacros.h>
 
+#include <dev/FBConsole/FBConsole.h>
+#include <dev/dev.h>
 #include <kern/kmem.h>
+
+#include <vfs/vfs.h>
 
 extern char sun12x22[], nbsdbold[];
 
-FBConsole    *syscon = nil;
+FBConsole *syscon = nil;
 static int termnum = 0;
+tty_t	  *sctty;
 
-#if 0
-static int fbtopen(dev_t dev, int mode, struct proc *proc);
+static int fbtopen(dev_t dev, vnode_t **out, int mode);
 static int fbtputch(void *data, int ch);
-#endif
 
 @implementation FBConsole
 
@@ -26,7 +28,6 @@ static int fbtputch(void *data, int ch);
 
 - (id)initWithFB:(LimineFB *)fb
 {
-
 	self = [super initWithProvider:fb];
 
 	_fb = fb;
@@ -44,7 +45,6 @@ static int fbtputch(void *data, int ch);
 		.scale_y = 1,
 	};
 
-#if 0
 	tty.termios.c_cc[VINTR] = 0x03;
 	tty.termios.c_cc[VEOL] = '\n';
 	tty.termios.c_cc[VEOF] = '\0';
@@ -54,12 +54,11 @@ static int fbtputch(void *data, int ch);
 	tty.termios.c_oflag = TTYDEF_OFLAG;
 	tty.termios.ibaud = tty.termios.obaud = TTYDEF_SPEED;
 
-	waitq_init(&tty.wq_canon);
-	waitq_init(&tty.wq_noncanon);
+	// waitq_init(&tty.wq_canon);
+	// waitq_init(&tty.wq_noncanon);
 
 	tty.putch = fbtputch;
 	tty.data = self;
-#endif
 
 	kmem_asprintf(&m_name, "FBConsole%d", termnum++);
 
@@ -68,21 +67,20 @@ static int fbtputch(void *data, int ch);
 
 	if (syscon == nil) {
 		cdevsw_t cdev;
-		int maj;
+		int	 maj;
 
 		cdev.is_tty = true;
 		cdev.private = self;
-		// cdev.open = fbtopen;
-		// cdev.read = tty_read;
-		// cdev.write = tty_write;
+		cdev.open = fbtopen;
+		cdev.read = tty_read;
+		cdev.write = tty_write;
 		// cdev.kqfilter = tty_kqfilter;
 
 		syscon = self;
 
 		maj = cdevsw_attach(&cdev);
-		// assert(dev_vnode->ops->mknod(root_dev, &node, "console",
-		//	   makedev(maj, 0)) == 0);
-		// sctty = &tty;
+		devfs_make_node(makedev(maj, 0), "console");
+		sctty = &tty;
 		(void)maj;
 
 		for (int i = msgbuf.read; i != msgbuf.write; i++) {
@@ -136,9 +134,8 @@ static int fbtputch(void *data, int ch);
 
 @end
 
-#if 0
 static int
-fbtopen(dev_t dev, int mode, struct proc *proc)
+fbtopen(dev_t dev, vnode_t **out, int mode)
 {
 	return 0;
 }
@@ -146,12 +143,10 @@ fbtopen(dev_t dev, int mode, struct proc *proc)
 static int
 fbtputch(void *data, int c)
 {
-	limterm_putc(c, NULL);
-	//[(FBConsole *)data putc:c];
+	[(FBConsole *)data putc:c];
 	[(FBConsole *)data flush];
 	return 0;
 }
-#endif
 
 void
 sysconputc(int c)

@@ -15,6 +15,9 @@
 /*! parameter is nullable */
 #define kx_nullable
 
+/*! function never returns */
+#define kx_noreturn __attribute__((noreturn))
+
 /* calling function requires this lock to be held */
 #define LOCK_REQUIRES(lock)
 

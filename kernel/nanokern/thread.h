@@ -150,6 +150,8 @@ typedef enum kthread_state {
 	kThreadStateRunnable,
 	kThreadStateRunning,
 	kThreadStateWaiting,
+	/*! thread has exited and will no longer be scheduled */
+	kThreadStateDone,
 } kthread_state_t;
 
 typedef struct kthread {

@@ -1,16 +1,17 @@
 #ifndef FBTERM_H_
 #define FBTERM_H_
 
+#include <posix/tty.h>
+
 #ifdef __OBJC__
 #include <dev/LimineFB.h>
 #include <devicekit/DKDevice.h>
+
 #include "./term.h"
 
 @interface FBConsole : DKDevice {
 	LimineFB *_fb;
-#if 0
 	tty_t tty;
-#endif
 	struct framebuffer_t frm;
 	struct term_t	     term;
 	struct style_t	     style;
@@ -38,6 +39,8 @@
 extern void *syscon;
 #endif
 
+extern tty_t * sctty;
 void sysconputc(int c);
+void sysconflush(void);
 
 #endif /* FBTERM_H_ */

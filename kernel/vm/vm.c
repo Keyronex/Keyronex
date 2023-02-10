@@ -597,6 +597,7 @@ vm_object_copy(vm_object_t *obj)
 void
 vmx_object_release(vm_object_t *obj)
 {
+	nk_dbg("\n\nVMX_OBJECT_RELEASE\n\n");
 	if (obj->type == kVMObjAnon)
 		amap_release(obj->anon.amap);
 	else

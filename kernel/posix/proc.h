@@ -41,10 +41,12 @@ typedef struct proc {
 	LIST_HEAD(, proc) subprocs;
 	/*! (p) parent->subprocs linkage */
 	LIST_ENTRY(proc) subprocs_link;
+#if 0
 	/*! (p) process group */
 	pgrp_t *pgrp;
 	/*! (p) pgrp->members linkage */
 	LIST_ENTRY(proc) pgrp_members_link;
+#endif
 
 	/*! (l) open files */
 	file_t *files[64];

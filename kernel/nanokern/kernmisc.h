@@ -2,7 +2,6 @@
 #define KERNMISC_H_
 
 #include <libkern/nanoprintf.h>
-
 #include <nanokern/thread.h>
 
 #define nk_dbg(...)                                                         \
@@ -21,19 +20,23 @@
 	}
 #define ksnprintf(...) npf_snprintf(__VA_ARGS__)
 
-#define nk_fatal(...)                \
-	{                            \
-		nk_dbg(__VA_ARGS__); \
-		while (1) {          \
-			asm("hlt");  \
-		}                    \
+#define nk_fatal(...)                                                     \
+	{                                                                 \
+		nk_dbg("%s:%d (%s): ", __FILE__, __LINE__, __FUNCTION__); \
+		nk_dbg(__VA_ARGS__);                                      \
+		while (1) {                                               \
+			asm("hlt");                                       \
+		}                                                         \
 	}
 
 #define nk_assert(...)                                                \
 	{                                                             \
-		if (!(__VA_ARGS__))                                   \
+		if (!(__VA_ARGS__)) {                                 \
+			nk_dbg("%s:%d (%s): ", __FILE__, __LINE__,    \
+			    __FUNCTION__);                            \
 			nk_fatal("nanokernel assertion failed: %s\n", \
 			    #__VA_ARGS__);                            \
+		}                                                     \
 	}
 
 /*! machine-dependent kernel debug putchar for kernel debug messages */
