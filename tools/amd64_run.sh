@@ -1,0 +1,1 @@
+qemu-system-x86_64 -cdrom build/barebones.iso -enable-kvm

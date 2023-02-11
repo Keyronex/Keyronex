@@ -1,0 +1,5 @@
+# meson generates ignores for build directories
+# so they are not needed
+.cache/*
+compile_commands.json
+*.out

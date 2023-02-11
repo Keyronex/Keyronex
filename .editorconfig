@@ -1,0 +1,8 @@
+[*.{h,c,cc,cpp}]
+indent_size = 4
+indent_style = tab
+
+[*.build]
+indent_size = 4
+indent_style = tab
+
