@@ -14,5 +14,5 @@ mlxkern = executable(
 		'-Wl,--build-id=none',
 		mlxkern_link_args,
 	],
-	include_directories: [mlxkern_include_directories]
+	include_directories: mlxkern_include_directories
 )

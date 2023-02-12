@@ -47,6 +47,11 @@ executable(
 	native: true
 )
 
+mlx_sdk_includes = include_directories(
+	'external/bsd-includes',
+	'mlxsdk/include'
+)
+
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 

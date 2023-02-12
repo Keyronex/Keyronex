@@ -1,0 +1,24 @@
+{
+    "C/C++ Include Guard.Macro Type": "Filepath",
+    "C/C++ Include Guard.Path Depth": 1,
+    "C/C++ Include Guard.Remove Extension": false,
+    "C/C++ Include Guard.Prefix": "MLX_",
+    "C/C++ Include Guard.Suffix": "",
+	"fileHeaderComment.parameter":{
+		"*":{
+			"commentbegin": "/*",
+			"commentprefix": " *",
+			"commentend": " */",
+			"company": "Your Company"
+		}
+	},
+	"fileHeaderComment.template":{
+		"*":[
+			"${commentbegin}",
+			"${commentprefix} Copyright (c) ${year} The Melantix Project.",
+			"${commentprefix} Created on ${date}.",
+			"${commentend}"
+		]
+	}
+
+}

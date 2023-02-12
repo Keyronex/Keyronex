@@ -24,9 +24,9 @@ done(void)
 	}
 }
 
-const unsigned logow = 63, logoh = 20;
+const unsigned logow = 70, logoh = 22;
 const unsigned logosize = logow * logoh * 4;
-extern const char logosmall[5040];
+extern const char logosmall[6160];
 
 void
 draw_logo(void)

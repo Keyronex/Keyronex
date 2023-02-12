@@ -1,8 +1,8 @@
-mlxkern_sources = []
+mlxkern_sources = files( 'mm/mm.c', )
 mlxkern_c_args = [freestanding_c_args]
 mlxkern_cpp_args = [freestanding_cpp_args]
 mlxkern_link_args = []
-mlxkern_include_directories = []
+mlxkern_include_directories = [ mlx_sdk_includes, include_directories('./') ]
 
 gen = generator(bin2c,
     output : '@PLAINNAME@.c',
