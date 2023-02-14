@@ -362,6 +362,8 @@ void hl_dputc(int ch, void *ctx);
 extern kspinlock_t dispatcher_lock;
 /*! Debug print lock. */
 extern kspinlock_t dprintf_lock;
+/*! Bootstrap CPU. */
+extern kcpu_t cpu_bsp;
 
 #ifdef __cplusplus
 }

@@ -23,8 +23,8 @@
  * The VAD list mutex protects process' trees of VAD lists.
  */
 
-#ifndef MLX_MM_MM_H
-#define MLX_MM_MM_H
+#ifndef MLX_VM_VM_H
+#define MLX_VM_VM_H
 
 #include <bsdqueue/queue.h>
 #include <bsdqueue/tree.h>
@@ -32,6 +32,7 @@
 
 #include "amd64/vm_md.h"
 #include "ke/ke.h"
+#include "vm/vmem_impl.h"
 
 /*! Fault flags. For convenience, matches amd64 MMU. */
 typedef enum vm_fault_flags {
@@ -60,6 +61,14 @@ typedef enum vm_protection {
 	kMMExecute = 0x4,
 	kMMAll = kMMRead | kMMWrite | kMMExecute,
 } vm_protection_t;
+
+/*! Flags that may be passed to vm_kalloc(). */
+enum vm_kalloc_flags {
+	/*! immediately return NULL if no free pages currently */
+	kVMKNoSleep = 0,
+	/*! infallible; sleepwait for a page if no pages currently available */
+	kVMKSleep = 1,
+};
 
 struct vm_stat {
 	size_t npfndb;
@@ -175,16 +184,21 @@ typedef struct vm_procstate {
 	kmutex_t mutex;
 	/*! VAD queue. */
 	TAILQ_HEAD(, vm_vad) vad_queue;
-	/*! VMem state. */
+	/*! VMem allocator state. */
+	vmem_t vmem;
 	/*! Per-port VM state. */
 	struct vm_ps_md md;
 } vm_procstate_t;
 
 extern struct vm_stat vmstat;
 
-/*!
- * @brief Add a region of physical memory to VMM management.
- */
+/*! @brief Acquire the PFN database lock. */
+#define vi_acquire_pfn_lock() ke_spinlock_acquire(&vi_pfn_lock)
+
+/*! @brief Release the PFN database lock. */
+#define vi_release_pfn_lock(IPL) ke_spinlock_release(&vi_pfn_lock, IPL)
+
+/*! @brief Add a region of physical memory to VMM management. */
 void vi_region_add(paddr_t base, size_t length);
 
 /*! @brief Activate a process' virtual address space. */
@@ -250,4 +264,6 @@ void mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry);
  */
 void mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n);
 
-#endif /* MLX_MM_MM_H */
+extern kspinlock_t vi_pfn_lock;
+
+#endif /* MLX_VM_VM_H */

@@ -9,6 +9,7 @@
 #include <nanoprintf/nanoprintf.h>
 
 kspinlock_t dprintf_lock = KSPINLOCK_INITIALISER;
+kcpu_t cpu_bsp;
 
 ipl_t
 splraise(ipl_t spl)

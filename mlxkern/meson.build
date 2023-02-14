@@ -1,5 +1,15 @@
-mlxkern_sources = files( 'ke/ke.c', 'ke/sched.c', 'ke/time.c', 'ke/wait.c', 'object/object.c', 'vm/fork.c', 'vm/page.c', 'vm/ws.c', )
-mlxkern_c_args = [freestanding_c_args]
+mlxkern_sources = files(
+	'ke/ke.c', 'ke/sched.c', 'ke/time.c', 'ke/wait.c',
+
+	'libkern/libkern.c',
+
+	'object/object.c',
+
+	'ps/ps.c',
+
+	'vm/kmem_slab.c', 'vm/kwired.c', 'vm/fork.c', 'vm/page.c', 'vm/vmem.c', 'vm/ws.c', 
+	)
+mlxkern_c_args = [freestanding_c_args, '-D_KERNEL']
 mlxkern_cpp_args = [freestanding_cpp_args]
 mlxkern_link_args = []
 mlxkern_include_directories = [ mlx_sdk_includes, include_directories('./') ]

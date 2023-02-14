@@ -5,6 +5,8 @@
 
 #define mlx_out
 
+#define elementsof(x) (sizeof(x) / sizeof(x[0]))
+
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))
 #define ROUNDUP(addr, align) (((addr) + align - 1) & ~(align - 1))

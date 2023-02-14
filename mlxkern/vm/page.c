@@ -20,6 +20,7 @@ struct mi_pregion {
 struct vm_stat vmstat;
 static TAILQ_HEAD(, mi_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
     pregion_queue);
+kspinlock_t vi_pfn_lock = KSPINLOCK_INITIALISER;
 
 void
 vi_region_add(paddr_t base, size_t length)

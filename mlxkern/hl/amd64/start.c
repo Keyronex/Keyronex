@@ -3,15 +3,18 @@
 #include <stdint.h>
 
 #include "amd64.h"
-#include "vm/vm.h"
 #include "ke/ke.h"
+#include "vm/vm.h"
 
 enum { kPortCOM1 = 0x3f8 };
+
+/* intr.c */
+void idt_load(void);
+void idt_setup(void);
 
 // The Limine requests can be placed anywhere, but it is important that
 // the compiler does not optimise them away, so, usually, they should
 // be made volatile or equivalent.
-
 
 volatile struct limine_framebuffer_request framebuffer_request = {
 	.id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -110,7 +113,6 @@ serial_init()
 	outb(kPortCOM1 + 4, 0x0B);
 }
 
-
 /* put character to limine terminal + COM1 */
 void
 hl_dputc(int ch, void *ctx)
@@ -121,10 +123,10 @@ hl_dputc(int ch, void *ctx)
 	outb(kPortCOM1, ch);
 
 	/* put to syscon/limine terminal */
-	//if (!syscon) {
-		struct limine_terminal *terminal =
-		    terminal_request.response->terminals[0];
-		terminal_request.response->write(terminal, (char *)&ch, 1);
+	// if (!syscon) {
+	struct limine_terminal *terminal =
+	    terminal_request.response->terminals[0];
+	terminal_request.response->write(terminal, (char *)&ch, 1);
 	//} else {
 	//	sysconputc(ch);
 	//}
@@ -136,7 +138,7 @@ mem_init()
 	if (hhdm_request.response->offset != 0xffff800000000000) {
 		/* we expect HHDM begins there for now for simplicity */
 		kdprintf("Unexpected HHDM offset (assumes 0xffff800000000000, "
-			"actual %lx",
+			 "actual %lx",
 		    hhdm_request.response->offset);
 		done();
 	}
@@ -162,12 +164,15 @@ mem_init()
 void
 _start(void)
 {
+	void *pcpu0 = &cpu_bsp;
+
+	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 	serial_init();
 
 	// Ensure we got a terminal
 	if (terminal_request.response == NULL ||
 	    terminal_request.response->terminal_count < 1) {
-		
+
 		done();
 	}
 
@@ -175,7 +180,10 @@ _start(void)
 
 	kdprintf("Melantix (TM) Kernel Version 1.0-alpha\n");
 
+	idt_setup();
 	mem_init();
+
+	*(char*)0x0 = '\n';
 
 	// We're done, just hang...
 	done();

@@ -6,11 +6,61 @@
 #include <bsdqueue/queue.h>
 
 #include "amd64.h"
+#include "asmintr.h"
 #include "hl/hl.h"
 #include "ke/ke.h"
 #include "vm/vm.h"
 
+typedef struct {
+	uint16_t isr_low;
+	uint16_t selector;
+	uint8_t ist;
+	uint8_t type;
+	uint16_t isr_mid;
+	uint32_t isr_high;
+	uint32_t zero;
+} __attribute__((packed)) idt_entry_t;
+
 static TAILQ_HEAD(intr_entries, intr_entry) intr_entries[256];
+static idt_entry_t idt[256] = { 0 };
+
+void
+idt_load(void)
+{
+	struct {
+		uint16_t limit;
+		vaddr_t addr;
+	} __attribute__((packed)) idtr = { sizeof(idt) - 1, (vaddr_t)idt };
+
+	asm volatile("lidt %0" : : "m"(idtr));
+}
+
+static void
+idt_set(uint8_t index, vaddr_t isr, uint8_t type, uint8_t ist)
+{
+	idt[index].isr_low = (uint64_t)isr & 0xFFFF;
+	idt[index].isr_mid = ((uint64_t)isr >> 16) & 0xFFFF;
+	idt[index].isr_high = (uint64_t)isr >> 32;
+	idt[index].selector = 0x28; /* sixth */
+	idt[index].type = type;
+	idt[index].ist = ist;
+	idt[index].zero = 0x0;
+}
+
+/* setup the initial IDT */
+void
+idt_setup(void)
+{
+#define IDT_SET(VAL) idt_set(VAL, (vaddr_t)&isr_thunk_##VAL, INT, 0);
+	NORMAL_INTS(IDT_SET);
+#undef IDT_SET
+
+#define IDT_SET(VAL, GATE) idt_set(VAL, (vaddr_t)&isr_thunk_##VAL, GATE, 0);
+	SPECIAL_INTS(IDT_SET);
+#undef IDT_SET
+
+	idt_load();
+}
 
 void
 handle_int(hl_intr_frame_t *frame, uintptr_t num)
@@ -36,6 +86,9 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		splx(next->saved_ipl);
 		return;
 	}
+
+	kfatal("Unhandled interrupt %lu\n", num);
+
 }
 
 int
