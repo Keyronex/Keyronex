@@ -1,4 +1,4 @@
-mlxkern_sources = files( 'mm/mm.c', )
+mlxkern_sources = files( 'ke/ke.c', 'ke/sched.c', 'ke/time.c', 'ke/wait.c', 'object/object.c', 'vm/fork.c', 'vm/page.c', 'vm/ws.c', )
 mlxkern_c_args = [freestanding_c_args]
 mlxkern_cpp_args = [freestanding_cpp_args]
 mlxkern_link_args = []

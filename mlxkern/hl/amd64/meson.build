@@ -1,6 +1,5 @@
 mlxkern_link_args += ['-Wl,-T' + meson.current_source_dir() + '/linker.ld']
-mlxkern_sources += files('start.c')
-mlxkern_include_directories += limine_include_directories
+mlxkern_sources += files('apic.c', 'cpu.c', 'intr.c', 'start.c')
 
 mlxkern = executable(
 	'mlxkern',
@@ -14,5 +13,8 @@ mlxkern = executable(
 		'-Wl,--build-id=none',
 		mlxkern_link_args,
 	],
-	include_directories: mlxkern_include_directories
+	include_directories: [ mlxkern_include_directories,
+		limine_include_directories,
+		'.' 
+	]
 )
