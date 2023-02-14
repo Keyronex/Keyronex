@@ -4,6 +4,7 @@
 
 #include "amd64.h"
 #include "ke/ke.h"
+#include "vm/kmem.h"
 #include "vm/vm.h"
 
 enum { kPortCOM1 = 0x3f8 };
@@ -11,6 +12,9 @@ enum { kPortCOM1 = 0x3f8 };
 /* intr.c */
 void idt_load(void);
 void idt_setup(void);
+
+/* vmamd64.c */
+void pmap_init(void);
 
 // The Limine requests can be placed anywhere, but it is important that
 // the compiler does not optimise them away, so, usually, they should
@@ -182,8 +186,15 @@ _start(void)
 
 	idt_setup();
 	mem_init();
+	pmap_init();
+	vi_kernel_init();
+	kmem_init();
 
-	*(char*)0x0 = '\n';
+	char *shizzle;
+	kmem_asprintf(&shizzle, "Hello, %s %s!\n", "KMem", "World");
+
+	kdprintf("We got this: %s\n", shizzle);
+	kmem_strfree(shizzle);
 
 	// We're done, just hang...
 	done();

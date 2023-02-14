@@ -42,12 +42,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include "ke/ke.h"
 
 #ifdef _KERNEL
-#include "vm/vm.h"
-#include "vm/kmem.h"
 #include "libkern/libkern.h"
+#include "vm/kmem.h"
+#include "vm/vm.h"
 #else
 #include <sys/mman.h>
 
@@ -241,9 +242,9 @@ slabcapacity(kmem_zone_t *zone)
 static struct kmem_slab *
 small_slab_new(kmem_zone_t *zone)
 {
-	struct kmem_slab   *slab;
+	struct kmem_slab *slab;
 	struct kmem_bufctl *entry = NULL;
-	void		   *base;
+	void *base;
 
 	/* create a new slab */
 	base = (void *)vm_kalloc(1, kVMKSleep);
@@ -269,7 +270,7 @@ small_slab_new(kmem_zone_t *zone)
 static struct kmem_slab *
 large_slab_new(kmem_zone_t *zone)
 {
-	struct kmem_slab   *slab;
+	struct kmem_slab *slab;
 	struct kmem_bufctl *entry = NULL, *prev = NULL;
 
 	slab = kmem_zonealloc(&kmem_slab);
@@ -297,12 +298,24 @@ large_slab_new(kmem_zone_t *zone)
 	return slab;
 }
 
+static void
+slab_free(kmem_zone_t *zone, struct kmem_slab *slab)
+{
+	kdprintf("Freeing slab %p in zone %s\n", slab, zone->name);
+	if (zone->size > kSmallSlabMax) {
+		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE);
+		kmem_zonefree(&kmem_slab, slab);
+	} else {
+		vm_kfree(PGROUNDDOWN((uintptr_t)slab), 1);
+	}
+}
+
 void *
 kmem_zonealloc(kmem_zone_t *zone)
 {
 	struct kmem_bufctl *entry, *next;
-	struct kmem_slab   *slab;
-	void		   *ret;
+	struct kmem_slab *slab;
+	void *ret;
 	ipl_t ipl;
 
 	ipl = ke_spinlock_acquire(&zone->lock);
@@ -329,7 +342,7 @@ kmem_zonealloc(kmem_zone_t *zone)
 		STAILQ_INSERT_TAIL(&zone->slablist, slab, slablist);
 		slab->firstfree = NULL;
 	} else {
-//#ifdef KMEM_SANITY_CHECKS
+		//#ifdef KMEM_SANITY_CHECKS
 		void *slab_base, *slab_end, *next_data;
 
 		if (zone->size <= kSmallSlabMax) {
@@ -348,7 +361,7 @@ kmem_zonealloc(kmem_zone_t *zone)
 		kassert(
 		    (uintptr_t)((void *)next_data - slab_base) % zone->size ==
 		    0);
-//#endif
+		//#endif
 
 		slab->firstfree = next;
 	}
@@ -368,7 +381,7 @@ kmem_zonealloc(kmem_zone_t *zone)
 void
 kmem_zonefree(kmem_zone_t *zone, void *ptr)
 {
-	struct kmem_slab   *slab;
+	struct kmem_slab *slab;
 	struct kmem_bufctl *newfree;
 	ipl_t ipl;
 
@@ -382,8 +395,7 @@ kmem_zonefree(kmem_zone_t *zone, void *ptr)
 	} else {
 		struct kmem_bufctl *iter;
 
-		SLIST_FOREACH(iter, &zone->bufctllist, entrylist)
-		{
+		SLIST_FOREACH (iter, &zone->bufctllist, entrylist) {
 			if (iter->base == ptr) {
 				newfree = iter;
 				break;
@@ -401,9 +413,15 @@ kmem_zonefree(kmem_zone_t *zone, void *ptr)
 	}
 
 	slab->nfree++;
-	/* TODO: push slab to front; if nfree == slab capacity, free the slab */
-	newfree->entrylist.sle_next = slab->firstfree;
-	slab->firstfree = newfree;
+	if (slab->nfree == slabcapacity(zone)) {
+		STAILQ_REMOVE(&zone->slablist, slab, kmem_slab, slablist);
+		slab_free(zone, slab);
+	} else {
+		/* TODO: push slab to front; if nfree == slab capacity, free the
+		 * slab */
+		newfree->entrylist.sle_next = slab->firstfree;
+		slab->firstfree = newfree;
+	}
 
 	ke_spinlock_release(&zone->lock, ipl);
 }
@@ -413,14 +431,13 @@ kmem_dump()
 {
 	kmem_zone_t *zone;
 
-	kdprintf("\033[7m%-24s%-6s%-6s%-6s%-6s\033[m\n", "name", "size", "slabs",
-	    "objs", "free");
+	kdprintf("\033[7m%-24s%-6s%-6s%-6s%-6s\033[m\n", "name", "size",
+	    "slabs", "objs", "free");
 
-	STAILQ_FOREACH(zone, &kmem_zones, zonelist)
-	{
-		size_t		  cap;
-		size_t		  nSlabs = 0;
-		size_t		  totalFree = 0;
+	STAILQ_FOREACH (zone, &kmem_zones, zonelist) {
+		size_t cap;
+		size_t nSlabs = 0;
+		size_t totalFree = 0;
 		struct kmem_slab *slab;
 		ipl_t ipl;
 
@@ -428,8 +445,7 @@ kmem_dump()
 
 		cap = slabcapacity(zone);
 
-		STAILQ_FOREACH(slab, &zone->slablist, slablist)
-		{
+		STAILQ_FOREACH (slab, &zone->slablist, slablist) {
 			nSlabs++;
 			totalFree += slab->nfree;
 		}
@@ -532,7 +548,7 @@ kmem_zalloc(size_t size)
 int
 kmem_vasprintf(char **strp, const char *fmt, va_list ap)
 {
-	size_t	size = 0;
+	size_t size = 0;
 	va_list apcopy;
 
 	va_copy(apcopy, ap);
@@ -554,7 +570,7 @@ kmem_vasprintf(char **strp, const char *fmt, va_list ap)
 int
 kmem_asprintf(char **str, const char *fmt, ...)
 {
-	size_t	size = 0;
+	size_t size = 0;
 	va_list ap;
 
 	va_start(ap, fmt);

@@ -488,7 +488,7 @@ vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
 			goto free;
 	}
 
-	kfatal("vmem_xfree: segment at address 0x%lx\n", addr);
+	kfatal("vmem_xfree: segment at address 0x%lx doesn't exist\n", addr);
 	return -1;
 
 free:

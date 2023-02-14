@@ -56,10 +56,10 @@ typedef enum vm_fault_return {
  * Protection flags.
  */
 typedef enum vm_protection {
-	kMMRead = 0x1,
-	kMMWrite = 0x2,
-	kMMExecute = 0x4,
-	kMMAll = kMMRead | kMMWrite | kMMExecute,
+	kVMRead = 0x1,
+	kVMWrite = 0x2,
+	kVMExecute = 0x4,
+	kVMAll = kVMRead | kVMWrite | kVMExecute,
 } vm_protection_t;
 
 /*! Flags that may be passed to vm_kalloc(). */
@@ -87,6 +87,7 @@ typedef struct vm_page {
 	STAILQ_ENTRY(vm_page) queue_entry;
 	/*! By how many PTEs is it mapped? */
 	uint16_t reference_count;
+	/*! What is its current use? */
 	enum vm_page_use {
 		/*! The page is on the freelist. */
 		kPageUseFree,
@@ -200,6 +201,42 @@ extern struct vm_stat vmstat;
 
 /*! @brief Add a region of physical memory to VMM management. */
 void vi_region_add(paddr_t base, size_t length);
+
+/*! @brief Initialise the kernel wired memory system. */
+void vi_kernel_init(void);
+
+/*!
+ * @brief Allocate a physical page.
+ *
+ * Reference count of page is set to 1.
+ *
+ * @param[optional] vmps Process to charge for the allocation.
+ * @param must Whether the allocaton must be served.
+ * @param[out] out Allocated page's PFN db entry will be written here.
+ * @param use What the page will be used for.
+ *
+ * @pre PFN database lock held.
+ *
+ * @retval 0 Page allocated.
+ * @retval 1 Low memory, drop locks and wait on the low-memory event.
+ */
+int vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
+    vm_page_t **out);
+
+/*!
+ * @brief Free a physical page.
+ *
+ * Page's reference count must be 0.
+ *
+ * @pre PFN database lock held.
+ */
+void vi_page_free(vm_procstate_t *ps, vm_page_t *page);
+
+/*! @brief Allocated kernel wired pages and address space. */
+vaddr_t vm_kalloc(size_t npages, enum vm_kalloc_flags wait);
+
+/*! @brief Free kernel wired pages. */
+void vm_kfree(vaddr_t addr, size_t npages);
 
 /*! @brief Activate a process' virtual address space. */
 void vm_ps_activate(vm_procstate_t *vmps);

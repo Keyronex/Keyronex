@@ -256,7 +256,7 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 /*! @brief Kernel fatal condition. */
 #define kfatal(...)                                                         \
 	{                                                                   \
-		kdprintf("%s:%d (%s): ", __FILE__, __LINE__, __FUNCTION__); \
+		kdprintf("at %s:%d (%s):\n", __FILE__, __LINE__, __FUNCTION__); \
 		kdprintf(__VA_ARGS__);                                      \
 		while (1) {                                                 \
 			asm("hlt");                                         \
@@ -267,8 +267,6 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 #define kassert(...)                                                           \
 	{                                                                      \
 		if (!(__VA_ARGS__)) {                                          \
-			kdprintf("%s:%d (%s): ", __FILE__, __LINE__,           \
-			    __FUNCTION__);                                     \
 			kfatal("kernel assertion failed: %s\n", #__VA_ARGS__); \
 		}                                                              \
 	}

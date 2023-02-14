@@ -7,6 +7,7 @@
 #include "ps/ps.h"
 #include "vm/vm.h"
 #include "vm/vmem_impl.h"
+#include "vm_internal.h"
 
 /* Kernel wired heap arena. */
 vmem_t vm_kernel_wired;
@@ -26,13 +27,12 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		return r;
 	}
 
-#if 0
 	for (int i = 0; i < size - 1; i += PGSIZE) {
-		vm_page_t *page = vm_pagealloc(flags & kVMemSleep, &vm_pgkmemq);
-		pmap_enter_kern(kmap.pmap, page->paddr, (vaddr_t)*out + i,
-		    kVMAll);
+		vm_page_t *page;
+		vi_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
+		pmap_enter(&kernel_process.vmps, page->address,
+		    (vaddr_t)*out + i, kVMAll);
 	}
-#endif
 
 	vi_release_pfn_lock(ipl);
 
@@ -55,13 +55,11 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
 	}
 	r = size;
 
-#if 0
 	for (int i = 0; i < r; i += PGSIZE) {
 		vm_page_t *page;
-		page = pmap_unenter_kern(&kmap, (vaddr_t)addr + i);
-		vm_page_free(page);
+		page = pmap_unenter(&kernel_process.vmps, (vaddr_t)addr + i);
+		vi_page_free(&kernel_process.vmps, page);
 	}
-#endif
 
 	vi_release_pfn_lock(ipl);
 }
@@ -74,7 +72,7 @@ vm_kernel_dump()
 }
 
 void
-vm_kernel_init()
+vi_kernel_init()
 {
 	vmem_earlyinit();
 	vmem_init(&kernel_process.vmps.vmem, "kernel-va", KHEAP_BASE,
@@ -98,6 +96,7 @@ vm_kalloc(size_t npages, enum vm_kalloc_flags wait)
 	flags |= wait & 0x2 ? kVMemBootstrap : 0;
 	r = vmem_xalloc(&vm_kernel_wired, npages * PGSIZE, 0, 0, 0, 0, 0, flags,
 	    &addr);
+	kassert(r == 0);
 	if (r == 0)
 		return (vaddr_t)addr;
 	else

@@ -22,5 +22,6 @@ gen = generator(bin2c,
 mlxkern_sources += gen.process(['logosmall.data'])
 
 if (arch == 'x86_64')
+	mlxkern_sources += files('vm/amd64/vmamd64.c')
 	subdir('hl/amd64')
 endif
