@@ -214,6 +214,9 @@ enum kreschedule_reason {
  * - D => dpc_lock
  */
 typedef struct kcpu {
+	/*! (~) Unique identifier. */
+	uint32_t num;
+
 	/*! (d) DPC queue */
 	TAILQ_HEAD(, kdpc) dpc_queue;
 	/*! (d) Scheduler entry reason */
@@ -362,6 +365,10 @@ extern kspinlock_t dispatcher_lock;
 extern kspinlock_t dprintf_lock;
 /*! Bootstrap CPU. */
 extern kcpu_t cpu_bsp;
+/*! All CPUs by CPU number. */
+extern kcpu_t **all_cpus;
+/*! NUmber of CPUs in system. */
+extern size_t ncpus;
 
 #ifdef __cplusplus
 }

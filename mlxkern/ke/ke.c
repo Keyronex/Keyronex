@@ -10,6 +10,8 @@
 
 kspinlock_t dprintf_lock = KSPINLOCK_INITIALISER;
 kcpu_t cpu_bsp;
+kcpu_t **all_cpus;
+size_t ncpus;
 
 ipl_t
 splraise(ipl_t spl)

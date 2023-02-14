@@ -4,10 +4,18 @@
 
 #include "amd64.h"
 #include "ke/ke.h"
+#include "ps/ps.h"
 #include "vm/kmem.h"
 #include "vm/vm.h"
 
 enum { kPortCOM1 = 0x3f8 };
+
+/* apic.c */
+void lapic_enable(uint8_t spurvec);
+uint32_t lapic_timer_calibrate(void);
+
+/* cpu.c */
+void setup_cpu_gdt(kcpu_t *cpu);
 
 /* intr.c */
 void idt_load(void);
@@ -164,6 +172,105 @@ mem_init()
 	}
 }
 
+/* can't rely on mutexes until scheduling is up (and in any case not in idle
+ * thread), so this must be used instead */
+static kspinlock_t early_lock = KSPINLOCK_INITIALISER;
+static int cpus_up = 0;
+
+static void
+common_init(struct limine_smp_info *smpi)
+{
+	kcpu_t *cpu = (kcpu_t *)smpi->extra_argument;
+	kthread_t *thread = cpu->current_thread;
+
+	idt_load();
+	cpu->hl.lapic_base = rdmsr(kAMD64MSRAPICBase);
+	lapic_enable(0xff);
+
+	/* nkx_thread_common_init allocates... */
+	ke_spinlock_acquire_nospl(&early_lock);
+	// nkx_thread_common_init(thread, cpu, &kernel_process, "idle_thread");
+	ke_spinlock_release_nospl(&early_lock);
+	thread->state = kThreadStateRunning;
+
+	setup_cpu_gdt(cpu);
+
+	/* measure thrice and average it */
+	cpu->hl.lapic_tps = 0;
+	cpu->hl.lapic_id = smpi->lapic_id;
+	for (int i = 0; i < 3; i++)
+		cpu->hl.lapic_tps += lapic_timer_calibrate() / 3;
+
+	TAILQ_INIT(&cpu->runqueue);
+	TAILQ_INIT(&cpu->timer_queue);
+	TAILQ_INIT(&cpu->dpc_queue);
+	cpu->dpc_int = false;
+	cpu->reschedule_reason = kRescheduleReasonNone;
+	cpu->idle_thread = thread;
+
+	/* enable SSE and SSE2 */
+	uint64_t cr0 = read_cr0();
+	cr0 &= ~((uint64_t)1 << 2);
+	cr0 |= (uint64_t)1 << 1;
+	write_cr0(cr0);
+
+	uint64_t cr4 = read_cr4();
+	cr4 |= (uint64_t)3 << 9;
+	write_cr4(cr4);
+
+	asm("sti");
+	__atomic_add_fetch(&cpus_up, 1, __ATOMIC_RELAXED);
+	// md_timeslicing_start();
+}
+
+static void
+ap_init(struct limine_smp_info *smpi)
+{
+	kcpu_t *cpu = (kcpu_t *)smpi->extra_argument;
+
+	/* set it up immediately to avoid problems */
+	wrmsr(kAMD64MSRGSBase, (uintptr_t)&all_cpus[cpu->num]);
+
+	common_init(smpi);
+	/* this is now that CPU's idle thread loop */
+	done();
+}
+
+static void
+smp_init()
+{
+	struct limine_smp_response *smpr = smp_request.response;
+
+	all_cpus = kmem_alloc(sizeof(kcpu_t *) * smpr->cpu_count);
+
+	kdprintf("%lu cpus\n", smpr->cpu_count);
+	ncpus = smpr->cpu_count;
+
+	for (size_t i = 0; i < smpr->cpu_count; i++) {
+		struct limine_smp_info *smpi = smpr->cpus[i];
+
+		if (smpi->lapic_id == smpr->bsp_lapic_id) {
+			smpi->extra_argument = (uint64_t)&cpu_bsp;
+			cpu_bsp.num = i;
+			all_cpus[i] = &cpu_bsp;
+			common_init(smpi);
+		} else {
+			kcpu_t *cpu = kmem_alloc(sizeof *cpu);
+			kthread_t *thread = kmem_alloc(sizeof *thread);
+
+			cpu->num = i;
+			cpu->current_thread = thread;
+			all_cpus[i] = cpu;
+
+			smpi->extra_argument = (uint64_t)cpu;
+			smpi->goto_address = ap_init;
+		}
+	}
+
+	while (cpus_up != smpr->cpu_count)
+		__asm__("pause");
+}
+
 // The following will be our kernel's entry point.
 void
 _start(void)
@@ -171,6 +278,7 @@ _start(void)
 	void *pcpu0 = &cpu_bsp;
 
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
+	cpu_bsp.current_thread = (kthread_t *)&kernel_bsp_thread;
 	serial_init();
 
 	// Ensure we got a terminal
@@ -195,6 +303,8 @@ _start(void)
 
 	kdprintf("We got this: %s\n", shizzle);
 	kmem_strfree(shizzle);
+
+	smp_init();
 
 	// We're done, just hang...
 	done();

@@ -72,7 +72,7 @@ pit_await_oneshot(void)
 
 /* return the number of ticks per second for the lapic timer */
 uint32_t
-lapic_timer_calibrate()
+lapic_timer_calibrate(void)
 {
 	const uint32_t initial = 0xffffffff;
 	const uint32_t hz = 50;

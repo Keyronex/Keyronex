@@ -232,6 +232,9 @@ int vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
  */
 void vi_page_free(vm_procstate_t *ps, vm_page_t *page);
 
+/*! @brief Get the PFN database entry for a physical page address. */
+vm_page_t *vi_paddr_to_page(paddr_t paddr);
+
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, enum vm_kalloc_flags wait);
 

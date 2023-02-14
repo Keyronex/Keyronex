@@ -14,6 +14,7 @@
 #include "hl/hl.h"
 #include "ps/ps.h"
 #include "vm/vm.h"
+#include "vm/vm_internal.h"
 #include "vm_md.h"
 
 enum {
@@ -236,34 +237,42 @@ pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
 	pml4e_t *pml4 = (void *)vmps->md.cr3;
 	pdpte_t *pdpte;
 	pde_t *pde;
-	pte_t *pte;
+	pte_t *pt;
 	pte_t *pti_virt;
 
 	pdpte = pmap_descend(vmps, pml4, pml4i, true, kMMUDefaultProt);
 	pde = pmap_descend(vmps, pdpte, pdpti, true, kMMUDefaultProt);
-	pte = pmap_descend(vmps, pde, pdi, true, kMMUDefaultProt);
+	pt = pmap_descend(vmps, pde, pdi, true, kMMUDefaultProt);
 
-	pti_virt = P2V(&pte[pti]);
+	pti_virt = P2V(&pt[pti]);
+	void *oldaddr;
 
-	if (pte_get_addr(*pti_virt) != NULL) {
-		kfatal("remapping a PTE without explicit request\n");
-		/* is that realy necessary? */
+	if ((oldaddr = pte_get_addr(*pti_virt)) != NULL) {
+		/*! this may turn out to be excessive */
+		kfatal("not remapping a PTE without explicit request\n"
+		       "(requested vaddr=>phys 0x%lx=>0x%lx\n"
+		       "(existing 0x%lx=>%p; PTE is %p)\n",
+		    virt, phys, virt, oldaddr, &pt[pti]);
 	}
 
 	pte_set(pti_virt, phys,
 	    vm_prot_to_i386(prot) | (virt < KAREA_BASE ? kMMUUser : 0));
 }
 
-void
+vm_page_t *
 pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr)
 {
+	paddr_t paddr;
 	pte_t *pte = pmap_fully_descend(vmps, vaddr);
 
 	kassert(pte);
 	pte = P2V(pte);
-	// paddr = (paddr_t)pte_get_addr(*pte);
+	paddr = (paddr_t)pte_get_addr(*pte);
+
 	kassert(*pte != 0x0);
 	*pte = 0x0;
+
+	return vi_paddr_to_page(paddr);
 }
 
 void

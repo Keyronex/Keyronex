@@ -30,7 +30,11 @@ typedef struct eprocess {
 	vm_procstate_t vmps;
 } eprocess_t;
 
+/*! Eternal handle to the kernel process. Only useable by  */
 #define kernel_process_handle (handle_t)(-1)
+
+/*! Process management initialisation part 1. */
+void pi_init_0(void);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;
