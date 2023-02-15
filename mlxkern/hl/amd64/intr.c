@@ -47,6 +47,8 @@ idt_set(uint8_t index, vaddr_t isr, uint8_t type, uint8_t ist)
 	idt[index].zero = 0x0;
 }
 
+struct intr_entry hardclock_intr_entry;
+
 /* setup the initial IDT */
 void
 idt_setup(void)
@@ -60,13 +62,22 @@ idt_setup(void)
 #undef IDT_SET
 
 	idt_load();
+
+	for (int i = 0; i < elementsof(intr_entries); i++) {
+		TAILQ_INIT(&intr_entries[i]);
+	}
+	md_intr_register("hardclock", kIntNumLAPICTimer, kIPLHigh,
+	    ki_cpu_hardclock, NULL, false, &hardclock_intr_entry);
 }
+
+#define DEBUG_SCHED 0
 
 void
 handle_int(hl_intr_frame_t *frame, uintptr_t num)
 {
-	ipl_t ipl;
-	struct md_intr_entry *entry;
+	ipl_t ipl = kIPL0;
+	struct intr_entries *entries;
+	struct intr_entry *entry;
 
 	if (num == kIntNumSwitch) {
 		/* here the context switch actually happens */
@@ -74,7 +85,7 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 			  *next = hl_curcpu()->hl.newthread;
 
 #if DEBUG_SCHED == 1
-		ke_dbg("Switch from %p to %p\n", old, next);
+		kdprintf("Switch from %p to %p\n", old, next);
 #endif
 
 		old->frame = *frame;
@@ -87,9 +98,32 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		return;
 	}
 
-	kdprintf("Unhandled interrupt %lu. CR2: 0x%lx\n", num, read_cr2());
-	md_intr_frame_trace(frame);
-	kfatal("Halting.\n");
+	entries = &intr_entries[num];
+
+	if (TAILQ_EMPTY(entries)) {
+		kdprintf("Unhandled interrupt %lu. CR2: 0x%lx\n", num,
+		    read_cr2());
+		md_intr_frame_trace(frame);
+		kfatal("Halting.\n");
+	}
+
+	TAILQ_FOREACH (entry, entries, queue_entry) {
+		ipl = MAX2(ipl, entry->ipl);
+	}
+
+	ipl = splraise(ipl);
+
+	TAILQ_FOREACH (entry, entries, queue_entry) {
+		bool r = entry->handler(frame, entry->arg);
+		(void)r;
+	}
+
+	if (num >= 32) {
+		void lapic_eoi(void);
+		lapic_eoi();
+	}
+
+	splx(ipl);
 }
 
 int
@@ -154,7 +188,7 @@ md_intr_frame_trace(hl_intr_frame_t *frame)
 void
 hl_switch(struct kthread *from, struct kthread *to)
 {
-	ke_curthread()->saved_ipl = splget();
+	from->saved_ipl = splget();
 	hl_curcpu()->hl.oldthread = from;
 	hl_curcpu()->hl.newthread = to;
 	from->hl.fs = rdmsr(kAMD64MSRFSBase);

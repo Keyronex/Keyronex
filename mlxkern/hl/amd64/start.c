@@ -220,7 +220,7 @@ common_init(struct limine_smp_info *smpi)
 
 	asm("sti");
 	__atomic_add_fetch(&cpus_up, 1, __ATOMIC_RELAXED);
-	// md_timeslicing_start();
+	hl_clock_start();
 }
 
 static void
@@ -271,6 +271,18 @@ smp_init()
 		__asm__("pause");
 }
 
+void
+start_fun(void *arg)
+{
+
+	kdprintf("Hello, world from %c!!\n", (char)arg);
+	while (true) {
+		for (int i = 0; i < 20000; i++)
+			asm("pause");
+		kdprintf("%c", (char)arg);
+	}
+}
+
 // The following will be our kernel's entry point.
 void
 _start(void)
@@ -305,6 +317,49 @@ _start(void)
 	kmem_strfree(shizzle);
 
 	smp_init();
+
+	ethread_t testthr;
+	testthr.kthread.cpu = &cpu_bsp;
+	testthr.kthread.process = &kernel_process;
+	testthr.kthread.state = kThreadStateRunnable;
+	testthr.kthread.saved_ipl = kIPL0;
+	testthr.kthread.frame.cs = 0x28;
+	testthr.kthread.frame.ss = 0x30;
+	testthr.kthread.frame.rflags = 0x202;
+	testthr.kthread.frame.rip = (uintptr_t)start_fun;
+	testthr.kthread.frame.rdi = (uintptr_t)'a';
+	testthr.kthread.frame.rbp = 0;
+	testthr.kthread.kstack = vm_kalloc(4, 0) + 4 * PGSIZE;
+	/*
+	 * subtract 8 since there is no `call` prior to executing the function
+	 * so its push %rbp will misalign the stack
+	 */
+	testthr.kthread.frame.rsp = (uintptr_t)testthr.kthread.kstack - 8;
+
+	ethread_t testthr2;
+	testthr2.kthread.cpu = &cpu_bsp;
+	testthr2.kthread.process = &kernel_process;
+	testthr2.kthread.state = kThreadStateRunnable;
+	testthr2.kthread.saved_ipl = kIPL0;
+	testthr2.kthread.frame.cs = 0x28;
+	testthr2.kthread.frame.ss = 0x30;
+	testthr2.kthread.frame.rflags = 0x202;
+	testthr2.kthread.frame.rip = (uintptr_t)start_fun;
+	testthr2.kthread.frame.rdi = (uintptr_t)'b';
+	testthr2.kthread.frame.rbp = 0;
+	testthr2.kthread.kstack = vm_kalloc(4, 0) + 4 * PGSIZE;
+	/*
+	 * subtract 8 since there is no `call` prior to executing the function
+	 * so its push %rbp will misalign the stack
+	 */
+	testthr2.kthread.frame.rsp = (uintptr_t)testthr2.kthread.kstack - 8;
+
+	spldpc();
+	ki_thread_start(&testthr.kthread);
+	ki_thread_start(&testthr2.kthread);
+
+	kdprintf("Both threads now ready 2 go.\n");
+	splx(kIPL0);
 
 	// We're done, just hang...
 	done();

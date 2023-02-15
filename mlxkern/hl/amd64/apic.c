@@ -98,6 +98,15 @@ lapic_timer_calibrate(void)
 	return (initial - apic_after) * hz;
 }
 
+void
+hl_clock_start()
+{
+	lapic_write(hl_curcpu(), kLAPICRegTimer,
+	    kLAPICTimerPeriodic | kIntNumLAPICTimer);
+	lapic_write(hl_curcpu(), kLAPICRegTimerInitial,
+	    hl_curcpu()->hl.lapic_tps / KERN_HZ);
+}
+
 static void
 send_ipi(uint32_t lapic_id, uint8_t intr)
 {

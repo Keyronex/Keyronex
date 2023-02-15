@@ -3,6 +3,7 @@
 #include "ps/ps.h"
 
 kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER;
+kspinlock_t dpc_queues_lock = KSPINLOCK_INITIALISER;
 
 eprocess_t *
 eprocess(kprocess_t *process)
@@ -79,7 +80,7 @@ ki_reschedule(void)
 	kcpu_t *cpu = hl_curcpu();
 	kthread_t *curthread = ke_curthread(), *next;
 
-	kassert(splget() == kIPLHigh);
+	kassert(splget() == kIPLDPC);
 	kassert(ke_spinlock_held(&dispatcher_lock));
 
 	if (curthread == cpu->idle_thread) {

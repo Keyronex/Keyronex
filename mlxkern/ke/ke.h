@@ -257,13 +257,14 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 	}
 
 /*! @brief Kernel fatal condition. */
-#define kfatal(...)                                                         \
-	{                                                                   \
-		kdprintf("at %s:%d (%s):\n", __FILE__, __LINE__, __FUNCTION__); \
-		kdprintf(__VA_ARGS__);                                      \
-		while (1) {                                                 \
-			asm("hlt");                                         \
-		}                                                           \
+#define kfatal(...)                                              \
+	{                                                        \
+		kdprintf("at %s:%d (%s):\n", __FILE__, __LINE__, \
+		    __FUNCTION__);                               \
+		kdprintf(__VA_ARGS__);                           \
+		while (1) {                                      \
+			asm("hlt");                              \
+		}                                                \
 	}
 
 /*! @brief Kernel assertion */
@@ -338,10 +339,15 @@ ke_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 	ke_spinlock_release(&dispatcher_lock, IPL)
 
 /*! @brief Acquire the DPC queues lock. */
-#define ke_acquire_dpc_lock() ke_spinlock_acquire_at(&dispatcher_lock, kIPLHigh)
+#define ke_acquire_dpc_lock() ke_spinlock_acquire_at(&dpc_queues_lock, kIPLHigh)
 
 /*! @brief Release the DPC queues lock. */
-#define ke_release_dpc_lock(IPL) ke_spinlock_release(&dispatcher_lock, IPL)
+#define ke_release_dpc_lock(IPL) ke_spinlock_release(&dpc_queues_lock, IPL)
+
+/*!
+ * @brief Periodic timer interrupt handler.
+ */
+bool ki_cpu_hardclock(hl_intr_frame_t *frame, void *arg);
 
 /*!
  * @brief Reschedule the CPU.
@@ -353,6 +359,9 @@ void ki_reschedule(void);
 /*! @brief Raise a DPC-level software interrupt. */
 void ki_raise_dpc_interrupt(void);
 
+/*! @brief Start a newly-created thread. */
+void ki_thread_start(kthread_t *thread);
+
 /*! @brief Enqueue a DPC (will be run immediately if IPL < kIPLDPC) */
 void ke_dpc_enqueue(kdpc_t *dpc);
 
@@ -361,6 +370,8 @@ void hl_dputc(int ch, void *ctx);
 
 /*! Dispatcher database lock. */
 extern kspinlock_t dispatcher_lock;
+/*! DPC queues lock. */
+extern kspinlock_t dpc_queues_lock;
 /*! Debug print lock. */
 extern kspinlock_t dprintf_lock;
 /*! Bootstrap CPU. */

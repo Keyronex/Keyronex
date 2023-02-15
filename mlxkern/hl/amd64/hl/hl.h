@@ -178,6 +178,9 @@ md_intr_x(bool en)
 			     : "r10", "memory");
 }
 
+/*! @brief Start the periodic timer at KERN_HZ. */
+void hl_clock_start();
+
 /*! @brief Low-level context switch. */
 void hl_switch(struct kthread *from, struct kthread *to);
 
@@ -202,12 +205,12 @@ static inline ipl_t
 splx(ipl_t ipl)
 {
 	uint64_t spli = ipl;
-	uint64_t oldspl = splget();
+	uint64_t oldipl = splget();
 	asm volatile("movq %0,%%cr8" ::"r"(spli) : "memory");
-	if (oldspl > ipl) {
-		ki_ipl_lowered(oldspl, ipl);
+	if (oldipl > ipl) {
+		ki_ipl_lowered(oldipl, ipl);
 	}
-	return oldspl;
+	return oldipl;
 }
 
 /*!
