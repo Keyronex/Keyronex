@@ -86,6 +86,7 @@ ki_reschedule(void)
 	if (curthread == cpu->idle_thread) {
 		/*! idle thread must never wait, try to exit, whatever */
 		kassert(curthread->state == kThreadStateRunning);
+		curthread->state = kThreadStateRunnable;
 	} else if (curthread->state == kThreadStateRunning) {
 		/*! currently running - replace on runqueue */
 		curthread->state = kThreadStateRunnable;
@@ -97,7 +98,7 @@ ki_reschedule(void)
 	}
 
 	curthread->stats.total_run_time +=
-	    MIN2((curthread->stats.last_start_time - ke_get_ticks(cpu)), 1);
+	    MAX2((ke_get_ticks(cpu) - curthread->stats.last_start_time), 1);
 	curthread->stats.last_start_time = ke_get_ticks(cpu);
 
 	next = next_thread(cpu);

@@ -291,6 +291,8 @@ _start(void)
 
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 	cpu_bsp.current_thread = (kthread_t *)&kernel_bsp_thread;
+	kernel_bsp_thread.kthread.cpu = pcpu0;
+	kernel_bsp_thread.kthread.process = &kernel_process;
 	serial_init();
 
 	// Ensure we got a terminal
