@@ -91,6 +91,13 @@ typedef struct kmutex {
 	struct kthread *owner;
 } kmutex_t;
 
+#define KMUTEX_INITIALIZER(kmutex)                              \
+	{                                                       \
+		.hdr.type = kDispatchMutex, .hdr.signalled = 1, \
+		.hdr.waitblock_queue = TAILQ_HEAD_INITIALIZER(  \
+		    (kmutex).hdr.waitblock_queue)               \
+	}
+
 typedef struct ktimer {
 	kdispatchheader_t hdr;
 
@@ -117,12 +124,25 @@ typedef struct ktimer {
 
 TAILQ_HEAD(ktimer_queue, ktimer);
 
-#define KMUTEX_INITIALIZER(kmutex)                              \
-	{                                                       \
-		.hdr.type = kDispatchMutex, .hdr.signalled = 1, \
-		.hdr.waitblock_queue = TAILQ_HEAD_INITIALIZER(  \
-		    (kmutex).hdr.waitblock_queue)               \
-	}
+/*!
+ * Fixed-size message queue.
+ */
+typedef struct kmsgqueue {
+	kdispatchheader_t hdr;
+
+	/* size (must be power of 2) */
+	size_t size;
+	/* write head */
+	size_t writehead;
+	/* read head */
+	size_t readhead;
+
+	/*! message enqueuing semaphore */
+	ksemaphore_t sem;
+
+	/*! message ringbuf */
+	void **messages;
+} kmsgqueue_t;
 
 typedef enum kthread_state {
 	/*! Thread has been created but not yet put to scheduling. */
@@ -364,6 +384,80 @@ void ki_thread_start(kthread_t *thread);
 
 /*! @brief Enqueue a DPC (will be run immediately if IPL < kIPLDPC) */
 void ke_dpc_enqueue(kdpc_t *dpc);
+
+/*!
+ * @brief Initialise a kernel event, either signalled or nonsignalled.
+ */
+void ke_event_init(kevent_t *ev, bool signalled);
+
+/*!
+ * @brief Signal a kernel event.
+ */
+void ke_event_signal(kevent_t *ev);
+
+/*!
+ * @brief Clear a kernel event, resetting it to nonsignalled state.
+ * @returns the previous signal state of the event.
+ */
+bool ke_event_clear(kevent_t *ev);
+
+/*!
+ * @brief Initialise a kernel messagequeue with the given capacity.
+ */
+void ke_msgqueue_init(kmsgqueue_t *msgq, unsigned count);
+
+/*!
+ * @brief Post a message to a kernel messagequeue. Waits until it can be done.
+ */
+void ke_msgq_post(kmsgqueue_t *queue, void *msg);
+
+/*!
+ * @brief Read a message from a kernel messagequeue.
+ * @retval 0 a message was retrieved
+ * @retval 1 no messages were pending
+ */
+int ke_msgq_read(kmsgqueue_t *queue, void **msg);
+
+/*!
+ * @brief Initialise a kernel mutex.
+ */
+void ke_mutex_init(kmutex_t *mutex);
+
+/*!
+ * @brief Release a kernel mutex.
+ */
+void ke_mutex_release(kmutex_t *mutex);
+
+/*!
+ * @brief Initialise a kernel semaphore.
+ * \p count Initial count.
+ */
+void ke_semaphore_init(ksemaphore_t *sem, unsigned count);
+
+/*!
+ * Release a kernel semaphore.
+ *
+ * \p semaphore Pointer to a kernel semaphore.
+ * \p adjustment Value to add to the semaphore count.
+ */
+void ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment);
+
+/*!
+ * @brief Initialise a kernel timer.
+ */
+void ke_timer_init(ktimer_t *timer);
+
+/*!
+ * @brief Set a kernel timer for a given time.
+ */
+void ke_timer_set(ktimer_t *timer, uint64_t nanosecs);
+
+kwaitstatus_t ke_wait(void *object, const char *reason, bool isuserwait,
+    bool alertable, nanosecs_t timeout);
+
+kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
+    const char *reason, bool isWaitall, bool isUserwait, bool isAlertable,
+    nanosecs_t timeout, mlx_nullable mlx_out kwaitblock_t *waitblocks);
 
 /*! Platform-specific debug putc(). */
 void hl_dputc(int ch, void *ctx);

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define mlx_out
+#define mlx_nullable
 
 #define elementsof(x) (sizeof(x) / sizeof(x[0]))
 

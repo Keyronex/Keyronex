@@ -1,5 +1,6 @@
 mlxkern_sources = files(
-	'ke/ke.c', 'ke/sched.c', 'ke/thread.c', 'ke/time.c', 'ke/wait.c',
+	'ke/ke.c', 'ke/msgqueue.c', 'ke/sched.c', 'ke/semaphore.c', 'ke/thread.c',
+	'ke/time.c', 'ke/timer.c', 'ke/wait.c',
 
 	'libkern/libkern.c',
 

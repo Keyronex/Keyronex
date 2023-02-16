@@ -187,9 +187,9 @@ common_init(struct limine_smp_info *smpi)
 	cpu->hl.lapic_base = rdmsr(kAMD64MSRAPICBase);
 	lapic_enable(0xff);
 
-	/* nkx_thread_common_init allocates... */
+	/* ki_thread_common_init allocates... */
 	ke_spinlock_acquire_nospl(&early_lock);
-	// nkx_thread_common_init(thread, cpu, &kernel_process, "idle_thread");
+	// ki_thread_common_init(thread, cpu, &kernel_process, "idle_thread");
 	ke_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
