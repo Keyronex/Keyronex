@@ -48,6 +48,7 @@ idt_set(uint8_t index, vaddr_t isr, uint8_t type, uint8_t ist)
 }
 
 struct intr_entry hardclock_intr_entry;
+struct intr_entry reschedule_ipi_intr_entry;
 
 /* setup the initial IDT */
 void
@@ -66,6 +67,8 @@ idt_setup(void)
 	for (int i = 0; i < elementsof(intr_entries); i++) {
 		TAILQ_INIT(&intr_entries[i]);
 	}
+	md_intr_register("reschedule-ipi", kIntNumRescheduleIPI, kIPLHigh,
+	    ki_reschedule_ipi, NULL, false, &reschedule_ipi_intr_entry);
 	md_intr_register("hardclock", kIntNumLAPICTimer, kIPLHigh,
 	    ki_cpu_hardclock, NULL, false, &hardclock_intr_entry);
 }

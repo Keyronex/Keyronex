@@ -16,8 +16,7 @@ ki_thread_start(kthread_t *thread)
 		hl_curcpu()->reschedule_reason = kRescheduleReasonPreempted;
 		ki_raise_dpc_interrupt();
 	} else {
-		kfatal("un-handled\n");
-		//md_ipi_reschedule(thread->cpu);
+		hl_ipi_reschedule(thread->cpu);
 	}
 
 	ke_release_dispatcher_lock(ipl);

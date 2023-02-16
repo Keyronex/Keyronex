@@ -321,7 +321,7 @@ _start(void)
 	smp_init();
 
 	ethread_t testthr;
-	testthr.kthread.cpu = &cpu_bsp;
+	testthr.kthread.cpu = all_cpus[1];
 	testthr.kthread.process = &kernel_process;
 	testthr.kthread.state = kThreadStateRunnable;
 	testthr.kthread.saved_ipl = kIPL0;
@@ -339,7 +339,7 @@ _start(void)
 	testthr.kthread.frame.rsp = (uintptr_t)testthr.kthread.kstack - 8;
 
 	ethread_t testthr2;
-	testthr2.kthread.cpu = &cpu_bsp;
+	testthr2.kthread.cpu = all_cpus[1];
 	testthr2.kthread.process = &kernel_process;
 	testthr2.kthread.state = kThreadStateRunnable;
 	testthr2.kthread.saved_ipl = kIPL0;

@@ -370,6 +370,11 @@ ke_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 bool ki_cpu_hardclock(hl_intr_frame_t *frame, void *arg);
 
 /*!
+ * @brief Reschedule request IPI handler.
+ */
+bool ki_reschedule_ipi(hl_intr_frame_t *frame, void *arg);
+
+/*!
  * @brief Reschedule the CPU.
  * @pre dispatcher lock held
  * @post dispatcher lock released, IPL remains unchanged

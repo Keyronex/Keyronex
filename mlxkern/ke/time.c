@@ -117,3 +117,10 @@ next:
 
 	return true;
 }
+
+bool
+ki_reschedule_ipi(hl_intr_frame_t *frame, void *arg)
+{
+	hl_curcpu()->reschedule_reason = kRescheduleReasonPreempted;
+	ki_raise_dpc_interrupt();
+}

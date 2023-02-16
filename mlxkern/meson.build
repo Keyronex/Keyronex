@@ -1,7 +1,4 @@
 mlxkern_sources = files(
-	'ke/ke.c', 'ke/msgqueue.c', 'ke/sched.c', 'ke/semaphore.c', 'ke/thread.c',
-	'ke/time.c', 'ke/timer.c', 'ke/wait.c',
-
 	'libkern/libkern.c',
 
 	'object/object.c',
@@ -21,6 +18,8 @@ gen = generator(bin2c,
 )
 
 mlxkern_sources += gen.process(['logosmall.data'])
+
+subdir('ke')
 
 if (arch == 'x86_64')
 	mlxkern_sources += files('vm/amd64/vmamd64.c')
