@@ -14,6 +14,7 @@ vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
 
 	/* todo: lock vad list */
 
+#if 0
 	TAILQ_FOREACH (vad, &vmps->vad_queue, vad_queue_entry) {
 		switch (vad->inheritance) {
 		case kVADInheritShared:
@@ -22,6 +23,7 @@ vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
 			break;
 		}
 	}
+#endif
 
 	return 0;
 }

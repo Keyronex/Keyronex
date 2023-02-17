@@ -4,8 +4,6 @@ mlxkern_sources = files(
 	'object/object.c',
 
 	'process/ps.c',
-
-	'vm/kmem_slab.c', 'vm/kwired.c', 'vm/fork.c', 'vm/page.c', 'vm/vmem.c', 'vm/ws.c', 
 	)
 mlxkern_c_args = [freestanding_c_args, '-D_KERNEL']
 mlxkern_cpp_args = [freestanding_cpp_args]
@@ -20,8 +18,8 @@ gen = generator(bin2c,
 mlxkern_sources += gen.process(['logosmall.data'])
 
 subdir('kernel')
+subdir('vm')
 
 if (arch == 'x86_64')
-	mlxkern_sources += files('vm/amd64/vmamd64.c')
 	subdir('machdep/amd64')
 endif

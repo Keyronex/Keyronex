@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#define mlx_in
 #define mlx_out
 #define mlx_nullable
 
@@ -25,5 +26,7 @@ typedef uint64_t nanosecs_t;
 typedef uintptr_t vaddr_t;
 /*! A physical address. */
 typedef uintptr_t paddr_t;
+/*! A virtual offset. */
+typedef intptr_t voff_t;
 
 #endif /* MLX_MELANTIX_KERNDEFS_H */

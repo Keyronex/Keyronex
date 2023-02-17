@@ -152,12 +152,24 @@ typedef struct vm_wsl {
 } vm_wsl_t;
 
 /*!
+ * Section - an object which can be mapped into a process' address space.
+ */
+typedef struct vm_section {
+
+} vm_section_t;
+
+/*!
  * Virtual Address Descriptor - a mapping of a section object. Note that
  * copy-on-write is done at the section object level, not here.
  */
 typedef struct vm_vad {
-	/*! Entry in vm_procstate::vad_queue */
-	TAILQ_ENTRY(vm_vad) vad_queue_entry;
+	/*! Entry in vm_procstate::vad_rbtree */
+	RB_ENTRY(vm_vad) rbtree_entry;
+
+	/*! Start and end vitrual address. */
+	vaddr_t start, end;
+	/*! Offset into section object. */
+	voff_t offset;
 
 	/*! Inheritance attributes for fork. */
 	enum vm_vad_inheritance {
@@ -183,8 +195,8 @@ typedef struct vm_procstate {
 	vm_wsl_t wsl;
 	/*! VAD queue lock. */
 	kmutex_t mutex;
-	/*! VAD queue. */
-	TAILQ_HEAD(, vm_vad) vad_queue;
+	/*! VAD tree. */
+	RB_HEAD(vm_vad_rbtree, vm_vad) vad_queue;
 	/*! VMem allocator state. */
 	vmem_t vmem;
 	/*! Per-port VM state. */
@@ -243,6 +255,9 @@ void vm_kfree(vaddr_t addr, size_t npages);
 
 /*! @brief Activate a process' virtual address space. */
 void vm_ps_activate(vm_procstate_t *vmps);
+
+/*! @brief Handle a page fault. */
+vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t *out);
 
 /*!
  * @brief Forks a process' virtual address space

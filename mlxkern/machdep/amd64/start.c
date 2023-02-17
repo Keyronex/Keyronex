@@ -320,6 +320,12 @@ _start(void)
 
 	smp_init();
 
+	psp_init_0();
+
+	ipl_t ipl = splget();
+	kdprintf("Current IPL: %d\n", ipl);
+	*(char*)0x0 = 'g';
+
 	ethread_t testthr;
 	testthr.kthread.cpu = all_cpus[1];
 	testthr.kthread.process = &kernel_process;

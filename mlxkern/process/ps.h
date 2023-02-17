@@ -33,8 +33,8 @@ typedef struct eprocess {
 /*! Eternal handle to the kernel process. Only useable by  */
 #define kernel_process_handle (handle_t)(-1)
 
-/*! Process management initialisation part 1. */
-void pi_init_0(void);
+/*! Get the currently-running process. */
+#define ps_curproc() ((eprocess_t *)ke_curthread()->process)
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

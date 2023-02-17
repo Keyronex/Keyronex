@@ -1,6 +1,8 @@
 # meson generates ignores for build directories
 # so they are not needed
 .cache/*
+docs/htmlout
+docs/latexout
 compile_commands.json
 *.out
 out
