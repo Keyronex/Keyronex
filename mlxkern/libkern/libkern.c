@@ -1,5 +1,10 @@
+/*
+ * Copyright (c) 2022-2023 The Melantix Project.
+ * Created in 2022.
+ */
+
 #include "libkern.h"
-#include "ke/ke.h"
+#include "kernel/ke.h"
 #include "vm/kmem.h"
 
 /* ctype.h */

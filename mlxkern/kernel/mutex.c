@@ -1,4 +1,9 @@
-#include "ke/ke_internal.h"
+/*
+ * Copyright (c) 2023 The Melantix Project.
+ * Created on Thu Jan 19 2023.
+ */
+
+#include "kernel/ke_internal.h"
 
 void
 ke_mutex_init(kmutex_t *mtx)

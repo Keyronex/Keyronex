@@ -7,8 +7,8 @@
 
 #include "amd64.h"
 #include "asmintr.h"
-#include "hl/hl.h"
-#include "ke/ke.h"
+#include "machdep/machdep.h"
+#include "kernel/ke.h"
 #include "vm/vm.h"
 
 typedef struct {

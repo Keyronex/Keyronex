@@ -4,7 +4,7 @@
  */
 
 #include "vm.h"
-#include "hl/amd64/amd64.h"
+#include "machdep/amd64/amd64.h"
 #include "vm/amd64/vm_md.h"
 
 int

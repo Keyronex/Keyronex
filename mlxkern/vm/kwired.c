@@ -1,10 +1,14 @@
+/*
+ * Copyright (c) 2022-2023 The Melantix Project.
+ * Created in 2022.
+ */
 /**
  * @file vm_kernel.c
  * @brief Management of the kernel's virtual address space, especially wired.
  */
 
 #include "libkern/libkern.h"
-#include "ps/ps.h"
+#include "process/ps.h"
 #include "vm/vm.h"
 #include "vm/vmem_impl.h"
 #include "vm_internal.h"

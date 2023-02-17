@@ -4,7 +4,7 @@
  */
 
 #include "amd64.h"
-#include "ke/ke.h"
+#include "kernel/ke.h"
 #include "vm/vm.h"
 
 enum {

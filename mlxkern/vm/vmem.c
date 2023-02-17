@@ -90,7 +90,7 @@
 
 #ifdef _KERNEL
 #include "vm/vm.h"
-#include "ke/ke.h"
+#include "kernel/ke.h"
 #include "libkern/libkern.h"
 #else
 #include <assert.h>

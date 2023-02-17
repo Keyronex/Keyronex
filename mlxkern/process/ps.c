@@ -3,8 +3,8 @@
  * Created on Tue Feb 14 2023.
  */
 
-#include "hl/hl.h"
-#include "ps/ps.h"
+#include "machdep/machdep.h"
+#include "process/ps.h"
 
 eprocess_t kernel_process;
 ethread_t kernel_bsp_thread;

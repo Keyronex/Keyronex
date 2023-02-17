@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2022-2023 The Melantix Project.
+ * Created in 2022.
+ */
+
 #ifndef MLX_LIBKERN_LIBKERN_H
 #define MLX_LIBKERN_LIBKERN_H
 

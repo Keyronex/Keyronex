@@ -1,6 +1,12 @@
-#include "hl/hl.h"
-#include "ke/ke.h"
-#include "ps/ps.h"
+/*
+ * Copyright (c) 2023 The Melantix Project.
+ * Created on Tue Feb 14 2023.
+ */
+
+
+#include "machdep/machdep.h"
+#include "kernel/ke.h"
+#include "process/ps.h"
 
 kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER;
 kspinlock_t dpc_queues_lock = KSPINLOCK_INITIALISER;

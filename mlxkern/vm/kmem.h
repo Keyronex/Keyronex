@@ -21,7 +21,7 @@
 #include <sys/queue.h>
 #define mutex_t int
 #else
-#include "ke/ke.h"
+#include "kernel/ke.h"
 #endif
 
 /*!

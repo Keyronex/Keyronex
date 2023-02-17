@@ -14,7 +14,7 @@ extern "C" {
 #include <nanoprintf/nanoprintf.h>
 #include <stdbool.h>
 
-#include "hl/hl.h"
+#include "machdep/machdep.h"
 #include "object/header.h"
 
 #define kNThreadWaitBlocks 4
@@ -174,7 +174,7 @@ typedef struct kthread {
 	object_header_t objhdr;
 
 	/*! Process thread list linkage. */
-	SLIST_ENTRY(kthread) thread_list_link;
+	SLIST_ENTRY(kthread) kproc_threads_link;
 	/*! Process to which it belongs. */
 	struct kprocess *process;
 
@@ -218,8 +218,14 @@ typedef struct kthread {
 	struct hl_thread hl;
 } kthread_t;
 
+/*!
+ * l => #lock
+ */
 typedef struct kprocess {
 	object_header_t objhdr;
+	kspinlock_t lock;
+	/*! (l) threads of the process; linked by kthread::kproc_threads_link */
+	SLIST_HEAD(, kthread) threads;
 } kprocess_t;
 
 enum kreschedule_reason {

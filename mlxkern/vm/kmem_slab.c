@@ -7,7 +7,6 @@
  * Copyright 2020-2022 NetaScale Systems Ltd.
  * All rights reserved.
  */
-
 /*!
  * \page kmem_slab KMem Slab Allocator
  *
@@ -43,7 +42,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ke/ke.h"
+#include "kernel/ke.h"
 
 #ifdef _KERNEL
 #include "libkern/libkern.h"

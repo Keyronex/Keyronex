@@ -23,7 +23,7 @@
 #ifndef _KERNEL
 typedef int ipl_t;
 #else
-#include "hl/hl.h"
+#include "machdep/machdep.h"
 #endif
 
 typedef uintptr_t   vmem_addr_t;

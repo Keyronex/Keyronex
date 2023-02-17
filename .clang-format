@@ -132,7 +132,7 @@ IncludeCategories:
   - Regex: '^<vm/'
     Priority: 3
     SortPriority: 31
-  - Regex: '^<machine/'
+  - Regex: '^<machdep/'
     Priority: 4
     SortPriority: 40
   - Regex: '^<(x86|amd64|i386|xen)/'

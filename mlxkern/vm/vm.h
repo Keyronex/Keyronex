@@ -31,7 +31,7 @@
 #include <stdint.h>
 
 #include "amd64/vm_md.h"
-#include "ke/ke.h"
+#include "kernel/ke.h"
 #include "vm/vmem_impl.h"
 
 /*! Fault flags. For convenience, matches amd64 MMU. */

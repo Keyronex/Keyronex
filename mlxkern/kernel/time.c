@@ -1,5 +1,10 @@
-#include "hl/hl.h"
-#include "ke/ke.h"
+/*
+ * Copyright (c) 2023 The Melantix Project.
+ * Created on Tue Feb 14 2023.
+ */
+
+#include "machdep/machdep.h"
+#include "kernel/ke.h"
 
 int64_t
 ke_get_ticks(kcpu_t *cpu)

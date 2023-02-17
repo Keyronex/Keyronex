@@ -3,8 +3,8 @@
 #include <stdint.h>
 
 #include "amd64.h"
-#include "ke/ke.h"
-#include "ps/ps.h"
+#include "kernel/ke.h"
+#include "process/ps.h"
 #include "vm/kmem.h"
 #include "vm/vm.h"
 

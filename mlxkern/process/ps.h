@@ -6,7 +6,7 @@
 #ifndef MLX_PS_PS_H
 #define MLX_PS_PS_H
 
-#include "ke/ke.h"
+#include "kernel/ke.h"
 #include "object/object.h"
 #include "vm/vm.h"
 

@@ -1,6 +1,11 @@
+/*
+ * Copyright (c) 2023 The Melantix Project.
+ * Created on Thu Jan 19 2023.
+ */
+
 #include <stdbool.h>
 
-#include "ke/ke_internal.h"
+#include "kernel/ke_internal.h"
 
 void
 ke_semaphore_init(ksemaphore_t *sem, unsigned count)

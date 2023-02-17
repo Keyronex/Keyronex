@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2022-2023 The Melantix Project.
  * Created on Tue Feb 14 2023.
  */
 /*!
@@ -10,9 +10,9 @@
  * lock held.
  */
 
-#include "hl/amd64/amd64.h"
-#include "hl/hl.h"
-#include "ps/ps.h"
+#include "machdep/amd64/amd64.h"
+#include "machdep/machdep.h"
+#include "process/ps.h"
 #include "vm/vm.h"
 #include "vm/vm_internal.h"
 #include "vm_md.h"

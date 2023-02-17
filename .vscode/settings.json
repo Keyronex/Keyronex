@@ -19,6 +19,7 @@
 			"${commentprefix} Created on ${date}.",
 			"${commentend}"
 		]
-	}
+	},
+	"esbonio.sphinx.confDir": ""
 
 }
