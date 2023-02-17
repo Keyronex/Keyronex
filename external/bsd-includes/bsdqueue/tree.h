@@ -33,6 +33,7 @@
 #define	_SYS_TREE_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * This file defines data structures for different types of trees:
@@ -332,13 +333,13 @@ struct {								\
  */
 #define _RB_LINK(elm, dir, field)	(elm)->field.rbe_link[dir]
 #define _RB_UP(elm, field)		_RB_LINK(elm, 0, field)
-#define _RB_L				((__uintptr_t)1)
-#define _RB_R				((__uintptr_t)2)
-#define _RB_LR				((__uintptr_t)3)
-#define _RB_BITS(elm)			(*(__uintptr_t *)&elm)
+#define _RB_L				((uintptr_t)1)
+#define _RB_R				((uintptr_t)2)
+#define _RB_LR				((uintptr_t)3)
+#define _RB_BITS(elm)			(*(uintptr_t *)&elm)
 #define _RB_BITSUP(elm, field)		_RB_BITS(_RB_UP(elm, field))
 #define _RB_PTR(elm)			(__typeof(elm))			\
-					((__uintptr_t)elm & ~_RB_LR)
+					((uintptr_t)elm & ~_RB_LR)
 
 #define RB_PARENT(elm, field)		_RB_PTR(_RB_UP(elm, field))
 #define RB_LEFT(elm, field)		_RB_LINK(elm, _RB_L, field)
@@ -347,7 +348,7 @@ struct {								\
 #define RB_EMPTY(head)			(RB_ROOT(head) == NULL)
 
 #define RB_SET_PARENT(dst, src, field) do {				\
-	_RB_BITSUP(dst, field) = (__uintptr_t)src |			\
+	_RB_BITSUP(dst, field) = (uintptr_t)src |			\
 	    (_RB_BITSUP(dst, field) & _RB_LR);				\
 } while (/*CONSTCOND*/ 0)
 
@@ -539,7 +540,7 @@ name##_RB_INSERT_COLOR(struct name *head,				\
 	 * one.								\
 	 */								\
 	struct type *child, *child_up, *gpar;				\
-	__uintptr_t elmdir, sibdir;					\
+	uintptr_t elmdir, sibdir;					\
 									\
 	do {								\
 		/* the rank of the tree rooted at elm grew */		\
@@ -642,7 +643,7 @@ name##_RB_REMOVE_COLOR(struct name *head,				\
     struct type *parent, struct type *elm)				\
 {									\
 	struct type *gpar, *sib, *up;					\
-	__uintptr_t elmdir, sibdir;					\
+	uintptr_t elmdir, sibdir;					\
 									\
 	if (RB_RIGHT(parent, field) == elm &&				\
 	    RB_LEFT(parent, field) == elm) {				\
