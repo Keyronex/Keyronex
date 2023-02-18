@@ -31,11 +31,16 @@ typedef size_t	    vmem_size_t;
 typedef struct vmem vmem_t;
 
 typedef enum vmem_flag {
-	kVMemSleep = 0x0,
-	kVMemNoSleep = 0x1,
+	/*! It is acceptable for the allocation to sleep. */
+	kVMemSleep = 0x1,
+	/*! The allocation must succeed. */
+	kVMemMust = 0x2,
+	/*! The requested address should be allocated. */
 	kVMemExact = 0x2,
-	/** @private */
+	/*! @private VMem to use statically allocated segments */
 	kVMemBootstrap = 0x4,
+	/*! @private PFNDB lock is already held. */
+	kVMemPFNDBHeld = 0x8,
 } vmem_flag_t;
 
 typedef int (*vmem_alloc_t)(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,

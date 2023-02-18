@@ -88,6 +88,7 @@
  */
 
 
+#include "vm/vmem.h"
 #ifdef _KERNEL
 #include "vm/vm.h"
 #include "kernel/ke.h"
@@ -201,7 +202,8 @@ seg_refill(int flags)
 	if (nfreesegs >= 128)
 		return;
 
-	block = (void*)vm_kalloc(1, flags & kVMemSleep ? 0x3 : 0x2);
+	/* passing kVMemBootstrap means recursive VMem won't try to refill. */
+	block = (void*)vm_kalloc(1, flags | kVMemBootstrap);
 	kassert(block != NULL);
 	for (int i = 0; i < elementsof(block->_chunks); i++) {
 		memset(&block->_chunks[i].seg, 0x0,

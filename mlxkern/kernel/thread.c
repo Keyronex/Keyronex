@@ -5,6 +5,7 @@
 
 #include "kernel/ke.h"
 #include "vm/vm.h"
+#include "vm/vmem.h"
 
 /*! cpu roundrobin for allocating threads to */
 size_t lastcpu = 0;
@@ -72,7 +73,7 @@ ke_thread_init(kprocess_t *proc, kthread_t *thread, void (*start_fun)(void *),
 
 	ki_thread_common_init(thread, cpu, proc, name);
 	thread->state = kThreadStateInitial;
-	thread->kstack = vm_kalloc(6, kVMKSleep) + 6 * PGSIZE;
+	thread->kstack = vm_kalloc(6, kVMemSleep) + 6 * PGSIZE;
 
 	kmd_thread_init(thread, start_fun, start_arg);
 }

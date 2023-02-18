@@ -43,6 +43,7 @@
 #include <stdint.h>
 
 #include "kernel/ke.h"
+#include "vm/vmem.h"
 
 #ifdef _KERNEL
 #include "libkern/libkern.h"
@@ -63,7 +64,6 @@
 #define ROUNDDOWN(addr, align) ((((uintptr_t)addr)) & ~(align - 1))
 #define PGROUNDUP(addr) ROUNDUP(addr, PGSIZE)
 #define PGROUNDDOWN(addr) ROUNDDOWN(addr, PGSIZE)
-#define kVMKSleep 0
 
 #define mutex_lock(...)
 #define mutex_unlock(...)
@@ -239,14 +239,14 @@ slabcapacity(kmem_zone_t *zone)
 }
 
 static struct kmem_slab *
-small_slab_new(kmem_zone_t *zone)
+small_slab_new(kmem_zone_t *zone, vmem_flag_t flags)
 {
 	struct kmem_slab *slab;
 	struct kmem_bufctl *entry = NULL;
 	void *base;
 
 	/* create a new slab */
-	base = (void *)vm_kalloc(1, kVMKSleep);
+	base = (void *)vm_kalloc(1, flags);
 	slab = SMALL_SLAB_HDR(base);
 
 	STAILQ_INSERT_HEAD(&zone->slablist, slab, slablist);
@@ -267,7 +267,7 @@ small_slab_new(kmem_zone_t *zone)
 }
 
 static struct kmem_slab *
-large_slab_new(kmem_zone_t *zone)
+large_slab_new(kmem_zone_t *zone, vmem_flag_t flags)
 {
 	struct kmem_slab *slab;
 	struct kmem_bufctl *entry = NULL, *prev = NULL;
@@ -277,7 +277,7 @@ large_slab_new(kmem_zone_t *zone)
 	STAILQ_INSERT_HEAD(&zone->slablist, slab, slablist);
 	slab->zone = zone;
 	slab->nfree = slabcapacity(zone);
-	slab->data[0] = (void *)vm_kalloc(slabsize(zone) / PGSIZE, kVMKSleep);
+	slab->data[0] = (void *)vm_kalloc(slabsize(zone) / PGSIZE, flags);
 
 	/* set up the freelist */
 	for (size_t i = 0; i < slabcapacity(zone); i++) {
@@ -298,19 +298,19 @@ large_slab_new(kmem_zone_t *zone)
 }
 
 static void
-slab_free(kmem_zone_t *zone, struct kmem_slab *slab)
+slab_free(kmem_zone_t *zone, struct kmem_slab *slab, vmem_flag_t flags)
 {
 	kdprintf("Freeing slab %p in zone %s\n", slab, zone->name);
 	if (zone->size > kSmallSlabMax) {
-		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE);
+		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE, flags);
 		kmem_zonefree(&kmem_slab, slab);
 	} else {
-		vm_kfree(PGROUNDDOWN((uintptr_t)slab), 1);
+		vm_kfree(PGROUNDDOWN((uintptr_t)slab), 1, flags);
 	}
 }
 
 void *
-kmem_zonealloc(kmem_zone_t *zone)
+kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 {
 	struct kmem_bufctl *entry, *next;
 	struct kmem_slab *slab;
@@ -323,9 +323,9 @@ kmem_zonealloc(kmem_zone_t *zone)
 	if (!slab || slab->nfree == 0) {
 		/* no slabs or all full (full slabs always at tail of queue) */
 		if (zone->size > kSmallSlabMax) {
-			slab = large_slab_new(zone);
+			slab = large_slab_new(zone, flags);
 		} else {
-			slab = small_slab_new(zone);
+			slab = small_slab_new(zone, flags);
 		}
 	}
 
@@ -378,7 +378,7 @@ kmem_zonealloc(kmem_zone_t *zone)
 }
 
 void
-kmem_zonefree(kmem_zone_t *zone, void *ptr)
+kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 {
 	struct kmem_slab *slab;
 	struct kmem_bufctl *newfree;
@@ -414,7 +414,7 @@ kmem_zonefree(kmem_zone_t *zone, void *ptr)
 	slab->nfree++;
 	if (slab->nfree == slabcapacity(zone)) {
 		STAILQ_REMOVE(&zone->slablist, slab, kmem_slab, slablist);
-		slab_free(zone, slab);
+		slab_free(zone, slab, flags);
 	} else {
 		/* TODO: push slab to front; if nfree == slab capacity, free the
 		 * slab */
@@ -479,7 +479,7 @@ zonenum(size_t size)
 }
 
 static void *
-_kmem_alloc(size_t size)
+_kmem_alloc(size_t size, vmem_flag_t flags)
 {
 	int zoneidx;
 
@@ -489,16 +489,16 @@ _kmem_alloc(size_t size)
 
 	if (zoneidx == -1) {
 		size_t realsize = PGROUNDUP(size);
-		return (void *)vm_kalloc(realsize / PGSIZE, kVMKSleep);
+		return (void *)vm_kalloc(realsize / PGSIZE, flags);
 	} else {
-		return kmem_zonealloc(kmem_alloc_zones[zoneidx]);
+		return kmem_xzonealloc(kmem_alloc_zones[zoneidx], flags);
 	}
 }
 
 void *
-kmem_alloc(size_t size)
+kmem_xalloc(size_t size, vmem_flag_t flags)
 {
-	void *ret = _kmem_alloc(size);
+	void *ret = _kmem_alloc(size, flags);
 #if 0
 	memset(ret - 64, 0xDEAFBEEF, 64);
 	memset(ret + size, 0xDEADBEEF, 64);
@@ -508,7 +508,7 @@ kmem_alloc(size_t size)
 }
 
 void
-kmem_free(void *ptr, size_t size)
+kmem_xfree(void *ptr, size_t size, vmem_flag_t flags)
 {
 	int zoneidx = zonenum(size);
 
@@ -516,22 +516,22 @@ kmem_free(void *ptr, size_t size)
 
 	if (zoneidx == -1) {
 		size_t realsize = PGROUNDUP(size);
-		return vm_kfree((uintptr_t)ptr, realsize / PGSIZE);
+		return vm_kfree((uintptr_t)ptr, realsize / PGSIZE, flags);
 	} else
-		return kmem_zonefree(kmem_alloc_zones[zoneidx], ptr);
+		return kmem_xzonefree(kmem_alloc_zones[zoneidx], ptr, flags);
 }
 
 void *
-kmem_realloc(void *ptr, size_t oldSize, size_t size)
+kmem_xrealloc(void *ptr, size_t oldSize, size_t size, vmem_flag_t flags)
 {
 	void *ret;
 
-	ret = kmem_alloc(size);
+	ret = kmem_xalloc(size, flags);
 	if (ptr != NULL) {
 		kassert(oldSize > 0);
 		kassert(size > oldSize);
 		memcpy(ret, ptr, oldSize);
-		kmem_free(ptr, oldSize);
+		kmem_xfree(ptr, oldSize, flags);
 	}
 	return ret;
 }
@@ -557,7 +557,7 @@ kmem_vasprintf(char **strp, const char *fmt, va_list ap)
 	if (size < 0)
 		return -1;
 
-	*strp = (char *)kmem_alloc(size + 1);
+	*strp = (char *)kmem_xalloc(size + 1, 0);
 
 	if (NULL == *strp)
 		return -1;

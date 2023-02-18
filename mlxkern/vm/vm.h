@@ -63,14 +63,6 @@ typedef enum vm_protection {
 	kVMAll = kVMRead | kVMWrite | kVMExecute,
 } vm_protection_t;
 
-/*! Flags that may be passed to vm_kalloc(). */
-enum vm_kalloc_flags {
-	/*! immediately return NULL if no free pages currently */
-	kVMKNoSleep = 0,
-	/*! infallible; sleepwait for a page if no pages currently available */
-	kVMKSleep = 1,
-};
-
 struct vm_stat {
 	size_t npfndb;
 	size_t nfree;
@@ -299,10 +291,10 @@ vm_page_t *vmp_paddr_to_page(paddr_t paddr);
 void vmp_page_copy(vm_page_t *from, vm_page_t *to);
 
 /*! @brief Allocated kernel wired pages and address space. */
-vaddr_t vm_kalloc(size_t npages, enum vm_kalloc_flags wait);
+vaddr_t vm_kalloc(size_t npages, vmem_flag_t flags);
 
 /*! @brief Free kernel wired pages. */
-void vm_kfree(vaddr_t addr, size_t npages);
+void vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags);
 
 /*! @brief Activate a process' virtual address space. */
 void vm_ps_activate(vm_procstate_t *vmps);
@@ -310,6 +302,18 @@ void vm_ps_activate(vm_procstate_t *vmps);
 /*! @brief Handle a page fault. */
 vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr,
     vm_fault_flags_t flags, vm_page_t **out);
+
+/*! @brief Allocate anonymous memory in a process. */
+int vm_ps_allocate(vm_procstate_t *ps, vaddr_t *vaddrp, size_t size,
+    bool exact);
+
+/*!
+ * @brief Map a view of a section into a process.
+ */
+int vm_ps_map_section_view(vm_procstate_t *ps, vm_section_t *section,
+    mlx_in mlx_out vaddr_t *vaddrp, size_t size, voff_t offset,
+    vm_protection_t initial_protection, vm_protection_t max_protection,
+    enum vm_vad_inheritance inheritance, bool exact);
 
 /*!
  * @brief Forks a process' virtual address space

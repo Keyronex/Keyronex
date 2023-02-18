@@ -308,7 +308,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 				*out = vpage->page;
 			}
 		}
-	} else {
+	} else /* refcnt */ {
 		if (pmap_is_present(vmps, vaddr, NULL)) {
 			/*
 			 * the ?only possible case where there's a fault where
@@ -327,6 +327,8 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 			*out = vpage->page;
 		}
 	}
+
+	return kVMFaultRetOK;
 }
 
 static vm_fault_return_t

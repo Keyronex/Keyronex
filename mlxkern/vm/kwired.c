@@ -92,14 +92,11 @@ vmp_kernel_init()
 }
 
 vaddr_t
-vm_kalloc(size_t npages, enum vm_kalloc_flags wait)
+vm_kalloc(size_t npages, vmem_flag_t flags)
 {
 	vmem_addr_t addr;
-	int flags;
 	int r;
 
-	flags = wait & 0x1 ? kVMemSleep : kVMemNoSleep;
-	flags |= wait & 0x2 ? kVMemBootstrap : 0;
 	r = vmem_xalloc(&vm_kernel_wired, npages * PGSIZE, 0, 0, 0, 0, 0, flags,
 	    &addr);
 	kassert(r == 0);
@@ -110,7 +107,7 @@ vm_kalloc(size_t npages, enum vm_kalloc_flags wait)
 }
 
 void
-vm_kfree(vaddr_t addr, size_t npages)
+vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 {
 	vmem_xfree(&vm_kernel_wired, (vmem_addr_t)addr, npages * PGSIZE);
 }

@@ -17,6 +17,7 @@
 #ifndef KMEM_SLAB_H_
 #define KMEM_SLAB_H_
 
+#include "vm/vmem.h"
 #ifndef _KERNEL
 #include <sys/queue.h>
 #define mutex_t int
@@ -65,26 +66,28 @@ void kmem_zone_init(struct kmem_zone *zone, const char *name, size_t size);
 /*!
  * Allocate from a zone.
  */
-void *kmem_zonealloc(kmem_zone_t *zone);
+void *kmem_xzonealloc(kmem_zone_t *zone, enum vmem_flag flags);
 
 /*!
  * Release memory previously allocated with kmem_zonealloc().
  */
-void kmem_zonefree(kmem_zone_t *zone, void *ptr);
+void kmem_xzonefree(kmem_zone_t *zone, void *ptr, enum vmem_flag flags);
 
 /*!
  * Allocate kernel wired memory. Memory will be aligned to zone's size (thus
  * power-of-2 allocations will be naturally aligned).
  */
-void *kmem_alloc(size_t size) __attribute__ ((alloc_size (1)));
+void *kmem_xalloc(size_t size, enum vmem_flag flags)
+    __attribute__((alloc_size(1)));
 
 /*!
  * Release memory allocated by kmem_alloc(). \p size must match the size that
  * was allocated by kmem_alloc or kmem_realloc.
  */
-void kmem_free(void *ptr, size_t size);
+void kmem_xfree(void *ptr, size_t size, enum vmem_flag flags);
 
-void *kmem_realloc(void *ptr, size_t oldSize, size_t size);
+void *kmem_xrealloc(void *ptr, size_t oldSize, size_t size,
+    enum vmem_flag flags);
 
 /*!
  * Allocate zeroed memory from a zone.
@@ -113,12 +116,18 @@ void *kmem_genalloc(size_t size);
 /*!
  * The realloc-like counterpart to kmem_genalloc().
  */
-void *kmem_genrealloc(void * ptr, size_t newSize);
+void *kmem_genrealloc(void *ptr, size_t newSize);
 
 /*!
  * Release memory allocated by kmem_genalloc().
  */
 void kmem_genfree(void *ptr);
+
+#define kmem_zonealloc(zone) kmem_xzonealloc(zone, 0)
+#define kmem_zonefree(zone, ptr) kmem_xzonefree(zone, ptr, 0)
+#define kmem_alloc(size) kmem_xalloc(size, 0)
+#define kmem_free(ptr, size) kmem_xfree(ptr, size, 0)
+#define kmem_realloc(ptr, oldsize, size) kmem_xrealloc(ptr, oldsize, size, 0)
 
 extern struct kmem_zones kmem_zones;
 
