@@ -254,16 +254,16 @@ typedef struct vm_mdl {
 extern struct vm_stat vmstat;
 
 /*! @brief Acquire the PFN database lock. */
-#define vi_acquire_pfn_lock() ke_spinlock_acquire(&vi_pfn_lock)
+#define vmp_acquire_pfn_lock() ke_spinlock_acquire(&vmp_pfn_lock)
 
 /*! @brief Release the PFN database lock. */
-#define vi_release_pfn_lock(IPL) ke_spinlock_release(&vi_pfn_lock, IPL)
+#define vmp_release_pfn_lock(IPL) ke_spinlock_release(&vmp_pfn_lock, IPL)
 
 /*! @brief Add a region of physical memory to VMM management. */
-void vi_region_add(paddr_t base, size_t length);
+void vmp_region_add(paddr_t base, size_t length);
 
 /*! @brief Initialise the kernel wired memory system. */
-void vi_kernel_init(void);
+void vmp_kernel_init(void);
 
 /*!
  * @brief Allocate a physical page.
@@ -280,7 +280,7 @@ void vi_kernel_init(void);
  * @retval 0 Page allocated.
  * @retval 1 Low memory, drop locks and wait on the low-memory event.
  */
-int vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
+int vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
     vm_page_t **out);
 
 /*!
@@ -290,10 +290,10 @@ int vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
  *
  * @pre PFN database lock held.
  */
-void vi_page_free(vm_procstate_t *ps, vm_page_t *page);
+void vmp_page_free(vm_procstate_t *ps, vm_page_t *page);
 
 /*! @brief Get the PFN database entry for a physical page address. */
-vm_page_t *vi_paddr_to_page(paddr_t paddr);
+vm_page_t *vmp_paddr_to_page(paddr_t paddr);
 
 /*! @brief Copy the contents of one page to another. */
 void vmp_page_copy(vm_page_t *from, vm_page_t *to);
@@ -342,6 +342,6 @@ vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr,
  */
 int vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new);
 
-extern kspinlock_t vi_pfn_lock;
+extern kspinlock_t vmp_pfn_lock;
 
 #endif /* MLX_VM_VM_H */

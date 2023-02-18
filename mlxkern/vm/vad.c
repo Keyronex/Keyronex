@@ -5,10 +5,10 @@
 
 #include "vm/vm_internal.h"
 
-RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vi_vad_cmp);
+RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
 
 int
-vi_vad_cmp(vm_vad_t *x, vm_vad_t *y)
+vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y)
 {
 	/*
 	 * what this actually does is determine whether x's start address is
@@ -27,7 +27,7 @@ vi_vad_cmp(vm_vad_t *x, vm_vad_t *y)
 }
 
 vm_vad_t *
-vi_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr)
+vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr)
 {
 	vm_vad_t key;
 	key.start = vaddr;

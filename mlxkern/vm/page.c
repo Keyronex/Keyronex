@@ -8,9 +8,9 @@
 #include "vm/amd64/vm_md.h"
 #include "vm/vm.h"
 
-struct mi_pregion {
+struct vmp_pregion {
 	/*! Linkage to pregion_queue. */
-	TAILQ_ENTRY(mi_pregion) queue_entry;
+	TAILQ_ENTRY(vmp_pregion) queue_entry;
 	/*! Base address of region. */
 	paddr_t base;
 	/*! Number of pages the region covers. */
@@ -22,15 +22,15 @@ struct mi_pregion {
 typedef STAILQ_HEAD(, vm_page) page_queue_t;
 
 struct vm_stat vmstat;
-static TAILQ_HEAD(, mi_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
+static TAILQ_HEAD(, vmp_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
     pregion_queue);
-kspinlock_t vi_pfn_lock = KSPINLOCK_INITIALISER;
+kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
 static page_queue_t free_list = STAILQ_HEAD_INITIALIZER(free_list);
 
 void
-vi_region_add(paddr_t base, size_t length)
+vmp_region_add(paddr_t base, size_t length)
 {
-	struct mi_pregion *bm = P2V(base);
+	struct vmp_pregion *bm = P2V(base);
 	size_t used; /* n bytes used by bitmap struct */
 	int b;
 
@@ -38,7 +38,7 @@ vi_region_add(paddr_t base, size_t length)
 	bm->base = base;
 	bm->npages = length / PGSIZE;
 
-	used = ROUNDUP(sizeof(struct mi_pregion) +
+	used = ROUNDUP(sizeof(struct vmp_pregion) +
 		sizeof(vm_page_t) * bm->npages,
 	    PGSIZE);
 
@@ -71,9 +71,9 @@ vi_region_add(paddr_t base, size_t length)
 }
 
 vm_page_t *
-vi_paddr_to_page(paddr_t paddr)
+vmp_paddr_to_page(paddr_t paddr)
 {
-	struct mi_pregion *preg;
+	struct vmp_pregion *preg;
 
 	TAILQ_FOREACH (preg, &pregion_queue, queue_entry) {
 		if (preg->base <= paddr &&
@@ -86,7 +86,7 @@ vi_paddr_to_page(paddr_t paddr)
 }
 
 int
-vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
+vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
     vm_page_t **out)
 {
 	vm_page_t *page = STAILQ_FIRST(&free_list);
@@ -105,7 +105,7 @@ vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 }
 
 void
-vi_page_free(vm_procstate_t *ps, vm_page_t *page)
+vmp_page_free(vm_procstate_t *ps, vm_page_t *page)
 {
 
 	STAILQ_INSERT_HEAD(&free_list, page, queue_entry);

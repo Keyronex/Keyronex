@@ -168,7 +168,7 @@ mem_init()
 		if (entries[i]->type != 0 || entries[i]->base < 0x100000)
 			continue;
 
-		vi_region_add(entries[i]->base, entries[i]->length);
+		vmp_region_add(entries[i]->base, entries[i]->length);
 	}
 }
 
@@ -309,7 +309,7 @@ _start(void)
 	idt_setup();
 	mem_init();
 	pmap_init();
-	vi_kernel_init();
+	vmp_kernel_init();
 	kmem_init();
 
 	char *shizzle;

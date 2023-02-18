@@ -91,7 +91,7 @@ wsl_grow(vm_procstate_t *vmps)
 }
 
 void
-mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
+vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
     vm_protection_t protection)
 {
 	vm_wsl_t *ws = &vmps->wsl;
@@ -131,7 +131,7 @@ mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
 }
 
 void
-mi_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
+vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
 {
 	vm_wsl_t *ws = &vmps->wsl;
 
@@ -152,7 +152,7 @@ mi_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
 }
 
 void
-mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
+vmp_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
 {
 	vm_wsl_t *ws = &vmps->wsl;
 	uintptr_t i, entry;

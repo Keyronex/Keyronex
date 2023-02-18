@@ -55,7 +55,7 @@ pmap_init(void)
 		uint64_t *pml4 = P2V(cr3);
 		if (pte_get_addr(pml4[i]) == NULL) {
 			vm_page_t *page;
-			vi_page_alloc(&kernel_process.vmps, true, kPageUseVMM,
+			vmp_page_alloc(&kernel_process.vmps, true, kPageUseVMM,
 			    &page);
 			pte_set(&pml4[i], page->address, kMMUDefaultProt);
 		}
@@ -84,8 +84,8 @@ pmap_free_sub(vm_procstate_t *vmps, uint64_t *table, int level)
 			pmap_free_sub(vmps, pte_get_addr(*entry), level - 1);
 		}
 
-	page = vi_paddr_to_page((uintptr_t)V2P(table));
-	vi_page_free(vmps, page);
+	page = vmp_paddr_to_page((uintptr_t)V2P(table));
+	vmp_page_free(vmps, page);
 }
 
 void
@@ -145,7 +145,7 @@ pmap_descend(vm_procstate_t *vmps, uint64_t *table, size_t index, bool alloc,
 		addr = pte_get_addr(*entry);
 	} else if (alloc) {
 		vm_page_t *page;
-		vi_page_alloc(vmps, true, kPageUseVMM, &page);
+		vmp_page_alloc(vmps, true, kPageUseVMM, &page);
 		addr = (uint64_t *)page->address;
 		pte_set(entry, (paddr_t)addr, mmuprot);
 	}
@@ -273,7 +273,7 @@ pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr)
 	kassert(*pte != 0x0);
 	*pte = 0x0;
 
-	return vi_paddr_to_page(paddr);
+	return vmp_paddr_to_page(paddr);
 }
 
 bool
@@ -318,7 +318,7 @@ void
 vm_ps_md_init(vm_procstate_t *vmps)
 {
 	vm_page_t *page;
-	vi_page_alloc(vmps, true, kPageUseVMM, &page);
+	vmp_page_alloc(vmps, true, kPageUseVMM, &page);
 	vmps->md.cr3 = page->address;
 	for (int i = 255; i < 512; i++) {
 		uint64_t *pml4 = P2V(vmps->md.cr3);

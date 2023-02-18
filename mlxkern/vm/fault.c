@@ -19,9 +19,9 @@
 #include "vm/vm.h"
 #include "vm/vm_internal.h"
 
-RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vi_page_ref_cmp);
+RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 
-int vi_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y)
+int vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y)
 {
 	return x->page_index - y->page_index;
 }
@@ -46,7 +46,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		vm_page_t *page;
 		int ret;
 
-		ret = vi_page_alloc(vmps, false, kPageUseActive, &page);
+		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
 
 		kassert(ret == 0);
 
@@ -66,7 +66,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		 * (TODO: they aren't yet so this can leave IPL permanently
 		 * elevated as the normal IPL drop in vm_fault is absent.)
 		 */
-		vi_release_pfn_lock(kIPLAPC);
+		vmp_release_pfn_lock(kIPLAPC);
 		ke_mutex_release(&vmps->mutex);
 
 		// I/O submission and wait goes here.
@@ -94,7 +94,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 	/* We have the page; map it into the working set list */
 	kassert(!pmap_is_present(vmps, vaddr, NULL));
 
-	mi_wsl_insert(vmps, vaddr, pageref->page, protection);
+	vmp_wsl_insert(vmps, vaddr, pageref->page, protection);
 
 	if (out) {
 		pageref->page->reference_count++;
@@ -149,7 +149,7 @@ fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
 		kassert(r = kVMFaultRetOK);
 	} else {
 		/* grab the page from the working set list */
-		file_page = vi_paddr_to_page(paddr);
+		file_page = vmp_paddr_to_page(paddr);
 		/* we later assume we've got an extra reference */
 		file_page->reference_count++;
 	}
@@ -192,14 +192,14 @@ fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
 		if (pmap_is_writeable(vmps, vaddr, &paddr)) {
 			kassert(paddr);
 			if (*out) {
-				anon_page = vi_paddr_to_page(paddr);
+				anon_page = vmp_paddr_to_page(paddr);
 				anon_page->reference_count++;
 				*out = anon_page;
 			}
 			return kVMFaultRetOK;
 		}
 
-		ret = vi_page_alloc(vmps, false, kPageUseActive, &anon_page);
+		ret = vmp_page_alloc(vmps, false, kPageUseActive, &anon_page);
 		kassert(ret == 0);
 
 		vmp_page_copy(file_page, anon_page);
@@ -210,10 +210,10 @@ fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
 		 * now we can drop the WSL entry for the read-only mapping
 		 * (of file_page), and instate the writeable one (of anon_page).
 		 */
-		mi_wsl_remove(vmps, vaddr);
-		mi_wsl_insert(vmps, vaddr, anon_page, protection);
+		vmp_wsl_remove(vmps, vaddr);
+		vmp_wsl_insert(vmps, vaddr, anon_page, protection);
 
-		/* page has extra refcount from the vi_page_alloc */
+		/* page has extra refcount from the vmp_page_alloc */
 		if (out)
 			*out = anon_page;
 		else
@@ -242,7 +242,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 		vm_page_t *page;
 		int ret;
 
-		ret = vi_page_alloc(vmps, false, kPageUseActive, &page);
+		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
 
 		kassert(ret == 0);
 
@@ -255,7 +255,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 		 * Now that that's done, we can drop our locks and initiate the
 		 * I/O. Page faults are always at APC level.
 		 */
-		vi_release_pfn_lock(kIPLAPC);
+		vmp_release_pfn_lock(kIPLAPC);
 		ke_mutex_release(&vmps->mutex);
 
 		// I/O submission and wait goes here.
@@ -271,7 +271,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 			vm_page_t *page;
 			int ret;
 
-			ret = vi_page_alloc(vmps, false, kPageUseActive, &page);
+			ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
 			kassert(ret == 0);
 
 			vmp_page_copy(vpage->page, page);
@@ -287,12 +287,12 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 
 			if (pmap_is_present(vmps, vaddr, NULL)) {
 				/* existing read-only mapping must go */
-				mi_wsl_remove(vmps, vaddr);
+				vmp_wsl_remove(vmps, vaddr);
 			}
 
-			mi_wsl_insert(vmps, vaddr, page, protection);
+			vmp_wsl_insert(vmps, vaddr, page, protection);
 
-			/* we've got an extra refcount from vi_page_alloc/*/
+			/* we've got an extra refcount from vmp_page_alloc/*/
 			if (out)
 				*out = page;
 			else
@@ -300,7 +300,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 		} else {
 			/* just a read; map existing anon read-only */
 			kassert(!pmap_is_present(vmps, vaddr, NULL));
-			mi_wsl_insert(vmps, vaddr, vpage->page,
+			vmp_wsl_insert(vmps, vaddr, vpage->page,
 			    protection & ~kVMWrite);
 
 			if (out) {
@@ -317,10 +317,10 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 			 * took a write fault. so remove the existing mapping
 			 * and proceed.
 			 */
-			mi_wsl_remove(vmps, vaddr);
+			vmp_wsl_remove(vmps, vaddr);
 		}
 
-		mi_wsl_insert(vmps, vaddr, vpage->page, protection);
+		vmp_wsl_insert(vmps, vaddr, vpage->page, protection);
 
 		if (out) {
 			vpage->page->reference_count++;
@@ -353,13 +353,13 @@ fault_anonymous(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		int ret;
 		vm_page_t *page;
 
-		ret = vi_page_alloc(vmps, false, kPageUseActive, &page);
+		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
 		kassert(ret == 0);
 
 		make_new_anon(section, offset, page);
-		mi_wsl_insert(vmps, vaddr, page, protection);
+		vmp_wsl_insert(vmps, vaddr, page, protection);
 
-		/* page has extra refcount from the vi_page_alloc */
+		/* page has extra refcount from the vmp_page_alloc */
 		if (out)
 			*out = page;
 		else
@@ -385,7 +385,7 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 	w = ke_wait(&vmps->mutex, "vm_fault:vmps->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
-	vad = vi_ps_vad_find(vmps, vaddr);
+	vad = vmp_ps_vad_find(vmps, vaddr);
 	if (!vad) {
 		kfatal("vm_fault: no VAD at address 0x%lx\n", vaddr);
 	}
@@ -398,9 +398,9 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 
 	offset = vaddr - vad->start;
 
-	ipl = vi_acquire_pfn_lock();
+	ipl = vmp_acquire_pfn_lock();
 	if (vad->section->size <= offset) {
-		vi_release_pfn_lock(ipl);
+		vmp_release_pfn_lock(ipl);
 		kfatal("vm_fault: fault past end of object"
 		       "(offset 0x%lx, size 0x%lx)\n",
 		    offset, vad->section->size);
@@ -419,7 +419,7 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 		return r;
 	}
 
-	vi_release_pfn_lock(ipl);
+	vmp_release_pfn_lock(ipl);
 	ke_mutex_release(&vmps->mutex);
 
 	return kVMFaultRetOK;

@@ -21,7 +21,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
     vmem_addr_t *out)
 {
 	int r;
-	ipl_t ipl = vi_acquire_pfn_lock();
+	ipl_t ipl = vmp_acquire_pfn_lock();
 
 	kassert(vmem == &kernel_process.vmps.vmem);
 
@@ -33,12 +33,12 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 	for (int i = 0; i < size - 1; i += PGSIZE) {
 		vm_page_t *page;
-		vi_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
+		vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
 		pmap_enter(&kernel_process.vmps, page->address,
 		    (vaddr_t)*out + i, kVMAll);
 	}
 
-	vi_release_pfn_lock(ipl);
+	vmp_release_pfn_lock(ipl);
 
 	return 0;
 }
@@ -47,14 +47,14 @@ static void
 internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
 {
 	int r;
-	ipl_t ipl = vi_acquire_pfn_lock();
+	ipl_t ipl = vmp_acquire_pfn_lock();
 
 	kassert(vmem == &kernel_process.vmps.vmem);
 
 	r = vmem_xfree(vmem, addr, size);
 	if (r < 0) {
 		kdprintf("internal_freewired: vmem returned %d\n", r);
-		vi_release_pfn_lock(ipl);
+		vmp_release_pfn_lock(ipl);
 		return;
 	}
 	r = size;
@@ -64,10 +64,10 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
 		page = pmap_unenter(&kernel_process.vmps, (vaddr_t)addr + i);
 		kassert(page->reference_count == 1);
 		page->reference_count = 0;
-		vi_page_free(&kernel_process.vmps, page);
+		vmp_page_free(&kernel_process.vmps, page);
 	}
 
-	vi_release_pfn_lock(ipl);
+	vmp_release_pfn_lock(ipl);
 }
 
 void
@@ -78,7 +78,7 @@ vm_kernel_dump()
 }
 
 void
-vi_kernel_init()
+vmp_kernel_init()
 {
 	vmem_earlyinit();
 	vmem_init(&kernel_process.vmps.vmem, "kernel-va", KHEAP_BASE,

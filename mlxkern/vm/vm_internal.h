@@ -64,7 +64,7 @@ bool pmap_is_writeable(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
  * @param protection The level of memory protection to be imposed on the
  * mapping.
  */
-void mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
+void vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
     vm_protection_t protection);
 
 /*!
@@ -75,7 +75,7 @@ void mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
  * and the page will have its reference count dropped.
  *
  */
-void mi_wsl_remove(vm_procstate_t *vmps, vaddr_t entry);
+void vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry);
 
 /**
  * @brief Trims a specified number of pages from a working set list.
@@ -88,21 +88,21 @@ void mi_wsl_remove(vm_procstate_t *vmps, vaddr_t entry);
  * @param ws Pointer to the process vm state.
  * @param n Number of entries to be trimmed.
  */
-void mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n);
+void vmp_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n);
 
 /*!
  * @brief Find the VAD in a process to which a virtual address belongs.
  *
  * @pre VAD mutex locked.
  */
-vm_vad_t *vi_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
+vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
 /*! @brief Comparator function for VAD rb-tree. */
-int vi_vad_cmp(vm_vad_t *x, vm_vad_t *y);
+int vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
 /*! @brief Comparator function for page ref rb-tree. */
-int vi_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y);
+int vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y);
 
-RB_PROTOTYPE(vm_vad_rbtree, vm_vad, rbtree_entry, vi_vad_cmp);
-RB_PROTOTYPE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vi_page_ref_cmp);
+RB_PROTOTYPE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
+RB_PROTOTYPE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 
 #endif /* MLX_VM_VM_INTERNAL_H */
