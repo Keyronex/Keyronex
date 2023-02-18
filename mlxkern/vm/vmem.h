@@ -45,7 +45,7 @@ typedef enum vmem_flag {
 
 typedef int (*vmem_alloc_t)(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
     vmem_addr_t *out);
-typedef void (*vmem_free_t)(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size);
+typedef void (*vmem_free_t)(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size, vmem_flag_t flags);
 
 /** Create a new VMem arena. */
 vmem_t *vmem_init(vmem_t *vmem, const char *name, vmem_addr_t base,
@@ -59,7 +59,7 @@ int vmem_xalloc(vmem_t *vmem, vmem_size_t size, vmem_size_t align,
     vmem_size_t phase, vmem_size_t nocross, vmem_addr_t min, vmem_addr_t max,
     vmem_flag_t flags, vmem_addr_t *out);
 
-int vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size);
+int vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size, vmem_flag_t flags);
 
 void vmem_dump(const vmem_t *vmem);
 

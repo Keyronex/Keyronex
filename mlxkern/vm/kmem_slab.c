@@ -303,7 +303,7 @@ slab_free(kmem_zone_t *zone, struct kmem_slab *slab, vmem_flag_t flags)
 	kdprintf("Freeing slab %p in zone %s\n", slab, zone->name);
 	if (zone->size > kSmallSlabMax) {
 		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE, flags);
-		kmem_zonefree(&kmem_slab, slab);
+		kmem_xzonefree(&kmem_slab, slab, flags);
 	} else {
 		vm_kfree(PGROUNDDOWN((uintptr_t)slab), 1, flags);
 	}

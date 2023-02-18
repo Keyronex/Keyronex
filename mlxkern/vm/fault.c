@@ -18,6 +18,7 @@
 #include "vm/kmem.h"
 #include "vm/vm.h"
 #include "vm/vm_internal.h"
+#include "vm/vmem.h"
 
 RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 
@@ -113,14 +114,14 @@ make_new_anon(vm_section_t *section, voff_t offset, vm_page_t *page)
 	vm_vpage_t *vpage;
 	struct vmp_page_ref *anon_ref;
 
-	vpage = kmem_alloc(sizeof(vm_vpage_t));
+	vpage = kmem_xalloc(sizeof(vm_vpage_t), kVMemPFNDBHeld);
 	vpage->refcount = 1;
 	vpage->swapdesc = -1;
 	vpage->page = page;
 
 	page->vpage = vpage;
 
-	anon_ref = kmem_alloc(sizeof(struct vmp_page_ref));
+	anon_ref = kmem_xalloc(sizeof(struct vmp_page_ref), kVMemPFNDBHeld);
 	anon_ref->page_index = offset / PGSIZE;
 	anon_ref->vpage = vpage;
 

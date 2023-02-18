@@ -390,7 +390,7 @@ try_import(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags, vmem_seg_t **out)
 	r = vmem_add_internal(vmem, kVMemSegSpanImported, addr, size, flags,
 	    out);
 	if (r < 0)
-		vmem->freefn(vmem->source, addr, size);
+		vmem->freefn(vmem->source, addr, size, flags);
 
 	return r;
 }
@@ -479,7 +479,7 @@ freeseg_expand(vmem_t *vmem, vmem_seg_t *seg, vmem_addr_t newbase,
 }
 
 int
-vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
+vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size, vmem_flag_t flags)
 {
 	vmem_seglist_t *bucket = hashbucket_for_addr(vmem, addr);
 	vmem_seg_t	   *seg, *left, *right;
@@ -535,7 +535,7 @@ free:
 		kassert(!right || right->type == kVMemSegSpanImported);
 		kdprintf("Entire ispan 0x%lx-0x%lx is free\n", left->base,
 		    left->base + left->size);
-		vmem->freefn(vmem->source, left->base, left->size);
+		vmem->freefn(vmem->source, left->base, left->size, flags);
 
 		/* XXX seg not set free yet if it wasn't coalesced */
 #if 0

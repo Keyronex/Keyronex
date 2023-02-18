@@ -21,13 +21,13 @@
 #include <bsdqueue/queue.h>
 #include <stdbool.h>
 
+#include "vm/kmem.h"
 #include "vm/vm.h"
+#include "vm/vmem.h"
 
 #define IS_FREELIST_LINK(entry) (((entry)&1) == 1)
 #define DETAG(PENTRY) ((uintptr_t **)(((uintptr_t)PENTRY) & ~1))
 
-#define malloc(...) 0x0
-#define free(...)
 #define assert(...)
 
 /*!
@@ -45,8 +45,8 @@ static void
 wsl_realloc(vm_procstate_t *vmps, size_t new_size)
 {
 	vm_wsl_t *ws = &vmps->wsl;
-	uintptr_t *new_entries = (uintptr_t *)malloc(
-	    new_size * sizeof(uintptr_t));
+	uintptr_t *new_entries = kmem_xalloc(new_size * sizeof(uintptr_t),
+	    kVMemPFNDBHeld);
 	int i = ws->head;
 	int new_tail = 0;
 
@@ -56,13 +56,15 @@ wsl_realloc(vm_procstate_t *vmps, size_t new_size)
 		uintptr_t entry = ws->entries[i++];
 		if (!IS_FREELIST_LINK(entry)) {
 			new_entries[new_tail++] = entry;
+			ws->cur_size++;
 		}
 		if (i >= ws->max_size) {
 			i = 0;
 		}
 	}
 	new_entries[new_tail] = ws->entries[ws->tail];
-	free(ws->entries);
+	kmem_xfree(ws->entries, sizeof(uintptr_t *) * ws->array_size,
+	    kVMemPFNDBHeld);
 	ws->entries = new_entries;
 	ws->head = 0;
 	ws->tail = new_tail;

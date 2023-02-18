@@ -147,10 +147,11 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 	splx(ipl);
 }
 
-static bool
+static __attribute__((noreturn)) bool
 double_fault(hl_intr_frame_t *frame, void *arg)
 {
-	kfatal("double fault\n");
+	kdprintf("double fault\n");
+	for (;;) ;
 }
 
 static bool

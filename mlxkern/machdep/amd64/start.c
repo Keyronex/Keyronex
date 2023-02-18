@@ -324,6 +324,16 @@ _start(void)
 
 	ipl_t ipl = splget();
 	kdprintf("Current IPL: %d\n", ipl);
+
+	vaddr_t addr;
+	vm_ps_allocate(&ps_curproc()->vmps, &addr, 8192, false);
+
+	kdprintf("ADDR: %lu\n", addr);
+	*(char*)addr ='x';
+
+	kdprintf("ADDR: %c\n", *(char*)addr);
+
+#if 0
 	*(char*)0x0 = 'g';
 
 	ethread_t testthr;
@@ -368,6 +378,7 @@ _start(void)
 
 	kdprintf("Both threads now ready 2 go.\n");
 	splx(kIPL0);
+#endif
 
 	// We're done, just hang...
 	done();

@@ -10,6 +10,7 @@
 #include "libkern/libkern.h"
 #include "process/ps.h"
 #include "vm/vm.h"
+#include "vm/vmem.h"
 #include "vm/vmem_impl.h"
 #include "vm_internal.h"
 
@@ -21,7 +22,10 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
     vmem_addr_t *out)
 {
 	int r;
-	ipl_t ipl = vmp_acquire_pfn_lock();
+	ipl_t ipl;
+
+	if (!(flags & kVMemPFNDBHeld))
+		ipl = vmp_acquire_pfn_lock();
 
 	kassert(vmem == &kernel_process.vmps.vmem);
 
@@ -33,25 +37,31 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 	for (int i = 0; i < size - 1; i += PGSIZE) {
 		vm_page_t *page;
-		vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
+		vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
+		    &page);
 		pmap_enter(&kernel_process.vmps, page->address,
 		    (vaddr_t)*out + i, kVMAll);
 	}
 
-	vmp_release_pfn_lock(ipl);
+	if (!(flags & kVMemPFNDBHeld))
+		vmp_release_pfn_lock(ipl);
 
 	return 0;
 }
 
 static void
-internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
+internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
+    vmem_flag_t flags)
 {
 	int r;
-	ipl_t ipl = vmp_acquire_pfn_lock();
+	ipl_t ipl;
 
 	kassert(vmem == &kernel_process.vmps.vmem);
 
-	r = vmem_xfree(vmem, addr, size);
+	if (!(flags & kVMemPFNDBHeld))
+		vmp_acquire_pfn_lock();
+
+	r = vmem_xfree(vmem, addr, size, flags);
 	if (r < 0) {
 		kdprintf("internal_freewired: vmem returned %d\n", r);
 		vmp_release_pfn_lock(ipl);
@@ -67,7 +77,8 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size)
 		vmp_page_free(&kernel_process.vmps, page);
 	}
 
-	vmp_release_pfn_lock(ipl);
+	if (!(flags & kVMemPFNDBHeld))
+		vmp_release_pfn_lock(ipl);
 }
 
 void
@@ -109,5 +120,5 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 void
 vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 {
-	vmem_xfree(&vm_kernel_wired, (vmem_addr_t)addr, npages * PGSIZE);
+	vmem_xfree(&vm_kernel_wired, (vmem_addr_t)addr, npages * PGSIZE, flags);
 }
