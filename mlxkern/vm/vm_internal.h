@@ -12,9 +12,9 @@
  *
  */
 struct vmp_page_ref {
-	/*!
-	 * Where in the section does it belong to?
-	 */
+	/*! Linkage in vm_section::page_ref_rbtree */
+	RB_ENTRY(vmp_page_ref) rbtree_entry;
+	/*! Where in the section does it belong to? */
 	size_t page_index;
 	union {
 		/*! Page reference (used by file sections) */
@@ -27,24 +27,55 @@ struct vmp_page_ref {
 /*! @brief Enter a page mapping. */
 void pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
     vm_protection_t prot);
+
 /*! @brief Remove a page mapping, returning the page previously mapped. */
 vm_page_t *pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr);
 
 /*!
- * @brief Adds a virtual address to a working set list.
+ * @brief Check if a page is present in a process.
+ * @param paddr if this is non-NULL and the page is present, the page's physical
+ * address will be written here.
+ */
+bool pmap_is_present(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
+
+/*!
+ * @brief Check if a page is writeably mapped in a process.
+ * @param paddr if this is non-NULL and the page is writeably mapped, the page's
+ * physical address will be written here.
+ */
+bool pmap_is_writeable(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
+
+/*!
+ * @brief Adds a mapping to the working set list.
  *
- * This function adds a virtual address entry to the working set list.
+ * This function adds a mapping entry to to the working set list.
  * If the working set list is below its maximal size, and there is no low-memory
  * condition, it will be appended.
  * Otherwise, if the working set list is at its maximum, it will try to expand
  * its size and add the entry.
  * If the expansion fails, the function will dispose of the least recently added
  * entry in the working set list and add the new entry in its place.
+ * The provided page is mapped in the process' virtual address space with the
+ * requested protection.
  *
  * @param ws Pointer to the process vm state.
  * @param entry The virtual address entry to add to the working set list.
+ * @param page The page to which \p entry should be set to point.
+ * @param protection The level of memory protection to be imposed on the
+ * mapping.
  */
-void mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry);
+void mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
+    vm_protection_t protection);
+
+/*!
+ * @brief Removes a mapping from a working set list.
+ *
+ * This functions removes a mapping entry from a working set list.
+ * The physical mapping will be abolished, a TLB shootdown issued if necessary,
+ * and the page will have its reference count dropped.
+ *
+ */
+void mi_wsl_remove(vm_procstate_t *vmps, vaddr_t entry);
 
 /**
  * @brief Trims a specified number of pages from a working set list.

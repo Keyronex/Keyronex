@@ -133,7 +133,11 @@ typedef struct vm_vpage {
 	vm_page_t *page;
 	/*! swap descriptor, if it's been written */
 	uintptr_t swapdesc;
-	/*! How many section objects contain it? */
+	/*!
+	 * How many section objects contain it? Note not 'how many times is it
+	 * mapped into working sets'. That's what vm_page_t tracks. This
+	 * reference count drives the copy-on-write logic.
+	 */
 	size_t refcount;
 } vm_vpage_t;
 
@@ -290,6 +294,9 @@ void vi_page_free(vm_procstate_t *ps, vm_page_t *page);
 
 /*! @brief Get the PFN database entry for a physical page address. */
 vm_page_t *vi_paddr_to_page(paddr_t paddr);
+
+/*! @brief Copy the contents of one page to another. */
+void vmp_page_copy(vm_page_t *from, vm_page_t *to);
 
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, enum vm_kalloc_flags wait);

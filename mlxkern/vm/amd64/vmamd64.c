@@ -154,7 +154,8 @@ pmap_descend(vm_procstate_t *vmps, uint64_t *table, size_t index, bool alloc,
 }
 
 /*!
- * @returns pointer to the pte for this virtual address, or NULL if none exists
+ * @returns (physical) pointer to the pte for this virtual address, or NULL if
+ * none exists
  */
 pte_t *
 pmap_fully_descend(vm_procstate_t *vmps, vaddr_t virt)
@@ -273,6 +274,44 @@ pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr)
 	*pte = 0x0;
 
 	return vi_paddr_to_page(paddr);
+}
+
+bool
+pmap_is_present(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr)
+{
+	pte_t *pte = pmap_fully_descend(vmps, vaddr);
+
+	if (!pte)
+		return false;
+
+	pte = P2V(pte);
+
+	if (!(*pte & kMMUPresent))
+		return false;
+	else {
+		if (paddr)
+			*paddr = (paddr_t)pte_get_addr(*pte);
+		return true;
+	}
+}
+
+bool
+pmap_is_writeable(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr)
+{
+	pte_t *pte = pmap_fully_descend(vmps, vaddr);
+
+	if (!pte)
+		return false;
+
+	pte = P2V(pte);
+
+	if (!(*pte & kMMUWrite))
+		return false;
+	else {
+		if (paddr)
+			*paddr = (paddr_t)pte_get_addr(*pte);
+		return true;
+	}
 }
 
 void

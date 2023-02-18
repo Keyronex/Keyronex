@@ -4,6 +4,7 @@
  */
 
 #include "bsdqueue/queue.h"
+#include "libkern/libkern.h"
 #include "vm/amd64/vm_md.h"
 #include "vm/vm.h"
 
@@ -103,8 +104,16 @@ vi_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 	return 0;
 }
 
-void vi_page_free(vm_procstate_t *ps, vm_page_t *page) {
+void
+vi_page_free(vm_procstate_t *ps, vm_page_t *page)
+{
 
 	STAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
+}
+
+void
+vmp_page_copy(vm_page_t *from, vm_page_t *to)
+{
+	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
 }

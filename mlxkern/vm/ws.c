@@ -30,10 +30,14 @@
 #define free(...)
 #define assert(...)
 
-/*! Dispose of an entry in the working set list. */
+/*!
+ * Dispose of an entry in the working set list: unmap it and unreference the
+ * page.
+ */
 static void
-wsl_dispose(vaddr_t vaddr)
+wsl_dispose(vm_procstate_t *vmps, vaddr_t vaddr)
 {
+	(void)vmps;
 	(void)vaddr;
 }
 
@@ -87,7 +91,8 @@ wsl_grow(vm_procstate_t *vmps)
 }
 
 void
-mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry)
+mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
+    vm_protection_t protection)
 {
 	vm_wsl_t *ws = &vmps->wsl;
 
@@ -109,7 +114,7 @@ mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry)
 			} else {
 				/* could not expand, dispose of head entry and
 				 * replace it */
-				wsl_dispose(ws->entries[ws->head]);
+				wsl_dispose(vmps, ws->entries[ws->head]);
 				ws->entries[ws->head] = entry;
 				ws->head = (ws->head + 1) % ws->array_size;
 				ws->tail = (ws->tail + 1) % ws->array_size;
@@ -126,6 +131,27 @@ mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry)
 }
 
 void
+mi_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
+{
+	vm_wsl_t *ws = &vmps->wsl;
+
+	for (int i = ws->head; i != ws->tail;) {
+		uintptr_t *wse = &ws->entries[i];
+		if (!IS_FREELIST_LINK(entry)) {
+			if (*wse == entry) {
+				wsl_dispose(vmps, entry);
+				*wse = (uintptr_t)ws->freelist_head;
+				ws->freelist_head =
+				    (uintptr_t **)((uintptr_t)wse | 0x1);
+			}
+		}
+		if (++i >= ws->max_size) {
+			i = 0;
+		}
+	}
+}
+
+void
 mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
 {
 	vm_wsl_t *ws = &vmps->wsl;
@@ -137,7 +163,7 @@ mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
 		/*! in this case, clear everything */
 		for (i = ws->head; i != ws->tail; i = (i + 1) % ws->max_size) {
 			entry = ws->entries[i];
-			wsl_dispose(entry);
+			wsl_dispose(vmps, entry);
 		}
 		ws->head = ws->tail = 0;
 		ws->cur_size = 0;
@@ -146,7 +172,7 @@ mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
 	for (i = ws->head; i != (ws->head + n) % ws->max_size;
 	     i = (i + 1) % ws->max_size) {
 		entry = ws->entries[i];
-		wsl_dispose(entry);
+		wsl_dispose(vmps, entry);
 	}
 	ws->head = (ws->head + n) % ws->max_size;
 	ws->cur_size -= n;
