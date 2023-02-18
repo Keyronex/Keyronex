@@ -3,7 +3,7 @@
  * Created on Sun Feb 12 2023.
  */
 
-#include "vm.h"
+#include "vm_internal.h"
 #include "machdep/amd64/amd64.h"
 #include "vm/amd64/vm_md.h"
 
@@ -14,8 +14,7 @@ vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
 
 	/* todo: lock vad list */
 
-#if 0
-	TAILQ_FOREACH (vad, &vmps->vad_queue, vad_queue_entry) {
+	RB_FOREACH (vad, vm_vad_rbtree, &vmps->vad_queue) {
 		switch (vad->inheritance) {
 		case kVADInheritShared:
 		case kVADInheritCopy:
@@ -23,7 +22,6 @@ vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
 			break;
 		}
 	}
-#endif
 
 	return 0;
 }

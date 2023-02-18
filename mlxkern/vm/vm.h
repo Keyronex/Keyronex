@@ -32,24 +32,25 @@
 
 #include "amd64/vm_md.h"
 #include "kernel/ke.h"
+#include "object/header.h"
 #include "vm/vmem_impl.h"
 
 /*! Fault flags. For convenience, matches amd64 MMU. */
 typedef enum vm_fault_flags {
-	kMMFaultPresent = 1,
-	kMMFaultWrite = 2,
-	kMMFaultUser = 4,
-	kMMFaultExecute = 16,
+	kVMFaultPresent = 1,
+	kVMFaultWrite = 2,
+	kVMFaultUser = 4,
+	kVMFaultExecute = 16,
 } vm_fault_flags_t;
 
 /*!
  * Fault return values.
  */
 typedef enum vm_fault_return {
-	kMMFaultRetOK = 0,
-	kMMFaultRetFailure = -1,
-	kMMFaultRetPageShortage = -2,
-	kMMFaultRetRetry = -3,
+	kVMFaultRetOK = 0,
+	kVMFaultRetFailure = -1,
+	kVMFaultRetPageShortage = -2,
+	kVMFaultRetRetry = -3,
 } vm_fault_return_t;
 
 /*!
@@ -102,6 +103,12 @@ typedef struct vm_page {
 		/*! The page is used by the VMM directly (wired) */
 		kPageUseVMM,
 	} use : 4;
+	/*! Flags */
+	unsigned
+	    /*! the page (may) have been written to; needs to be laundered */
+	    dirty : 1,
+	    /*! the page is being moved in, or out, of memory */
+	    busy : 1;
 
 	/*! Page's physical address. */
 	paddr_t address;
@@ -110,7 +117,7 @@ typedef struct vm_page {
 		/*! Virtual page, if ::is_anonymous. */
 		struct vm_vpage *vpage;
 		/*! File, if ::is_file */
-		struct vm_file *file;
+		struct file *file;
 	};
 } vm_page_t;
 
@@ -127,6 +134,7 @@ typedef struct vm_vpage {
 	/*! swap descriptor, if it's been written */
 	uintptr_t swapdesc;
 	/*! How many section objects contain it? */
+	size_t refcount;
 } vm_vpage_t;
 
 /*!
@@ -153,9 +161,31 @@ typedef struct vm_wsl {
 
 /*!
  * Section - an object which can be mapped into a process' address space.
+ * Contents mostly locked by the PFN DB lock.
  */
 typedef struct vm_section {
+	object_header_t header;
 
+	/*! size in bytes */
+	size_t size;
+
+	/*! what kind is it? */
+	enum vm_section_kind {
+		kSectionFile,
+		kSectionAnonymous,
+	} kind;
+
+	/*! RB tree of references to vpages (for anonymous) or pages (for file).
+	 */
+	RB_HEAD(vmp_page_ref_rbtree, vmp_page_ref) page_ref_rbtree;
+
+	union {
+		/*! If kind = kSectionAnonymous, the file section we copied, if
+		 * this is a virtual copy of a file section. */
+		struct vm_section *parent;
+		/* If this is a file, a (?non-owning) pointer to the file,  */
+		struct file *file;
+	};
 } vm_section_t;
 
 /*!
@@ -171,6 +201,9 @@ typedef struct vm_vad {
 	/*! Offset into section object. */
 	voff_t offset;
 
+	/*! Section object. */
+	vm_section_t *section;
+
 	/*! Inheritance attributes for fork. */
 	enum vm_vad_inheritance {
 		/*! Inherit a shared entry (though not necessarily writeable!)
@@ -183,8 +216,12 @@ typedef struct vm_vad {
 	} inheritance;
 
 	/*!
-	 * Maximum protection of the region. (we may want to split out a current
-	 * protection from this)
+	 * Current protection of the region.
+	 */
+	vm_protection_t protection;
+
+	/*!
+	 * Maximum protection of the region. Set at creation.
 	 */
 	vm_protection_t max_protection;
 } vm_vad_t;
@@ -202,6 +239,13 @@ typedef struct vm_procstate {
 	/*! Per-port VM state. */
 	struct vm_ps_md md;
 } vm_procstate_t;
+
+/*!
+ * Memory descriptor list.
+ */
+typedef struct vm_mdl {
+
+} vm_mdl_t;
 
 extern struct vm_stat vmstat;
 
@@ -257,7 +301,8 @@ void vm_kfree(vaddr_t addr, size_t npages);
 void vm_ps_activate(vm_procstate_t *vmps);
 
 /*! @brief Handle a page fault. */
-vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t *out);
+vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr,
+    vm_fault_flags_t flags, vm_page_t **out);
 
 /*!
  * @brief Forks a process' virtual address space
@@ -289,35 +334,6 @@ vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t
  * @return 0 on success, negative error code on failure
  */
 int vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new);
-
-/*!
- * @brief Adds a virtual address to a working set list.
- *
- * This function adds a virtual address entry to the working set list.
- * If the working set list is below its maximal size, and there is no low-memory
- * condition, it will be appended.
- * Otherwise, if the working set list is at its maximum, it will try to expand
- * its size and add the entry.
- * If the expansion fails, the function will dispose of the least recently added
- * entry in the working set list and add the new entry in its place.
- *
- * @param ws Pointer to the process vm state.
- * @param entry The virtual address entry to add to the working set list.
- */
-void mi_wsl_insert(vm_procstate_t *vmps, vaddr_t entry);
-
-/**
- * @brief Trims a specified number of pages from a working set list.
- *
- * This function removes a specified number of pages, starting with the least
- * recently used, from a working set list. If the number of entries to be
- * trimmed is equal to the current size of the working set list, then all the
- * entries will be disposed.
- *
- * @param ws Pointer to the process vm state.
- * @param n Number of entries to be trimmed.
- */
-void mi_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n);
 
 extern kspinlock_t vi_pfn_lock;
 

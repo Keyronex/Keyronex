@@ -3,15 +3,12 @@
  * Created on Fri Feb 17 2023.
  */
 
-#include "vm/vm.h"
 #include "vm/vm_internal.h"
 
-static int vad_cmp(vm_vad_t *x, vm_vad_t *y);
+RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vi_vad_cmp);
 
-RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vad_cmp);
-
-static int
-vad_cmp(vm_vad_t *x, vm_vad_t *y)
+int
+vi_vad_cmp(vm_vad_t *x, vm_vad_t *y)
 {
 	/*
 	 * what this actually does is determine whether x's start address is
