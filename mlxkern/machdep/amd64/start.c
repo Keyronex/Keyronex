@@ -283,6 +283,48 @@ start_fun(void *arg)
 	}
 }
 
+#include "vm/vm_internal.h"
+
+void
+test_cow(void)
+{
+	vaddr_t addr_a, addr_b;
+	vm_section_t *a, *b;
+	int r;
+
+	vm_section_new_anonymous(&ps_curproc()->vmps, 8192, &a);
+	kassert(a != NULL);
+	r = vm_ps_map_section_view(&ps_curproc()->vmps, a, &addr_a, 8192, 0,
+	    kVMAll, kVMAll, kVADInheritCopy, false);
+	kassert(r == 0);
+
+	kdprintf("ADDR: 0x%lx\n", addr_a);
+	*(char *)addr_a = 'x';
+
+	kdprintf("ADDR CONTENT: <%c>\n", *(char *)addr_a);
+
+	int vmp_section_anonymous_copy(vm_procstate_t * vmps_from,
+	    vm_procstate_t * vmps_to, vm_vad_t * from_vad,
+	    vm_section_t * section, vm_section_t * *out);
+
+	vmp_section_anonymous_copy(&ps_curproc()->vmps, &ps_curproc()->vmps,
+	    RB_MIN(vm_vad_rbtree, &ps_curproc()->vmps.vad_queue), a, &b);
+
+	r = vm_ps_map_section_view(&ps_curproc()->vmps, b, &addr_b, 8192, 0,
+	    kVMAll, kVMAll, kVADInheritCopy, false);
+	kassert(r == 0);
+
+	kdprintf("&B: 0x%lx\n", addr_b);
+
+	kdprintf("setting A to 'a'\n");
+	*(char *)addr_a = 'a';
+
+	char val = *(char *)addr_a;
+	kdprintf("*A: <%c>\n", val);
+	val = *(char *)addr_b;
+	kdprintf("*B: <%c>\n", val);
+}
+
 // The following will be our kernel's entry point.
 void
 _start(void)
@@ -325,13 +367,7 @@ _start(void)
 	ipl_t ipl = splget();
 	kdprintf("Current IPL: %d\n", ipl);
 
-	vaddr_t addr;
-	vm_ps_allocate(&ps_curproc()->vmps, &addr, 8192, false);
-
-	kdprintf("ADDR: %lu\n", addr);
-	*(char*)addr ='x';
-
-	kdprintf("ADDR: %c\n", *(char*)addr);
+	test_cow();
 
 #if 0
 	*(char*)0x0 = 'g';

@@ -43,6 +43,7 @@ typedef uint64_t pml4e_t, pdpte_t, pde_t, pte_t;
 
 static uint64_t *pte_get_addr(uint64_t pte);
 static void pte_set(uint64_t *pte, paddr_t addr, uint64_t flags);
+void pmap_invlpg(vaddr_t addr);
 
 void
 pmap_init(void)
@@ -248,8 +249,13 @@ pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
 	pti_virt = P2V(&pt[pti]);
 	void *oldaddr;
 
+	uint64_t tib = 1024ul * 1024 * 1024 * 1024;
+	kassert(phys < tib);
+
 	if ((oldaddr = pte_get_addr(*pti_virt)) != NULL) {
 		/*! this may turn out to be excessive */
+		vmem_dump(&kernel_process.vmps.vmem);
+		kmem_dump();
 		kfatal("not remapping a PTE without explicit request\n"
 		       "(requested vaddr=>phys 0x%lx=>0x%lx\n"
 		       "(existing 0x%lx=>%p; PTE is %p)\n",
@@ -274,6 +280,28 @@ pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr)
 	*pte = 0x0;
 
 	return vmp_paddr_to_page(paddr);
+}
+
+void
+pmap_protect_range(vm_procstate_t *vmps, vaddr_t base, vaddr_t limit)
+{
+	/* this is really non-optimal and should be written properly */
+	for (vaddr_t vaddr = base; vaddr < limit; vaddr++) {
+		pte_t *pte = pmap_fully_descend(vmps, vaddr);
+
+		if (!pte)
+			continue;
+
+		pte = P2V(pte);
+		if ( pte_get_addr(*pte) == NULL)
+		 continue;
+
+		if (*pte & kMMUWrite) {
+			/* todo: tlb shootdown! */
+			*pte &= ~kMMUWrite;
+			pmap_invlpg(base);
+		}
+	}
 }
 
 bool

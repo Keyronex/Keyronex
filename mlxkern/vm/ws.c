@@ -34,7 +34,8 @@ struct vmp_wsle {
 	vaddr_t vaddr;
 };
 
-static intptr_t wsle_cmp(struct vmp_wsle *x, struct vmp_wsle *y)
+static intptr_t
+wsle_cmp(struct vmp_wsle *x, struct vmp_wsle *y)
 {
 	return x->vaddr - y->vaddr;
 }
@@ -51,8 +52,9 @@ wsl_dispose(vm_procstate_t *vmps, struct vmp_wsle *wsle)
 	pmap_unenter(vmps, wsle->vaddr);
 }
 
-
-void vmp_wsl_init(vm_procstate_t *vmps){
+void
+vmp_wsl_init(vm_procstate_t *vmps)
+{
 	vm_wsl_t *wsl = &vmps->wsl;
 	wsl->count = 0;
 	TAILQ_INIT(&wsl->queue);
@@ -79,7 +81,8 @@ vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
 	key.vaddr = entry;
 	wsle = RB_FIND(vmp_wsle_rbtree, &vmps->wsl.rbtree, &key);
 	if (wsle == NULL)
-		kfatal("vmp_wsl_remove: no wsle for virtual address 0x%lx\n", entry);
+		kfatal("vmp_wsl_remove: no wsle for virtual address 0x%lx\n",
+		    entry);
 
 	RB_REMOVE(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
 	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);

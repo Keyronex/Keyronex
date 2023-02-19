@@ -101,13 +101,14 @@ vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 
 	*out = page;
 
+	memset(P2V(page->address), 0x0, PGSIZE);
+
 	return 0;
 }
 
 void
 vmp_page_free(vm_procstate_t *ps, vm_page_t *page)
 {
-
 	STAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
 }

@@ -32,6 +32,11 @@ void pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
 vm_page_t *pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr);
 
 /*!
+ * @brief Reduce protections on all mappings within some range of memory.
+ */
+void pmap_protect_range(vm_procstate_t *vmps, vaddr_t base, vaddr_t limit);
+
+/*!
  * @brief Check if a page is present in a process.
  * @param paddr if this is non-NULL and the page is present, the page's physical
  * address will be written here.
@@ -44,6 +49,9 @@ bool pmap_is_present(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
  * physical address will be written here.
  */
 bool pmap_is_writeable(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
+
+/*! @brief Initialise a process' working set list. */
+void vmp_wsl_init(vm_procstate_t *vmps);
 
 /*!
  * @brief Adds a mapping to the working set list.

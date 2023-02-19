@@ -59,7 +59,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 	kassert(vmem == &kernel_process.vmps.vmem);
 
 	if (!(flags & kVMemPFNDBHeld))
-		vmp_acquire_pfn_lock();
+		ipl = vmp_acquire_pfn_lock();
 
 	r = vmem_xfree(vmem, addr, size, flags);
 	if (r < 0) {

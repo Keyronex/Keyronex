@@ -121,6 +121,10 @@ typedef struct vm_page {
  * Whole thing (?) locked by the PFN lock.
  */
 typedef struct vm_vpage {
+#if 0
+	/*! mutex, locks most its fields */
+	kmutex_t mutex;
+#endif
 	/*! physical page frame description if resident */
 	vm_page_t *page;
 	/*! swap descriptor, if it's been written */
@@ -136,6 +140,7 @@ typedef struct vm_vpage {
 /*!
  * Working-set list (or WSL). The set of pageable pages resident in a process.
  * (this really needs rewriting to be less space-inefficient)
+ * Locked by PFN DB lock currently, in future should be its own mutex.
  */
 typedef struct vm_wsl {
 #if 0
@@ -152,10 +157,15 @@ typedef struct vm_wsl {
 
 /*!
  * Section - an object which can be mapped into a process' address space.
- * Contents mostly locked by the PFN DB lock.
+ * Contents mostly locked by the PFN DB lock..
  */
 typedef struct vm_section {
 	object_header_t header;
+
+#if 0
+	/*! object lock */
+	kmutex_t mutex;
+#endif
 
 	/*! size in bytes */
 	size_t size;

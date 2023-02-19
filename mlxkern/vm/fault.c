@@ -22,7 +22,8 @@
 
 RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 
-int vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y)
+int
+vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y)
 {
 	return x->page_index - y->page_index;
 }
@@ -102,7 +103,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		*out = pageref->page;
 	}
 
-	kfatal("path unimplemented\n");
+	return kVMFaultRetOK;
 }
 
 /*!
@@ -149,6 +150,7 @@ fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
 
 		kassert(r = kVMFaultRetOK);
 	} else {
+		/* check if page busy here? */
 		/* grab the page from the working set list */
 		file_page = vmp_paddr_to_page(paddr);
 		/* we later assume we've got an extra reference */
@@ -207,6 +209,10 @@ fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
 
 		/* now we can drop our extra reference to file_page */
 		file_page->reference_count--;
+
+		/* allocate the vpage and page_ref, and insert */
+		make_new_anon(section, offset, anon_page);
+
 		/*
 		 * now we can drop the WSL entry for the read-only mapping
 		 * (of file_page), and instate the writeable one (of anon_page).
@@ -219,9 +225,6 @@ fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
 			*out = anon_page;
 		else
 			anon_page->reference_count--;
-
-		/* finally we'll allocate the vpage and page_ref, and insert */
-		make_new_anon(section, offset, anon_page);
 	}
 
 	return kVMFaultRetOK;
@@ -260,6 +263,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 		ke_mutex_release(&vmps->mutex);
 
 		// I/O submission and wait goes here.
+		// see comments in the file_fault()
 
 		kfatal("Path unimplemented\n");
 
@@ -272,7 +276,8 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 			vm_page_t *page;
 			int ret;
 
-			ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
+			ret = vmp_page_alloc(vmps, false, kPageUseActive,
+			    &page);
 			kassert(ret == 0);
 
 			vmp_page_copy(vpage->page, page);
@@ -389,8 +394,8 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 	kassert(w == kKernWaitStatusOK);
 
 	vad = vmp_ps_vad_find(vmps, vaddr);
-	if (!vad) {
-		kfatal("vm_fault: no VAD at address 0x%lx\n", vaddr);
+	if (vad == NULL || vad->section == NULL) {
+		kfatal("vm_fault: no or bad VAD at address 0x%lx\n", vaddr);
 	}
 
 	/* verify protection permits */

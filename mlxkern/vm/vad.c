@@ -39,7 +39,7 @@ vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr)
 }
 
 int
-vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
+vm_section_new_anonymous(vm_procstate_t *vmps, size_t size, vm_section_t **out)
 {
 	vm_section_t *section = kmem_alloc(sizeof(vm_section_t));
 
@@ -47,6 +47,20 @@ vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
 	section->size = size;
 	section->parent = NULL;
 	RB_INIT(&section->page_ref_rbtree);
+
+	*out = section;
+
+	return 0;
+}
+
+int
+vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
+{
+	vm_section_t *section;
+	int r;
+
+	r = vm_section_new_anonymous(vmps, size, &section);
+	kassert(r == 0);
 
 	return vm_ps_map_section_view(vmps, section, vaddrp, size, 0, kVMAll,
 	    kVMAll, kVADInheritCopy, exact);
