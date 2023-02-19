@@ -134,25 +134,20 @@ typedef struct vm_vpage {
 } vm_vpage_t;
 
 /*!
- * Working-set list (or WSL). A modified ring buffer which can be grown or
- * shrunk, and employing a freelist so that cleared entries can be used.
+ * Working-set list (or WSL). The set of pageable pages resident in a process.
+ * (this really needs rewriting to be less space-inefficient)
  */
 typedef struct vm_wsl {
-	/*! Pointer to array of virtual addresses/freelist linkage. */
-	uintptr_t *entries;
-	/*! Actual size of the array. */
-	size_t array_size;
-	/*! Current maximum size of the working set, may be lower than
-	 * array_size.*/
-	size_t max_size;
-	/*! Currently used number of entries (including cleared ones). */
-	size_t cur_size;
-	/*! Index of least recently inserted page. */
-	size_t head;
-	/*! Index of most recently inserted page */
-	size_t tail;
-	/*! Head of the freelist, if there is one. */
-	uintptr_t **freelist_head;
+#if 0
+	/*! Lock on WSL and on page tables of the associated process. */
+	kmutex_t mutex;
+#endif
+	/*! Number of entries in the working set list. */
+	size_t count;
+	/*! RB tree of entries. */
+	RB_HEAD(vmp_wsle_rbtree, vmp_wsle) rbtree;
+	/*! Tailqueue of entries, for FIFO replacement. */
+	TAILQ_HEAD(, vmp_wsle) queue;
 } vm_wsl_t;
 
 /*!
@@ -345,6 +340,10 @@ int vm_ps_map_section_view(vm_procstate_t *ps, vm_section_t *section,
  * @return 0 on success, negative error code on failure
  */
 int vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new);
+
+/*! @brief Allocate a new anonymous section and charge \p vmps for it.*/
+int vm_section_new_anonymous(vm_procstate_t *vmps, size_t size,
+    vm_section_t **out);
 
 extern kspinlock_t vmp_pfn_lock;
 

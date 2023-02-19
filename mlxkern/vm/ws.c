@@ -23,159 +23,72 @@
 
 #include "vm/kmem.h"
 #include "vm/vm.h"
+#include "vm/vm_internal.h"
 #include "vm/vmem.h"
 
-#define IS_FREELIST_LINK(entry) (((entry)&1) == 1)
-#define DETAG(PENTRY) ((uintptr_t **)(((uintptr_t)PENTRY) & ~1))
+#define WRAP(VALUE, TO) ((VALUE) % TO)
 
-#define assert(...)
+struct vmp_wsle {
+	TAILQ_ENTRY(vmp_wsle) queue_entry;
+	RB_ENTRY(vmp_wsle) rb_entry;
+	vaddr_t vaddr;
+};
+
+static intptr_t wsle_cmp(struct vmp_wsle *x, struct vmp_wsle *y)
+{
+	return x->vaddr - y->vaddr;
+}
+
+RB_GENERATE(vmp_wsle_rbtree, vmp_wsle, rb_entry, wsle_cmp);
 
 /*!
  * Dispose of an entry in the working set list: unmap it and unreference the
- * page.
+ * page. Doesn't remove the WSLE, that's the job of elsewhere.
  */
 static void
-wsl_dispose(vm_procstate_t *vmps, vaddr_t vaddr)
+wsl_dispose(vm_procstate_t *vmps, struct vmp_wsle *wsle)
 {
-	(void)vmps;
-	(void)vaddr;
+	pmap_unenter(vmps, wsle->vaddr);
 }
 
-static void
-wsl_realloc(vm_procstate_t *vmps, size_t new_size)
-{
-	vm_wsl_t *ws = &vmps->wsl;
-	uintptr_t *new_entries = kmem_xalloc(new_size * sizeof(uintptr_t),
-	    kVMemPFNDBHeld);
-	int i = ws->head;
-	int new_tail = 0;
 
-	ws->cur_size = 0;
-
-	while (i != ws->tail) {
-		uintptr_t entry = ws->entries[i++];
-		if (!IS_FREELIST_LINK(entry)) {
-			new_entries[new_tail++] = entry;
-			ws->cur_size++;
-		}
-		if (i >= ws->max_size) {
-			i = 0;
-		}
-	}
-	new_entries[new_tail] = ws->entries[ws->tail];
-	kmem_xfree(ws->entries, sizeof(uintptr_t *) * ws->array_size,
-	    kVMemPFNDBHeld);
-	ws->entries = new_entries;
-	ws->head = 0;
-	ws->tail = new_tail;
-	ws->array_size = new_size;
-}
-
-static bool
-wsl_grow(vm_procstate_t *vmps)
-{
-	vm_wsl_t *ws = &vmps->wsl;
-	size_t increment = 16;
-
-	/* todo: check if we're ALLOWED to grow first.... */
-
-	if (ws->max_size + increment <= ws->array_size) {
-		/* can fit new max size within the array size; simply grow */
-		ws->max_size += increment;
-	} else {
-		/* need to allocate a bigger array. increase its size a bit
-		 * more. */
-		wsl_realloc(vmps, ws->array_size + increment * 4);
-		ws->max_size += increment;
-	}
-
-	return true;
+void vmp_wsl_init(vm_procstate_t *vmps){
+	vm_wsl_t *wsl = &vmps->wsl;
+	wsl->count = 0;
+	TAILQ_INIT(&wsl->queue);
+	RB_INIT(&wsl->rbtree);
 }
 
 void
 vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
     vm_protection_t protection)
 {
-	vm_wsl_t *ws = &vmps->wsl;
-
-	if (ws->freelist_head != 0) {
-		/* we are always allowed to use freelist entries, they're
-		 * cruelly included in our working set size*/
-		uintptr_t *freelist = *DETAG(ws->freelist_head);
-		if (*freelist != 0) {
-			ws->freelist_head = DETAG(*freelist);
-		}
-		*freelist = entry;
-	} else {
-		size_t new_tail = (ws->tail + 1) % ws->array_size;
-		if (new_tail == ws->head) {
-			/* out of slots, first try to expand the WSL */
-			if (wsl_grow(vmps)) {
-				/* expanded, can now append as normal */
-				goto append;
-			} else {
-				/* could not expand, dispose of head entry and
-				 * replace it */
-				wsl_dispose(vmps, ws->entries[ws->head]);
-				ws->entries[ws->head] = entry;
-				ws->head = (ws->head + 1) % ws->array_size;
-				ws->tail = (ws->tail + 1) % ws->array_size;
-			}
-		} else {
-		append:
-			/* the simple case: no disposal, just appending */
-			new_tail = (ws->tail + 1) % ws->array_size;
-			ws->entries[new_tail] = entry;
-			ws->tail = new_tail;
-			ws->cur_size++;
-		}
-	}
+	struct vmp_wsle *wsle = kmem_alloc(sizeof(struct vmp_wsle));
+	wsle->vaddr = entry;
+	TAILQ_INSERT_TAIL(&vmps->wsl.queue, wsle, queue_entry);
+	RB_INSERT(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
+	pmap_enter(vmps, page->address, entry, protection);
+	vmps->wsl.count++;
 }
 
 void
 vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
 {
-	vm_wsl_t *ws = &vmps->wsl;
+	struct vmp_wsle *wsle, key;
 
-	for (int i = ws->head; i != ws->tail;) {
-		uintptr_t *wse = &ws->entries[i];
-		if (!IS_FREELIST_LINK(entry)) {
-			if (*wse == entry) {
-				wsl_dispose(vmps, entry);
-				*wse = (uintptr_t)ws->freelist_head;
-				ws->freelist_head =
-				    (uintptr_t **)((uintptr_t)wse | 0x1);
-			}
-		}
-		if (++i >= ws->max_size) {
-			i = 0;
-		}
-	}
+	key.vaddr = entry;
+	wsle = RB_FIND(vmp_wsle_rbtree, &vmps->wsl.rbtree, &key);
+	if (wsle == NULL)
+		kfatal("vmp_wsl_remove: no wsle for virtual address 0x%lx\n", entry);
+
+	RB_REMOVE(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
+	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);
+	vmps->wsl.count--;
+	wsl_dispose(vmps, wsle);
 }
 
 void
 vmp_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
 {
-	vm_wsl_t *ws = &vmps->wsl;
-	uintptr_t i, entry;
-
-	assert(!(n > ws->cur_size));
-
-	if (n == ws->cur_size) {
-		/*! in this case, clear everything */
-		for (i = ws->head; i != ws->tail; i = (i + 1) % ws->max_size) {
-			entry = ws->entries[i];
-			wsl_dispose(vmps, entry);
-		}
-		ws->head = ws->tail = 0;
-		ws->cur_size = 0;
-		return;
-	}
-	for (i = ws->head; i != (ws->head + n) % ws->max_size;
-	     i = (i + 1) % ws->max_size) {
-		entry = ws->entries[i];
-		wsl_dispose(vmps, entry);
-	}
-	ws->head = (ws->head + n) % ws->max_size;
-	ws->cur_size -= n;
+	kfatal("Unimplemented\n");
 }
