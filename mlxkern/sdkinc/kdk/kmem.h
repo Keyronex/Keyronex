@@ -14,8 +14,8 @@
  * it.
  */
 
-#ifndef KMEM_SLAB_H_
-#define KMEM_SLAB_H_
+#ifndef MLX_KDK_KMEM_H
+#define MLX_KDK_KMEM_H
 
 #include "./vmem.h"
 #ifndef _KERNEL
@@ -23,6 +23,10 @@
 #define mutex_t int
 #else
 #include "./kernel.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /*!
@@ -123,12 +127,18 @@ void *kmem_genrealloc(void *ptr, size_t newSize);
  */
 void kmem_genfree(void *ptr);
 
-#define kmem_zonealloc(zone) kmem_xzonealloc(zone, 0)
-#define kmem_zonefree(zone, ptr) kmem_xzonefree(zone, ptr, 0)
-#define kmem_alloc(size) kmem_xalloc(size, 0)
-#define kmem_free(ptr, size) kmem_xfree(ptr, size, 0)
-#define kmem_realloc(ptr, oldsize, size) kmem_xrealloc(ptr, oldsize, size, 0)
+#define kmem_zonealloc(zone) kmem_xzonealloc(zone, (enum vmem_flag)0)
+#define kmem_zonefree(zone, ptr) kmem_xzonefree(zone, ptr, (enum vmem_flag)0)
+#define kmem_alloc(size) kmem_xalloc(size, (enum vmem_flag)0)
+#define kmem_free(ptr, size) kmem_xfree(ptr, size, (enum vmem_flag)0)
+#define kmem_realloc(ptr, oldsize, size) \
+	kmem_xrealloc(ptr, oldsize, size, (enum vmem_flag)0)
 
 extern struct kmem_zones kmem_zones;
 
-#endif /* KMEM_SLAB_H_ */
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+
+
+#endif /* MLX_KDK_KMEM_H */

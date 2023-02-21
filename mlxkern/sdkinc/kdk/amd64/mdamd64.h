@@ -12,6 +12,10 @@
 
 #include "kdk/kerndefs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum ipl {
 	kIPL0 = 0,
 	kIPLAPC = 1,
@@ -196,7 +200,7 @@ splget()
 {
 	uint64_t ipl;
 	asm volatile("mov %%cr8, %0\n" : "=r"(ipl));
-	return ipl;
+	return (ipl_t)ipl;
 }
 
 /*!
@@ -205,13 +209,13 @@ splget()
 static inline ipl_t
 splx(ipl_t ipl)
 {
-	uint64_t spli = ipl;
-	uint64_t oldipl = splget();
+	uint64_t spli = (ipl_t)ipl;
+	uint64_t oldipl = (ipl_t)splget();
 	asm volatile("movq %0,%%cr8" ::"r"(spli) : "memory");
-	if (oldipl > ipl) {
-		ki_ipl_lowered(oldipl, ipl);
+	if (oldipl > (uint64_t)ipl) {
+		ki_ipl_lowered((ipl_t)oldipl, ipl);
 	}
-	return oldipl;
+	return (ipl_t)oldipl;
 }
 
 /*!
@@ -221,5 +225,9 @@ ipl_t splraise(ipl_t ipl);
 
 #define splapc() splraise(kIPLAPC)
 #define spldpc() splraise(kIPLDPC)
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* MLX_HL_HL_H */

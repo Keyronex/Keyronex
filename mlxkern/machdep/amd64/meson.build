@@ -13,6 +13,9 @@ mlxkern = executable(
 		'-Wl,--build-id=none',
 		mlxkern_link_args,
 	],
+	link_with: [
+		acpipc
+	],
 	include_directories: [ mlxkern_include_directories,
 		limine_include_directories,
 		'.' 

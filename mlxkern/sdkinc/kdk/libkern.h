@@ -6,8 +6,13 @@
 #ifndef MLX_LIBKERN_LIBKERN_H
 #define MLX_LIBKERN_LIBKERN_H
 
-#include <stdint.h>
+#ifdef __cplusplus
+#define restrict __restrict
+extern "C" {
+#endif
+
 #include <stddef.h>
+#include <stdint.h>
 
 /* ctype.h */
 int isalpha(char c);
@@ -33,5 +38,10 @@ char *strdup(const char *src);
 char *strcpy(char *restrict dst, const char *restrict src);
 char *strncpy(char *restrict dst, const char *restrict src, size_t n);
 size_t strlen(const char *str);
+
+#ifdef __cplusplus
+#define restrict __restrict
+} /* extern "C" */
+#endif
 
 #endif /* MLX_LIBKERN_LIBKERN_H */

@@ -24,6 +24,7 @@ if (arch == 'x86_64')
 		'-mno-sse2',
 		'-mno-red-zone',
 		'-mcmodel=kernel',
+		'-D_KERNEL'
 	]
 	freestanding_cpp_args = freestanding_c_args
 	freestanding_ld_args = ['-nostdlib', '-mno-red-zone']
@@ -58,5 +59,6 @@ mlx_sdk_includes = include_directories(
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
 subdir('external/lai')
+subdir('acpipc')
 subdir('virtiofam')
 subdir('mlxkern')

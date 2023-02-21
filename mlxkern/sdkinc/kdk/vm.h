@@ -69,6 +69,21 @@ struct vm_stat {
 	size_t nvmm;
 };
 
+enum vm_page_use {
+	/*! The page is on the freelist. */
+	kPageUseFree,
+	/*! The page is mapped in at least one working set. */
+	kPageUseActive,
+	/*! The page is on the modified or standby list. */
+	kPageUseModified,
+	/*! The page is in transition. */
+	kPageUseTransition,
+	/*! The page is used by kernel wired memory. */
+	kPageUseWired,
+	/*! The page is used by the VMM directly (wired) */
+	kPageUseVMM,
+};
+
 /*!
  * Physical page frame description. Whole thing (?) locked by the PFN lock.
  */
@@ -78,20 +93,7 @@ typedef struct vm_page {
 	/*! By how many PTEs is it mapped? */
 	uint16_t reference_count;
 	/*! What is its current use? */
-	enum vm_page_use {
-		/*! The page is on the freelist. */
-		kPageUseFree,
-		/*! The page is mapped in at least one working set. */
-		kPageUseActive,
-		/*! The page is on the modified or standby list. */
-		kPageUseModified,
-		/*! The page is in transition. */
-		kPageUseTransition,
-		/*! The page is used by kernel wired memory. */
-		kPageUseWired,
-		/*! The page is used by the VMM directly (wired) */
-		kPageUseVMM,
-	} use : 4;
+	enum vm_page_use use : 4;
 	/*! Flags */
 	unsigned
 	    /*! the page (may) have been written to; needs to be laundered */
@@ -186,6 +188,16 @@ typedef struct vm_section {
 	};
 } vm_section_t;
 
+enum vm_vad_inheritance {
+	/*! Inherit a shared entry (though not necessarily writeable!)
+	 */
+	kVADInheritShared,
+	/*! Inherit a virtual copy. */
+	kVADInheritCopy,
+	/*! Special case for stacks - inherit only current thread's. */
+	kVADInheritStack
+};
+
 /*!
  * Virtual Address Descriptor - a mapping of a section object. Note that
  * copy-on-write is done at the section object level, not here.
@@ -203,15 +215,7 @@ typedef struct vm_vad {
 	vm_section_t *section;
 
 	/*! Inheritance attributes for fork. */
-	enum vm_vad_inheritance {
-		/*! Inherit a shared entry (though not necessarily writeable!)
-		 */
-		kVADInheritShared,
-		/*! Inherit a virtual copy. */
-		kVADInheritCopy,
-		/*! Special case for stacks - inherit only current thread's. */
-		kVADInheritStack
-	} inheritance;
+	enum vm_vad_inheritance inheritance;
 
 	/*!
 	 * Current protection of the region.

@@ -25,6 +25,9 @@ void idt_setup(void);
 /* vmamd64.c */
 void pmap_init(void);
 
+/* acpipc/acpipc.cc */
+void acpipc_autoconf(void* rsdp) ;
+
 // The Limine requests can be placed anywhere, but it is important that
 // the compiler does not optimise them away, so, usually, they should
 // be made volatile or equivalent.
@@ -369,6 +372,8 @@ _start(void)
 	kdprintf("Current IPL: %d\n", ipl);
 
 	test_cow();
+
+	acpipc_autoconf(rsdp_request.response->address);
 
 #if 0
 	*(char*)0x0 = 'g';
