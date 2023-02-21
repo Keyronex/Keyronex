@@ -6,7 +6,7 @@
 #ifndef MLX_AMD64_VMAMD64_H
 #define MLX_AMD64_VMAMD64_H
 
-#include <melantix/kerndefs.h>
+#include "kdk/kerndefs.h"
 
 #define PGSIZE 4096
 

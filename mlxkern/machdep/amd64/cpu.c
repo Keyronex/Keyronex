@@ -9,7 +9,7 @@
  * Intel x86 and 64 Manual. So for now it's a statically-allocated thing.
  */
 
-#include <melantix/kerndefs.h>
+#include "kdk/kerndefs.h"
 
 #include "amd64.h"
 #include "kdk/kernel.h"

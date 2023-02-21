@@ -20,12 +20,12 @@ extern "C" {
 #define kNThreadWaitBlocks 4
 
 typedef struct kspinlock {
-	atomic_flag flag;
+	unsigned char flag;
 } kspinlock_t;
 
-#define KSPINLOCK_INITIALISER    \
-	{                        \
-		ATOMIC_FLAG_INIT \
+#define KSPINLOCK_INITIALISER \
+	{                     \
+		0             \
 	}
 
 typedef struct kdpc {
@@ -260,7 +260,7 @@ typedef struct kcpu {
 	kthread_t *idle_thread;
 
 	/*! (a) Number of ticks occurred. */
-	_Atomic nanosecs_t ticks;
+	nanosecs_t ticks;
 
 	unsigned int
 	    /*! DPC-level software-interrupt pending */
@@ -307,15 +307,19 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 static inline bool
 ke_spinlock_held(kspinlock_t *lock)
 {
-	return atomic_flag_test_and_set(&lock->flag);
+	return __atomic_load_n(&lock, __ATOMIC_RELAXED);
 }
 
 /*! @brief Acquire a spinlock without SPL */
 static inline void
 ke_spinlock_acquire_nospl(kspinlock_t *lock)
 {
-	while (atomic_flag_test_and_set(&lock->flag)) {
-		__asm__("pause");
+	unsigned char zero = 0;
+	unsigned char one = 1;
+	while (__atomic_compare_exchange(&lock->flag, &zero, &one, 0,
+	    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+		asm("pause");
+		zero = 0;
 	}
 }
 
@@ -323,7 +327,8 @@ ke_spinlock_acquire_nospl(kspinlock_t *lock)
 static inline void
 ke_spinlock_release_nospl(kspinlock_t *lock)
 {
-	atomic_flag_clear(&lock->flag);
+	unsigned char zero = 0;
+	__atomic_store(&lock->flag, &zero, __ATOMIC_RELEASE);
 }
 
 /*! @brief Initialise a spinlock */

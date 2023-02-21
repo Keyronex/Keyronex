@@ -3,8 +3,12 @@
  * Created on Tue Feb 21 2023.
  */
 
-#ifndef MLX_DEVMGR_DEVMGR_H
-#define MLX_DEVMGR_DEVMGR_H
+#ifndef MLX_KDK_DEVMGR_H
+#define MLX_KDK_DEVMGR_H
+
+#include <stdint.h>
+
+#include "kdk/objhdr.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,11 +23,33 @@ typedef struct irp_stack_entry {
 } irp_stack_entry_t;
 
 typedef struct irp {
+	/*! How many items are on the stack? */
+	uint8_t stack_count;
+	/*!
+	 * The stack, containing at least #stack_count entries, ordered starting
+	 * with the highest level first.
+	 */
 	irp_stack_entry_t stack[0];
 } irp_t;
+
+/*!
+ * A device object.
+ */
+typedef struct device {
+	object_header_t objhdr;
+} device_t;
+
+#if 0
+/*!
+ * A driver object.
+ */
+typedef struct driver {
+
+} driver_t;
+#endif
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MLX_DEVMGR_DEVMGR_H */
+#endif /* MLX_KDK_DEVMGR_H */

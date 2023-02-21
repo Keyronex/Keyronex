@@ -7,9 +7,10 @@
 #define MLX_HL_HL_H
 
 #include <bsdqueue/queue.h>
-#include <melantix/kerndefs.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "kdk/kerndefs.h"
 
 typedef enum ipl {
 	kIPL0 = 0,

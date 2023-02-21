@@ -1,4 +1,5 @@
-project('Melantix', ['c', 'cpp'], default_options: ['cpp_std=gnu++20'])
+project('Melantix', ['c', 'cpp'],
+	default_options: ['cpp_std=gnu++20'])
 
 arch = target_machine.cpu_family()
 os = target_machine.system()
@@ -56,5 +57,6 @@ mlx_sdk_includes = include_directories(
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
+subdir('external/lai')
 subdir('virtiofam')
 subdir('mlxkern')

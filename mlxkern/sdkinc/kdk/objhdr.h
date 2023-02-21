@@ -11,17 +11,26 @@
 #ifndef MLX_OBJECT_HEADER_H
 #define MLX_OBJECT_HEADER_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
-#include <stdatomic.h>
+
+#include "./kerndefs.h"
 
 typedef enum object_type {
 	kObjTypeThread,
 	kObjTypeProcess,
-}object_type_t;
+} object_type_t;
 
 typedef struct object_header {
 	object_type_t type;
-	atomic_int_fast64_t reference_count;
+	uint32_t reference_count;
 } object_header_t;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* MLX_OBJECT_HEADER_H */

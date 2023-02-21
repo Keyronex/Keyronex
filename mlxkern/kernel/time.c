@@ -6,10 +6,10 @@
 #include "kdk/machdep.h"
 #include "kdk/kernel.h"
 
-int64_t
+inline int64_t
 ke_get_ticks(kcpu_t *cpu)
 {
-	return cpu->ticks;
+	return __atomic_load_n(&cpu->ticks, __ATOMIC_SEQ_CST);
 }
 
 void
@@ -93,7 +93,7 @@ ki_cpu_hardclock(hl_intr_frame_t *frame, void *arg)
 
 	/* we are actually already at spl high */
 	ipl = ke_acquire_dpc_lock();
-	ticks = atomic_fetch_add(&cpu->ticks, NS_PER_S / KERN_HZ);
+	ticks = __atomic_fetch_add(&cpu->ticks, NS_PER_S / KERN_HZ, __ATOMIC_SEQ_CST);
 
 	if (cpu->current_thread->timeslice-- <= 0) {
 		cpu->reschedule_reason = kRescheduleReasonPreempted;

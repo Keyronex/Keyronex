@@ -10,10 +10,12 @@
  * lock held.
  */
 
-#include "machdep/amd64/amd64.h"
+#include <stdatomic.h>
+
 #include "kdk/machdep.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "machdep/amd64/amd64.h"
 #include "vm/vm_internal.h"
 
 enum {
@@ -292,8 +294,8 @@ pmap_protect_range(vm_procstate_t *vmps, vaddr_t base, vaddr_t limit)
 			continue;
 
 		pte = P2V(pte);
-		if ( pte_get_addr(*pte) == NULL)
-		 continue;
+		if (pte_get_addr(*pte) == NULL)
+			continue;
 
 		if (*pte & kMMUWrite) {
 			/* todo: tlb shootdown! */
