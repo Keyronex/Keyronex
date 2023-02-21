@@ -3,11 +3,9 @@
  * Created on Fri Feb 17 2023.
  */
 
-#include "kernel/ke.h"
-#include "vm/kmem.h"
-#include "vm/vm.h"
+#include "kdk/kernel.h"
+#include "kdk/kmem.h"
 #include "vm/vm_internal.h"
-#include "vm/vmem.h"
 
 RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
 

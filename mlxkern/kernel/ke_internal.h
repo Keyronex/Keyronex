@@ -6,7 +6,7 @@
 #ifndef MLX_KE_KE_INTERNAL_H
 #define MLX_KE_KE_INTERNAL_H
 
-#include "kernel/ke.h"
+#include "kdk/kernel.h"
 
 /*!
  * @brief Set up a kernel thread to run a function with argument.

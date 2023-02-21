@@ -3,9 +3,9 @@
  * Created in 2022.
  */
 
-#include "libkern.h"
-#include "kernel/ke.h"
-#include "vm/kmem.h"
+#include "kdk/libkern.h"
+#include "kdk/kernel.h"
+#include "kdk/kmem.h"
 
 /* ctype.h */
 int

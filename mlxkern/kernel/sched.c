@@ -4,9 +4,9 @@
  */
 
 
-#include "machdep/machdep.h"
-#include "kernel/ke.h"
-#include "process/ps.h"
+#include "kdk/machdep.h"
+#include "kdk/kernel.h"
+#include "kdk/process.h"
 
 kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER;
 kspinlock_t dpc_queues_lock = KSPINLOCK_INITIALISER;

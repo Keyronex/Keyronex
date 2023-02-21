@@ -4,15 +4,7 @@
  */
 /*!
  * @file vm.h
- * @brief The memory manager's internal data structures.
- *
- * Working Set Lists
- * -----------------
- *
- * The implementation of these is based very closely on that of Mintia:
- * see https://github.com/xrarch/mintia
- *
- *
+ * @brief Virtual Memory Manager public interface.
  *
  * Locking
  * -------
@@ -23,17 +15,22 @@
  * The VAD list mutex protects process' trees of VAD lists.
  */
 
-#ifndef MLX_VM_VM_H
-#define MLX_VM_VM_H
+#ifndef MLX_KDK_VM_H
+#define MLX_KDK_VM_H
 
 #include <bsdqueue/queue.h>
 #include <bsdqueue/tree.h>
 #include <stdint.h>
 
-#include "amd64/vm_md.h"
-#include "kernel/ke.h"
-#include "object/header.h"
-#include "vm/vmem_impl.h"
+#ifdef __amd64
+#include "./amd64/vmamd64.h"
+#else
+#error "Port Virtual Memory to this platform"
+#endif
+
+#include "./kernel.h"
+#include "./objhdr.h"
+#include "./vmem_impl.h"
 
 /*! Fault flags. For convenience, matches amd64 MMU. */
 typedef enum vm_fault_flags {
@@ -357,4 +354,4 @@ int vm_section_new_anonymous(vm_procstate_t *vmps, size_t size,
 
 extern kspinlock_t vmp_pfn_lock;
 
-#endif /* MLX_VM_VM_H */
+#endif /* MLX_KDK_VM_H */

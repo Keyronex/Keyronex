@@ -14,15 +14,15 @@
  * detailed description of VMem.
  */
 
-#ifndef MLX_KE_VMEM_IMPL_H
-#define MLX_KE_VMEM_IMPL_H
+#ifndef MLX_KDK_VMEM_IMPL_H
+#define MLX_KDK_VMEM_IMPL_H
 
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "vm/vmem.h"
+#include "./vmem.h"
 
 enum { kNFreeLists = sizeof(vmem_addr_t) * CHAR_BIT, kNHashBuckets = 16 };
 
@@ -72,4 +72,4 @@ typedef struct vmem {
 
 void vmem_earlyinit();
 
-#endif /* MLX_KE_VMEM_IMPL_H */
+#endif /* MLX_KDK_VMEM_IMPL_H */

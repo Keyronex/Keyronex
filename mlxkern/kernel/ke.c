@@ -3,7 +3,7 @@
  * Created on Mon Feb 13 2023.
  */
 
-#include "kernel/ke.h"
+#include "kdk/kernel.h"
 
 #define NANOPRINTF_IMPLEMENTATION
 #include <nanoprintf/nanoprintf.h>

@@ -88,11 +88,11 @@
  */
 
 
-#include "vm/vmem.h"
+#include "kdk/vmem_impl.h"
 #ifdef _KERNEL
-#include "vm/vm.h"
-#include "kernel/ke.h"
-#include "libkern/libkern.h"
+#include "kdk/vm.h"
+#include "kdk/kernel.h"
+#include "kdk/libkern.h"
 #else
 #include <assert.h>
 #include <stdio.h>
@@ -107,8 +107,6 @@
 		exit(EXIT_FAILURE);             \
 	}
 #endif
-
-#include "vmem_impl.h"
 
 #ifndef ERESOURCEEXHAUSTED
 #define ERESOURCEEXHAUSTED 1200

@@ -3,9 +3,9 @@
  * Created on Wed Feb 15 2023.
  */
 
-#include "kernel/ke.h"
-#include "vm/vm.h"
-#include "vm/vmem.h"
+#include "kdk/kernel.h"
+#include "kdk/vm.h"
+#include "kdk/vmem.h"
 
 /*! cpu roundrobin for allocating threads to */
 size_t lastcpu = 0;

@@ -3,11 +3,10 @@
  * Created on Sun Feb 12 2023.
  */
 
-#include "kmem.h"
+#include "kdk/kmem.h"
 #include "machdep/amd64/amd64.h"
-#include "vm/amd64/vm_md.h"
-#include "vm/vm.h"
-#include "vm/vmem.h"
+#include "kdk/vm.h"
+#include "kdk/vmem.h"
 #include "vm_internal.h"
 
 /*!

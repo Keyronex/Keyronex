@@ -17,12 +17,12 @@
 #ifndef KMEM_SLAB_H_
 #define KMEM_SLAB_H_
 
-#include "vm/vmem.h"
+#include "./vmem.h"
 #ifndef _KERNEL
 #include <sys/queue.h>
 #define mutex_t int
 #else
-#include "kernel/ke.h"
+#include "./kernel.h"
 #endif
 
 /*!

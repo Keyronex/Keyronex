@@ -14,11 +14,9 @@
  * can't be removed.
  */
 
-#include "process/ps.h"
-#include "vm/kmem.h"
-#include "vm/vm.h"
+#include "kdk/kmem.h"
+#include "kdk/process.h"
 #include "vm/vm_internal.h"
-#include "vm/vmem.h"
 
 RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 

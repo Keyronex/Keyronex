@@ -4,8 +4,8 @@
  */
 
 #include "amd64.h"
-#include "kernel/ke.h"
-#include "vm/vm.h"
+#include "kdk/kernel.h"
+#include "kdk/vm.h"
 
 enum {
 	kLAPICRegEOI = 0xb0,

@@ -3,10 +3,10 @@
  * Created on Tue Feb 14 2023.
  */
 
-#include "kernel/ke.h"
-#include "machdep/machdep.h"
-#include "process/ps.h"
-#include "vm/kmem.h"
+#include "kdk/kernel.h"
+#include "kdk/machdep.h"
+#include "kdk/process.h"
+#include "kdk/vmem.h"
 
 eprocess_t kernel_process;
 ethread_t kernel_bsp_thread;

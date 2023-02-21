@@ -4,9 +4,8 @@
  */
 
 #include "bsdqueue/queue.h"
-#include "libkern/libkern.h"
-#include "vm/amd64/vm_md.h"
-#include "vm/vm.h"
+#include "kdk/libkern.h"
+#include "kdk/vm.h"
 
 struct vmp_pregion {
 	/*! Linkage to pregion_queue. */

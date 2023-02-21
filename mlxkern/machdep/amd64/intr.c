@@ -7,10 +7,10 @@
 
 #include "amd64.h"
 #include "asmintr.h"
-#include "kernel/ke.h"
-#include "machdep/machdep.h"
-#include "process/ps.h"
-#include "vm/vm.h"
+#include "kdk/kernel.h"
+#include "kdk/machdep.h"
+#include "kdk/process.h"
+#include "kdk/vm.h"
 
 typedef struct {
 	uint16_t isr_low;

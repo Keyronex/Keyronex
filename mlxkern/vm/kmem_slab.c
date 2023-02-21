@@ -42,13 +42,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kernel/ke.h"
-#include "vm/vmem.h"
+#include "kdk/kernel.h"
+#include "kdk/vmem.h"
+#include "kdk/kmem.h"
 
 #ifdef _KERNEL
-#include "libkern/libkern.h"
-#include "vm/kmem.h"
-#include "vm/vm.h"
+#include "kdk/libkern.h"
+#include "kdk/vmem.h"
+#include "kdk/vm.h"
 #else
 #include <sys/mman.h>
 
@@ -57,7 +58,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "kmem.h"
+#include "kdk/kmem.h"
 
 #define PGSIZE 4096
 #define ROUNDUP(addr, align) (((addr) + align - 1) & ~(align - 1))

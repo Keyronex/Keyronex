@@ -6,9 +6,9 @@
 #ifndef MLX_PS_PS_H
 #define MLX_PS_PS_H
 
-#include "kernel/ke.h"
-#include "object/object.h"
-#include "vm/vm.h"
+#include "./kernel.h"
+#include "./object.h"
+#include "./vm.h"
 
 /*!
  * An executive thread.
@@ -35,6 +35,16 @@ typedef struct eprocess {
 
 /*! Get the currently-running process. */
 #define ps_curproc() ((eprocess_t *)ke_curthread()->process)
+
+/*!
+ * Create a new thread of a kernel process.
+ *
+ * @param thread Pointer to an uninitialised ethread_t structure which will be
+ * initialised as the thread.
+ *
+ * @post New thread is created, with one reference held to it.
+ */
+int ps_create_system_thread(ethread_t *thread);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

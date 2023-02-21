@@ -3,8 +3,8 @@
  * Created on Tue Feb 14 2023.
  */
 
-#include "machdep/machdep.h"
-#include "kernel/ke.h"
+#include "kdk/machdep.h"
+#include "kdk/kernel.h"
 
 int64_t
 ke_get_ticks(kcpu_t *cpu)

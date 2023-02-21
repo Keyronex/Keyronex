@@ -5,7 +5,7 @@
 
 
 #include "kernel/ke_internal.h"
-#include "vm/kmem.h"
+#include "kdk/kmem.h"
 
 void
 ke_event_init(kevent_t *ev, bool signalled)

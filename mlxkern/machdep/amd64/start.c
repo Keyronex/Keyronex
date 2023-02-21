@@ -3,10 +3,11 @@
 #include <stdint.h>
 
 #include "amd64.h"
-#include "kernel/ke.h"
-#include "process/ps.h"
-#include "vm/kmem.h"
-#include "vm/vm.h"
+#include "kdk/kernel.h"
+#include "kdk/kmem.h"
+#include "kdk/vm.h"
+#include "kdk/vmem.h"
+#include "kdk/process.h"
 
 enum { kPortCOM1 = 0x3f8 };
 

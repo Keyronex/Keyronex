@@ -12,7 +12,7 @@
 #include <melantix/kerndefs.h>
 
 #include "amd64.h"
-#include "kernel/ke.h"
+#include "kdk/kernel.h"
 
 typedef struct {
 	uint16_t length;

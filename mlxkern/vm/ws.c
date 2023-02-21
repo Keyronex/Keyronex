@@ -21,10 +21,8 @@
 #include <bsdqueue/queue.h>
 #include <stdbool.h>
 
-#include "vm/kmem.h"
-#include "vm/vm.h"
+#include "kdk/kmem.h"
 #include "vm/vm_internal.h"
-#include "vm/vmem.h"
 
 #define WRAP(VALUE, TO) ((VALUE) % TO)
 

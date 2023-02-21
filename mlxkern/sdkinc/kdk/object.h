@@ -7,10 +7,10 @@
  * @brief Object manager interface
  */
 
-#ifndef MLX_OBJECT_OBJECT_H
-#define MLX_OBJECT_OBJECT_H
+#ifndef MLX_KDK_OBJECT_H
+#define MLX_KDK_OBJECT_H
 
-#include "object/header.h"
+#include "./objhdr.h"
 
 /*!
  * Initialise a given object header appropriately for a type.
@@ -30,4 +30,4 @@ void *obi_retain(object_header_t *hdr);
  */
 void *obi_direct_release(void *obj);
 
-#endif /* MLX_OBJECT_OBJECT_H */
+#endif /* MLX_KDK_OBJECT_H */

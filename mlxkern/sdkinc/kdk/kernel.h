@@ -14,8 +14,8 @@ extern "C" {
 #include <nanoprintf/nanoprintf.h>
 #include <stdbool.h>
 
-#include "machdep/machdep.h"
-#include "object/header.h"
+#include "kdk/machdep.h"
+#include "kdk/objhdr.h"
 
 #define kNThreadWaitBlocks 4
 
@@ -222,7 +222,9 @@ typedef struct kthread {
  * l => #lock
  */
 typedef struct kprocess {
+	/*! Object manager header. */
 	object_header_t objhdr;
+
 	kspinlock_t lock;
 	/*! (l) threads of the process; linked by kthread::kproc_threads_link */
 	SLIST_HEAD(, kthread) threads;

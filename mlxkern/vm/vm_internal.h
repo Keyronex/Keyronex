@@ -6,7 +6,7 @@
 #ifndef MLX_VM_VM_INTERNAL_H
 #define MLX_VM_VM_INTERNAL_H
 
-#include "vm/vm.h"
+#include "kdk/vm.h"
 
 /*!
  *

@@ -11,11 +11,10 @@
  */
 
 #include "machdep/amd64/amd64.h"
-#include "machdep/machdep.h"
-#include "process/ps.h"
-#include "vm/vm.h"
+#include "kdk/machdep.h"
+#include "kdk/process.h"
+#include "kdk/vm.h"
 #include "vm/vm_internal.h"
-#include "vm_md.h"
 
 enum {
 	kPML4Shift = 0x39,

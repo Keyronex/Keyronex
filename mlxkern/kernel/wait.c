@@ -4,8 +4,8 @@
  */
 
 #include "kernel/ke_internal.h"
-#include "libkern/libkern.h"
-#include "vm/vm.h"
+#include "kdk/libkern.h"
+#include "kdk/vm.h"
 
 /*! @pre dispatcher_lock held */
 static void

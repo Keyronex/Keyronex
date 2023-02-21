@@ -14,8 +14,8 @@
  * detailed description of VMem.
  */
 
-#ifndef MLX_KE_VMEM_H
-#define MLX_KE_VMEM_H
+#ifndef MLX_KDK_VMEM_H
+#define MLX_KDK_VMEM_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -23,7 +23,7 @@
 #ifndef _KERNEL
 typedef int ipl_t;
 #else
-#include "machdep/machdep.h"
+#include ".//machdep.h"
 #endif
 
 typedef uintptr_t   vmem_addr_t;
@@ -63,4 +63,4 @@ int vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size, vmem_flag_t fla
 
 void vmem_dump(const vmem_t *vmem);
 
-#endif /* MLX_KE_VMEM_H */
+#endif /* MLX_KDK_VMEM_H */

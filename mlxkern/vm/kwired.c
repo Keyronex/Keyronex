@@ -7,11 +7,11 @@
  * @brief Management of the kernel's virtual address space, especially wired.
  */
 
-#include "libkern/libkern.h"
-#include "process/ps.h"
-#include "vm/vm.h"
-#include "vm/vmem.h"
-#include "vm/vmem_impl.h"
+#include "kdk/libkern.h"
+#include "kdk/process.h"
+#include "kdk/vm.h"
+#include "kdk/vmem.h"
+#include "kdk/vmem_impl.h"
 #include "vm_internal.h"
 
 /* Kernel wired heap arena. */
