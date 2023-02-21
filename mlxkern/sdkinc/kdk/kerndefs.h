@@ -3,6 +3,14 @@
 
 #include <stdint.h>
 
+#if 0
+#ifdef __cplusplus
+#include <atomic>
+#else
+#include <stdatomic.h>
+#endif
+#endif
+
 #define mlx_in
 #define mlx_out
 #define mlx_nullable
