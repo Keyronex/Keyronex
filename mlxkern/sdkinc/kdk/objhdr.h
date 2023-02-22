@@ -27,6 +27,7 @@ typedef enum object_type {
 typedef struct object_header {
 	object_type_t type;
 	uint32_t reference_count;
+	char *name;
 } object_header_t;
 
 #ifdef __cplusplus

@@ -14,7 +14,7 @@ mlxkern = executable(
 		mlxkern_link_args,
 	],
 	link_with: [
-		acpipc
+		drivers
 	],
 	include_directories: [ mlxkern_include_directories,
 		limine_include_directories,

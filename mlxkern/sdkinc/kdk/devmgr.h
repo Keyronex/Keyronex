@@ -6,6 +6,7 @@
 #ifndef MLX_KDK_DEVMGR_H
 #define MLX_KDK_DEVMGR_H
 
+#include <bsdqueue/queue.h>
 #include <stdint.h>
 
 #include "kdk/objhdr.h"
@@ -37,6 +38,14 @@ typedef struct irp {
  */
 typedef struct device {
 	object_header_t objhdr;
+
+	TAILQ_HEAD(, device) consumers;
+	TAILQ_ENTRY(device) consumers_link;
+	struct device * provider;
+	uint8_t stack_depth;
+
+	/*! driver-specific context */
+	//void *context;
 } device_t;
 
 #if 0
@@ -47,6 +56,17 @@ typedef struct driver {
 
 } driver_t;
 #endif
+
+
+/*!
+ * Create a device. object.
+ */
+//int dev_create(d)
+
+/*!
+ * Attach a device object as consumer of another device object.
+ */
+void dev_attach(device_t *consumer, device_t *provider);
 
 #ifdef __cplusplus
 }

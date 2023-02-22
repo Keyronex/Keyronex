@@ -8,6 +8,7 @@
 
 #include "acpispec/tables.h"
 #include "lai/core.h"
+#include "../mdf/mdfdev.hh"
 
 typedef struct {
 	char Signature[8];
@@ -39,11 +40,12 @@ typedef struct {
 
 } __attribute__((packed)) mcfg_t;
 
-class AcpiPC {
+class AcpiPC : public Device{
 	AcpiPC();
 
 	void iterate(lai_nsnode_t *obj);
 	void matchDevice(lai_nsnode_t *node);
+	void doPCIBus(lai_nsnode_t *node);
 
     public:
 	static AcpiPC *probeWithRSDP(rsdp_desc_t *rsdp);

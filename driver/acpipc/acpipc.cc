@@ -4,6 +4,7 @@
  */
 
 #include "kdk/amd64/portio.h"
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
@@ -11,7 +12,9 @@
 #include "lai/helpers/sci.h"
 #include "lai/host.h"
 
+#include "../pcibus/pcibus.hh"
 #include "acpipc.hh"
+#include "ioapic.hh"
 
 inline void *
 operator new(size_t, void *p)
@@ -286,21 +289,6 @@ laihost_sleep(uint64_t ms)
 	}
 }
 
-AcpiPC *
-AcpiPC::probeWithRSDP(rsdp_desc_t *rsdp)
-{
-	if (rsdp->Revision > 0)
-		xsdt = (acpi_xsdt_t *)P2V(((rsdp_desc2_t *)rsdp)->XsdtAddress);
-	else
-		rsdt = (acpi_rsdt_t *)P2V((uintptr_t)rsdp->RsdtAddress);
-
-	lai_set_acpi_revision(rsdp->Revision);
-	lai_create_namespace();
-	lai_enable_acpi(1);
-
-	return new (kmem_alloc(sizeof(AcpiPC))) AcpiPC;
-}
-
 static void
 madt_walk(acpi_madt_t *madt,
     void (*callback)(acpi_madt_entry_header_t *item, void *arg), void *arg)
@@ -317,18 +305,14 @@ madt_walk(acpi_madt_t *madt,
 static void
 parse_ioapics(acpi_madt_entry_header_t *item, void *arg)
 {
+	IOApic *obj;
 	acpi_madt_ioapic_t *ioapic;
 
 	if (item->type != 1)
 		return;
 
 	ioapic = (acpi_madt_ioapic_t *)item;
-#if 0
-	[[IOApic alloc] initWithID:ioapic->ioapic_id
-			   address:(void *)(uintptr_t)ioapic->ioapic_addr
-			   gsiBase:ioapic->gsi_base];
-#endif
-	kdprintf("IOApic %d at 0x%x; GSI base %d\n", ioapic->ioapic_id,
+	obj = new (kmem_general) IOApic(acpipc, ioapic->ioapic_id,
 	    ioapic->ioapic_addr, ioapic->gsi_base);
 }
 
@@ -406,6 +390,25 @@ string_to_eisaid(const char *id)
 	return bswap_32(out);
 }
 
+static int
+laiex_eval_one_int(lai_nsnode_t *node, const char *path, uint64_t *out,
+    lai_state_t *state)
+{
+	LAI_CLEANUP_VAR lai_variable_t var = LAI_VAR_INITIALIZER;
+	lai_nsnode_t *handle;
+	int r;
+
+	handle = lai_resolve_path(node, path);
+	if (handle == NULL)
+		return LAI_ERROR_NO_SUCH_NODE;
+
+	r = lai_eval(&var, handle, state);
+	if (r != LAI_ERROR_NONE)
+		return r;
+
+	return lai_obj_get_integer(&var, out);
+}
+
 void
 AcpiPC::iterate(lai_nsnode_t *obj)
 {
@@ -460,17 +463,65 @@ AcpiPC::matchDevice(lai_nsnode_t *node)
 	else
 		devid = eisaid_to_string(id.integer);
 
-#if 0
 	/* TODO: matching on device classes by a more elegant means */
 	/*if (strcmp(devid, "PNP0303") == 0)
 		[PS2Keyboard probeWithAcpiNode:node];
 	else */
 	if (strcmp(devid, ACPI_PCI_ROOT_BUS_PNP_ID) == 0 ||
 	    strcmp(devid, ACPI_PCIE_ROOT_BUS_PNP_ID) == 0) {
-		//PCIBus::probe(this, node);
+		doPCIBus(node);
 	}
-#endif
-	kdprintf("Found a %s\n", devid);
+}
+
+#define DKLog(subsys, ...) kdprintf(subsys __VA_ARGS__)
+
+void
+AcpiPC::doPCIBus(lai_nsnode_t *node)
+{
+	uint64_t seg = -1, bus = -1;
+	LAI_CLEANUP_STATE lai_state_t state;
+	PCIBus *pcibus;
+	int r;
+
+	lai_init_state(&state);
+
+	r = laiex_eval_one_int(node, "_SEG", &seg, &state);
+	if (r != LAI_ERROR_NONE) {
+		if (r == LAI_ERROR_NO_SUCH_NODE) {
+			seg = 0;
+		} else {
+			DKLog("PCIBus", "failed to evaluate _SEG: %d\n", r);
+			return;
+		}
+	}
+
+	r = laiex_eval_one_int(node, "_BBN", &bus, &state);
+	if (r != LAI_ERROR_NONE) {
+		if (r == LAI_ERROR_NO_SUCH_NODE) {
+			bus = 0;
+		} else {
+			DKLog("PCIBus", "failed to evaluate _BBN: %d\n", r);
+			return;
+		}
+	}
+
+	pcibus = new (kmem_general) PCIBus(this, seg, bus);
+	(void)pcibus;
+}
+
+AcpiPC *
+AcpiPC::probeWithRSDP(rsdp_desc_t *rsdp)
+{
+	if (rsdp->Revision > 0)
+		xsdt = (acpi_xsdt_t *)P2V(((rsdp_desc2_t *)rsdp)->XsdtAddress);
+	else
+		rsdt = (acpi_rsdt_t *)P2V((uintptr_t)rsdp->RsdtAddress);
+
+	lai_set_acpi_revision(rsdp->Revision);
+	lai_create_namespace();
+	lai_enable_acpi(1);
+
+	return new (kmem_alloc(sizeof(AcpiPC))) AcpiPC;
 }
 
 AcpiPC::AcpiPC()
@@ -478,6 +529,8 @@ AcpiPC::AcpiPC()
 	acpi_madt_t *madt;
 
 	acpipc = this;
+	kmem_asprintf(&objhdr.name, "acpipc");
+	attach(NULL);
 
 	madt = (acpi_madt_t *)laihost_scan("APIC", 0);
 	madt_walk(madt, parse_ioapics, NULL);
@@ -486,13 +539,55 @@ AcpiPC::AcpiPC()
 	mcfg = (mcfg_t *)laihost_scan("MCFG", 0);
 
 	iterate(lai_resolve_path(NULL, "_SB_"));
-
-	// return self;
 }
+
+enum nodeKind { kRoot, kChild, kLastChild };
+
+static void
+printTree(device_t *dev, char *prefix, enum nodeKind kind)
+{
+#if 0
+	const char *branch = "+-";
+	const char *rcorner = "\\-";
+	const char *vline = "| ";
+#else
+	const char *branch = "\e(0\x78\x71\e(B";  /* ├─ */
+	const char *rcorner = "\e(0\x6d\x71\e(B"; /* └─ */
+	const char *vline = "\e(0\x78\e(B";	  /* │ */
+#endif
+	device_t *child;
+	char *newPrefix;
+
+	if (kind == kRoot) {
+		/* epsilon */
+		newPrefix = prefix;
+	}
+	if (kind == kLastChild) {
+		kdprintf("%s%s", prefix, rcorner);
+		kmem_asprintf(&newPrefix, "%s%s", prefix, "  ");
+	} else if (kind == kChild) {
+		kdprintf("%s%s", prefix, branch);
+		kmem_asprintf(&newPrefix, "%s%s", prefix, vline);
+	}
+
+	kdprintf("%s (class %s)\n", dev->objhdr.name, "???");
+
+	TAILQ_FOREACH (child, &dev->consumers, consumers_link) {
+		printTree(child, newPrefix,
+		    TAILQ_NEXT(child, consumers_link) ? kChild : kLastChild);
+	}
+
+	if (newPrefix != prefix) {
+		// kmem_strfree(prefix);
+	}
+}
+
+static char indent[255] = { 0 };
 
 extern "C" void
 acpipc_autoconf(void *rsdp)
 {
 	kdprintf("Probing hardware devices...\n");
 	AcpiPC::probeWithRSDP((rsdp_desc_t *)rsdp);
+	printTree(acpipc, indent, kRoot);
 }

@@ -51,7 +51,6 @@ executable(
 
 mlx_sdk_includes = include_directories(
 	'external/bsd-includes',
-	'mlxsdk/include',
 	'mlxkern/sdkinc'
 )
 
@@ -59,6 +58,5 @@ mlx_sdk_includes = include_directories(
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
 subdir('external/lai')
-subdir('acpipc')
-subdir('virtiofam')
+subdir('driver')
 subdir('mlxkern')
