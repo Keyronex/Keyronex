@@ -33,6 +33,14 @@ typedef struct kdpc {
 	TAILQ_ENTRY(kdpc) queue_entry;
 	void (*callback)(void *);
 	void *arg;
+	enum kdpc_state {
+		/*! dpc is not bound for running */
+		kDPCUnbound,
+		/*! dpc is bound for running */
+		kDPCBound,
+		/*! dpc is currently running */
+		kDPCRunning,
+	} state;
 } kdpc_t;
 
 typedef enum kwaitstatus {

@@ -26,7 +26,7 @@ if (arch == 'x86_64')
 		'-mcmodel=kernel',
 		'-D_KERNEL'
 	]
-	freestanding_cpp_args = freestanding_c_args
+	freestanding_cpp_args = freestanding_c_args + '-fno-exceptions' + '-fno-rtti'
 	freestanding_ld_args = ['-nostdlib', '-mno-red-zone']
 else
 	message('arch ' + arch + ' is not supported by Melantix')

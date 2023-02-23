@@ -45,8 +45,24 @@ struct virtio_queue {
 #define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
 
 class VirtIODevice : public Device {
+	kdpc_t interrupt_dpc;
+
+	static void intrDpc(void *arg);
+	static bool intxISR(hl_intr_frame_t *frame, void *arg);
 	static void enumerateCapabilitiesCallback(pci_device_info *info,
 	    voff_t cap, void *arg);
+
+	/*! DPC to process pending used elements. */
+	virtual void intrDpc() = 0;
+
+	/*!
+	 * Callback to process a completion on a queue.
+	 *
+	 * @pre queue->lock will be locked (since this is called by
+	 * processQueue)
+	 */
+	virtual void processUsed(virtio_queue *queue,
+	    struct vring_used_elem *e) = 0;
 
     protected:
 	pci_device_info pci_info;
@@ -61,11 +77,38 @@ class VirtIODevice : public Device {
 	struct dk_virtio_queue **queues;
 
 	VirtIODevice(PCIDevice *provider, pci_device_info &info);
+	virtual ~VirtIODevice() {};
 
 	bool exchangeFeatures(uint64_t required_mask);
-	void enableDevice();
+	int enableDevice();
 
+	/*! Initialise a queue and register it. */
 	int setupQueue(virtio_queue *queue, uint16_t index);
+	/*!
+	 * Notify a queue that new entries are enqueued.
+	 *
+	 * @pre queue->lock held
+	 */
+	void notifyQueue(virtio_queue *queue);
+	/*!
+	 * Process used entries on a queue. Calls processUsed() for each entry.
+	 *
+	 * @pre queue->lock must be locked (at IPL DPC)
+	 */
+	void processQueue(virtio_queue *queue);
+
+	/*!
+	 * @brief Allocate a descriptor from a queue.
+	 */
+	uint16_t allocateDescNumOnQueue(virtio_queue *queue);
+	/*!
+	 * @brief Free a descriptor to a queue.
+	 */
+	void freeDescNumOnQueue(virtio_queue *queue, uint16_t descNum);
+	/*!
+	 * @brief Submit a descriptor to a queue.
+	 */
+	void submitDescNumToQueue(virtio_queue *queue, uint16_t descNum);
 };
 
 #endif /* MLX_VIOFAM_VIODEV_HH */

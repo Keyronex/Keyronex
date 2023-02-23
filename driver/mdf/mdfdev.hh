@@ -25,6 +25,12 @@ operator new(size_t size, kmem_general_t)
 	return kmem_alloc(size);
 }
 
+inline void
+operator delete(void *p, unsigned long something)
+{
+	kfatal("operator delete called\n");
+}
+
 class Device : public device_t {
     protected:
 	void attach(device_t *provider) { dev_attach(this, provider); }

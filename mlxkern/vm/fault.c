@@ -393,7 +393,8 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 
 	vad = vmp_ps_vad_find(vmps, vaddr);
 	if (vad == NULL || vad->section == NULL) {
-		kfatal("vm_fault: no or bad VAD at address 0x%lx\n", vaddr);
+		kdprintf("vm_fault: no or bad VAD at address 0x%lx\n", vaddr);
+		return kVMFaultRetFailure;
 	}
 
 	/* verify protection permits */

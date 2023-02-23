@@ -7,6 +7,7 @@
 
 #include "amd64.h"
 #include "asmintr.h"
+#include "kdk/amd64/mdamd64.h"
 #include "kdk/kernel.h"
 #include "kdk/machdep.h"
 #include "kdk/process.h"
@@ -151,13 +152,19 @@ static __attribute__((noreturn)) bool
 double_fault(hl_intr_frame_t *frame, void *arg)
 {
 	kdprintf("double fault\n");
-	for (;;) ;
+	for (;;)
+		;
 }
 
 static bool
 page_fault(hl_intr_frame_t *frame, void *arg)
 {
-	vm_fault(&ps_curproc()->vmps, read_cr2(), frame->code, NULL);
+	vm_fault_return_t ret;
+	ret = vm_fault(&ps_curproc()->vmps, read_cr2(), frame->code, NULL);
+	if (ret != kVMFaultRetOK) {
+		md_intr_frame_trace(frame);
+		kfatal("vm_fault failed")
+	}
 	return true;
 }
 

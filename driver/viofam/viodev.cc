@@ -4,7 +4,10 @@
  */
 
 #include "dev/virtioreg.h"
+#include "kdk/kernel.h"
 #include "kdk/libkern.h"
+#include "kdk/process.h"
+#include "kdk/vm.h"
 
 #include "viodev.hh"
 
@@ -63,14 +66,21 @@ struct virtio_pci_common_cfg {
 	le64 queue_device;	/* read-write */
 };
 
-#if 0
-static bool
-virtio_intr(md_intr_frame_t *frame, void *arg)
+/*! PCI Intx ISR. */
+bool
+VirtIODevice::intxISR(hl_intr_frame_t *frame, void *arg)
 {
-	VirtIODevice *dev = arg;
-	return [dev handleInterrupt];
+	VirtIODevice *dev = (VirtIODevice *)arg;
+	uint8_t isr_status = *dev->isr;
+
+	if ((isr_status & 3) == 0)
+		/* not for us */
+		return false;
+
+	ke_dpc_enqueue(&dev->interrupt_dpc);
+
+	return true;
 }
-#endif
 
 void
 VirtIODevice::enumerateCapabilitiesCallback(pci_device_info *info, voff_t pCap,
@@ -183,13 +193,39 @@ VirtIODevice::exchangeFeatures(uint64_t required_mask)
 }
 
 int
+VirtIODevice::enableDevice()
+{
+	int r = 0;
+
+#if 0
+	r = [PCIBus handleInterruptOf:&info.pciInfo
+			  withHandler:virtio_intr
+			     argument:self
+			   atPriority:kSPLBIO];
+#endif
+
+	if (r < 0) {
+		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
+		return r;
+	}
+
+	m_common_cfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
+	__sync_synchronize();
+
+	return 0;
+}
+
+int
 VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 {
+	int r;
 	vaddr_t addr;
 	vaddr_t offs;
 
-	// queue->page = vm_pagealloc(true, &vm_pgdevbufq);
-	// addr =(vaddr_t)P2V(queue->page->paddr);
+	r = vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
+	    &queue->page);
+	kassert(r == 0);
+	addr = (vaddr_t)P2V(queue->page->address);
 
 	/* allocate a queue of total size 3336 bytes, to nicely fit in a page */
 	queue->num = index;
@@ -231,67 +267,8 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	return 0;
 }
 
-int
-VirtIODevice::enableDevice()
-{
-	int r;
-
-#if 0
-	r = [PCIBus handleInterruptOf:&info.pciInfo
-			  withHandler:virtio_intr
-			     argument:self
-			   atPriority:kSPLBIO];
-#endif
-
-	if (r < 0) {
-		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
-		return r;
-	}
-
-	m_common_cfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
-	__sync_synchronize();
-}
-
-#if 0
-
-#endif
-
-#if 0
-
-- (uint16_t)allocateDescNumOnQueue:(dk_virtio_queue_t *)queue
-{
-	int r;
-	ipl_t ipl;
-
-	r = nk_wait(&queue->free_sem, "virtio_queue_free", false, false, -1);
-	kassert(r == kKernWaitStatusOK);
-
-	ipl = nk_spinlock_acquire_at(&queue->spinlock, kSPLBIO);
-	r = queue->free_desc_index;
-	kassert(r != queue->length);
-	queue->free_desc_index = QUEUE_DESC_AT(queue, r).next;
-	nk_spinlock_release(&queue->spinlock, ipl);
-
-	return r;
-}
-
-- (void)freeDescNum:(uint16_t)descNum onQueue:(dk_virtio_queue_t *)queue
-{
-	QUEUE_DESC_AT(queue, descNum).next = queue->free_desc_index;
-	queue->free_desc_index = descNum;
-
-	nk_semaphore_release(&queue->free_sem, 1);
-}
-
-- (void)submitDescNum:(uint16_t)descNum toQueue:(dk_virtio_queue_t *)queue
-{
-	queue->avail->ring[queue->avail->idx % queue->length] = descNum;
-	__sync_synchronize();
-	queue->avail->idx += 1;
-	__sync_synchronize();
-}
-
-- (void)notifyQueue:(dk_virtio_queue_t *)queue
+void
+VirtIODevice::notifyQueue(virtio_queue *queue)
 {
 #if 0 /* only needed with VIRTIO_F_NOTIFICATION_DATA */
 	/*
@@ -304,69 +281,52 @@ VirtIODevice::enableDevice()
 	uint32_t value = queue->num << 16 | 0 << 1 | 0;
 #endif
 
-	uint32_t *addr = (uint32_t *)(info.notify_base +
-	    queue->notify_off * info.m_notify_off_multiplier);
+	uint32_t *addr = (uint32_t *)(notify_base +
+	    queue->notify_off * m_notify_off_multiplier);
 	uint32_t value = queue->num;
 	*addr = value;
 	__sync_synchronize();
 }
 
-- (bool)handleInterrupt
+void
+VirtIODevice::processQueue(virtio_queue *queue)
 {
-	uint8_t isr_status = *info.isr;
+	uint16_t i;
 
-	if ((isr_status & 3) == 0)
-		/* not for us */
-		return false;
-
-#if 0
-	DKDevLog(self, "interrupted, processing VirtIO queues...\n");
-#endif
-
-	for (int i = 0; i < info.num_queues; i++) {
-		dk_virtio_queue_t *queue = info.queues[i];
-		uint16_t i;
-		ipl_t ipl;
-
-		ipl = nk_spinlock_acquire_at(&queue->spinlock, kSPLBIO);
-
-		for (i = queue->last_seen_used;
-		     i != queue->used->idx % queue->length;
-		     i = (i + 1) % queue->length) {
-			struct vring_used_elem *e =
-			    &queue->used->ring[i % queue->length];
-
-			/*
-			 * ugly hack, maybe a problem: but need to access sched
-			 * from our handlers for now. i think we can get
-			 * away without releasing the spinlock as we won't get
-			 * another interrupt for this device on this cpu.
-			 *
-			 * todo(med): refactor the processBuffer:onQueue:
-			 * implementations to use DPCs to do any scheduler
-			 * stuff.
-			 */
-			// nk_spinlock_release(&queue->spinlock, ipl);
-			splx(kSPLDispatch);
-			[self processBuffer:e onQueue:queue];
-			splbio();
-			// ipl = nk_spinlock_acquire_at(&queue->spinlock,
-			// kSPLBIO);
-		}
-
-		nk_spinlock_release(&queue->spinlock, ipl);
-
-		queue->last_seen_used = i;
+	for (i = queue->last_seen_used; i != queue->used->idx % queue->length;
+	     i = (i + 1) % queue->length) {
+		struct vring_used_elem *e =
+		    &queue->used->ring[i % queue->length];
+		processUsed(queue, e);
 	}
 
-	return true;
+	queue->last_seen_used = i;
 }
 
-- (void)processBuffer:(struct vring_used_elem *)e
-	      onQueue:(dk_virtio_queue_t *)queue
+uint16_t
+VirtIODevice::allocateDescNumOnQueue(virtio_queue *queue)
 {
-	kfatal("subclass responsibility\n");
+	int r;
+
+	r = queue->free_desc_index;
+	kassert(r != queue->length);
+	queue->free_desc_index = QUEUE_DESC_AT(queue, r).next;
+
+	return r;
 }
 
-@end
-#endif
+void
+VirtIODevice::freeDescNumOnQueue(virtio_queue *queue, uint16_t descNum)
+{
+	QUEUE_DESC_AT(queue, descNum).next = queue->free_desc_index;
+	queue->free_desc_index = descNum;
+}
+
+void
+VirtIODevice::submitDescNumToQueue(virtio_queue *queue, uint16_t descNum)
+{
+	queue->avail->ring[queue->avail->idx % queue->length] = descNum;
+	__sync_synchronize();
+	queue->avail->idx += 1;
+	__sync_synchronize();
+}

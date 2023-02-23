@@ -32,6 +32,10 @@
 #include "./objhdr.h"
 #include "./vmem_impl.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*! Fault flags. For convenience, matches amd64 MMU. */
 typedef enum vm_fault_flags {
 	kVMFaultPresent = 1,
@@ -357,5 +361,9 @@ int vm_section_new_anonymous(vm_procstate_t *vmps, size_t size,
     vm_section_t **out);
 
 extern kspinlock_t vmp_pfn_lock;
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* MLX_KDK_VM_H */
