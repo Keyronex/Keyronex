@@ -21,7 +21,14 @@ struct pci_device_info {
 	uint8_t klass, subClass;
 	uint16_t vendorId, deviceId;
 
+	/* intx pin */
 	uint8_t pin;
+	/*! global system interrupt number (0 for none) */
+	uint8_t gsi;
+	/* low polarity? */
+	bool lopol;
+	/* edge triggered? */
+	bool edge;
 };
 
 class PCIBus : public Device {
@@ -37,6 +44,9 @@ class PCIDevice : public Device {
     public:
 	PCIDevice(PCIBus *provider, pci_device_info &info);
 
+	static void enableMemorySpace(pci_device_info &info);
+	static void enableBusMastering(pci_device_info &info);
+	static void setInterrupts(pci_device_info &info, bool enabled);
 	static void enumerateCapabilities(pci_device_info &info,
 	    void (*callback)(pci_device_info *info, voff_t cap, void *arg),
 	    void *userData);

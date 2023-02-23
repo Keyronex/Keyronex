@@ -4,11 +4,13 @@
  */
 
 #include "dev/virtioreg.h"
+#include "kdk/amd64/mdamd64.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 
+#include "../acpipc/ioapic.hh"
 #include "viodev.hh"
 
 typedef uint8_t u8;
@@ -66,12 +68,23 @@ struct virtio_pci_common_cfg {
 	le64 queue_device;	/* read-write */
 };
 
+void
+VirtIODevice::intrDpc(void *arg)
+{
+	VirtIODevice *dev = (VirtIODevice *)arg;
+	dev->intrDpc();
+}
+
 /*! PCI Intx ISR. */
 bool
 VirtIODevice::intxISR(hl_intr_frame_t *frame, void *arg)
 {
 	VirtIODevice *dev = (VirtIODevice *)arg;
 	uint8_t isr_status = *dev->isr;
+
+#ifdef DEBUG_VIRTIO
+	kdprintf("intx isr on %s\n", dev->objhdr.name);
+#endif
 
 	if ((isr_status & 3) == 0)
 		/* not for us */
@@ -147,10 +160,8 @@ VirtIODevice::enumerateCapabilitiesCallback(pci_device_info *info, voff_t pCap,
 VirtIODevice::VirtIODevice(PCIDevice *provider, pci_device_info &info)
     : pci_info(info)
 {
-#if 0
-	[PCIBus enableMemorySpace:pciInfo];
-	[PCIBus enableBusMastering:pciInfo];
-#endif
+	PCIDevice::enableBusMastering(info);
+	PCIDevice::enableMemorySpace(info);
 	PCIDevice::enumerateCapabilities(info, enumerateCapabilitiesCallback,
 	    this);
 
@@ -196,13 +207,13 @@ int
 VirtIODevice::enableDevice()
 {
 	int r = 0;
+	static intr_entry intx_entry;
 
-#if 0
-	r = [PCIBus handleInterruptOf:&info.pciInfo
-			  withHandler:virtio_intr
-			     argument:self
-			   atPriority:kSPLBIO];
-#endif
+	interrupt_dpc.callback = intrDpc;
+	interrupt_dpc.arg = this;
+
+	r = IOApic::handleGSI(pci_info.gsi, intxISR, this, pci_info.lopol,
+	    pci_info.edge, kIPLDevice, &intx_entry);
 
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
@@ -211,6 +222,8 @@ VirtIODevice::enableDevice()
 
 	m_common_cfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
+
+	PCIDevice::setInterrupts(pci_info, true);
 
 	return 0;
 }

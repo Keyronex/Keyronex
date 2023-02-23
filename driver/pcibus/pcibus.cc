@@ -3,10 +3,12 @@
  * Created on Wed Feb 22 2023.
  */
 
+#include "acpispec/resources.h"
 #include "kdk/object.h"
+#include "lai/helpers/pci.h"
 
-#include "pcibus.hh"
 #include "../viofam/viodisk.hh"
+#include "pcibus.hh"
 
 enum {
 	kVendorID = 0x0, /* u16 */
@@ -36,13 +38,49 @@ enum {
 PCIDevice::PCIDevice(PCIBus *provider, pci_device_info &info)
     : info(info)
 {
+	acpi_resource_t res;
+	int r;
+
 	kmem_asprintf(&objhdr.name, "pcidev%d:%d:%d.%d", info.seg, info.bus,
 	    info.slot, info.fun);
 	attach(provider);
 
-if (info.vendorId == 0x1af4 && info.deviceId == 0x1001) {
-		new (kmem_general)VirtIODisk(this, info);
-	} 
+	if (info.pin != 0) {
+		r = lai_pci_route_pin(&res, INFO_ARGS(&info), info.pin);
+		if (r != LAI_ERROR_NONE) {
+			kfatal("failed to route pin!\n");
+		} else {
+			info.gsi = res.base;
+			info.lopol = res.irq_flags & ACPI_SMALL_IRQ_ACTIVE_LOW;
+			info.edge = res.irq_flags &
+			    ACPI_SMALL_IRQ_EDGE_TRIGGERED;
+		}
+	}
+
+	if (info.vendorId == 0x1af4 && info.deviceId == 0x1001) {
+		new (kmem_general) VirtIODisk(this, info);
+	}
+}
+
+void
+PCIDevice::enableMemorySpace(pci_device_info &info)
+{
+	ENABLE_CMD_FLAG(&info, 0x1 | 0x2);
+}
+
+void
+PCIDevice::enableBusMastering(pci_device_info &info)
+{
+	ENABLE_CMD_FLAG(&info, 0x4);
+}
+
+void
+PCIDevice::setInterrupts(pci_device_info &info, bool enabled)
+{
+	if (enabled)
+		DISABLE_CMD_FLAG(&info, (1 << 10));
+	else
+		ENABLE_CMD_FLAG(&info, (1 << 10));
 }
 
 void
@@ -88,6 +126,7 @@ PCIBus::doFunction(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fun)
 	pciInfo.bus = bus;
 	pciInfo.slot = slot;
 	pciInfo.fun = fun;
+	pciInfo.pin = CFG_READ(b, kInterruptPin);
 
 	pcidev = new (kmem_general) PCIDevice(this, pciInfo);
 	(void)pcidev;

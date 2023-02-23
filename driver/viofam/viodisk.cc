@@ -3,9 +3,28 @@
  * Created on Thu Feb 23 2023.
  */
 
+#include "kdk/kernel.h"
+#include "kdk/process.h"
+#include "kdk/vm.h"
+
 #include "viodisk.hh"
 
 static unsigned sequence_num = 0;
+
+struct vioblk_request {
+	/* linkage in in_flight_reqs or free_reqs */
+	TAILQ_ENTRY(vioblk_request) queue_entry;
+	/* first descriptor */
+	struct virtio_blk_outhdr hdr;
+	/* final descriptor */
+	uint8_t flags;
+	/*! the first desc, by that this request is identified */
+	uint16_t first_desc_id;
+};
+
+ksemaphore_t sem;
+
+char *res;
 
 VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
     : VirtIODevice(provider, info)
@@ -13,6 +32,11 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	int r;
 
 	kmem_asprintf(&objhdr.name, "viodisk%d", sequence_num++);
+
+	if (!exchangeFeatures(VIRTIO_BLK_F_SEG_MAX)) {
+		DKDevLog(self, "Feature exchange failed.");
+		return;
+	}
 
 	cfg = (virtio_blk_config *)device_cfg;
 
@@ -28,16 +52,160 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 		DKDevLog(this, "failed to enable device: %d\n", r);
 	}
 
+	TAILQ_INIT(&free_reqs);
+	TAILQ_INIT(&in_flight_reqs);
+
+	/* minimum of 3 descriptors per request; allocate reqs accordingly */
+	/* TODO(high): ugly! do it better */
+	vm_page_t *page;
+
+	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
+	vaddr_t addr = (vaddr_t)P2V(page->address);
+	for (int i = 0; i < ROUNDUP(io_queue.length, 3) / 3; i++) {
+		vioblk_request *req = (vioblk_request *)(addr +
+		    sizeof(*req) * i);
+		TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
+	}
+
 	attach(provider);
-	for (;; ) ;
+
+	ke_semaphore_init(&sem, 0);
+
+	vm_page_t *dataPage;
+
+	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &dataPage);
+
+	// for (int i = 0; i < 2; i++) {
+	commonRequest(0, 1, 0, (void *)dataPage->address);
+	res = (char *)P2V(dataPage->address);
+
+	for (;;)
+		asm("pause");
+
+	// nk_wait(&sem, "test_virtio", false, false, -1);
+
+	// char *res = P2V(dataPage->address);
+	// res[512] = '\0';
+	// DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
+	//}
+}
+
+int
+VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
+    void *buffer)
+{
+	uint32_t virtq_desc[7];
+	ipl_t ipl;
+	size_t i = 0;
+	size_t ndatadescs;
+
+#if DEBUG_DISK == 1
+	DKDevLog(self, "Strategy(%d, block %lx, blocks %d)\n", strategy, block,
+	    nblocks);
+#endif
+
+	ndatadescs = ROUNDUP(nblocks * 512, PGSIZE) / PGSIZE;
+
+	for (int i = 0; i < 2 + ndatadescs; i++) {
+		virtq_desc[i] = allocateDescNumOnQueue(&io_queue); // i;
+	}
+
+	ipl = ke_spinlock_acquire(&io_queue.spinlock);
+
+	struct vioblk_request *req = TAILQ_FIRST(&free_reqs);
+	TAILQ_REMOVE(&free_reqs, req, queue_entry);
+
+	req->hdr.sector = block;
+	req->hdr.type = VIRTIO_BLK_T_IN;
+	req->first_desc_id = virtq_desc[0];
+
+	io_queue.desc[virtq_desc[i]].len = sizeof(struct virtio_blk_outhdr);
+	io_queue.desc[virtq_desc[i]].addr = (uint64_t)V2P(&req->hdr);
+	io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
+	io_queue.desc[virtq_desc[i]].next = virtq_desc[1];
+
+	size_t nbytes = nblocks * 512;
+
+	for (i = 1; i < 1 + ndatadescs; i++) {
+		size_t len = MIN2(nbytes, PGSIZE);
+		nbytes -= PGSIZE;
+		io_queue.desc[virtq_desc[i]].len = len;
+		io_queue.desc[virtq_desc[i]].addr = (uint64_t)
+		    buffer; // buf->pages[i - 1]->paddr;
+		io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
+		io_queue.desc[virtq_desc[i]].flags |= VRING_DESC_F_WRITE;
+		io_queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];
+	}
+
+	io_queue.desc[virtq_desc[i]].len = 1;
+	io_queue.desc[virtq_desc[i]].addr = (uint64_t)V2P(&req->flags);
+	io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_WRITE;
+
+	TAILQ_INSERT_HEAD(&in_flight_reqs, req, queue_entry);
+
+	submitDescNumToQueue(&io_queue, virtq_desc[0]);
+	notifyQueue(&io_queue);
+
+	ke_spinlock_release(&io_queue.spinlock, ipl);
+
+	return 0;
 }
 
 void
 VirtIODisk::intrDpc()
 {
+	ipl_t ipl = ke_spinlock_acquire(&io_queue.spinlock);
+	processQueue(&io_queue);
+	ke_spinlock_release(&io_queue.spinlock, ipl);
 }
 
 void
 VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 {
+	struct vring_desc *dout, *dnext;
+	uint16_t dnextidx;
+	struct vioblk_request *req;
+	size_t bytes = 0;
+
+	TAILQ_FOREACH (req, &in_flight_reqs, queue_entry) {
+		if (req->first_desc_id == e->id)
+			break;
+	}
+
+	if (!req || req->first_desc_id != e->id)
+		kfatal("vioblk completion without a request\n");
+
+	TAILQ_REMOVE(&in_flight_reqs, req, queue_entry);
+
+	dout = &QUEUE_DESC_AT(&io_queue, e->id);
+	kassert(dout->flags & VRING_DESC_F_NEXT);
+
+	dnextidx = dout->next;
+	while (true) {
+		dnext = &QUEUE_DESC_AT(&io_queue, dnextidx);
+
+		if (!(dnext->flags & VRING_DESC_F_NEXT)) {
+			break;
+		} else {
+			uint16_t old_idx = dnextidx;
+			bytes += dnext->len;
+			dnextidx = dnext->next;
+			freeDescNumOnQueue(&io_queue, old_idx);
+		}
+	}
+
+	freeDescNumOnQueue(&io_queue, e->id);
+	freeDescNumOnQueue(&io_queue, dnextidx);
+
+	if (req->flags & VIRTIO_BLK_S_IOERR ||
+	    req->flags & VIRTIO_BLK_S_UNSUPP) {
+		DKDevLog(self, "I/O error\n");
+		for (;;)
+			;
+		return;
+	}
+
+	kdprintf("done request %p yielding %zu bytes\n", req, bytes)
+
+	    TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
 }

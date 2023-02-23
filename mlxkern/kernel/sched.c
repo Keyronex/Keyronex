@@ -136,6 +136,7 @@ void
 ke_dpc_enqueue(kdpc_t *dpc)
 {
 	if (splget() < kIPLDPC) {
+		kdprintf("RUNNING DPC IMMEDIATELY....\n");
 		ipl_t ipl = spldpc();
 		dpc->callback(dpc->arg);
 		splx(ipl);
@@ -145,5 +146,5 @@ ke_dpc_enqueue(kdpc_t *dpc)
 	ipl_t ipl = ke_acquire_dpc_lock();
 	TAILQ_INSERT_TAIL(&hl_curcpu()->dpc_queue, dpc, queue_entry);
 	ki_raise_dpc_interrupt();
-	splx(ipl);
+	ke_release_dpc_lock(ipl);
 }
