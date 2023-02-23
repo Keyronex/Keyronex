@@ -6,3 +6,4 @@ docs/latexout
 compile_commands.json
 *.out
 out
+hda.img

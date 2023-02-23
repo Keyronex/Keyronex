@@ -13,6 +13,9 @@
 #include "kdk/devmgr.h"
 #include "kdk/kmem.h"
 
+#define DKLog(subsys, ...) kdprintf(subsys __VA_ARGS__)
+#define DKDevLog(DEV, ...) kdprintf("Device: " __VA_ARGS__)
+
 extern struct kmem_general_t {
 } kmem_general;
 
@@ -24,8 +27,6 @@ operator new(size_t size, kmem_general_t)
 
 class Device : public device_t {
     protected:
-	device_t *device;
-
 	void attach(device_t *provider) { dev_attach(this, provider); }
 };
 

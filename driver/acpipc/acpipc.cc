@@ -473,8 +473,6 @@ AcpiPC::matchDevice(lai_nsnode_t *node)
 	}
 }
 
-#define DKLog(subsys, ...) kdprintf(subsys __VA_ARGS__)
-
 void
 AcpiPC::doPCIBus(lai_nsnode_t *node)
 {

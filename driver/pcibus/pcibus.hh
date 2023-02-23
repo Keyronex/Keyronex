@@ -8,11 +8,18 @@
 
 #include "../acpipc/acpipc.hh"
 
+#define PCIINFO_CFG_READ(WIDTH, PCIINFO, OFFSET)                \
+	laihost_pci_read##WIDTH((PCIINFO)->seg, (PCIINFO)->bus, \
+	    (PCIINFO)->slot, (PCIINFO)->fun, OFFSET)
+
 struct pci_device_info {
 	uint16_t seg;
 	uint8_t bus;
 	uint8_t slot;
 	uint8_t fun;
+
+	uint8_t klass, subClass;
+	uint16_t vendorId, deviceId;
 
 	uint8_t pin;
 };
@@ -29,6 +36,11 @@ class PCIDevice : public Device {
 
     public:
 	PCIDevice(PCIBus *provider, pci_device_info &info);
+
+	static void enumerateCapabilities(pci_device_info &info,
+	    void (*callback)(pci_device_info *info, voff_t cap, void *arg),
+	    void *userData);
+	static paddr_t getBar(pci_device_info &info, uint8_t num);
 };
 
 #endif /* MLX_PCIBUS_PCIBUS_HH */
