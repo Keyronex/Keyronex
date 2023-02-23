@@ -316,7 +316,7 @@ ke_spinlock_acquire_nospl(kspinlock_t *lock)
 {
 	unsigned char zero = 0;
 	unsigned char one = 1;
-	while (__atomic_compare_exchange(&lock->flag, &zero, &one, 0,
+	while (!__atomic_compare_exchange(&lock->flag, &zero, &one, 0,
 	    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
 		asm("pause");
 		zero = 0;
