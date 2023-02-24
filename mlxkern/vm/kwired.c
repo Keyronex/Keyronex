@@ -29,7 +29,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 	kassert(vmem == &kernel_process.vmps.vmem);
 
-	r = vmem_xalloc(vmem, size, 0, 0, 0, 0, 0, flags, out);
+	r = vmem_xalloc(vmem, size, 0, 0, 0, 0, 0, flags | kVMemPFNDBHeld, out);
 	if (r < 0) {
 		kfatal("vmem_xalloc returned %d\n", r);
 		return r;
@@ -61,7 +61,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 	if (!(flags & kVMemPFNDBHeld))
 		ipl = vmp_acquire_pfn_lock();
 
-	r = vmem_xfree(vmem, addr, size, flags);
+	r = vmem_xfree(vmem, addr, size, flags | kVMemPFNDBHeld);
 	if (r < 0) {
 		kdprintf("internal_freewired: vmem returned %d\n", r);
 		vmp_release_pfn_lock(ipl);

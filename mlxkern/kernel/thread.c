@@ -6,6 +6,7 @@
 #include "kdk/kernel.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
+#include "ke_internal.h"
 
 /*! cpu roundrobin for allocating threads to */
 size_t lastcpu = 0;
@@ -65,9 +66,7 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
 	ke_spinlock_release(&proc->lock, ipl);
 }
 
-void
-ke_thread_init(kprocess_t *proc, kthread_t *thread, void (*start_fun)(void *),
-    void *start_arg, const char *name)
+int ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name, void (*start)(void*), void *arg)
 {
 	kcpu_t *cpu = nextcpu();
 
@@ -75,5 +74,7 @@ ke_thread_init(kprocess_t *proc, kthread_t *thread, void (*start_fun)(void *),
 	thread->state = kThreadStateInitial;
 	thread->kstack = vm_kalloc(6, kVMemSleep) + 6 * PGSIZE;
 
-	kmd_thread_init(thread, start_fun, start_arg);
+	kmd_thread_init(thread, start, arg);
+
+	return 0;
 }

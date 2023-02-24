@@ -75,19 +75,16 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &dataPage);
 
-	// for (int i = 0; i < 2; i++) {
-	commonRequest(0, 1, 0, (void *)dataPage->address);
 	res = (char *)P2V(dataPage->address);
 
-	for (;;)
-		asm("pause");
+	for (int i = 0; i < 2; i++) {
+		commonRequest(0, 1, i, (void *)dataPage->address);
 
-	// nk_wait(&sem, "test_virtio", false, false, -1);
+		ke_wait(&sem, "test_virtio", false, false, -1);
 
-	// char *res = P2V(dataPage->address);
-	// res[512] = '\0';
-	// DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
-	//}
+		res[512] = '\0';
+		DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
+	}
 }
 
 int
@@ -205,7 +202,9 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 		return;
 	}
 
-	kdprintf("done request %p yielding %zu bytes\n", req, bytes)
+	kdprintf("done request %p yielding %zu bytes\n", req, bytes);
 
-	    TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
+	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
+
+	ke_semaphore_release(&sem, 1);
 }

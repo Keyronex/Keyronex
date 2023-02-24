@@ -15,6 +15,18 @@ void kmd_thread_init(struct kthread *thread, void (*start_fun)(void *),
     void *start_arg);
 
 /*!
+ * @brief Common initialisation for handcrafted and normal threads.
+ */
+void
+ki_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
+    const char *name);
+
+/*!
+ * @brief Initialise a thread.
+ */
+int ki_thread_init(kthread_t *thread, kprocess_t *process, const char *name, void (*start)(void*), void *arg);
+
+/*!
  * @brief Wake up a thread waiting on a waitblock if appropriate.
  * @pre Dispatcher lock held.
  */

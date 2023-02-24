@@ -3,11 +3,14 @@
 #include <stdint.h>
 
 #include "amd64.h"
+#include "executive/ex_private.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/process.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
-#include "kdk/process.h"
+#include "kernel/ke_internal.h"
+#include "vm/vm_internal.h"
 
 enum { kPortCOM1 = 0x3f8 };
 
@@ -24,9 +27,6 @@ void idt_setup(void);
 
 /* vmamd64.c */
 void pmap_init(void);
-
-/* acpipc/acpipc.cc */
-void acpipc_autoconf(void* rsdp) ;
 
 // The Limine requests can be placed anywhere, but it is important that
 // the compiler does not optimise them away, so, usually, they should
@@ -186,14 +186,17 @@ common_init(struct limine_smp_info *smpi)
 {
 	kcpu_t *cpu = (kcpu_t *)smpi->extra_argument;
 	kthread_t *thread = cpu->current_thread;
+	char *name;
 
 	idt_load();
 	cpu->hl.lapic_base = rdmsr(kAMD64MSRAPICBase);
 	lapic_enable(0xff);
 
-	/* ki_thread_common_init allocates... */
+	/* guard allocations */
 	ke_spinlock_acquire_nospl(&early_lock);
-	// ki_thread_common_init(thread, cpu, &kernel_process, "idle_thread");
+	kmem_asprintf(&name, "idle thread *cpu %d)", cpu->num);
+	ki_thread_common_init(thread, cpu, &kernel_process.kproc,
+	    name);
 	ke_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
@@ -276,20 +279,6 @@ smp_init()
 }
 
 void
-start_fun(void *arg)
-{
-
-	kdprintf("Hello, world from %c!!\n", (char)arg);
-	while (true) {
-		for (int i = 0; i < 20000; i++)
-			asm("pause");
-		kdprintf("%c", (char)arg);
-	}
-}
-
-#include "vm/vm_internal.h"
-
-void
 test_cow(void)
 {
 	vaddr_t addr_a, addr_b;
@@ -338,7 +327,7 @@ _start(void)
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
 	cpu_bsp.current_thread = (kthread_t *)&kernel_bsp_thread;
 	kernel_bsp_thread.kthread.cpu = pcpu0;
-	kernel_bsp_thread.kthread.process = &kernel_process;
+	kernel_bsp_thread.kthread.process = &kernel_process.kproc;
 	serial_init();
 
 	// Ensure we got a terminal
@@ -366,14 +355,18 @@ _start(void)
 
 	smp_init();
 
+	void psp_init_0(void);
+
 	psp_init_0();
 
+	ex_init(rsdp_request.response->address);
+
+#if 0
 	ipl_t ipl = splget();
 	kdprintf("Current IPL: %d\n", ipl);
 
 	test_cow();
-
-	acpipc_autoconf(rsdp_request.response->address);
+#endif
 
 #if 0
 	*(char*)0x0 = 'g';

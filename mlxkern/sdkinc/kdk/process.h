@@ -44,7 +44,8 @@ typedef struct eprocess {
  *
  * @post New thread is created, with one reference held to it.
  */
-int ps_create_system_thread(ethread_t *thread);
+int ps_create_system_thread(ethread_t *thread, const char *name,
+    void (*start)(void *), void *arg);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

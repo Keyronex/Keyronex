@@ -18,6 +18,7 @@ gen = generator(bin2c,
 mlxkern_sources += gen.process(['logosmall.data'])
 
 subdir('devmgr')
+subdir('executive')
 subdir('kernel')
 subdir('vm')
 

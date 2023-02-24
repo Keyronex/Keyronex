@@ -28,6 +28,10 @@
 
 #define KERN_HZ 100
 
+typedef enum mlx_status {
+kNone,
+} mlx_status_t;
+
 /*! Nanoseconds. */
 typedef uint64_t nanosecs_t;
 /*! A virtual address. */
