@@ -3,6 +3,7 @@
  * Created on Thu Feb 23 2023.
  */
 
+#include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
@@ -54,6 +55,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	TAILQ_INIT(&free_reqs);
 	TAILQ_INIT(&in_flight_reqs);
+	TAILQ_INIT(&pending_packets);
 
 	/* minimum of 3 descriptors per request; allocate reqs accordingly */
 	/* TODO(high): ugly! do it better */
@@ -71,14 +73,12 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	ke_semaphore_init(&sem, 0);
 
-	vm_page_t *dataPage;
+	vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);
 
-	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &dataPage);
+	res = (char *)P2V(mdl->pages[0]->address);
 
-	res = (char *)P2V(dataPage->address);
-
-	for (int i = 0; i < 2; i++) {
-		commonRequest(0, 1, i, (void *)dataPage->address);
+	for (unsigned i = 0; i < 2; i++) {
+		commonRequest(0, 1, i, mdl);
 
 		ke_wait(&sem, "test_virtio", false, false, -1);
 
@@ -89,7 +89,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 int
 VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
-    void *buffer)
+    vm_mdl_t *mdl)
 {
 	uint32_t virtq_desc[7];
 	ipl_t ipl;
@@ -102,8 +102,9 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 #endif
 
 	ndatadescs = ROUNDUP(nblocks * 512, PGSIZE) / PGSIZE;
+	kassert(ndatadescs <= 4);
 
-	for (int i = 0; i < 2 + ndatadescs; i++) {
+	for (unsigned i = 0; i < 2 + ndatadescs; i++) {
 		virtq_desc[i] = allocateDescNumOnQueue(&io_queue); // i;
 	}
 
@@ -127,8 +128,8 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 		size_t len = MIN2(nbytes, PGSIZE);
 		nbytes -= PGSIZE;
 		io_queue.desc[virtq_desc[i]].len = len;
-		io_queue.desc[virtq_desc[i]].addr = (uint64_t)
-		    buffer; // buf->pages[i - 1]->paddr;
+		io_queue.desc[virtq_desc[i]].addr =
+		    (uint64_t)mdl->pages[i - 1]->address;
 		io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
 		io_queue.desc[virtq_desc[i]].flags |= VRING_DESC_F_WRITE;
 		io_queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];
@@ -152,7 +153,8 @@ void
 VirtIODisk::intrDpc()
 {
 	ipl_t ipl = ke_spinlock_acquire(&io_queue.spinlock);
-	processQueue(&io_queue);
+	processVirtQueue(&io_queue);
+	tryStartPackets();
 	ke_spinlock_release(&io_queue.spinlock, ipl);
 }
 
@@ -207,4 +209,35 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
 
 	ke_semaphore_release(&sem, 1);
+}
+
+void
+VirtIODisk::tryStartPackets()
+{
+	while (true) {
+		iop_t *iop;
+		iop_stack_entry_t *stack;
+		size_t ndescs;
+
+		if (io_queue.nfree_descs < 3)
+			return;
+
+		iop = TAILQ_FIRST(&pending_packets);
+		if (!iop)
+			break;
+
+		stack = iop_stack_current(iop);
+
+		kassert(stack->function == kIOPTypeRead);
+		kassert(stack->read.bytes <= PGSIZE ||
+		    stack->read.bytes % PGSIZE == 0);
+		kassert(stack->read.bytes < PGSIZE * 4);
+		ndescs = 2 + stack->read.bytes;
+
+		if (ndescs <= io_queue.nfree_descs)
+			commonRequest(VIRTIO_BLK_T_IN, stack->read.bytes / 512,
+			    stack->read.offset / 512, stack->mdl);
+		else
+			break;
+	}
 }

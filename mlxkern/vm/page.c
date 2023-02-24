@@ -4,7 +4,9 @@
  */
 
 #include "bsdqueue/queue.h"
+#include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/process.h"
 #include "kdk/vm.h"
 
 struct vmp_pregion {
@@ -116,4 +118,18 @@ void
 vmp_page_copy(vm_page_t *from, vm_page_t *to)
 {
 	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
+}
+
+#define MDL_SIZE(NPAGES) (sizeof(vm_mdl_t) + sizeof(vm_page_t *) * NPAGES)
+
+vm_mdl_t *
+vm_mdl_buffer_alloc(size_t npages)
+{
+	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
+	for (unsigned i = 0; i < npages; i++) {
+		int r = vmp_page_alloc(&kernel_process.vmps, true,
+		    kPageUseWired, &mdl->pages[i]);
+		kassert(r == 0);
+	}
+	return mdl;
 }

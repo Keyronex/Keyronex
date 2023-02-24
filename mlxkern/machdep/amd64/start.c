@@ -195,8 +195,7 @@ common_init(struct limine_smp_info *smpi)
 	/* guard allocations */
 	ke_spinlock_acquire_nospl(&early_lock);
 	kmem_asprintf(&name, "idle thread *cpu %d)", cpu->num);
-	ki_thread_common_init(thread, cpu, &kernel_process.kproc,
-	    name);
+	ki_thread_common_init(thread, cpu, &kernel_process.kproc, name);
 	ke_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 

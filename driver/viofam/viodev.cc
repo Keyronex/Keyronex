@@ -245,7 +245,6 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	queue->length = 128;
 
 	ke_spinlock_init(&queue->spinlock);
-	ke_semaphore_init(&queue->free_sem, queue->length);
 
 	/* array of 128 vring_descs; amounts to 2048 bytes */
 	queue->desc = (vring_desc *)addr;
@@ -264,6 +263,7 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	for (int i = 0; i < queue->length; i++)
 		queue->desc[i].next = i + 1;
 	queue->free_desc_index = 0;
+	queue->nfree_descs = 128;
 
 	m_common_cfg->queue_select = index;
 	__sync_synchronize();
@@ -302,7 +302,7 @@ VirtIODevice::notifyQueue(virtio_queue *queue)
 }
 
 void
-VirtIODevice::processQueue(virtio_queue *queue)
+VirtIODevice::processVirtQueue(virtio_queue *queue)
 {
 	uint16_t i;
 
@@ -324,6 +324,7 @@ VirtIODevice::allocateDescNumOnQueue(virtio_queue *queue)
 	r = queue->free_desc_index;
 	kassert(r != queue->length);
 	queue->free_desc_index = QUEUE_DESC_AT(queue, r).next;
+	queue->nfree_descs--;
 
 	return r;
 }
@@ -333,6 +334,7 @@ VirtIODevice::freeDescNumOnQueue(virtio_queue *queue, uint16_t descNum)
 {
 	QUEUE_DESC_AT(queue, descNum).next = queue->free_desc_index;
 	queue->free_desc_index = descNum;
+	queue->nfree_descs++;
 }
 
 void

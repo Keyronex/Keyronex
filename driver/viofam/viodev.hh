@@ -19,13 +19,13 @@ struct virtio_queue {
 	/* length of uqeue */
 	uint16_t length;
 
-	/* descriptor allocation semaphore */
-	ksemaphore_t free_sem;
 	/* manipulation spinlock */
 	kspinlock_t spinlock;
 
 	/* index of first free descriptor */
 	uint16_t free_desc_index;
+	/* number of free descriptors */
+	uint16_t nfree_descs;
 	/* last seen used index */
 	uint16_t last_seen_used;
 
@@ -95,7 +95,7 @@ class VirtIODevice : public Device {
 	 *
 	 * @pre queue->lock must be locked (at IPL DPC)
 	 */
-	void processQueue(virtio_queue *queue);
+	void processVirtQueue(virtio_queue *queue);
 
 	/*!
 	 * @brief Allocate a descriptor from a queue.

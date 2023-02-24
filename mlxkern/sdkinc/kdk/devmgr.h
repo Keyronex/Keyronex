@@ -16,12 +16,25 @@
 extern "C" {
 #endif
 
+typedef uint64_t io_bsize_t;
+typedef int64_t io_boff_t;
+typedef uint64_t io_size_t;
+typedef int64_t io_off_t;
+
 /*!
  * I/O packet function.
  */
 typedef enum iop_function {
 	kIOPTypeRead,
 } iop_function_t;
+
+/*! For kIOPTypeRead. */
+struct iop_stack_data_read {
+	/*! Number of bytes to read. */
+	io_size_t bytes;
+	/*! Offset in file at which to read. */
+	io_off_t offset;
+};
 
 /*!
  * An entry in an I/O packet stack.
@@ -31,6 +44,10 @@ typedef struct iop_stack_entry {
 	iop_function_t function;
 	/*! MDL for principal input/out */
 	vm_mdl_t *mdl;
+	/*! Union of different types. */
+	union {
+		struct iop_stack_data_read read;
+	};
 } iop_stack_entry_t;
 
 /*!
@@ -71,14 +88,14 @@ typedef struct device {
 
 	TAILQ_HEAD(, device) consumers;
 	TAILQ_ENTRY(device) consumers_link;
-	struct device * provider;
+	struct device *provider;
 	uint8_t stack_depth;
 
 	/*! Dispatch an I/O packet. */
 	mlx_status_t (*dispatch)(struct device *dev, iop_t *iop);
 
 	/*! driver-specific context */
-	//void *context;
+	// void *context;
 } device_t;
 
 #if 0
@@ -90,16 +107,24 @@ typedef struct driver {
 } driver_t;
 #endif
 
-
 /*!
  * Create a device. object.
  */
-//int dev_create(d)
+// int dev_create(d)
 
 /*!
  * Attach a device object as consumer of another device object.
  */
 void dev_attach(device_t *consumer, device_t *provider);
+
+/*!
+ * @brief Return a pointer to the current stack entry of an IOP.
+ */
+inline iop_stack_entry_t *
+iop_stack_current(iop_t *iop)
+{
+	return &iop->stack[iop->stack_current];
+}
 
 #ifdef __cplusplus
 }

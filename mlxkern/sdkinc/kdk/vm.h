@@ -250,7 +250,7 @@ typedef struct vm_procstate {
  * Memory descriptor list.
  */
 typedef struct vm_mdl {
-
+	vm_page_t *pages[0];
 } vm_mdl_t;
 
 extern struct vm_stat vmstat;
@@ -299,6 +299,9 @@ vm_page_t *vmp_paddr_to_page(paddr_t paddr);
 
 /*! @brief Copy the contents of one page to another. */
 void vmp_page_copy(vm_page_t *from, vm_page_t *to);
+
+/*! @brief Allocate an MDL populated with pages for a buffer. */
+vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
 
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, vmem_flag_t flags);
