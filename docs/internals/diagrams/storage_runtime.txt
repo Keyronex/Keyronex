@@ -1,0 +1,29 @@
+@startuml
+
+skinparam componentStyle uml2
+
+title Melantix storage stack at runtime
+
+[VirtIODisk] <<viodisk0>>
+[LogicalDisk] <<ld0>> as diskld
+[VolumeManager] as gpt
+[LogicalDisk] <<ld0s1>> as gptp0
+[LogicalDisk] <<ld0s2>> as gptp1
+
+
+[diskld] -up-> [VirtIODisk]
+[gpt] -up-> [diskld]
+
+gptp0 -up-> [gpt]
+gptp1 -up-> [gpt]
+gptp0 -[hidden]> gptp1
+
+' () "/dev/disk0" as nvd0
+' () "/dev/disk0s0" as nvd0p0
+' () "/dev/disk0s1" as nvd0p1
+
+' nvd0 -> diskld
+' nvd0p0 -up-> gptp0
+' nvd0p1 -up-> gptp1
+
+@enduml
