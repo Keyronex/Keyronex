@@ -51,11 +51,14 @@ executable(
 
 mlx_sdk_includes = include_directories(
 	'external/bsd-includes',
+	'external/uuid',
 	'mlxkern/sdkinc'
 )
 
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
+
+uuid_sources = files('external/uuid/uuid.c')
 
 subdir('external/lai')
 subdir('driver')
