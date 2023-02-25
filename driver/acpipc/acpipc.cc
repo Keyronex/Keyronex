@@ -314,6 +314,7 @@ parse_ioapics(acpi_madt_entry_header_t *item, void *arg)
 	ioapic = (acpi_madt_ioapic_t *)item;
 	obj = new (kmem_general) IOApic(acpipc, ioapic->ioapic_id,
 	    ioapic->ioapic_addr, ioapic->gsi_base);
+	(void)obj;
 }
 
 static void

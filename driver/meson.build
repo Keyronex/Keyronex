@@ -2,5 +2,6 @@ subdir('mdf')
 subdir('acpipc')
 subdir('pcibus')
 subdir('viofam')
+subdir('volmgr')
 
-drivers = [ mdfdev, acpipc, pcibus, viodisk ]
+drivers = [ mdfdev, acpipc, pcibus, viodisk, volmgr ]

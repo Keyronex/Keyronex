@@ -8,6 +8,7 @@
 #include "kdk/process.h"
 #include "kdk/vmem.h"
 #include "kernel/ke_internal.h"
+#include "vm/vm_internal.h"
 
 eprocess_t kernel_process;
 ethread_t kernel_bsp_thread;

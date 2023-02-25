@@ -292,6 +292,18 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 		ke_spinlock_release(&dprintf_lock, ipl);                     \
 	}
 
+/*! @brief Kernel vpprintf(). */
+#define kvppprintf(...)                                                      \
+	{                                                                    \
+		/* kdprintf is usable everywhere, so need SPL high */        \
+		ipl_t ipl = ke_spinlock_acquire_at(&dprintf_lock, kIPLHigh); \
+		npf_vpprintf(hl_dputc, NULL, __VA_ARGS__);                   \
+		ke_spinlock_release(&dprintf_lock, ipl);                     \
+	}
+
+/*! @brief Kernel snprintf(). */
+#define ksnprintf(...) npf_snprintf(__VA_ARGS__)
+
 /*! @brief Kernel fatal condition. */
 #define kfatal(...)                                              \
 	{                                                        \

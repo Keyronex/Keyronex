@@ -8,6 +8,7 @@
 #include "kdk/process.h"
 #include "kdk/vm.h"
 
+#include "../volmgr/volmgr.hh"
 #include "viodisk.hh"
 
 static unsigned sequence_num = 0;
@@ -85,6 +86,8 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 		res[512] = '\0';
 		DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
 	}
+
+	new (kmem_general) VolumeManager(this);
 }
 
 int

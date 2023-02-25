@@ -16,6 +16,7 @@ gen = generator(bin2c,
 )
 
 mlxkern_sources += gen.process(['logosmall.data'])
+mlxkern_sources += uuid_sources
 
 subdir('devmgr')
 subdir('executive')
