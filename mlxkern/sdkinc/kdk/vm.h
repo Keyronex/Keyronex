@@ -303,6 +303,9 @@ void vmp_page_copy(vm_page_t *from, vm_page_t *to);
 /*! @brief Allocate an MDL populated with pages for a buffer. */
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
 
+/*! @brief Allocate an MDL to describe kernel wired memory. */
+vm_mdl_t *vm_mdl_kwired_alloc(void* addr, size_t len);
+
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, vmem_flag_t flags);
 
