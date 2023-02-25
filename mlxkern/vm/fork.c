@@ -80,7 +80,7 @@ vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
 void
 vm_ps_activate(vm_procstate_t *vmps)
 {
-	kassert(vmps >= HHDM_BASE);
+	kassert((uintptr_t)vmps >= HHDM_BASE);
 	uint64_t val = (uint64_t)vmps->md.cr3;
 	write_cr3(val);
 }

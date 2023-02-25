@@ -116,7 +116,9 @@ struct kmem_slab {
 	/*! zone to which it belongs */
 	struct kmem_zone *zone;
 	/*! number of free entries */
-	uint32_t nfree;
+	uint16_t nfree;
+	/*! number alloced*/
+	uint16_t nalloced;
 	/*! first free bufctl */
 	struct kmem_bufctl *firstfree;
 	/*!
@@ -194,6 +196,8 @@ static kmem_zone_t *kmem_alloc_zones[] = { ZONE_SIZES(REFERENCE_ZONE) };
 /*! list of all zones; TODO(med): protect with a lock */
 struct kmem_zones kmem_zones = STAILQ_HEAD_INITIALIZER(kmem_zones);
 
+#define KMEM_SANITY_CHECKS 1
+
 void
 kmem_zone_init(struct kmem_zone *zone, const char *name, size_t size)
 {
@@ -254,6 +258,7 @@ small_slab_new(kmem_zone_t *zone, vmem_flag_t flags)
 
 	slab->zone = zone;
 	slab->nfree = slabcapacity(zone);
+	slab->nalloced = 0;
 
 	/* set up the freelist */
 	for (size_t i = 0; i < slabcapacity(zone); i++) {
@@ -278,6 +283,7 @@ large_slab_new(kmem_zone_t *zone, vmem_flag_t flags)
 	STAILQ_INSERT_HEAD(&zone->slablist, slab, slablist);
 	slab->zone = zone;
 	slab->nfree = slabcapacity(zone);
+	slab->nalloced = 0;
 	slab->data[0] = (void *)vm_kalloc(slabsize(zone) / PGSIZE, flags);
 
 	/* set up the freelist */
@@ -301,7 +307,9 @@ large_slab_new(kmem_zone_t *zone, vmem_flag_t flags)
 static void
 slab_free(kmem_zone_t *zone, struct kmem_slab *slab, vmem_flag_t flags)
 {
+#if KMEM_DBG == 1
 	kdprintf("Freeing slab %p in zone %s\n", slab, zone->name);
+#endif
 	if (zone->size > kSmallSlabMax) {
 		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE, flags);
 		kmem_xzonefree(&kmem_slab, slab, flags);
@@ -328,11 +336,20 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 		} else {
 			slab = small_slab_new(zone, flags);
 		}
+#if KMEM_DBG == 1
+		kdprintf("kmem: zone %s added slab %p\n", zone->name, slab);
+#endif
 	}
 
 	__atomic_sub_fetch(&slab->nfree, 1, __ATOMIC_RELAXED);
+	slab->nalloced ++;
 	entry = slab->firstfree;
 
+#if KMEM_SANITY_CHECKS == 1
+	kassert(slab->nfree + slab->nalloced == slabcapacity(zone));
+	kassert(slab->zone == zone);
+	kassert(slab->nfree <= slabcapacity(zone));
+#endif
 	kassert(entry != NULL);
 
 	next = entry->entrylist.sle_next;
@@ -342,7 +359,7 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 		STAILQ_INSERT_TAIL(&zone->slablist, slab, slablist);
 		slab->firstfree = NULL;
 	} else {
-		//#ifdef KMEM_SANITY_CHECKS
+#if KMEM_SANITY_CHECKS == 1
 		void *slab_base, *slab_end, *next_data;
 
 		if (zone->size <= kSmallSlabMax) {
@@ -361,7 +378,7 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 		kassert(
 		    (uintptr_t)((void *)next_data - slab_base) % zone->size ==
 		    0);
-		//#endif
+#endif
 
 		slab->firstfree = next;
 	}
@@ -382,7 +399,7 @@ void
 kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 {
 	struct kmem_slab *slab;
-	struct kmem_bufctl *newfree;
+	struct kmem_bufctl *newfree = NULL;
 	ipl_t ipl;
 
 	ASSERT_IN_KHEAP(ptr);
@@ -391,6 +408,17 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 
 	if (zone->size <= kSmallSlabMax) {
 		slab = (struct kmem_slab *)SMALL_SLAB_HDR(PGROUNDDOWN(ptr));
+#if KMEM_SANITY_CHECKS == 1
+		{
+			struct kmem_slab *iter;
+			STAILQ_FOREACH(iter, &zone->slablist,slablist) {
+				if (iter == slab)
+					goto next;
+			}
+			kfatal("No such slab!\n");
+		}
+		next:
+#endif
 		newfree = (struct kmem_bufctl *)ptr;
 	} else {
 		struct kmem_bufctl *iter;
@@ -413,6 +441,12 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 	}
 
 	slab->nfree++;
+	slab->nalloced--;
+
+#if KMEM_SANITY_CHECKS == 1
+	kassert (slab->nfree + slab->nalloced == slabcapacity(zone));
+#endif
+
 	if (slab->nfree == slabcapacity(zone)) {
 		STAILQ_REMOVE(&zone->slablist, slab, kmem_slab, slablist);
 		slab_free(zone, slab, flags);

@@ -31,6 +31,9 @@ void pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
 /*! @brief Remove a page mapping, returning the page previously mapped. */
 vm_page_t *pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr);
 
+/*! @brief Locally invalidate a mapping. */
+void pmap_invlpg(vaddr_t vaddr);
+
 /*!
  * @brief Reduce protections on all mappings within some range of memory.
  */
