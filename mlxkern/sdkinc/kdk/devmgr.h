@@ -64,9 +64,9 @@ struct iop_stack_data_ioctl {
 };
 
 /*!
- * An entry in an I/O packet stack.
+ * A frame in an I/O packet stack.
  */
-typedef struct iop_stack_entry {
+typedef struct iop_frame {
 	/*!
 	 * Associated IOPs. These are associated with a frame entry by its
 	 * dispatch function, and if they are present, then they will all be ran
@@ -90,7 +90,7 @@ typedef struct iop_stack_entry {
 		struct iop_stack_data_read read;
 		struct iop_stack_data_ioctl ioctl;
 	};
-} iop_stack_entry_t;
+} iop_frame_t;
 
 /*!
  * In which direction is the packet travelling?
@@ -137,7 +137,7 @@ typedef struct iop {
 	 * The stack, containing at least #stack_count entries, ordered starting
 	 * with the highest level first.
 	 */
-	iop_stack_entry_t stack[0];
+	iop_frame_t stack[0];
 } iop_t;
 
 /*!
@@ -221,7 +221,7 @@ iop_return_t iop_continue(iop_t *iop, iop_return_t res);
 /*!
  * @brief Return a pointer to the current stack entry of an IOP.
  */
-inline iop_stack_entry_t *
+inline iop_frame_t *
 iop_stack_current(iop_t *iop)
 {
 	return &iop->stack[iop->stack_current];

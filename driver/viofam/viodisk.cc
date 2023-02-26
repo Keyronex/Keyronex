@@ -102,7 +102,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 iop_return_t
 VirtIODisk::dispatchIOP(iop_t *iop)
 {
-	iop_stack_entry_t *frame = iop_stack_current(iop);
+	iop_frame_t *frame = iop_stack_current(iop);
 
 	kassert(frame->function == kIOPTypeRead);
 	TAILQ_INSERT_TAIL(&pending_packets, iop, dev_queue_entry);
@@ -252,7 +252,7 @@ VirtIODisk::tryStartPackets()
 	DKDevLog(this, "deferred IOP queue processing\n");
 	while (true) {
 		iop_t *iop;
-		iop_stack_entry_t *frame;
+		iop_frame_t *frame;
 		size_t ndescs;
 
 		if (io_queue.nfree_descs < 3)

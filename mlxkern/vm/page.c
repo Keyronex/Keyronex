@@ -126,10 +126,45 @@ vm_mdl_t *
 vm_mdl_buffer_alloc(size_t npages)
 {
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
+	mdl->npages = npages;
 	for (unsigned i = 0; i < npages; i++) {
 		int r = vmp_page_alloc(&kernel_process.vmps, true,
 		    kPageUseWired, &mdl->pages[i]);
 		kassert(r == 0);
 	}
 	return mdl;
+}
+
+void
+vm_mdl_map(vm_mdl_t *mdl, void **out)
+{
+	kassert(mdl->npages == 1);
+	*out = (void *)P2V(mdl->pages[0]->address);
+}
+
+void
+vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n)
+{
+	voff_t base = PGROUNDDOWN(off);
+	voff_t pageoff = off - base;
+	size_t firstpage = base / PGSIZE;
+	size_t lastpage = firstpage + (pageoff + n - 1) / PGSIZE + 1;
+
+	for (size_t iPage = firstpage; iPage < lastpage; iPage++) {
+		vm_page_t *page;
+		size_t tocopy;
+
+		if (n > PGSIZE)
+			tocopy = PGSIZE - pageoff;
+		else
+			tocopy = n;
+
+		page = mdl->pages[iPage];
+
+		memcpy(dest + (iPage - firstpage) * PGSIZE,
+		    P2V(page->address) + pageoff, tocopy);
+
+		n -= tocopy;
+		pageoff = 0;
+	}
 }

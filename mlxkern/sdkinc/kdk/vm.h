@@ -250,6 +250,7 @@ typedef struct vm_procstate {
  * Memory descriptor list.
  */
 typedef struct vm_mdl {
+	size_t npages;
 	vm_page_t *pages[0];
 } vm_mdl_t;
 
@@ -304,7 +305,13 @@ void vmp_page_copy(vm_page_t *from, vm_page_t *to);
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
 
 /*! @brief Allocate an MDL to describe kernel wired memory. */
-vm_mdl_t *vm_mdl_kwired_alloc(void* addr, size_t len);
+vm_mdl_t *vm_mdl_kwired_alloc(void *addr, size_t len);
+
+/*! @brief Map an MDL so the kernel can access it. */
+void vm_mdl_map(vm_mdl_t *mdl, void **out);
+
+/*! @brief Memcpy out of an MDL. */
+void vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n);
 
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, vmem_flag_t flags);

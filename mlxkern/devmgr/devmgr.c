@@ -31,7 +31,7 @@ dev_attach(device_t *consumer, device_t *provider)
 	}
 }
 
-#define IOP_SIZE(DEPTH) (sizeof(iop_t) + sizeof(iop_stack_entry_t) * DEPTH)
+#define IOP_SIZE(DEPTH) (sizeof(iop_t) + sizeof(iop_frame_t) * DEPTH)
 
 iop_t *
 iop_new(device_t *dev)
@@ -81,11 +81,11 @@ iop_return_t
 iop_continue(iop_t *iop, iop_return_t res)
 {
 	iop_return_t r;
-	iop_stack_entry_t *frame;
+	iop_frame_t *frame;
 
 start:
 	if (res == -1)
-		kdprintf("devmgr: IOP %p (%d stack frames) begins\n", iop,
+		kdprintf("devmgr: IOP %p (%d frames) begins\n", iop,
 		    iop->stack_count);
 
 	/* note this can be set multiple times - it doesn't matter. */
@@ -184,8 +184,8 @@ cont:
 			 * next associated IOP if not yet started and exists
 			 */
 			if (iop->master_iop != NULL) {
-				iop_stack_entry_t *master_frame =
-				    iop_stack_current(iop->master_iop);
+				iop_frame_t *master_frame = iop_stack_current(
+				    iop->master_iop);
 				uint8_t n_pending = __atomic_sub_fetch(
 				    &master_frame->n_pending_associated_iops, 1,
 				    __ATOMIC_SEQ_CST);
@@ -278,7 +278,7 @@ iop_send_sync(iop_t *iop)
 		ke_wait(&iop->event, "io_send_sync:iop->event", false, false,
 		    -1);
 		// return the result from the IOP somewhere??
-		return r;
+		return 0;
 
 	default:
 		kfatal("should not be returned");
