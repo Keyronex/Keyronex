@@ -3,9 +3,8 @@
  * Created on Tue Feb 14 2023.
  */
 
-
-#include "kdk/machdep.h"
 #include "kdk/kernel.h"
+#include "kdk/machdep.h"
 #include "kdk/process.h"
 
 kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER;
@@ -136,7 +135,6 @@ void
 ke_dpc_enqueue(kdpc_t *dpc)
 {
 	if (splget() < kIPLDPC) {
-		kdprintf("RUNNING DPC IMMEDIATELY....\n");
 		ipl_t ipl = spldpc();
 		dpc->callback(dpc->arg);
 		splx(ipl);

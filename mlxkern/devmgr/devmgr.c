@@ -63,12 +63,20 @@ iop_new_ioctl(device_t *dev, iop_ioctl_t ioctl, vm_mdl_t *mdl, size_t size)
 	return iop;
 }
 
-/*!
- * @brief Continue processing an IOP.
- *
- * This is also privately used by iop_send() and iop_send_synch() to begin an
- * IOP, they pass -1 as \p res since they aren't actually continuing anything.
- */
+iop_t *
+iop_new_read(device_t *dev, vm_mdl_t *mdl, size_t size, io_off_t off)
+{
+	iop_t *iop = iop_new(dev);
+
+	iop->stack[0].dev = dev;
+	iop->stack[0].function = kIOPTypeRead;
+	iop->stack[0].mdl = mdl;
+	iop->stack[0].read.bytes = size;
+	iop->stack[0].read.offset = off;
+
+	return iop;
+}
+
 iop_return_t
 iop_continue(iop_t *iop, iop_return_t res)
 {
@@ -76,6 +84,10 @@ iop_continue(iop_t *iop, iop_return_t res)
 	iop_stack_entry_t *frame;
 
 start:
+	if (res == -1)
+		kdprintf("devmgr: IOP %p (%d stack frames) begins\n", iop,
+		    iop->stack_count);
+
 	/* note this can be set multiple times - it doesn't matter. */
 	iop->begun = true;
 
@@ -202,7 +214,7 @@ cont:
 					}
 				}
 			} else {
-				kdprintf("IOP completed!\n");
+				kdprintf("devmgr: IOP %p completes\n", iop);
 				ke_event_signal(&iop->event);
 				return kIOPRetCompleted;
 			}
@@ -247,7 +259,7 @@ cont:
 			return r;
 		}
 		} /* switch (r) */
-	} /* if() */
+	}	  /* if() */
 
 	kfatal("unreached\n");
 	return -1;
@@ -265,9 +277,8 @@ iop_send_sync(iop_t *iop)
 	case kIOPRetPending:
 		ke_wait(&iop->event, "io_send_sync:iop->event", false, false,
 		    -1);
-		// return the result from the IOP
-		kfatal("path unimplemented\n");
-		return 0;
+		// return the result from the IOP somewhere??
+		return r;
 
 	default:
 		kfatal("should not be returned");

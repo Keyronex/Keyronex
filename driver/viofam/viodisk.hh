@@ -7,6 +7,7 @@
 #define MLX_VIOFAM_VIODISK_HH
 
 #include "dev/virtio_blk.h"
+#include "kdk/devmgr.h"
 
 #include "viodev.hh"
 
@@ -28,11 +29,16 @@ class VirtIODisk : VirtIODevice {
 	TAILQ_HEAD(, vioblk_request) in_flight_reqs;
 
 	/*!
+	 * @brief Dispatch an IOP.
+	 */
+	iop_return_t dispatchIOP(iop_t *iop);
+
+	/*!
 	 * @brief Send a request to the controller.
 	 * @param req one of VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT, etc.
 	 */
 	int commonRequest(int req, size_t nblocks, unsigned block,
-	    vm_mdl_t *buffer);
+	    vm_mdl_t *buffer, iop_t *iop);
 
 	/*!
 	 * @brief ISR DPC routine

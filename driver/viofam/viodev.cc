@@ -182,7 +182,7 @@ VirtIODevice::exchangeFeatures(uint64_t required_mask)
 		__sync_synchronize();
 		if ((m_common_cfg->device_feature & requiredFeaturesPart) !=
 		    requiredFeaturesPart) {
-			DKDevLog(self,
+			DKDevLog(this,
 			    "Unsupported features (dword %d): %x VS %x\n", i,
 			    m_common_cfg->device_feature, requiredFeaturesPart);
 			return false;
@@ -197,7 +197,7 @@ VirtIODevice::exchangeFeatures(uint64_t required_mask)
 	__sync_synchronize();
 	if (m_common_cfg->device_status !=
 	    VIRTIO_CONFIG_DEVICE_STATUS_FEATURES_OK) {
-		DKDevLog(self, "Features OK not set.\n");
+		DKDevLog(this, "Features OK not set.\n");
 		return false;
 	}
 	return true;
@@ -216,7 +216,7 @@ VirtIODevice::enableDevice()
 	    pci_info.edge, kIPLDevice, &intx_entry);
 
 	if (r < 0) {
-		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
+		DKDevLog(this, "Failed to allocate interrupt handler: %d\n", r);
 		return r;
 	}
 

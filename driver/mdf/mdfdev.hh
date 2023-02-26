@@ -13,8 +13,17 @@
 #include "kdk/devmgr.h"
 #include "kdk/kmem.h"
 
-#define DKLog(subsys, ...) kdprintf(subsys __VA_ARGS__)
-#define DKDevLog(DEV, ...) kdprintf("Device: " __VA_ARGS__)
+#define kAnsiYellow "\e[0;33m"
+#define kAnsiReset "\e[0m"
+
+#define DKPrint(...) kprintf(__VA_ARGS__)
+#define DKLog(SUB, ...)                                      \
+	({                                                   \
+		kdprintf(kAnsiYellow "%s: " kAnsiReset, SUB); \
+		kdprintf(__VA_ARGS__);                        \
+	})
+#define DKDevLog(DEV, ...) DKLog((DEV->objhdr.name), __VA_ARGS__)
+
 
 extern struct kmem_general_t {
 } kmem_general;
@@ -32,8 +41,11 @@ operator delete(void *p, unsigned long something)
 }
 
 class Device : public device_t {
+	static iop_return_t dispatchIOP(device_t *dev, iop_t *iop);
+
     protected:
-	void attach(device_t *provider) { dev_attach(this, provider); }
+	void attach(device_t *provider) { dispatch = dispatchIOP; dev_attach(this, provider); }
+	virtual iop_return_t dispatchIOP(iop_t *iop);
 };
 
 #endif /* MLX_MDF_MDFDEV_HH */

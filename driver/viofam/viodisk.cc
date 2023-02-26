@@ -3,6 +3,7 @@
  * Created on Thu Feb 23 2023.
  */
 
+#include "bsdqueue/queue.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/process.h"
@@ -22,6 +23,8 @@ struct vioblk_request {
 	uint8_t flags;
 	/*! the first desc, by that this request is identified */
 	uint16_t first_desc_id;
+	/*! the IOP it belongs to */
+	iop_t *iop;
 };
 
 ksemaphore_t sem;
@@ -32,11 +35,12 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
     : VirtIODevice(provider, info)
 {
 	int r;
+	volmgr_disk_info vol_info;
 
 	kmem_asprintf(&objhdr.name, "viodisk%d", sequence_num++);
 
 	if (!exchangeFeatures(VIRTIO_BLK_F_SEG_MAX)) {
-		DKDevLog(self, "Feature exchange failed.");
+		DKDevLog(this, "Feature exchange failed.");
 		return;
 	}
 
@@ -72,6 +76,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	attach(provider);
 
+#if 0
 	ke_semaphore_init(&sem, 0);
 
 	vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);
@@ -84,15 +89,32 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 		ke_wait(&sem, "test_virtio", false, false, -1);
 
 		res[512] = '\0';
-		DKDevLog(self, "Block %d contains: \"%s\"\n", i, res);
+		DKDevLog(this, "Block %d contains: \"%s\"\n", i, res);
 	}
+#endif
 
-	new (kmem_general) VolumeManager(this);
+	vol_info.block_size = 512;
+	vol_info.nblocks = cfg->capacity;
+
+	new (kmem_general) VolumeManager(this, vol_info);
+}
+
+iop_return_t
+VirtIODisk::dispatchIOP(iop_t *iop)
+{
+	iop_stack_entry_t *frame = iop_stack_current(iop);
+
+	kassert(frame->function == kIOPTypeRead);
+	TAILQ_INSERT_TAIL(&pending_packets, iop, dev_queue_entry);
+
+	ke_dpc_enqueue(&interrupt_dpc);
+
+	return kIOPRetPending;
 }
 
 int
 VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
-    vm_mdl_t *mdl)
+    vm_mdl_t *mdl, iop_t *iop)
 {
 	uint32_t virtq_desc[7];
 	ipl_t ipl;
@@ -100,7 +122,7 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 	size_t ndatadescs;
 
 #if DEBUG_DISK == 1
-	DKDevLog(self, "Strategy(%d, block %lx, blocks %d)\n", strategy, block,
+	DKDevLog(this, "Strategy(%d, block %lx, blocks %d)\n", strategy, block,
 	    nblocks);
 #endif
 
@@ -111,14 +133,20 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 		virtq_desc[i] = allocateDescNumOnQueue(&io_queue); // i;
 	}
 
+#if 0
 	ipl = ke_spinlock_acquire(&io_queue.spinlock);
+#endif
 
 	struct vioblk_request *req = TAILQ_FIRST(&free_reqs);
 	TAILQ_REMOVE(&free_reqs, req, queue_entry);
 
+	DKDevLog(this, "op type %d (nblocks %zu offset %d; req %p)\n", kind,
+	    nblocks, block, req);
+
 	req->hdr.sector = block;
 	req->hdr.type = VIRTIO_BLK_T_IN;
 	req->first_desc_id = virtq_desc[0];
+	req->iop = iop;
 
 	io_queue.desc[virtq_desc[i]].len = sizeof(struct virtio_blk_outhdr);
 	io_queue.desc[virtq_desc[i]].addr = (uint64_t)V2P(&req->hdr);
@@ -147,7 +175,9 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 	submitDescNumToQueue(&io_queue, virtq_desc[0]);
 	notifyQueue(&io_queue);
 
+#if 0
 	ke_spinlock_release(&io_queue.spinlock, ipl);
+#endif
 
 	return 0;
 }
@@ -201,25 +231,28 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 
 	if (req->flags & VIRTIO_BLK_S_IOERR ||
 	    req->flags & VIRTIO_BLK_S_UNSUPP) {
-		DKDevLog(self, "I/O error\n");
+		DKDevLog(this, "I/O error\n");
 		for (;;)
 			;
 		return;
 	}
 
-	kdprintf("done request %p yielding %zu bytes\n", req, bytes);
+	DKDevLog(this, "done req %p yielding %zu bytes\n", req, bytes);
+	/* this might be better in a separate DPC */
+	iop_continue(req->iop, kIOPRetCompleted);
 
 	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
 
-	ke_semaphore_release(&sem, 1);
+	// ke_semaphore_release(&sem, 1);
 }
 
 void
 VirtIODisk::tryStartPackets()
 {
+	DKDevLog(this, "deferred IOP queue processing\n");
 	while (true) {
 		iop_t *iop;
-		iop_stack_entry_t *stack;
+		iop_stack_entry_t *frame;
 		size_t ndescs;
 
 		if (io_queue.nfree_descs < 3)
@@ -229,17 +262,19 @@ VirtIODisk::tryStartPackets()
 		if (!iop)
 			break;
 
-		stack = iop_stack_current(iop);
+		TAILQ_REMOVE(&pending_packets, iop, dev_queue_entry);
 
-		kassert(stack->function == kIOPTypeRead);
-		kassert(stack->read.bytes <= PGSIZE ||
-		    stack->read.bytes % PGSIZE == 0);
-		kassert(stack->read.bytes < PGSIZE * 4);
-		ndescs = 2 + stack->read.bytes;
+		frame = iop_stack_current(iop);
+
+		kassert(frame->function == kIOPTypeRead);
+		kassert(frame->read.bytes <= PGSIZE ||
+		    frame->read.bytes % PGSIZE == 0);
+		kassert(frame->read.bytes < PGSIZE * 4);
+		ndescs = 2 + frame->read.bytes / 512;
 
 		if (ndescs <= io_queue.nfree_descs)
-			commonRequest(VIRTIO_BLK_T_IN, stack->read.bytes / 512,
-			    stack->read.offset / 512, stack->mdl);
+			commonRequest(VIRTIO_BLK_T_IN, frame->read.bytes / 512,
+			    frame->read.offset / 512, frame->mdl, iop);
 		else
 			break;
 	}

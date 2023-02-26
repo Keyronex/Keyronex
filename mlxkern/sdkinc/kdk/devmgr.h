@@ -17,9 +17,11 @@
 extern "C" {
 #endif
 
-typedef uint64_t io_bsize_t;
-typedef int64_t io_boff_t;
-typedef uint64_t io_size_t;
+/*! Count of blocks. */
+typedef uint64_t io_blksize_t;
+/*! Block offset. */
+typedef int64_t io_blkoff_t;
+/*! Byte offset. */
 typedef int64_t io_off_t;
 
 typedef enum iop_return {
@@ -48,8 +50,8 @@ typedef enum iop_ioctl {
 /*! For kIOPTypeRead. */
 struct iop_stack_data_read {
 	/*! Number of bytes to read. */
-	io_size_t bytes;
-	/*! Offset in file at which to read. */
+	size_t bytes;
+	/*! Byte offset in file at which to read. */
 	io_off_t offset;
 };
 
@@ -109,8 +111,11 @@ typedef enum iop_direction {
 typedef struct iop {
 	/*! An event which will be signalled when the IOP is complete. */
 	kevent_t event;
+
 	/*! Which device was the IOP originally directed at? */
 	struct device *dev;
+	/*! Linkage in a device queue. */
+	TAILQ_ENTRY(iop) dev_queue_entry;
 
 	unsigned
 	    /*! Has the IOP started running? */
@@ -193,8 +198,25 @@ iop_t *iop_new(device_t *dev);
 iop_t *iop_new_ioctl(device_t *dev, iop_ioctl_t ioctl, vm_mdl_t *mdl,
     size_t size);
 
+/*!
+ * @brief Allocate & set up a read IOP.
+ *
+ * @param dev Device the IOP is to be sent to.
+ * @param mdl MDL for the output buffer.
+ * @param size Size in bytes to read.
+ */
+iop_t *iop_new_read(device_t *dev, vm_mdl_t *mdl, size_t size, io_off_t off);
+
 /*! @brief Send and await completion of an IOP. */
 iop_return_t iop_send_sync(iop_t *iop);
+
+/*!
+ * @brief Continue processing an IOP.
+ *
+ * This is also privately used by iop_send() and iop_send_synch() to begin an
+ * IOP, they pass -1 as \p res since they aren't actually continuing anything.
+ */
+iop_return_t iop_continue(iop_t *iop, iop_return_t res);
 
 /*!
  * @brief Return a pointer to the current stack entry of an IOP.

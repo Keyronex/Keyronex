@@ -45,7 +45,6 @@ struct virtio_queue {
 #define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
 
 class VirtIODevice : public Device {
-	kdpc_t interrupt_dpc;
 
 	static void intrDpc(void *arg);
 	static bool intxISR(hl_intr_frame_t *frame, void *arg);
@@ -75,6 +74,8 @@ class VirtIODevice : public Device {
 
 	uint16_t num_queues;
 	struct dk_virtio_queue **queues;
+
+	kdpc_t interrupt_dpc;
 
 	VirtIODevice(PCIDevice *provider, pci_device_info &info);
 	virtual ~VirtIODevice() {};
