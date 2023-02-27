@@ -40,7 +40,8 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	kmem_asprintf(&objhdr.name, "viodisk%d", sequence_num++);
 
 	if (!exchangeFeatures(VIRTIO_BLK_F_SEG_MAX)) {
-		DKDevLog(this, "Feature exchange failed.");
+		DKDevLog(this, "Feature exchange failed.\n");
+		for (;;) ;
 		return;
 	}
 

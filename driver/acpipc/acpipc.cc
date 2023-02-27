@@ -550,7 +550,7 @@ printTree(device_t *dev, char *prefix, enum nodeKind kind)
 	const char *rcorner = "\\-";
 	const char *vline = "| ";
 #else
-	const char *branch = "\e(0\x78\x71\e(B";  /* ├─ */
+	const char *branch = "\e(0\x74\x71\e(B";  /* ├─ */
 	const char *rcorner = "\e(0\x6d\x71\e(B"; /* └─ */
 	const char *vline = "\e(0\x78\e(B";	  /* │ */
 #endif

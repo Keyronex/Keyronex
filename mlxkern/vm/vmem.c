@@ -531,8 +531,10 @@ free:
 
 	if (left->type == kVMemSegSpanImported && seg->size == left->size) {
 		kassert(!right || right->type == kVMemSegSpanImported);
+#if DEBUG_VMEM == 1
 		kdprintf("Entire ispan 0x%lx-0x%lx is free\n", left->base,
 		    left->base + left->size);
+#endif
 		vmem->freefn(vmem->source, left->base, left->size, flags);
 
 		/* XXX seg not set free yet if it wasn't coalesced */

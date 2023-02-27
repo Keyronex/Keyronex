@@ -57,6 +57,8 @@ PCIDevice::PCIDevice(PCIBus *provider, pci_device_info &info)
 		}
 	}
 
+	kdprintf("PCI device: vendor %x device %x\n", info.vendorId,
+	    info.deviceId);
 	if (info.vendorId == 0x1af4 && info.deviceId == 0x1001) {
 		new (kmem_general) VirtIODisk(this, info);
 	}
@@ -101,9 +103,53 @@ PCIDevice::enumerateCapabilities(pci_device_info &info,
 paddr_t
 PCIDevice::getBar(pci_device_info &info, uint8_t num)
 {
-	return (paddr_t)((uintptr_t)laihost_pci_readd(INFO_ARGS(&info),
-			     kBaseAddress0 + sizeof(uint32_t) * num) &
-	    0xfffffff0);
+	io_off_t off = kBaseAddress0 + sizeof(uint32_t) * num;
+	uint32_t bar;
+
+	uint64_t base;
+	size_t len;
+
+	bar = laihost_pci_readd(INFO_ARGS(&info), off);
+
+	if ((bar & 1) == 1) {
+		kfatal("I/O space bar\n");
+	} else if (((bar >> 1) & 3) == 0) {
+		uint32_t size_mask;
+
+		laihost_pci_writed(INFO_ARGS(&info), off, 0xffffffff);
+		size_mask = laihost_pci_readd(INFO_ARGS(&info), off);
+		laihost_pci_writed(INFO_ARGS(&info), off, bar);
+
+		base = bar & 0xFFFFFFF0;
+		len = (size_t)1 << __builtin_ctzl(size_mask & 0xFFFFFFF0);
+
+		kdprintf("32-bit memory bar: base 0x%lx, length %lu\n", base,
+		    len);
+	} else {
+		uint64_t size_mask, bar_high, size_mask_high;
+
+		kassert(((bar >> 1) & 3) == 2);
+
+		bar_high = laihost_pci_readd(INFO_ARGS(&info), off + 4);
+		base = (bar & 0xFFFFFFF0) | (bar_high << 32);
+
+		laihost_pci_writed(INFO_ARGS(&info), off, 0xffffffff);
+		size_mask = laihost_pci_readd(INFO_ARGS(&info), off);
+		laihost_pci_writed(INFO_ARGS(&info), off, bar);
+
+		laihost_pci_writed(INFO_ARGS(&info), off + 4, 0xffffffff);
+		size_mask_high = laihost_pci_readd(INFO_ARGS(&info), off + 4);
+		laihost_pci_writed(INFO_ARGS(&info), off + 4, bar_high);
+
+		size_mask |= size_mask_high << 32;
+		len = (size_t)1
+		    << __builtin_ctzl(size_mask & 0xffffffffFFFFFFF0);
+
+		kdprintf("64-bit memory bar: base 0x%lx, length %lu\n", base,
+		    len);
+	}
+
+	return (paddr_t)base;
 }
 
 void
