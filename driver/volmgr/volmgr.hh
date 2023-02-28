@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Fri Feb 24 2023.
  */
 
-#ifndef MLX_VOLMGR_VOLMGR_HH
-#define MLX_VOLMGR_VOLMGR_HH
+#ifndef KRX_VOLMGR_VOLMGR_HH
+#define KRX_VOLMGR_VOLMGR_HH
 
 #include "kdk/devmgr.h"
 
@@ -24,4 +24,4 @@ class VolumeManager : public Device {
 	VolumeManager(device_t *provider, struct volmgr_disk_info &info);
 };
 
-#endif /* MLX_VOLMGR_VOLMGR_HH */
+#endif /* KRX_VOLMGR_VOLMGR_HH */

@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Tue Feb 28 2023.
  */
 
-#ifndef MLX_VIOFAM_VIOFSPRT_HH
-#define MLX_VIOFAM_VIOFSPRT_HH
+#ifndef KRX_VIOFAM_VIOFSPRT_HH
+#define KRX_VIOFAM_VIOFSPRT_HH
 
 #include "dev/virtioreg.h"
 #include "kdk/devmgr.h"
@@ -23,4 +23,4 @@ class VirtIOFSPort : VirtIODevice {
 	VirtIOFSPort(PCIDevice *provider, pci_device_info &info);
 };
 
-#endif /* MLX_VIOFAM_VIOFSPRT_HH */
+#endif /* KRX_VIOFAM_VIOFSPRT_HH */

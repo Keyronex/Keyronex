@@ -2,7 +2,7 @@
 
 skinparam componentStyle uml2
 
-title Melantix storage stack at runtime
+title Keyronex storage stack at runtime
 
 [VirtIODisk] <<viodisk0>>
 [Disk] <<dk0>> as diskld

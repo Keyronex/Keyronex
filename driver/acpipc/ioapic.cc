@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Wed Feb 22 2023.
  */
 

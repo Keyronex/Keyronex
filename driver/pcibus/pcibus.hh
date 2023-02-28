@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Wed Feb 22 2023.
  */
 
-#ifndef MLX_PCIBUS_PCIBUS_HH
-#define MLX_PCIBUS_PCIBUS_HH
+#ifndef KRX_PCIBUS_PCIBUS_HH
+#define KRX_PCIBUS_PCIBUS_HH
 
 #include "../acpipc/acpipc.hh"
 
@@ -53,4 +53,4 @@ class PCIDevice : public Device {
 	static paddr_t getBar(pci_device_info &info, uint8_t num);
 };
 
-#endif /* MLX_PCIBUS_PCIBUS_HH */
+#endif /* KRX_PCIBUS_PCIBUS_HH */

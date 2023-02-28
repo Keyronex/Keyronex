@@ -1,11 +1,11 @@
-project('Melantix', ['c', 'cpp'],
+project('Keyronex', ['c', 'cpp'],
 	default_options: ['cpp_std=gnu++20'])
 
 arch = target_machine.cpu_family()
 os = target_machine.system()
 
 if not meson.is_cross_build()
-	error('Melantix must be cross-compiled')
+	error('Keyronex must be cross-compiled')
 endif
 
 if (arch == 'x86_64')
@@ -29,37 +29,37 @@ if (arch == 'x86_64')
 	freestanding_cpp_args = freestanding_c_args + '-fno-exceptions' + '-fno-rtti'
 	freestanding_ld_args = ['-nostdlib', '-mno-red-zone']
 else
-	message('arch ' + arch + ' is not supported by Melantix')
+	message('arch ' + arch + ' is not supported by Keyronex')
 	error('bad arch')
 endif
 
-if (os != 'elf' and os != 'melantix')
+if (os != 'elf' and os != 'Keyronex')
 	message('compiler for os ' + os +
-		' is not suitable for building Melantix\n')
+		' is not suitable for building Keyronex\n')
 	message('the required compiler is either ' + arch + '-elf or ' +
-		arch + '-melantix')
+		arch + '-Keyronex')
 	fatal('bad compiler')
 endif
 
 # limine dependencies
-limine_include_directories = include_directories('external/limine-binary')
+limine_include_directories = include_directories('vendor/limine-binary')
 executable(
 	'limine-deploy',
-	'external/limine-binary/limine-deploy.c',
+	'vendor/limine-binary/limine-deploy.c',
 	native: true
 )
 
-mlx_sdk_includes = include_directories(
-	'external/bsd-includes',
-	'external/uuid',
-	'mlxkern/sdkinc'
+krx_sdk_includes = include_directories(
+	'vendor/bsd-includes',
+	'vendor/uuid',
+	'kernel/_sdkinc'
 )
 
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
-uuid_sources = files('external/uuid/uuid.c')
+uuid_sources = files('vendor/uuid/uuid.c')
 
-subdir('external/lai')
+subdir('vendor/lai')
 subdir('driver')
-subdir('mlxkern')
+subdir('kernel')

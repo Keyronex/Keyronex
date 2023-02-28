@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Wed Feb 22 2023.
  */
 
@@ -128,8 +128,8 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 		size_mask = laihost_pci_readd(INFO_ARGS(&info), off);
 		laihost_pci_writed(INFO_ARGS(&info), off, bar);
 
-		base = bar & 0xFFFFFFF0;
-		len = (size_t)1 << __builtin_ctzl(size_mask & 0xFFFFFFF0);
+		base = bar & 0xffffffF0;
+		len = (size_t)1 << __builtin_ctzl(size_mask & 0xffffffF0);
 
 		kdprintf("32-bit memory bar: base 0x%lx, length %lu\n", base,
 		    len);
@@ -139,9 +139,7 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 		kassert(((bar >> 1) & 3) == 2);
 
 		bar_high = laihost_pci_readd(INFO_ARGS(&info), off + 4);
-		base = (bar & 0xFFFFFFF0) | (bar_high << 32);
-
-		kdprintf("64-bit bar: base 0x%lx\n", base);
+		base = (bar & 0xffffffF0) | (bar_high << 32);
 
 		laihost_pci_writed(INFO_ARGS(&info), off, 0xffffffff);
 		laihost_pci_writed(INFO_ARGS(&info), off + 4, 0xffffffff);
@@ -152,7 +150,7 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 
 		size_mask |= size_mask_high << 32;
 		len = (size_t)1
-		    << __builtin_ctzl(size_mask & 0xffffffffFFFFFFF0);
+		    << __builtin_ctzl(size_mask & 0xffffffffffffffF0);
 
 		kdprintf("64-bit memory bar: base 0x%lx, length %lu\n", base,
 		    len);

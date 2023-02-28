@@ -1,2 +1,2 @@
-file build/mlxkern/machdep/amd64/mlxkern
+file build/kernel/machdep/amd64/kernel
 target remote localhost:1234

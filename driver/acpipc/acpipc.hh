@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Tue Feb 21 2023.
  */
 
-#ifndef MLX_ACPIPC_ACPIPC_HH
-#define MLX_ACPIPC_ACPIPC_HH
+#ifndef KRX_ACPIPC_ACPIPC_HH
+#define KRX_ACPIPC_ACPIPC_HH
 
 #include "acpispec/tables.h"
 #include "lai/core.h"
@@ -51,4 +51,4 @@ class AcpiPC : public Device{
 	static AcpiPC *probeWithRSDP(rsdp_desc_t *rsdp);
 };
 
-#endif /* MLX_ACPIPC_ACPIPC_HH */
+#endif /* KRX_ACPIPC_ACPIPC_HH */

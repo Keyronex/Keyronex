@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Thu Feb 23 2023.
  */
 
-#ifndef MLX_VIOFAM_VIODEV_HH
-#define MLX_VIOFAM_VIODEV_HH
+#ifndef KRX_VIOFAM_VIODEV_HH
+#define KRX_VIOFAM_VIODEV_HH
 
 #include "kdk/kernel.h"
 #include "kdk/vm.h"
@@ -112,4 +112,4 @@ class VirtIODevice : public Device {
 	void submitDescNumToQueue(virtio_queue *queue, uint16_t descNum);
 };
 
-#endif /* MLX_VIOFAM_VIODEV_HH */
+#endif /* KRX_VIOFAM_VIODEV_HH */

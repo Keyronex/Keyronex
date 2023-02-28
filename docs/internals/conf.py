@@ -2,7 +2,7 @@
 
 # -- Project information
 
-project = 'Melantix Operating System Internals'
+project = 'Keyronex Operating System Internals'
 copyright = '2020-2023, NetaScale Object Solutions Ltd.'
 author = 'NetBSD User'
 
@@ -34,7 +34,7 @@ todo_include_todos = 'true'
 
 # -- Options for HTML output
 html_theme = 'sphinx_rtd_theme'
-html_logo = '../melantix_flat.svg'
+html_logo = '../keyronex.svg'
 
 # -- Options for EPUB output
 epub_show_urls = 'footnote'

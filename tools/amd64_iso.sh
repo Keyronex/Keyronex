@@ -1,6 +1,6 @@
-LIMINE="external/limine-binary"
+LIMINE="vendor/limine-binary"
 mkdir -p build/isoroot &&
-cp build/mlxkern/machdep/amd64/mlxkern \
+cp build/kernel/machdep/amd64/kernel \
     ${LIMINE}/limine.sys ${LIMINE}/limine-cd.bin ${LIMINE}/limine-cd-efi.bin \
     build/isoroot &&
 cp tools/amd64_limine.cfg build/isoroot/limine.cfg &&

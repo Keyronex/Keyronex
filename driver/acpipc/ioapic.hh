@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Wed Feb 22 2023.
  */
 
-#ifndef MLX_ACPIPC_IOAPIC_HH
-#define MLX_ACPIPC_IOAPIC_HH
+#ifndef KRX_ACPIPC_IOAPIC_HH
+#define KRX_ACPIPC_IOAPIC_HH
 
 #include "../mdf/mdfdev.hh"
 #include "acpipc.hh"
@@ -40,4 +40,4 @@ class IOApic : public Device {
 	    bool lopol, bool edge, ipl_t ipl, struct intr_entry *entry);
 };
 
-#endif /* MLX_ACPIPC_IOAPIC_HH */
+#endif /* KRX_ACPIPC_IOAPIC_HH */

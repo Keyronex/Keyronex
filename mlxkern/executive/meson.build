@@ -1,1 +1,0 @@
-mlxkern_sources += files('start.c')

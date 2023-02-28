@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Thu Feb 23 2023.
  */
 
-#ifndef MLX_VIOFAM_VIODISK_HH
-#define MLX_VIOFAM_VIODISK_HH
+#ifndef KRX_VIOFAM_VIODISK_HH
+#define KRX_VIOFAM_VIODISK_HH
 
 #include "dev/virtio_blk.h"
 #include "kdk/devmgr.h"
@@ -64,4 +64,4 @@ class VirtIODisk : VirtIODevice {
 	VirtIODisk(PCIDevice *provider, pci_device_info &info);
 };
 
-#endif /* MLX_VIOFAM_VIODISK_HH */
+#endif /* KRX_VIOFAM_VIODISK_HH */

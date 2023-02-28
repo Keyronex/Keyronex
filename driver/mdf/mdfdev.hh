@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 The Melantix Project.
+ * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Wed Feb 22 2023.
  */
 /*!
@@ -7,8 +7,8 @@
  * @brief C++ driver framework
  */
 
-#ifndef MLX_MDF_MDFDEV_HH
-#define MLX_MDF_MDFDEV_HH
+#ifndef KRX_MDF_MDFDEV_HH
+#define KRX_MDF_MDFDEV_HH
 
 #include "kdk/devmgr.h"
 #include "kdk/kmem.h"
@@ -48,4 +48,4 @@ class Device : public device_t {
 	virtual iop_return_t dispatchIOP(iop_t *iop);
 };
 
-#endif /* MLX_MDF_MDFDEV_HH */
+#endif /* KRX_MDF_MDFDEV_HH */
