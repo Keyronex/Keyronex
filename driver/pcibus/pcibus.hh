@@ -44,7 +44,7 @@ class PCIDevice : public Device {
     public:
 	PCIDevice(PCIBus *provider, pci_device_info &info);
 
-	static void enableMemorySpace(pci_device_info &info);
+	static void enableMemorySpace(pci_device_info &info, bool enabled=true);
 	static void enableBusMastering(pci_device_info &info);
 	static void setInterrupts(pci_device_info &info, bool enabled);
 	static void enumerateCapabilities(pci_device_info &info,

@@ -8,6 +8,7 @@
 #include "lai/helpers/pci.h"
 
 #include "../viofam/viodisk.hh"
+#include "../viofam/viofsprt.hh"
 #include "pcibus.hh"
 
 enum {
@@ -61,13 +62,18 @@ PCIDevice::PCIDevice(PCIBus *provider, pci_device_info &info)
 	    info.deviceId);
 	if (info.vendorId == 0x1af4 && info.deviceId == 0x1001) {
 		new (kmem_general) VirtIODisk(this, info);
+	} else if (info.vendorId == 0x1af4 && info.deviceId == 0x105a) {
+		new (kmem_general) VirtIOFSPort(this, info);
 	}
 }
 
 void
-PCIDevice::enableMemorySpace(pci_device_info &info)
+PCIDevice::enableMemorySpace(pci_device_info &info, bool enabled)
 {
-	ENABLE_CMD_FLAG(&info, 0x1 | 0x2);
+	if (enabled)
+		ENABLE_CMD_FLAG(&info, 0x1 | 0x2);
+	else
+		DISABLE_CMD_FLAG(&info, 0x1 | 0x2);
 }
 
 void
@@ -111,6 +117,8 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 
 	bar = laihost_pci_readd(INFO_ARGS(&info), off);
 
+	kdprintf("NUM: %d\n", num);
+
 	if ((bar & 1) == 1) {
 		kfatal("I/O space bar\n");
 	} else if (((bar >> 1) & 3) == 0) {
@@ -133,12 +141,13 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 		bar_high = laihost_pci_readd(INFO_ARGS(&info), off + 4);
 		base = (bar & 0xFFFFFFF0) | (bar_high << 32);
 
-		laihost_pci_writed(INFO_ARGS(&info), off, 0xffffffff);
-		size_mask = laihost_pci_readd(INFO_ARGS(&info), off);
-		laihost_pci_writed(INFO_ARGS(&info), off, bar);
+		kdprintf("64-bit bar: base 0x%lx\n", base);
 
+		laihost_pci_writed(INFO_ARGS(&info), off, 0xffffffff);
 		laihost_pci_writed(INFO_ARGS(&info), off + 4, 0xffffffff);
+		size_mask = laihost_pci_readd(INFO_ARGS(&info), off);
 		size_mask_high = laihost_pci_readd(INFO_ARGS(&info), off + 4);
+		laihost_pci_writed(INFO_ARGS(&info), off, bar);
 		laihost_pci_writed(INFO_ARGS(&info), off + 4, bar_high);
 
 		size_mask |= size_mask_high << 32;

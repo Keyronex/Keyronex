@@ -45,4 +45,4 @@ echo "Launching: ${qemu_exe} ${qemu_args} -smp $smpnum -boot d"
 echo ""
 echo ""
 
-${qemu_exe} ${qemu_args} -smp $smpnum -boot d -s
+${qemu_exe} ${qemu_args} -M q35 -smp $smpnum -boot d -s

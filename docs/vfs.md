@@ -1,7 +1,7 @@
 VFS
 ===
 
-The in-kernel VFS is more Unix-like than NT-like.
+The kernel VFS is mostly modeled after SunOS VFS. 
 
 Two public objects are associated with it:
  - the File object - resembles a Unix kernel file descriptor.

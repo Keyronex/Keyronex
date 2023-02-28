@@ -5,17 +5,19 @@ skinparam componentStyle uml2
 title Melantix storage stack at runtime
 
 [VirtIODisk] <<viodisk0>>
-[LogicalDisk] <<ld0>> as diskld
+[Disk] <<dk0>> as diskld
 [VolumeManager] as gpt
-[LogicalDisk] <<ld0s1>> as gptp0
-[LogicalDisk] <<ld0s2>> as gptp1
+[Volume] <<dk0s1>> as gptp0
+[Volume] <<dk0s2>> as gptp1
 
 
 [diskld] -up-> [VirtIODisk]
-[gpt] -up-> [diskld]
+[gpt] -left-> [diskld]
 
-gptp0 -up-> [gpt]
-gptp1 -up-> [gpt]
+gptp0 -up-> [diskld]
+gptp1 -up-> [diskld]
+gptp0 <..up..> [gpt]
+gptp1 <..up..> [gpt]
 gptp0 -[hidden]> gptp1
 
 ' () "/dev/disk0" as nvd0

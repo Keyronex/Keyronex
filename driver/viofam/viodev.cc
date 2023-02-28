@@ -3,8 +3,8 @@
  * Created on Thu Feb 23 2023.
  */
 
-#include "dev/virtioreg.h"
 #include "dev/virtio_pcireg.h"
+#include "dev/virtioreg.h"
 #include "kdk/amd64/mdamd64.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
@@ -99,6 +99,14 @@ VirtIODevice::enumerateCapabilitiesCallback(pci_device_info *info, voff_t pCap,
 		/* epsilon */
 		break;
 
+	case VIRTIO_PCI_CAP_SHARED_MEMORY_CFG: {
+		void *data = dev->device_cfg =
+		    ((char *)P2V(PCIDevice::getBar(dev->pci_info, cap.bar)) +
+			cap.offset);
+		kdprintf("Shared Memory is at %p\n", data);
+		break;
+	}
+
 	default:
 		DKLog("VirtIODevice", "unknown capability config type %d\n",
 		    cap.cfg_type);
@@ -109,9 +117,11 @@ VirtIODevice::VirtIODevice(PCIDevice *provider, pci_device_info &info)
     : pci_info(info)
 {
 	PCIDevice::enableBusMastering(info);
-	PCIDevice::enableMemorySpace(info);
+	/*! need to disable this before playing with BARs */
+	PCIDevice::enableMemorySpace(info, false);
 	PCIDevice::enumerateCapabilities(info, enumerateCapabilitiesCallback,
 	    this);
+	PCIDevice::enableMemorySpace(info);
 
 	m_common_cfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_RESET;
 	__sync_synchronize();
