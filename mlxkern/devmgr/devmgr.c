@@ -84,9 +84,11 @@ iop_continue(iop_t *iop, iop_return_t res)
 	iop_frame_t *frame;
 
 start:
+#if DEBUG_DEVMAN == 1
 	if (res == -1)
 		kdprintf("devmgr: IOP %p (%d frames) begins\n", iop,
 		    iop->stack_count);
+#endif
 
 	/* note this can be set multiple times - it doesn't matter. */
 	iop->begun = true;
@@ -214,7 +216,9 @@ cont:
 					}
 				}
 			} else {
+#if DEBUG_DEVMAN == 1
 				kdprintf("devmgr: IOP %p completes\n", iop);
+#endif
 				ke_event_signal(&iop->event);
 				return kIOPRetCompleted;
 			}

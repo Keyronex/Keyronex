@@ -31,7 +31,7 @@ virtio_fs_args="-object memory-backend-file,id=mem,size=128M,mem-path=/dev/shm,s
 
 (($dax)) && {
 	echo "Using DAX" ;
-	virtio_fs_args+=",cache-size=2G" ;
+	virtio_fs_args+=",cache-size=64M" ;
 }
 
 (($virtiofs)) && qemu_args+="${virtio_fs_args} "

@@ -141,8 +141,10 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 	struct vioblk_request *req = TAILQ_FIRST(&free_reqs);
 	TAILQ_REMOVE(&free_reqs, req, queue_entry);
 
+#if DEBUG_VIODISK == 1
 	DKDevLog(this, "op type %d (nblocks %zu offset %d; req %p)\n", kind,
 	    nblocks, block, req);
+#endif
 
 	req->hdr.sector = block;
 	req->hdr.type = VIRTIO_BLK_T_IN;
@@ -238,7 +240,9 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 		return;
 	}
 
+#if DEBUG_VIODISK == 1
 	DKDevLog(this, "done req %p yielding %zu bytes\n", req, bytes);
+#endif
 	/* this might be better in a separate DPC */
 	iop_continue(req->iop, kIOPRetCompleted);
 
@@ -250,7 +254,9 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 void
 VirtIODisk::tryStartPackets()
 {
+#if DEBUG_VIODISK == 1
 	DKDevLog(this, "deferred IOP queue processing\n");
+#endif
 	while (true) {
 		iop_t *iop;
 		iop_frame_t *frame;

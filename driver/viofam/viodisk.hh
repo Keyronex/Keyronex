@@ -36,6 +36,7 @@ class VirtIODisk : VirtIODevice {
 	/*!
 	 * @brief Send a request to the controller.
 	 * @param req one of VIRTIO_BLK_T_IN, VIRTIO_BLK_T_OUT, etc.
+	 * @pre io_queue->lock held
 	 */
 	int commonRequest(int req, size_t nblocks, unsigned block,
 	    vm_mdl_t *buffer, iop_t *iop);
