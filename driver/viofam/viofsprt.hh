@@ -13,6 +13,13 @@
 #include "viodev.hh"
 
 class VirtIOFSPort : VirtIODevice {
+	/*! VirtIO-FS configuration */
+	struct virtio_fs_config *cfg;
+	/*! Queue 0 - hiprio request queue */
+	virtio_queue hiprio_queue;
+	/*! Queue 1 - request queue */
+	virtio_queue request_queue;
+
 	void intrDpc() { kfatal("not yet implemented"); }
 	void processUsed(virtio_queue *queue, vring_used_elem *elem)
 	{
