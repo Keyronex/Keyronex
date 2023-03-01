@@ -3,6 +3,7 @@
  * Created on Wed Mar 01 2023.
  */
 
+#include "dev/fuse_kernel.h"
 #include "kdk/devmgr.h"
 #include "kdk/libkern.h"
 #include "kdk/process.h"
@@ -89,5 +90,60 @@ FuseFS::FuseFS(device_t *provider)
 	DKDevLog(this, "Remote FS runs FUSE %d.%d\n", pair->init_out.major,
 	    pair->init_out.minor);
 
-	// for (;;) ;
+	/*! opendir */
+
+	fuse_open_in openin = { 0 };
+	fuse_open_out openout;
+
+	req = newFuseRequest(FUSE_OPENDIR, FUSE_ROOT_ID, 0, 0, 0, &openin, NULL,
+	    sizeof(openin), &openout, NULL, sizeof(openout));
+
+	iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest, (vm_mdl_t *)req,
+	    sizeof(*req));
+
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kdprintf("open done\n");
+
+	kassert(req->fuse_out_header.error == 0);
+
+	/*! readdir */
+
+	char *readbuf = (char *)kmem_alloc(2048);
+	memset(readbuf, 0x0, 2048);
+	fuse_read_in readin = { 0 };
+	readin.size = 2048;
+	readin.fh = openout.fh;
+
+	req = newFuseRequest(FUSE_READDIR, FUSE_ROOT_ID, 0, 0, 0, &readin, NULL,
+	    sizeof(readin), readbuf, NULL, 2048);
+
+	iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest, (vm_mdl_t *)req,
+	    sizeof(*req));
+
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kdprintf("readdir done\n");
+
+	char *dirbuf = readbuf;
+	while (dirbuf < readbuf + req->fuse_out_header.len) {
+		fuse_dirent *dent = (fuse_dirent *)dirbuf;
+		char name[dent->namelen + 1];
+
+		if (dent->namelen == 0)
+			break;
+
+		memcpy(name, dent->name, dent->namelen);
+		name[dent->namelen] = 0;
+
+		kdprintf("[ino %lu type %u name %s]\n", dent->ino, dent->type,
+		    name);
+
+		dirbuf += FUSE_DIRENT_SIZE(dent);
+	}
+
+	for (;;)
+		;
 }
