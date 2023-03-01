@@ -301,6 +301,9 @@ vm_page_t *vmp_paddr_to_page(paddr_t paddr);
 /*! @brief Copy the contents of one page to another. */
 void vmp_page_copy(vm_page_t *from, vm_page_t *to);
 
+/*! @brief Translate wired virtual to physical address in current process. */
+paddr_t vm_translate(vaddr_t vaddr);
+
 /*! @brief Allocate an MDL populated with pages for a buffer. */
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
 

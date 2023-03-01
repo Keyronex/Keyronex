@@ -17,9 +17,12 @@
 
 #include "dev/fuse_kernel.h"
 #include "dev/virtioreg.h"
+#include "kdk/devmgr.h"
+#include "kdk/kernel.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 
+#include "fusefs.hh"
 #include "viofsprt.hh"
 
 typedef uint32_t le32;
@@ -30,19 +33,7 @@ struct virtio_fs_config {
 	le32 notify_buf_size;
 };
 
-struct initpair {
-	// Device-readable part
-	struct fuse_in_header in;
-	struct fuse_init_in init_in;
-
-	// Device-writable part
-	struct fuse_out_header out;
-	struct fuse_init_out init_out;
-};
-
 static int sequence_num = 0;
-
-struct initpair *pair;
 
 VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
     : VirtIODevice(provider, info)
@@ -57,13 +48,13 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 		return;
 	}
 
-	r = setupQueue(&hiprio_queue, 0);
+	r = setupQueue(&hiprio_vq, 0);
 	if (r != 0) {
 		DKDevLog(this, "failed to setup hiprio queue: %d\n", r);
 		return;
 	}
 
-	r = setupQueue(&request_queue, 1);
+	r = setupQueue(&req_vq, 1);
 	if (r != 0) {
 		DKDevLog(this, "failed to setup request queue: %d\n", r);
 		return;
@@ -73,6 +64,29 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 	if (r != 0) {
 		DKDevLog(this, "failed to enable device: %d\n", r);
 	}
+
+	size_t n_reqs = ROUNDUP(req_vq.length, 4) / 4;
+	req_array = (viofs_request *)kmem_alloc(sizeof(viofs_request) * n_reqs);
+
+	for (size_t i = 0; i < n_reqs; i++) {
+		free_reqs.insert_tail(&req_array[i]);
+	}
+
+#if 0
+	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
+	    &viofs_req_page);
+	vaddr_t addr = (vaddr_t)P2V(viofs_req_page->address);
+	for (int i = 0; i < ROUNDUP(req_vq.length, 4) / 4; i++) {
+		viofs_request *req = (viofs_request *)(addr + sizeof(*req) * i);
+		free_reqs.insert_tail(req);
+	}
+#endif
+
+	attach(provider);
+
+	new (kmem_general) FuseFS(this);
+
+#if 0
 
 	/* testing shit */
 
@@ -85,7 +99,7 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 	memset(pair, 0x0, sizeof(initpair));
 
 	for (unsigned i = 0; i < 2; i++)
-		virtq_desc[i] = allocateDescNumOnQueue(&request_queue);
+		virtq_desc[i] = allocateDescNumOnQueue(&req_vq);
 
 	pair->in.gid = 0;
 	pair->in.opcode = FUSE_INIT;
@@ -99,19 +113,217 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 	pair->init_in.flags = FUSE_MAP_ALIGNMENT;
 	pair->init_in.max_readahead = PGSIZE;
 
-	request_queue.desc[virtq_desc[0]].len = offsetof(initpair, out);
-	request_queue.desc[virtq_desc[0]].addr = (uint64_t)V2P(pair);
-	request_queue.desc[virtq_desc[0]].flags = VRING_DESC_F_NEXT;
-	request_queue.desc[virtq_desc[0]].next = virtq_desc[1];
-
-	request_queue.desc[virtq_desc[1]].len = sizeof(initpair) -
-	    offsetof(initpair, out);
-	request_queue.desc[virtq_desc[1]].addr = (uint64_t)V2P(&pair->out);
-	request_queue.desc[virtq_desc[1]].flags = VRING_DESC_F_WRITE;
-
-	submitDescNumToQueue(&request_queue, virtq_desc[0]);
-	notifyQueue(&request_queue);
+	fuseRequest(FUSE_INIT, FUSE_ROOT_ID, 0, 0, 0, &pair->in, NULL,
+	    offsetof(initpair, out), &pair->out, NULL,
+	    sizeof(initpair) - offsetof(initpair, out));
 
 	for (;;)
 		;
+#endif
+}
+
+iop_return_t
+VirtIOFSPort::dispatchIOP(iop_t *iop)
+{
+	iop_frame_t *frame = iop_stack_current(iop);
+
+	kassert(frame->function == kIOPTypeIOCtl);
+	kassert(frame->ioctl.type == kIOCTLFuseEnqueuRequest);
+
+	enqueueFuseRequest((io_fuse_request *)frame->kbuf);
+
+	return kIOPRetPending;
+}
+
+void
+VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
+{
+	viofs_request *vreq = free_reqs.remove_head();
+
+	/* number of descriptors required. Two for in-header and out-header. */
+	size_t ndescs = 0;
+	/* descriptors allocated for req */
+	uint16_t descs[12];
+	/* descriptor iterator */
+	size_t di = 0;
+
+	if (req->ptr_in) {
+		ndescs++;
+	}
+	if (req->mdl_in) {
+		ndescs += req->mdl_in->npages;
+	}
+
+	if (req->ptr_out) {
+		ndescs++;
+	}
+	if (req->mdl_out) {
+		ndescs += req->mdl_out->npages;
+	}
+
+	kassert(ndescs <= 12);
+
+	/* break this stuff off sometime soon! */
+	ipl_t ipl = ke_spinlock_acquire(&req_vq.spinlock);
+
+	for (uint16_t i = 0; i < ndescs; i++) {
+		descs[i] = allocateDescNumOnQueue(&req_vq);
+	}
+
+	vreq->fuse_req = req;
+	vreq->ndescs = ndescs;
+	vreq->first_desc_id = descs[0];
+
+	/* set the next desc, if there is a next */
+#define SET_NEXT()                                                 \
+	if (di + 1 < ndescs) {                                     \
+		req_vq.desc[descs[di]].flags |= VRING_DESC_F_NEXT; \
+		req_vq.desc[descs[di]].next = descs[di + 1];       \
+	}
+
+	if (req->ptr_in) {
+		req_vq.desc[descs[di]].addr = vm_translate(
+		    (vaddr_t)req->ptr_in);
+		req_vq.desc[descs[di]].len = req->ptr_in_size;
+		req_vq.desc[descs[di]].flags = 0;
+		SET_NEXT();
+		di++;
+	}
+
+	if (req->mdl_in) {
+		/* kassert(!req->mdl->offset) */
+		for (size_t i = 0; i < req->mdl_in->npages; i++) {
+			req_vq.desc[descs[di]].addr =
+			    req->mdl_in->pages[i]->address;
+			req_vq.desc[descs[di]].len = PGSIZE;
+			req_vq.desc[descs[di]].flags = 0;
+			SET_NEXT();
+			di++;
+		}
+	}
+
+	if (req->ptr_out) {
+		req_vq.desc[descs[di]].addr = vm_translate(
+		    (vaddr_t)req->ptr_out);
+		req_vq.desc[descs[di]].len = req->ptr_out_size;
+		req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
+		SET_NEXT();
+		di++;
+	}
+
+	if (req->mdl_in) {
+		/* kassert(!req->mdl->offset) */
+		for (size_t i = 0; i < req->mdl_out->npages; i++) {
+			req_vq.desc[descs[di]].addr =
+			    req->mdl_out->pages[i]->address;
+			req_vq.desc[descs[di]].len = PGSIZE;
+			req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
+			SET_NEXT();
+			di++;
+		}
+	}
+
+	in_flight_reqs.insert_tail(vreq);
+
+	submitDescNumToQueue(&req_vq, descs[0]);
+	notifyQueue(&req_vq);
+
+	ke_spinlock_release(&req_vq.spinlock, ipl);
+}
+
+void
+VirtIOFSPort::intrDpc()
+{
+	ipl_t ipl = ke_spinlock_acquire(&req_vq.spinlock);
+	processVirtQueue(&req_vq);
+	tryStartRequests();
+	ke_spinlock_release(&req_vq.spinlock, ipl);
+}
+
+void
+VirtIOFSPort::processUsed(virtio_queue *queue, struct vring_used_elem *e)
+{
+	viofs_request *vreq = NULL;
+	struct vring_desc *desc;
+	size_t descidx = e->id;
+
+	iop_t *iop;
+	size_t ndescs = 0, bytes_out = 0;
+
+	CXXSLIST_FOREACH(vreq, &in_flight_reqs, queue_entry)
+	{
+		if (vreq->first_desc_id == e->id)
+			break;
+	}
+
+	if (!vreq || vreq->first_desc_id != e->id)
+		kfatal("viofs completion without a request\n");
+
+	in_flight_reqs.remove(vreq);
+
+	while (true) {
+		desc = &QUEUE_DESC_AT(&req_vq, descidx);
+
+		if (desc->flags & VRING_DESC_F_WRITE)
+			bytes_out += desc->len;
+
+		if (!(desc->flags & VRING_DESC_F_NEXT)) {
+			freeDescNumOnQueue(&req_vq, descidx);
+			ndescs++;
+			break;
+		} else {
+			uint16_t oldidx = descidx;
+			descidx = desc->next;
+			freeDescNumOnQueue(&req_vq, oldidx);
+			ndescs++;
+		}
+	}
+
+	kassert(ndescs == vreq->ndescs);
+
+	iop = vreq->fuse_req->iop;
+	free_reqs.insert_tail(vreq);
+
+	(void)bytes_out;
+
+	iop_continue(iop, kIOPRetCompleted);
+}
+
+void
+VirtIOFSPort::tryStartRequests()
+{
+#if 0
+#if DEBUG_VIODISK == 1
+	DKDevLog(this, "deferred IOP queue processing\n");
+	while (true) {
+		iop_t *iop;
+		iop_frame_t *frame;
+		size_t ndescs;
+
+		if (req_queue.nfree_descs < 3)
+			return;
+
+		iop = TAILQ_FIRST(&pending_packets);
+		if (!iop)
+			break;
+
+		TAILQ_REMOVE(&pending_packets, iop, dev_queue_entry);
+
+		frame = iop_stack_current(iop);
+
+		kassert(frame->function == kIOPTypeRead);
+		kassert(frame->read.bytes <= PGSIZE ||
+		    frame->read.bytes % PGSIZE == 0);
+		kassert(frame->read.bytes < PGSIZE * 4);
+		ndescs = 2 + frame->read.bytes / 512;
+
+		if (ndescs <= io_queue.nfree_descs)
+			commonRequest(VIRTIO_BLK_T_IN, frame->read.bytes / 512,
+			    frame->read.offset / 512, frame->mdl, iop);
+		else
+			break;
+	}
+
+#endif
+#endif
 }

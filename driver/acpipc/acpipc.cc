@@ -566,7 +566,7 @@ printTree(device_t *dev, char *prefix, enum nodeKind kind)
 		kmem_asprintf(&newPrefix, "%s%s", prefix, "  ");
 	} else if (kind == kChild) {
 		kdprintf("%s%s", prefix, branch);
-		kmem_asprintf(&newPrefix, "%s%s", prefix, vline);
+		kmem_asprintf(&newPrefix, "%s%s ", prefix, vline);
 	}
 
 	kdprintf("%s (class %s)\n", dev->objhdr.name, "???");

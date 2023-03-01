@@ -45,6 +45,11 @@ typedef enum iop_function {
 
 typedef enum iop_ioctl {
 	kIOCTLDiskBlockSize = 1,
+
+	/*!
+	 * Enqueue FUSE request. iop_frame::kbuf will point to io_fuse_request.
+	 */
+	kIOCTLFuseEnqueuRequest
 } iop_ioctl_t;
 
 /*! For kIOPTypeRead. */
@@ -74,17 +79,18 @@ typedef struct iop_frame {
 	 * be ran.
 	 */
 	SLIST_HEAD(, iop) associated_iops;
-	/*!
-	 * Number of pending associated IOPs.
-	 */
+	/*! Number of pending associated IOPs. */
 	uint8_t n_pending_associated_iops;
+	/*! Which function is being carried out? (located here for packing)*/
+	iop_function_t function;
 
 	/*! Which device processes this stack entry? */
 	struct device *dev;
-	/*! Which function is being carried out? */
-	iop_function_t function;
-	/*! MDL for principal input/out */
-	vm_mdl_t *mdl;
+	/*! MDL or wired kernel buffer for principal input/out */
+	union {
+		vm_mdl_t *mdl;
+		void *kbuf;
+	};
 	/*! Union of different types. */
 	union {
 		struct iop_stack_data_read read;

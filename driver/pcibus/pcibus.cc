@@ -117,8 +117,6 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 
 	bar = laihost_pci_readd(INFO_ARGS(&info), off);
 
-	kdprintf("NUM: %d\n", num);
-
 	if ((bar & 1) == 1) {
 		kfatal("I/O space bar\n");
 	} else if (((bar >> 1) & 3) == 0) {
@@ -131,8 +129,10 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 		base = bar & 0xffffffF0;
 		len = (size_t)1 << __builtin_ctzl(size_mask & 0xffffffF0);
 
+#if 0
 		kdprintf("32-bit memory bar: base 0x%lx, length %lu\n", base,
 		    len);
+#endif
 	} else {
 		uint64_t size_mask, bar_high, size_mask_high;
 
@@ -152,8 +152,10 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 		len = (size_t)1
 		    << __builtin_ctzl(size_mask & 0xffffffffffffffF0);
 
+#if 0
 		kdprintf("64-bit memory bar: base 0x%lx, length %lu\n", base,
 		    len);
+#endif
 	}
 
 	return (paddr_t)base;

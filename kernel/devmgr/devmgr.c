@@ -14,6 +14,8 @@ static kspinlock_t devmgr_lock = KSPINLOCK_INITIALISER;
 void
 dev_attach(device_t *consumer, device_t *provider)
 {
+	kassert(consumer != NULL);
+
 	TAILQ_INIT(&consumer->consumers);
 	consumer->provider = provider;
 

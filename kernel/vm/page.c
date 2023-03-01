@@ -120,6 +120,11 @@ vmp_page_copy(vm_page_t *from, vm_page_t *to)
 	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
 }
 
+paddr_t vm_translate(vaddr_t vaddr) {
+	kassert( vaddr >= HHDM_BASE && vaddr < HHDM_BASE + HHDM_SIZE);
+	return (paddr_t)V2P(vaddr);
+}
+
 #define MDL_SIZE(NPAGES) (sizeof(vm_mdl_t) + sizeof(vm_page_t *) * NPAGES)
 
 vm_mdl_t *

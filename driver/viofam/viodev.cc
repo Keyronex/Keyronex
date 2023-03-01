@@ -165,7 +165,6 @@ int
 VirtIODevice::enableDevice()
 {
 	int r = 0;
-	static intr_entry intx_entry;
 
 	interrupt_dpc.callback = intrDpc;
 	interrupt_dpc.arg = this;
