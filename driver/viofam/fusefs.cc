@@ -12,11 +12,9 @@
 
 struct initpair {
 	// Device-readable part
-	struct fuse_in_header in;
 	struct fuse_init_in init_in;
 
 	// Device-writable part
-	struct fuse_out_header out;
 	struct fuse_init_out init_out;
 };
 
@@ -42,9 +40,11 @@ FuseFS::newFuseRequest(uint32_t opcode, uint64_t nodeid, uint32_t uid,
 	if (ptr_in) {
 		req->ptr_in = ptr_in;
 		req->ptr_in_size = ptr_in_size;
+		req->fuse_in_header.len += ptr_in_size;
 	}
 	if (mdl_in) {
 		req->mdl_in = mdl_in;
+		req->fuse_in_header.len += PGSIZE * mdl_in->npages;
 	}
 
 	if (ptr_out) {
@@ -71,21 +71,14 @@ FuseFS::FuseFS(device_t *provider)
 
 	memset(pair, 0x0, sizeof(initpair));
 
-	pair->in.gid = 0;
-	pair->in.opcode = FUSE_INIT;
-	pair->in.len = offsetof(initpair, out);
-	pair->in.unique = 444;
-	pair->in.nodeid = FUSE_ROOT_ID;
-	pair->in.pid = 0;
-
 	pair->init_in.major = FUSE_KERNEL_VERSION;
 	pair->init_in.minor = FUSE_KERNEL_MINOR_VERSION;
 	pair->init_in.flags = FUSE_MAP_ALIGNMENT;
 	pair->init_in.max_readahead = PGSIZE;
 
 	io_fuse_request *req = newFuseRequest(FUSE_INIT, FUSE_ROOT_ID, 0, 0, 0,
-	    &pair->in, NULL, offsetof(initpair, out), &pair->out, NULL,
-	    sizeof(initpair) - offsetof(initpair, out));
+	    &pair->init_in, NULL, offsetof(initpair, init_out), &pair->init_out,
+	    NULL, sizeof(initpair) - offsetof(initpair, init_out));
 
 	iop_t *iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest,
 	    (vm_mdl_t *)req, sizeof(*req));

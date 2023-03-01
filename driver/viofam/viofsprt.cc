@@ -72,54 +72,9 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 		free_reqs.insert_tail(&req_array[i]);
 	}
 
-#if 0
-	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
-	    &viofs_req_page);
-	vaddr_t addr = (vaddr_t)P2V(viofs_req_page->address);
-	for (int i = 0; i < ROUNDUP(req_vq.length, 4) / 4; i++) {
-		viofs_request *req = (viofs_request *)(addr + sizeof(*req) * i);
-		free_reqs.insert_tail(req);
-	}
-#endif
-
 	attach(provider);
 
 	new (kmem_general) FuseFS(this);
-
-#if 0
-
-	/* testing shit */
-
-	vm_page *page;
-	uint32_t virtq_desc[2];
-
-	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
-	pair = (struct initpair *)P2V(page->address);
-
-	memset(pair, 0x0, sizeof(initpair));
-
-	for (unsigned i = 0; i < 2; i++)
-		virtq_desc[i] = allocateDescNumOnQueue(&req_vq);
-
-	pair->in.gid = 0;
-	pair->in.opcode = FUSE_INIT;
-	pair->in.len = offsetof(initpair, out);
-	pair->in.unique = 444;
-	pair->in.nodeid = FUSE_ROOT_ID;
-	pair->in.pid = 0;
-
-	pair->init_in.major = FUSE_KERNEL_VERSION;
-	pair->init_in.minor = FUSE_KERNEL_MINOR_VERSION;
-	pair->init_in.flags = FUSE_MAP_ALIGNMENT;
-	pair->init_in.max_readahead = PGSIZE;
-
-	fuseRequest(FUSE_INIT, FUSE_ROOT_ID, 0, 0, 0, &pair->in, NULL,
-	    offsetof(initpair, out), &pair->out, NULL,
-	    sizeof(initpair) - offsetof(initpair, out));
-
-	for (;;)
-		;
-#endif
 }
 
 iop_return_t
@@ -141,9 +96,9 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	viofs_request *vreq = free_reqs.remove_head();
 
 	/* number of descriptors required. Two for in-header and out-header. */
-	size_t ndescs = 0;
+	size_t ndescs = 2;
 	/* descriptors allocated for req */
-	uint16_t descs[12];
+	uint16_t descs[14];
 	/* descriptor iterator */
 	size_t di = 0;
 
@@ -161,7 +116,7 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 		ndescs += req->mdl_out->npages;
 	}
 
-	kassert(ndescs <= 12);
+	kassert(ndescs <= 14);
 
 	/* break this stuff off sometime soon! */
 	ipl_t ipl = ke_spinlock_acquire(&req_vq.spinlock);
@@ -180,6 +135,14 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 		req_vq.desc[descs[di]].flags |= VRING_DESC_F_NEXT; \
 		req_vq.desc[descs[di]].next = descs[di + 1];       \
 	}
+
+	/*! the fuse in-header always goes in */
+	req_vq.desc[descs[di]].addr = vm_translate(
+	    (vaddr_t)&req->fuse_in_header);
+	req_vq.desc[descs[di]].len = sizeof(struct fuse_in_header);
+	req_vq.desc[descs[di]].flags = 0;
+	SET_NEXT();
+	di++;
 
 	if (req->ptr_in) {
 		req_vq.desc[descs[di]].addr = vm_translate(
@@ -201,6 +164,14 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 			di++;
 		}
 	}
+
+	/*! the fuse_out_header */
+	req_vq.desc[descs[di]].addr = vm_translate(
+	    (vaddr_t)&req->fuse_out_header);
+	req_vq.desc[descs[di]].len = sizeof(struct fuse_out_header);
+	req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
+	SET_NEXT();
+	di++;
 
 	if (req->ptr_out) {
 		req_vq.desc[descs[di]].addr = vm_translate(
@@ -224,6 +195,7 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	}
 
 	in_flight_reqs.insert_tail(vreq);
+	// for (;;) ;
 
 	submitDescNumToQueue(&req_vq, descs[0]);
 	notifyQueue(&req_vq);

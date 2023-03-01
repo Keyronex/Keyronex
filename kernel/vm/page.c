@@ -4,6 +4,7 @@
  */
 
 #include "bsdqueue/queue.h"
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/process.h"
@@ -120,9 +121,18 @@ vmp_page_copy(vm_page_t *from, vm_page_t *to)
 	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
 }
 
-paddr_t vm_translate(vaddr_t vaddr) {
-	kassert( vaddr >= HHDM_BASE && vaddr < HHDM_BASE + HHDM_SIZE);
-	return (paddr_t)V2P(vaddr);
+paddr_t
+vm_translate(vaddr_t vaddr)
+{
+	if (vaddr >= HHDM_BASE && vaddr < HHDM_BASE + HHDM_SIZE) {
+		return (paddr_t)V2P(vaddr);
+	} else {
+		paddr_t r;
+		kassert(vaddr > HHDM_BASE);
+		r = pmap_trans(&kernel_process.vmps, vaddr);
+		kassert(r != 0);
+		return r;
+	}
 }
 
 #define MDL_SIZE(NPAGES) (sizeof(vm_mdl_t) + sizeof(vm_page_t *) * NPAGES)

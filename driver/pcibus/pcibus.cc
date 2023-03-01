@@ -152,6 +152,8 @@ PCIDevice::getBar(pci_device_info &info, uint8_t num)
 		len = (size_t)1
 		    << __builtin_ctzl(size_mask & 0xffffffffffffffF0);
 
+		(void)len;
+
 #if 0
 		kdprintf("64-bit memory bar: base 0x%lx, length %lu\n", base,
 		    len);

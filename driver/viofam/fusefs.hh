@@ -49,7 +49,7 @@ static_assert(sizeof(io_fuse_request) == 128,
     "io_fuse_request unexpected size");
 
 class FuseFS : public Device {
-	uint64_t fuse_unique = 0;
+	uint64_t fuse_unique = 1;
 
 	io_fuse_request *newFuseRequest(uint32_t opcode, uint64_t nodeid,
 	    uint32_t uid, uint32_t gid, uint32_t pid, void *ptr_in,
