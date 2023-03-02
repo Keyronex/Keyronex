@@ -2,3 +2,6 @@
 	path = vendor/limine-binary
 	url = https://github.com/limine-bootloader/limine.git
 	branch = v4.x-branch-binary
+[submodule "subprojects/mlibc"]
+	path = subprojects/mlibc
+	url = ../mlibc

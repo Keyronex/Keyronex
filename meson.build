@@ -33,12 +33,12 @@ else
 	error('bad arch')
 endif
 
-if (os != 'elf' and os != 'Keyronex')
+if (os != 'elf' and os != 'keyronex')
 	message('compiler for os ' + os +
 		' is not suitable for building Keyronex\n')
 	message('the required compiler is either ' + arch + '-elf or ' +
-		arch + '-Keyronex')
-	fatal('bad compiler')
+		arch + '-keyronex')
+	error('bad compiler')
 endif
 
 # limine dependencies
@@ -57,6 +57,9 @@ krx_sdk_includes = include_directories(
 
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
+
+mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
+mlibc_keyronex_includes = mlibc.get_variable('keyronex_includes')
 
 uuid_sources = files('vendor/uuid/uuid.c')
 
