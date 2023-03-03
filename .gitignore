@@ -8,3 +8,5 @@ compile_commands.json
 out
 hda.img
 kjv.img
+subprojects/cxxshim*
+subprojects/frigg*

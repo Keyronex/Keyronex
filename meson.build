@@ -49,12 +49,6 @@ executable(
 	native: true
 )
 
-krx_sdk_includes = include_directories(
-	'vendor/bsd-includes',
-	'vendor/uuid',
-	'kernel/_sdkinc'
-)
-
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
@@ -62,6 +56,12 @@ mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
 mlibc_keyronex_includes = mlibc.get_variable('keyronex_includes')
 
 uuid_sources = files('vendor/uuid/uuid.c')
+
+krx_sdk_includes = [ include_directories(
+	'vendor/bsd-includes',
+	'vendor/uuid',
+	'kernel/_sdkinc'
+), mlibc_keyronex_includes ]
 
 subdir('vendor/lai')
 subdir('driver')

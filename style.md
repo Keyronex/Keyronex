@@ -9,5 +9,6 @@ Prefixes for functions and types:
  - `md_`/`mdp_` - machine dependent/machine dependent private
  - `ps_`/`psp_`/`e` - executive processes/executive processes internal/executive
  processes datatype
+ - `px_`/`pxp_` - portable applications subsystem/portable applications private
  - `obj_`/`obi_`/`object_` - object manager/object manager internal/object
  manager datatype

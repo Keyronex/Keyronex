@@ -115,3 +115,5 @@ swtch:
 	add $8, %rsp
 
 	iretq
+
+.section .note.GNU-stack,"",%progbits

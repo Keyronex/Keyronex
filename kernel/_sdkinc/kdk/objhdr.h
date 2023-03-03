@@ -22,6 +22,7 @@ extern "C" {
 typedef enum object_type {
 	kObjTypeThread,
 	kObjTypeProcess,
+	kObjTypeVNode,
 } object_type_t;
 
 typedef struct object_header {

@@ -21,6 +21,7 @@ kernel_sources += uuid_sources
 subdir('devmgr')
 subdir('executive')
 subdir('kernel')
+subdir('posix')
 subdir('vm')
 
 if (arch == 'x86_64')

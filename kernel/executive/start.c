@@ -15,6 +15,8 @@ void acpipc_autoconf(void *rsdp);
 void
 init_thread_start(void *rsdp)
 {
+	/*! first we maun setup the device tmpfs */
+
 	acpipc_autoconf(rsdp);
 
 	/* become some sort of worker thread? */

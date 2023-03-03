@@ -20,14 +20,19 @@ typedef struct ethread {
 
 /*!
  * An executive process
+ *
+ * (~) => invariant after initialisation
  */
 typedef struct eprocess {
 	/*! Kernel process part. */
 	kprocess_t kproc;
-	/*! Unique process identifier. */
+	/*! (~) Unique process identifier. */
 	uint32_t id;
 	/*! Virtual memory state. */
 	vm_procstate_t vmps;
+	/*! (~) Portable Applications Subsystem process. */
+	void *pas_proc;
+
 } eprocess_t;
 
 /*! Eternal handle to the kernel process. Only useable by  */
