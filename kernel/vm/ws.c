@@ -71,6 +71,15 @@ vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
 	vmps->wsl.count++;
 }
 
+static void
+wsl_remove(vm_procstate_t *vmps, struct vmp_wsle *wsle)
+{
+	RB_REMOVE(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
+	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);
+	vmps->wsl.count--;
+	wsl_dispose(vmps, wsle);
+}
+
 void
 vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
 {
@@ -82,10 +91,18 @@ vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
 		kfatal("vmp_wsl_remove: no wsle for virtual address 0x%lx\n",
 		    entry);
 
-	RB_REMOVE(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
-	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);
-	vmps->wsl.count--;
-	wsl_dispose(vmps, wsle);
+	wsl_remove(vmps, wsle);
+}
+
+void
+vmp_wsl_remove_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
+{
+	struct vmp_wsle *wsle, *tmp;
+
+	RB_FOREACH_SAFE (wsle, vmp_wsle_rbtree, &vmps->wsl.rbtree, tmp) {
+		if (wsle->vaddr >= start && wsle->vaddr < end)
+			wsl_remove(vmps, wsle);
+	}
 }
 
 void

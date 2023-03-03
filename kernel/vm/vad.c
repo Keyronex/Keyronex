@@ -5,6 +5,8 @@
 
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/object.h"
+#include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
 RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
@@ -60,8 +62,12 @@ vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
 	r = vm_section_new_anonymous(vmps, size, &section);
 	kassert(r == 0);
 
-	return vm_ps_map_section_view(vmps, section, vaddrp, size, 0, kVMAll,
+	r = vm_ps_map_section_view(vmps, section, vaddrp, size, 0, kVMAll,
 	    kVMAll, kVADInheritCopy, exact);
+
+	obj_direct_release(section);
+
+	return r;
 }
 
 int
@@ -87,6 +93,8 @@ vm_ps_map_section_view(vm_procstate_t *vmps, vm_section_t *section,
 		    r);
 	}
 
+	obj_direct_retain(&section->header);
+
 	vad = kmem_alloc(sizeof(vm_vad_t));
 	vad->start = (vaddr_t)addr;
 	vad->end = addr + size;
@@ -100,6 +108,49 @@ vm_ps_map_section_view(vm_procstate_t *vmps, vm_section_t *section,
 	ke_mutex_release(&vmps->mutex);
 
 	*vaddrp = addr;
+
+	return 0;
+}
+
+int
+vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
+{
+	vm_vad_t *entry, *tmp;
+	vaddr_t end = start + size;
+	kwaitstatus_t w;
+
+	w = ke_wait(&vmps->mutex, "map_section_view:vmps->mutex", false, false,
+	    -1);
+	kassert(w == kKernWaitStatusOK);
+
+	RB_FOREACH_SAFE (entry, vm_vad_rbtree, &vmps->vad_queue, tmp) {
+		if ((entry->start < start && entry->end <= start) ||
+		    (entry->start >= end))
+			continue;
+		else if (entry->start >= start && entry->end <= end) {
+			int r;
+			ipl_t ipl;
+
+			r = vmem_xfree(&vmps->vmem, entry->start,
+			    entry->end - entry->start, 0);
+			kassert(r == 0);
+
+			RB_REMOVE(vm_vad_rbtree, &vmps->vad_queue, entry);
+
+			ipl = vmp_acquire_pfn_lock();
+			vmp_wsl_remove_range(vmps, entry->start, entry->end);
+			vmp_release_pfn_lock(ipl);
+
+			obj_direct_release(entry->section);
+			kmem_free(entry, sizeof(vm_vad_t));
+		} else if (entry->start >= start && entry->end <= end) {
+			kfatal("unimplemented deallocate right of vadt\n");
+		} else if (entry->start < start && entry->end < end) {
+			kfatal("unimplemented other sort of deallocate\n");
+		}
+	}
+
+	ke_mutex_release(&vmps->mutex);
 
 	return 0;
 }

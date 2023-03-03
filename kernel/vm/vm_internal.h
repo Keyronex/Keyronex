@@ -88,6 +88,9 @@ void vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
  */
 void vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry);
 
+/*! @brief Remove any mappings within a range from a working set list. */
+void vmp_wsl_remove_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end);
+
 /**
  * @brief Trims a specified number of pages from a working set list.
  *

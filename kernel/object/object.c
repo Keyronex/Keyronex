@@ -15,7 +15,9 @@
 #include "kdk/kernel.h"
 #include "kdk/object.h"
 
-void obj_initialise_header(object_header_t *hdr, object_type_t type) {
+void
+obj_initialise_header(object_header_t *hdr, object_type_t type)
+{
 	hdr->type = type;
 	hdr->reference_count = 0;
 	hdr->name = NULL;
@@ -26,6 +28,12 @@ obj_retain(object_header_t *hdr)
 {
 	__atomic_fetch_add(&hdr->reference_count, 1, __ATOMIC_SEQ_CST);
 	return (void *)hdr;
+}
+
+void
+obj_direct_retain(void *obj)
+{
+	obj_retain(obj);
 }
 
 void

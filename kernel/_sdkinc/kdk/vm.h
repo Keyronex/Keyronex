@@ -333,6 +333,9 @@ vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr,
 int vm_ps_allocate(vm_procstate_t *ps, vaddr_t *vaddrp, size_t size,
     bool exact);
 
+/*! @brief Deallocate a range of virtual address space in a process. */
+int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
+
 /*!
  * @brief Map a view of a section into a process.
  */

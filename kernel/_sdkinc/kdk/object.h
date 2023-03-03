@@ -30,6 +30,12 @@ void obj_initialise_header(object_header_t *hdr, object_type_t type);
 void *obj_retain(object_header_t *hdr);
 
 /*!
+ * Increment the reference count of an object via a direct reference to the
+ * object.
+ */
+void obj_direct_retain(void *obj);
+
+/*!
  * Release a reference held via a direct pointer to an object (as e.g. by a call
  * to obi_retain() or obi_initialise_header()).
  */

@@ -185,9 +185,9 @@ tmp_getattr(vnode_t *vn, vattr_t *out)
 int
 tmp_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
-#if 0
-	vaddr_t vaddr = VADDR_MAX;
+	vaddr_t vaddr = -1;
 	tmpnode_t *tn = VNTOTN(vn);
+	int r;
 
 	if (tn->attr.type != VREG)
 		return -EINVAL;
@@ -197,22 +197,26 @@ tmp_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (nbyte == 0)
 		return 0;
 
-	kassert(vm_map_object(&kmap, vn->vmobj, &vaddr, PGROUNDUP(nbyte + off),
-		    0, false) == 0);
+	r = vm_ps_map_section_view(&kernel_process.vmps, vn->section, &vaddr,
+	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVADInheritShared,
+	    false);
+	kassert(r == 0);
+
 	memcpy(buf, (void *)(vaddr + off), nbyte);
-	vm_deallocate(&kmap, vaddr, PGROUNDUP(nbyte + off));
+
+	r = vm_ps_deallocate(&kernel_process.vmps, vaddr,
+	    PGROUNDUP(nbyte + off));
+	kassert(r == 0);
 
 	return nbyte; /* FIXME */
-#endif
-	kfatal("unimplemented\n");
 }
 
 int
 tmp_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
-#if 0
-	vaddr_t vaddr = VADDR_MAX;
+	vaddr_t vaddr = -1;
 	tmpnode_t *tn = VNTOTN(vn);
+	int r;
 
 	if (nbyte == 0)
 		return 0;
@@ -220,14 +224,17 @@ tmp_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (off + nbyte > tn->attr.size)
 		tn->attr.size = off + nbyte;
 
-	kassert(vm_map_object(&kmap, vn->vmobj, &vaddr, PGROUNDUP(nbyte + off),
-		    0, false) == 0);
+	r = vm_ps_map_section_view(&kernel_process.vmps, vn->section, &vaddr,
+	    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVADInheritShared,
+	    false);
+	kassert(r == 0);
+
 	memcpy((void *)(vaddr + off), buf, nbyte);
-	vm_deallocate(&kmap, vaddr, PGROUNDUP(nbyte + off));
+
+	r = vm_ps_deallocate(&kernel_process.vmps, vaddr,
+	    PGROUNDUP(nbyte + off));
 
 	return nbyte;
-#endif
-	kfatal("unimplemented\n");
 }
 
 #define DIRENT_RECLEN(NAMELEN) \
