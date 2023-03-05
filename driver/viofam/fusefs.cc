@@ -4,8 +4,10 @@
  */
 
 #include "abi-bits/errno.h"
+#include "abi-bits/fcntl.h"
 #include "abi-bits/stat.h"
 #include "dev/fuse_kernel.h"
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
@@ -35,6 +37,11 @@ struct fusefs_node {
 	ino_t inode;
 	/*! Fuse I-node number of parent. */
 	ino_t parent_inode;
+
+	/*! Do we have a pager file handle yet? */
+	bool have_pager_file_handle : 1;
+	/*! Pager file handle */
+	uint64_t pager_file_handle;
 };
 
 /*! this works as long as our defs align with Linux */
@@ -259,6 +266,37 @@ FuseFS::findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
 }
 
 int
+FuseFS::pagerFileHandle(fusefs_node *node, uint64_t &handle_out)
+{
+	if (node->have_pager_file_handle)
+		return node->pager_file_handle;
+
+	if (node->vnode->type != VREG)
+		return -EBADF;
+
+	io_fuse_request *req;
+	iop_t *iop;
+	fuse_open_in open_in = { 0 };
+	fuse_open_out open_out = { 0 };
+
+	open_in.flags = O_RDWR;
+
+	req = newFuseRequest(FUSE_OPEN, node->inode, 0, 0, 0, &open_in, NULL,
+	    sizeof(open_in), &open_out, NULL, sizeof(open_out));
+	iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest, (vm_mdl_t *)req,
+	    sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+
+	node->have_pager_file_handle = true;
+	node->pager_file_handle = open_out.fh;
+
+	return 0;
+}
+
+int
 FuseFS::root(vfs_t *vfs, vnode_t **vout)
 {
 	FuseFS *self = (FuseFS *)(vfs->data);
@@ -317,6 +355,62 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	return 0;
 }
 
+int
+FuseFS::readlink(vnode_t *vn, char *out)
+{
+	FuseFS *self = (FuseFS *)vn->vfsp->data;
+	fusefs_node *node = ((fusefs_node *)vn->data);
+
+	io_fuse_request *req;
+	iop_t *iop;
+
+	req = self->newFuseRequest(FUSE_READLINK, node->inode, 0, 0, 0, NULL,
+	    NULL, 0, out, NULL, 255);
+	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+	out[req->fuse_out_header.len - sizeof(fuse_out_header)] = '\0';
+
+	return 0;
+}
+
+int
+FuseFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+{
+	FuseFS *self = (FuseFS *)vn->vfsp->data;
+	fusefs_node *node = ((fusefs_node *)vn->data);
+	int r;
+
+	kassert(nbyte <= 8 * PGSIZE);
+
+	fuse_read_in read_in = { 0 };
+	io_fuse_request *req;
+	iop_t *iop;
+
+	r = self->pagerFileHandle(node, read_in.fh);
+	if (r != 0) {
+		DKDevLog(self, "Failed to get a pager I/O handle!\n");
+		return r;
+	}
+
+	read_in.offset = off;
+	read_in.size = nbyte;
+
+	req = self->newFuseRequest(FUSE_READ, node->inode, 0, 0, 0, &read_in,
+	    NULL, sizeof(fuse_read_in), buf, NULL, nbyte);
+	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+
+	return req->fuse_out_header.len - sizeof(fuse_out_header);
+}
+
 struct vfsops FuseFS::vfsops = {
 	.root = root,
 	.vget = vget,
@@ -324,4 +418,6 @@ struct vfsops FuseFS::vfsops = {
 
 struct vnops FuseFS::vnops = {
 	.lookup = lookup,
+	.read = read,
+	.readlink = readlink,
 };

@@ -26,6 +26,10 @@ obj_initialise_header(object_header_t *hdr, object_type_t type)
 void *
 obj_retain(object_header_t *hdr)
 {
+#ifdef DEBUG_OBJ
+	kdprintf("retain %p from %p - new rc = %d\n", hdr,
+	    __builtin_return_address(0), hdr->reference_count);
+#endif
 	__atomic_fetch_add(&hdr->reference_count, 1, __ATOMIC_SEQ_CST);
 	return (void *)hdr;
 }
@@ -33,24 +37,28 @@ obj_retain(object_header_t *hdr)
 void *
 obj_direct_retain(void *obj)
 {
-#ifdef DEBUG_OBJ
-	kdprintf("retain %p from %p\n", obj, __builtin_return_address(0));
-#endif
 	return obj_retain(obj);
+}
+
+void
+obj_release(object_header_t *hdr)
+{
+#ifdef DEBUG_OBJ
+	kdprintf("release %p from %p - new rc = %d\n", obj,
+	    __builtin_return_address(0), hdr->reference_count - 1);
+	kassert(obj != NULL);
+#endif
+
+	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
+	    1) {
+		kassert(hdr->reference_count == 0);
+		kdprintf("objmgr: <%p> (type %d) is to be freed\n", hdr,
+		    hdr->type);
+	}
 }
 
 void
 obj_direct_release(void *obj)
 {
-#ifdef DEBUG_OBJ
-	kdprintf("release %p from %p\n", obj, __builtin_return_address(0));
-	kassert(obj != NULL);
-#endif
-	object_header_t *hdr = (object_header_t *)obj;
-	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
-	    0) {
-		kassert(hdr->reference_count == 0);
-		kdprintf("objmgr: <%p> (type %d) is to be freed\n", hdr,
-		    hdr->type);
-	}
+	return obj_release(obj);
 }

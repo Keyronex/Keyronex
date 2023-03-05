@@ -71,6 +71,8 @@ class FuseFS : public Device {
 
 	/*! VNode ops */
 	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
+	static int readlink(vnode_t *vn, char *out);
+	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
 	/*!
 	 * @brief Allocate a fusefs_node/vnode pair and cache it.
@@ -79,6 +81,16 @@ class FuseFS : public Device {
 	 */
 	fusefs_node *findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
 	    ino_t fuse_parent_ino);
+
+	/*!
+	 * @brief Get or create the built-in pager file handle for a node.
+	 *
+	 * FUSE I/O apparently needs to always go through a file handle. This
+	 * function gets a file handle for a node, or creates one if there isn't
+	 * one yet. This is a special handle which is for use by the FUSE ops
+	 * only.
+	 */
+	int pagerFileHandle(fusefs_node *node, uint64_t &handle_out);
 
 	io_fuse_request *newFuseRequest(uint32_t opcode, uint64_t nodeid,
 	    uint32_t uid, uint32_t gid, uint32_t pid, void *ptr_in,

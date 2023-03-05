@@ -3,6 +3,7 @@
  * Created on Thu Mar 02 2023.
  */
 
+#include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
@@ -17,6 +18,7 @@ reduce(vnode_t *parent, vnode_t **vn)
 	kassert(*vn != NULL);
 	rvn = obj_direct_retain(*vn);
 
+start:
 	while (rvn->vfsmountedhere != NULL) {
 		vnode_t *root;
 		int r;
@@ -29,7 +31,26 @@ reduce(vnode_t *parent, vnode_t **vn)
 		rvn = root;
 	}
 	if (rvn->type == VLNK) {
-		kfatal("handle symlinks in lookup please\n");
+		char *buf = kmem_alloc(256);
+		vnode_t *target;
+		int r;
+
+		r = rvn->ops->readlink(rvn, buf);
+		if (r != 0) {
+			obj_direct_release(rvn);
+			return r;
+		}
+
+		r = vfs_lookup(parent, &target, buf, 0, NULL);
+		if (r != 0) {
+			obj_direct_release(rvn);
+			return r;
+		}
+
+		obj_direct_release(rvn);
+		rvn = target;
+
+		goto start;
 	}
 
 	*vn = rvn;
@@ -97,9 +118,9 @@ loop:
 		if (r == 0) {
 			r = reduce(vn, &new_vn);
 			if (r == 0) {
+				obj_direct_release(vn);
 				vn = new_vn;
 			}
-			obj_direct_release(vn);
 		}
 	} else if (flags & kLookupCreate) {
 		vnode_t *new_vn;

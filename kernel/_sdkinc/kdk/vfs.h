@@ -113,6 +113,11 @@ struct vnops {
 	    off_t seqno);
 
 	/*!
+	 * @brief Read a symlink's target.
+	 */
+	int (*readlink)(vnode_t *dvn, char *out);
+
+	/*!
 	 * Write (via cache) to a vnode.
 	 */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
