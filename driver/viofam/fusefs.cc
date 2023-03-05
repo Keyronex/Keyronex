@@ -5,8 +5,12 @@
 
 #include "dev/fuse_kernel.h"
 #include "kdk/devmgr.h"
+#include "kdk/kernel.h"
 #include "kdk/libkern.h"
+#include "kdk/object.h"
+#include "kdk/objhdr.h"
 #include "kdk/process.h"
+#include "kdk/vfs.h"
 #include "kdk/vm.h"
 
 #include "fusefs.hh"
@@ -19,9 +23,26 @@ struct initpair {
 	struct fuse_init_out init_out;
 };
 
-struct initpair *pair;
+/*! Reference-counted by their vnode. Their lifespans are equivalent */
+struct fusefs_node {
+	/*! Entry in FuseFS::node_rbtree */
+	RB_ENTRY(fusefs_node) rbt_entry;
+	/*! Corresponding vnode. */
+	vnode_t *vnode;
+	/*! Fuse I-node number */
+	ino_t inode;
+};
+
+static int64_t
+node_cmp(struct fusefs_node *x, struct fusefs_node *y)
+{
+	return x->inode - y->inode;
+}
 
 static uint64_t sequence_num = 0;
+
+RB_PROTOTYPE(fusefs_node_rbt, fusefs_node, rbt_entry, node_cmp);
+RB_GENERATE(fusefs_node_rbt, fusefs_node, rbt_entry, node_cmp);
 
 io_fuse_request *
 FuseFS::newFuseRequest(uint32_t opcode, uint64_t nodeid, uint32_t uid,
@@ -59,26 +80,24 @@ FuseFS::newFuseRequest(uint32_t opcode, uint64_t nodeid, uint32_t uid,
 	return req;
 }
 
-FuseFS::FuseFS(device_t *provider)
+FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
 {
-	vm_page_t *page;
+	int r;
+	vnode_t *vn;
+	struct initpair pair = { 0 };
+
+	ke_mutex_init(&nodecache_mutex);
 
 	kmem_asprintf(&objhdr.name, "fusefs%d", sequence_num++);
 	attach(provider);
 
-	/* testing shit */
-	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
-	pair = (struct initpair *)P2V(page->address);
-
-	memset(pair, 0x0, sizeof(initpair));
-
-	pair->init_in.major = FUSE_KERNEL_VERSION;
-	pair->init_in.minor = FUSE_KERNEL_MINOR_VERSION;
-	pair->init_in.flags = FUSE_MAP_ALIGNMENT;
-	pair->init_in.max_readahead = PGSIZE;
+	pair.init_in.major = FUSE_KERNEL_VERSION;
+	pair.init_in.minor = FUSE_KERNEL_MINOR_VERSION;
+	pair.init_in.flags = FUSE_MAP_ALIGNMENT;
+	pair.init_in.max_readahead = PGSIZE;
 
 	io_fuse_request *req = newFuseRequest(FUSE_INIT, FUSE_ROOT_ID, 0, 0, 0,
-	    &pair->init_in, NULL, offsetof(initpair, init_out), &pair->init_out,
+	    &pair.init_in, NULL, offsetof(initpair, init_out), &pair.init_out,
 	    NULL, sizeof(initpair) - offsetof(initpair, init_out));
 
 	iop_t *iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest,
@@ -87,11 +106,20 @@ FuseFS::FuseFS(device_t *provider)
 	req->iop = iop;
 	iop_send_sync(iop);
 
-	DKDevLog(this, "Remote FS runs FUSE %d.%d\n", pair->init_out.major,
-	    pair->init_out.minor);
+	DKDevLog(this, "Remote FS runs FUSE %d.%d\n", pair.init_out.major,
+	    pair.init_out.minor);
 
-	/*! opendir */
+	/* todo: factor away into a mount operation */
+	vfs->ops = &vfsops;
+	vfs->data = (uintptr_t)this;
 
+	r = root(vfs, &vn);
+	kassert(r == 0);
+	root_node = (fusefs_node *)vn->data;
+
+	DKDevLog(this, "Real root I-node number is %lu\n", root_node->inode);
+
+#if 0
 	fuse_open_in openin = { 0 };
 	fuse_open_out openout;
 
@@ -104,12 +132,9 @@ FuseFS::FuseFS(device_t *provider)
 	req->iop = iop;
 	iop_send_sync(iop);
 
-	kdprintf("open done\n");
-
 	kassert(req->fuse_out_header.error == 0);
 
 	/*! readdir */
-
 	char *readbuf = (char *)kmem_alloc(2048);
 	memset(readbuf, 0x0, 2048);
 	fuse_read_in readin = { 0 };
@@ -146,4 +171,80 @@ FuseFS::FuseFS(device_t *provider)
 
 	for (;;)
 		;
+#endif
 }
+
+int
+FuseFS::root(vfs_t *vfs, vnode_t **vout)
+{
+	return FuseFS::vget(vfs, vout, FUSE_ROOT_ID);
+}
+
+int
+FuseFS::vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
+{
+	FuseFS *self = (FuseFS *)vfs->data;
+	struct fusefs_node key, *found;
+	kwaitstatus_t w;
+	vnode_t *res;
+
+	/* if root_node is still NULL, we need to do the initial load of it */
+	if (ino == FUSE_ROOT_ID && self->root_node != NULL) {
+		*vout = self->root_node->vnode;
+		return 0;
+	}
+
+	key.inode = ino;
+	w = ke_wait(&self->nodecache_mutex, "FuseFS::vget nodecache_mutex",
+	    false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+
+	found = RB_FIND(fusefs_node_rbt, &self->node_rbt, &key);
+	if (found) {
+		res = (vnode_t *)obj_direct_retain(found->vnode);
+		ke_mutex_release(&self->nodecache_mutex);
+		*vout = res;
+		return 0;
+	}
+
+	/* not found, need to get. we need to do stupid shit because FUSE is
+	 * badly designed. vget will of course fail on non-directories */
+	fuse_entry_out entry_out = { 0 };
+	const char *dot = ".\0";
+	io_fuse_request *req;
+	iop_t *iop;
+
+	req = self->newFuseRequest(FUSE_LOOKUP, FUSE_ROOT_ID, 0, 0, 0,
+	    (void *)dot, NULL, 2, &entry_out, NULL, sizeof(entry_out));
+	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+
+	found = new (kmem_general) fusefs_node;
+	found->inode = entry_out.attr.ino;
+	found->vnode = new (kmem_general) vnode;
+	obj_initialise_header(&found->vnode->objhdr, kObjTypeVNode);
+	found->vnode->data = (uintptr_t)found;
+	found->vnode->isroot = true;
+	found->vnode->section = NULL;
+	found->vnode->type = VDIR;
+	found->vnode->vfsp = vfs;
+	found->vnode->ops = NULL;
+	found->vnode->vfsmountedhere = NULL;
+
+	RB_INSERT(fusefs_node_rbt, &self->node_rbt, found);
+	ke_mutex_release(&self->nodecache_mutex);
+
+	/* this has already got one reference, being newly created */
+	*vout = found->vnode;
+
+	return 0;
+}
+
+struct vfsops FuseFS::vfsops = {
+	.root = root,
+	.vget = vget,
+};

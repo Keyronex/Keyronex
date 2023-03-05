@@ -15,6 +15,10 @@
 #include "kdk/objhdr.h"
 #include "kdk/vm.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK } vtype_t;
 
 typedef struct vattr {
@@ -114,7 +118,6 @@ struct vnops {
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 };
 
-
 struct vfsops {
 	/*!
 	 * Mount the filesystem.
@@ -152,5 +155,9 @@ extern vfs_t dev_vfs;
 extern vnode_t *dev_vnode;
 /*! Root vnode of the root filesystem. */
 extern vnode_t *root_vnode;
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* KRX_KDK_VFS_H */

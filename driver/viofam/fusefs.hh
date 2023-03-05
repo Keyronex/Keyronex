@@ -7,6 +7,8 @@
 #define KRX_VIOFAM_FUSEFS_HH
 
 #include "dev/fuse_kernel.h"
+#include "kdk/kernel.h"
+#include "kdk/vfs.h"
 #include "kdk/vm.h"
 
 #include "../mdf/mdfdev.hh"
@@ -48,8 +50,23 @@ struct io_fuse_request {
 static_assert(sizeof(io_fuse_request) == 128,
     "io_fuse_request unexpected size");
 
+RB_HEAD(fusefs_node_rbt, fusefs_node);
+
 class FuseFS : public Device {
+	static struct vfsops vfsops;
+
 	uint64_t fuse_unique = 1;
+	vfs_t *vfs;
+	kmutex_t nodecache_mutex;
+
+	/*! Indexed by fuse I-node number. Locked by vnode_lock. */
+	fusefs_node_rbt node_rbt;
+
+	fusefs_node *root_node;
+
+	/*! VFS ops */
+	static int root(vfs_t *vfs, vnode_t **out);
+	static int vget(vfs_t *vfs, vnode_t **vout, ino_t ino);
 
 	io_fuse_request *newFuseRequest(uint32_t opcode, uint64_t nodeid,
 	    uint32_t uid, uint32_t gid, uint32_t pid, void *ptr_in,
@@ -57,7 +74,7 @@ class FuseFS : public Device {
 	    vm_mdl_t *mdl_out, size_t ptr_out_size);
 
     public:
-	FuseFS(device_t *provider);
+	FuseFS(device_t *provider, vfs_t *vfs);
 };
 
 #endif /* KRX_VIOFAM_FUSEFS_HH */

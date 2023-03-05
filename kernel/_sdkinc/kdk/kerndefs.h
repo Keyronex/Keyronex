@@ -11,6 +11,9 @@
 #endif
 #endif
 
+/*! disables "Unused" warning */
+#define __unused __attribute__((unused))
+
 #define krx_in
 #define krx_out
 #define krx_inout
@@ -30,7 +33,7 @@
 #define KERN_HZ 100
 
 typedef enum krx_status {
-kNone,
+	kNone,
 } krx_status_t;
 
 /*! Nanoseconds. */

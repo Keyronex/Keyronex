@@ -41,8 +41,7 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		node->vn = vn;
 		obj_initialise_header(&vn->objhdr, kObjTypeVNode);
 		vn->type = node->attr.type;
-		vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops :
-		&tmpfs_vnops;
+		vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops : &tmpfs_vnops;
 		vn->vfsp = vfs;
 		vn->vfsmountedhere = NULL;
 		vn->isroot = false;

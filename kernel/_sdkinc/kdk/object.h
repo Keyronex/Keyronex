@@ -12,6 +12,10 @@
 
 #include "./objhdr.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*!
  * Initialise a given object header appropriately for a type.
  * @post Object has an initial reference count of 1.
@@ -40,5 +44,9 @@ void *obj_direct_retain(void *obj);
  * to obi_retain() or obi_initialise_header()).
  */
 void obj_direct_release(void *obj);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* KRX_KDK_OBJECT_H */

@@ -20,6 +20,7 @@
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/process.h"
+#include "kdk/vfs.h"
 #include "kdk/vm.h"
 
 #include "fusefs.hh"
@@ -74,7 +75,11 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 
 	attach(provider);
 
-	new (kmem_general) FuseFS(this);
+	/* todo: factor out */
+	vfs_t *vfs = (vfs_t *)kmem_alloc(sizeof(vfs_t));
+	vfs->vnodecovered = NULL;
+
+	new (kmem_general) FuseFS(this, vfs);
 }
 
 iop_return_t

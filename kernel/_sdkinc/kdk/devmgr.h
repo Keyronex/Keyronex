@@ -41,6 +41,7 @@ typedef enum iop_return {
 typedef enum iop_function {
 	kIOPTypeRead,
 	kIOPTypeIOCtl,
+	kIOPTypeMount,
 } iop_function_t;
 
 typedef enum iop_ioctl {
