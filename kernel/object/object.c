@@ -19,7 +19,7 @@ void
 obj_initialise_header(object_header_t *hdr, object_type_t type)
 {
 	hdr->type = type;
-	hdr->reference_count = 0;
+	hdr->reference_count = 1;
 	hdr->name = NULL;
 }
 
@@ -33,12 +33,19 @@ obj_retain(object_header_t *hdr)
 void *
 obj_direct_retain(void *obj)
 {
+#ifdef DEBUG_OBJ
+	kdprintf("retain %p from %p\n", obj, __builtin_return_address(0));
+#endif
 	return obj_retain(obj);
 }
 
 void
 obj_direct_release(void *obj)
 {
+#ifdef DEBUG_OBJ
+	kdprintf("release %p from %p\n", obj, __builtin_return_address(0));
+	kassert(obj != NULL);
+#endif
 	object_header_t *hdr = (object_header_t *)obj;
 	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
 	    0) {

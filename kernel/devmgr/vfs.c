@@ -12,7 +12,10 @@ vnode_t *root_vnode = NULL;
 static int
 reduce(vnode_t *parent, vnode_t **vn)
 {
-	vnode_t *rvn = obj_direct_retain(*vn);
+	vnode_t *rvn;
+
+	kassert(*vn != NULL);
+	rvn = obj_direct_retain(*vn);
 
 	while (rvn->vfsmountedhere != NULL) {
 		vnode_t *root;
@@ -88,17 +91,15 @@ loop:
 	if (strcmp(sub, ".") == 0 || sublen == 0)
 		goto next; /* . or trailing */
 
-	prevvn = vn;
-
 	if (!last || !(flags & kLookupCreate)) {
-		vnode_t *new_vn;
+		vnode_t *new_vn = NULL;
 		r = vn->ops->lookup(vn, &new_vn, sub);
 		if (r == 0) {
-			r = reduce(prevvn, &new_vn);
+			r = reduce(vn, &new_vn);
 			if (r == 0) {
-				obj_direct_release(vn);
 				vn = new_vn;
 			}
+			obj_direct_release(vn);
 		}
 	} else if (flags & kLookupCreate) {
 		vnode_t *new_vn;
@@ -117,11 +118,14 @@ next:
 		goto out;
 
 	sub += sublen + 1;
-	obj_direct_release(prevvn);
+	if (prevvn)
+		obj_direct_release(prevvn);
+	prevvn = vn;
 	goto loop;
 
 out:
 	if (mustdir) {
+		kassert(prevvn != NULL);
 		r = reduce(prevvn, &vn);
 		if (r != 0) {
 			obj_direct_release(prevvn);
@@ -129,6 +133,9 @@ out:
 			return r;
 		}
 	}
+
+	if (prevvn)
+		obj_direct_release(prevvn);
 
 	*out = vn;
 	return 0;

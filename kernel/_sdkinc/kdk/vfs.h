@@ -149,6 +149,9 @@ enum lookup_flags {
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
 
+int vfs_lookup(vnode_t *cwd, vnode_t **out, const char *pathname,
+    enum lookup_flags flags, vattr_t *attr);
+
 /*! VFS of the master DevFS */
 extern vfs_t dev_vfs;
 /*! Root vnode of the master DevFS */

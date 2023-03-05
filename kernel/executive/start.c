@@ -5,6 +5,7 @@
 
 #include "ex_private.h"
 #include "kdk/kernel.h"
+#include "kdk/vfs.h"
 #include "kdk/process.h"
 
 ethread_t init_thread;
@@ -16,8 +17,14 @@ void
 init_thread_start(void *rsdp)
 {
 	/*! first we maun setup the device tmpfs */
-
+	// setup device tmpfs
 	acpipc_autoconf(rsdp);
+
+
+	vnode_t *vn;
+	int r = vfs_lookup(root_vnode, &vn, "/testdir2/hello.txt", 0, NULL);
+
+	kdprintf("lookup of root vnode (%p) yielded result %d vnode %p\n", root_vnode, r, vn);
 
 	/* become some sort of worker thread? */
 	for (;;)

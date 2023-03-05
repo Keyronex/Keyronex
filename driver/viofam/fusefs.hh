@@ -54,6 +54,7 @@ RB_HEAD(fusefs_node_rbt, fusefs_node);
 
 class FuseFS : public Device {
 	static struct vfsops vfsops;
+	static struct vnops vnops;
 
 	uint64_t fuse_unique = 1;
 	vfs_t *vfs;
@@ -66,7 +67,18 @@ class FuseFS : public Device {
 
 	/*! VFS ops */
 	static int root(vfs_t *vfs, vnode_t **out);
-	static int vget(vfs_t *vfs, vnode_t **vout, ino_t ino);
+	static int vget(vfs_t *vfs, vnode_t **out, ino_t ino);
+
+	/*! VNode ops */
+	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
+
+	/*!
+	 * @brief Allocate a fusefs_node/vnode pair and cache it.
+	 *
+	 * @returns a fusefs_node with a reference held, or NULL
+	 */
+	fusefs_node *findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
+	    ino_t fuse_parent_ino);
 
 	io_fuse_request *newFuseRequest(uint32_t opcode, uint64_t nodeid,
 	    uint32_t uid, uint32_t gid, uint32_t pid, void *ptr_in,

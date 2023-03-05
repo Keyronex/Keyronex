@@ -80,6 +80,7 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 	vfs->vnodecovered = NULL;
 
 	new (kmem_general) FuseFS(this, vfs);
+	vfs->ops->root(vfs, &root_vnode);
 }
 
 iop_return_t

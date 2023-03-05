@@ -3,6 +3,8 @@
  * Created on Wed Mar 01 2023.
  */
 
+#include "abi-bits/errno.h"
+#include "abi-bits/stat.h"
 #include "dev/fuse_kernel.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
@@ -31,7 +33,40 @@ struct fusefs_node {
 	vnode_t *vnode;
 	/*! Fuse I-node number */
 	ino_t inode;
+	/*! Fuse I-node number of parent. */
+	ino_t parent_inode;
 };
+
+/*! this works as long as our defs align with Linux */
+static inline vtype
+mode_to_vtype(mode_t mode)
+{
+	switch (mode & S_IFMT) {
+	case S_IFDIR:
+		return VDIR;
+
+	case S_IFCHR:
+		return VCHR;
+
+	case S_IFBLK:
+		return VNON;
+
+	case S_IFREG:
+		return VREG;
+
+	case S_IFIFO:
+		return VNON;
+
+	case S_IFLNK:
+		return VLNK;
+
+	case S_IFSOCK:
+		return VNON;
+
+	default:
+		return VNON;
+	}
+}
 
 static int64_t
 node_cmp(struct fusefs_node *x, struct fusefs_node *y)
@@ -51,6 +86,10 @@ FuseFS::newFuseRequest(uint32_t opcode, uint64_t nodeid, uint32_t uid,
 {
 	io_fuse_request *req = new (kmem_general) io_fuse_request;
 	memset(req, 0x0, sizeof(*req));
+
+	/*! hack for virtiofsd stupidity */
+	if (root_node != NULL && nodeid == root_node->inode)
+		nodeid = FUSE_ROOT_ID;
 
 	req->fuse_in_header.opcode = opcode;
 	req->fuse_in_header.unique = fuse_unique++;
@@ -81,9 +120,9 @@ FuseFS::newFuseRequest(uint32_t opcode, uint64_t nodeid, uint32_t uid,
 }
 
 FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
+    : vfs(vfs)
+    , root_node(NULL)
 {
-	int r;
-	vnode_t *vn;
 	struct initpair pair = { 0 };
 
 	ke_mutex_init(&nodecache_mutex);
@@ -113,11 +152,7 @@ FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
 	vfs->ops = &vfsops;
 	vfs->data = (uintptr_t)this;
 
-	r = root(vfs, &vn);
-	kassert(r == 0);
-	root_node = (fusefs_node *)vn->data;
-
-	DKDevLog(this, "Real root I-node number is %lu\n", root_node->inode);
+	root_node = findOrCreateNodePair(VDIR, FUSE_ROOT_ID, FUSE_ROOT_ID);
 
 #if 0
 	fuse_open_in openin = { 0 };
@@ -174,77 +209,119 @@ FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
 #endif
 }
 
+fusefs_node *
+FuseFS::findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
+    ino_t fuse_parent_ino)
+{
+	struct fusefs_node key, *node;
+	kwaitstatus_t w;
+
+	key.inode = fuse_ino;
+	w = ke_wait(&nodecache_mutex,
+	    "FuseFS::findOrCreateNodePair nodecache_mutex", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+
+	node = RB_FIND(fusefs_node_rbt, &node_rbt, &key);
+	if (node) {
+		kassert(node->parent_inode = fuse_parent_ino);
+		obj_direct_retain(node->vnode);
+		ke_mutex_release(&nodecache_mutex);
+		return node;
+	}
+
+	/*
+	 * we can't do anything without a type and parent number because with
+	 * VirtIOFS at least you can't do anything useful without the parent
+	 * number; if you do lookup('..') for example you get unusable nonsense.
+	 */
+	if (fuse_parent_ino == (ino_t)-1 || type == VNON) {
+		ke_mutex_release(&nodecache_mutex);
+		return NULL;
+	}
+
+	node = new (kmem_general) fusefs_node;
+
+	node->inode = fuse_ino;
+	node->vnode = new (kmem_general) vnode;
+	obj_initialise_header(&node->vnode->objhdr, kObjTypeVNode);
+	node->vnode->data = (uintptr_t)node;
+	node->vnode->section = NULL;
+	node->vnode->type = type;
+	node->vnode->vfsp = vfs;
+	node->vnode->ops = &vnops;
+	node->vnode->vfsmountedhere = NULL;
+
+	RB_INSERT(fusefs_node_rbt, &node_rbt, node);
+
+	ke_mutex_release(&nodecache_mutex);
+
+	return node;
+}
+
 int
 FuseFS::root(vfs_t *vfs, vnode_t **vout)
 {
-	return FuseFS::vget(vfs, vout, FUSE_ROOT_ID);
+	FuseFS *self = (FuseFS *)(vfs->data);
+	obj_direct_retain(self->root_node->vnode);
+	*vout = self->root_node->vnode;
+	return 0;
 }
 
 int
 FuseFS::vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 {
 	FuseFS *self = (FuseFS *)vfs->data;
-	struct fusefs_node key, *found;
-	kwaitstatus_t w;
-	vnode_t *res;
-
-	/* if root_node is still NULL, we need to do the initial load of it */
-	if (ino == FUSE_ROOT_ID && self->root_node != NULL) {
-		*vout = self->root_node->vnode;
+	struct fusefs_node *node = self->findOrCreateNodePair(VNON, ino, -1);
+	if (!node)
+		return -EOPNOTSUPP;
+	else {
+		*vout = node->vnode;
 		return 0;
 	}
+}
 
-	key.inode = ino;
-	w = ke_wait(&self->nodecache_mutex, "FuseFS::vget nodecache_mutex",
-	    false, false, -1);
-	kassert(w == kKernWaitStatusOK);
+int
+FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
+{
+	FuseFS *self = (FuseFS *)vn->vfsp->data;
+	fusefs_node *node = ((fusefs_node *)vn->data), *res;
 
-	found = RB_FIND(fusefs_node_rbt, &self->node_rbt, &key);
-	if (found) {
-		res = (vnode_t *)obj_direct_retain(found->vnode);
-		ke_mutex_release(&self->nodecache_mutex);
-		*vout = res;
-		return 0;
-	}
+	kdprintf("fusefs_lookup(vnode: %p, ino: %lu, \"%s\");\n", node->vnode,
+	    node->inode, pathname);
 
-	/* not found, need to get. we need to do stupid shit because FUSE is
-	 * badly designed. vget will of course fail on non-directories */
 	fuse_entry_out entry_out = { 0 };
-	const char *dot = ".\0";
 	io_fuse_request *req;
 	iop_t *iop;
 
-	req = self->newFuseRequest(FUSE_LOOKUP, FUSE_ROOT_ID, 0, 0, 0,
-	    (void *)dot, NULL, 2, &entry_out, NULL, sizeof(entry_out));
+	req = self->newFuseRequest(FUSE_LOOKUP, node->inode, 0, 0, 0,
+	    (void *)pathname, NULL, strlen(pathname) + 1, &entry_out, NULL,
+	    sizeof(entry_out));
 	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
 	    (vm_mdl_t *)req, sizeof(*req));
 	req->iop = iop;
 	iop_send_sync(iop);
 
+#if DEBUG_FUSEFS == 1
+	kdprintf("INode resulted from looking up %s: %lu\n\n", pathname,
+	    entry_out.nodeid);
+#endif
+
 	kassert(req->fuse_out_header.error == 0);
 
-	found = new (kmem_general) fusefs_node;
-	found->inode = entry_out.attr.ino;
-	found->vnode = new (kmem_general) vnode;
-	obj_initialise_header(&found->vnode->objhdr, kObjTypeVNode);
-	found->vnode->data = (uintptr_t)found;
-	found->vnode->isroot = true;
-	found->vnode->section = NULL;
-	found->vnode->type = VDIR;
-	found->vnode->vfsp = vfs;
-	found->vnode->ops = NULL;
-	found->vnode->vfsmountedhere = NULL;
+	res = self->findOrCreateNodePair(mode_to_vtype(entry_out.attr.mode),
+	    entry_out.nodeid, node->inode);
+	if (!res)
+		return -ENOENT;
 
-	RB_INSERT(fusefs_node_rbt, &self->node_rbt, found);
-	ke_mutex_release(&self->nodecache_mutex);
-
-	/* this has already got one reference, being newly created */
-	*vout = found->vnode;
-
+	*out = res->vnode;
 	return 0;
 }
 
 struct vfsops FuseFS::vfsops = {
 	.root = root,
 	.vget = vget,
+};
+
+struct vnops FuseFS::vnops = {
+	.lookup = lookup,
 };
