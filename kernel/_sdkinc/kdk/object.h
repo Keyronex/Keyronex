@@ -33,7 +33,7 @@ void *obj_retain(object_header_t *hdr);
  * Increment the reference count of an object via a direct reference to the
  * object.
  */
-void obj_direct_retain(void *obj);
+void *obj_direct_retain(void *obj);
 
 /*!
  * Release a reference held via a direct pointer to an object (as e.g. by a call

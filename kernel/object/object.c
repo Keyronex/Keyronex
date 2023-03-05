@@ -30,10 +30,10 @@ obj_retain(object_header_t *hdr)
 	return (void *)hdr;
 }
 
-void
+void *
 obj_direct_retain(void *obj)
 {
-	obj_retain(obj);
+	return obj_retain(obj);
 }
 
 void

@@ -13,6 +13,7 @@
 
 #define krx_in
 #define krx_out
+#define krx_inout
 #define krx_nullable
 
 #define elementsof(x) (sizeof(x) / sizeof(x[0]))

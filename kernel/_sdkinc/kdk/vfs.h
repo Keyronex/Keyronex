@@ -32,6 +32,8 @@ typedef struct vattr {
 typedef struct vnode {
 	object_header_t objhdr;
 
+	/*! (~) operations */
+	struct vnops *ops;
 	/*! (~) type of vnode */
 	vtype_t type;
 	/*! (~) section object; one reference held */
@@ -58,6 +60,61 @@ typedef struct vfs {
 	uintptr_t data;
 } vfs_t;
 
+struct vnops {
+	/**
+	 * Create a new vnode in the given directory.
+	 *
+	 * @param dvn directory vnode
+	 * @param out [out] resultant vnode
+	 * @param name new file name
+	 * @param attr attributes of file (including whether file, directory,
+	 * device node...)
+	 */
+	int (*create)(vnode_t *dvn, vnode_t **out, const char *name,
+	    vattr_t *attr);
+
+	/*!
+	 * Get attributes.
+	 */
+	int (*getattr)(vnode_t *vn, vattr_t *out);
+
+	/**
+	 * Lookup the vnode corresponding to the given file name in the given
+	 * direct vnode.
+	 *
+	 * @param dvn directory vnode
+	 * @param out resultant vnode
+	 * @param name filename
+	 */
+	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
+
+	/*!
+	 * Open a vnode. This may change the vnode.
+	 */
+	int (*open)(krx_inout vnode_t **vn, int mode);
+
+	/*!
+	 * Read (via cache) from a vnode.
+	 */
+	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+
+	/*!
+	 * Read directory entries into a buffer.
+	 *
+	 * @returns -errno for an error condition
+	 * @returns 0 for no more entries available
+	 * @returns >= 1 sequence number
+	 */
+	int (*readdir)(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
+	    off_t seqno);
+
+	/*!
+	 * Write (via cache) to a vnode.
+	 */
+	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+};
+
+
 struct vfsops {
 	/*!
 	 * Mount the filesystem.
@@ -80,12 +137,20 @@ struct vfsops {
 	int (*vget)(vfs_t *vfs, vnode_t **out, ino_t inode);
 };
 
+enum lookup_flags {
+	kLookupCreate = 1 << 0,
+	kLookupFollowSymlinks = 1 << 1,
+	kLookupMustDir = 1 << 2,
+};
+
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
 
 /*! VFS of the master DevFS */
 extern vfs_t dev_vfs;
-/*! Root vnode of the master DevFS*/
+/*! Root vnode of the master DevFS */
 extern vnode_t *dev_vnode;
+/*! Root vnode of the root filesystem. */
+extern vnode_t *root_vnode;
 
 #endif /* KRX_KDK_VFS_H */

@@ -16,6 +16,10 @@
 vfs_t dev_vfs;
 vnode_t *dev_vnode;
 
+extern struct vnops tmpfs_vnops;
+extern struct vnops tmpfs_spec_vnops;
+extern struct vfsops tmpfs_vfsops;
+
 static int
 tmpfs_root(vfs_t *vfs, vnode_t **out)
 {
@@ -37,8 +41,8 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		node->vn = vn;
 		obj_initialise_header(&vn->objhdr, kObjTypeVNode);
 		vn->type = node->attr.type;
-		// vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops :
-		// &tmpfs_vnops;
+		vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops :
+		&tmpfs_vnops;
 		vn->vfsp = vfs;
 		vn->vfsmountedhere = NULL;
 		vn->isroot = false;
@@ -286,7 +290,11 @@ finish:
 	return i;
 }
 
-#if 0
+struct vfsops tmpfs_vfsops = {
+	.root = tmpfs_root,
+	.vget = tmpfs_vget,
+};
+
 struct vnops tmpfs_vnops = {
 	.create = tmp_create,
 	.lookup = tmp_lookup,
@@ -298,9 +306,9 @@ struct vnops tmpfs_vnops = {
 
 struct vnops tmpfs_spec_vnops = {
 	.getattr = tmp_getattr,
+#if 0
 	.open = spec_open,
 	.read = spec_read,
 	.write = spec_write,
-	//.kqfilter = spec_kqfilter,
-};
 #endif
+};
