@@ -4,6 +4,7 @@
  */
 
 #include "kdk/devmgr.h"
+
 #include "mdfdev.hh"
 
 int __dso_handle = 0;
@@ -21,6 +22,21 @@ Device::dispatchIOP(device_t *dev, iop_t *iop)
 	return device->dispatchIOP(iop);
 }
 
-iop_return_t Device::dispatchIOP(iop_t *iop) {
+iop_return_t
+Device::completeIOP(device_t *dev, iop_t *iop)
+{
+	Device *device = (Device *)dev;
+	return device->completeIOP(iop);
+}
+
+iop_return_t
+Device::dispatchIOP(iop_t *iop)
+{
 	return kIOPRetContinue;
+}
+
+iop_return_t
+Device::completeIOP(iop_t *iop)
+{
+	return kIOPRetCompleted;
 }

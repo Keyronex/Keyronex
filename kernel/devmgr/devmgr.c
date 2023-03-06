@@ -7,6 +7,7 @@
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/process.h"
 
 static kspinlock_t devmgr_lock = KSPINLOCK_INITIALISER;
@@ -55,12 +56,10 @@ iop_t *
 iop_new_ioctl(device_t *dev, iop_ioctl_t ioctl, vm_mdl_t *mdl, size_t size)
 {
 	iop_t *iop = iop_new(dev);
+	iop_frame_t *frame = &iop->stack[0];
 
-	iop->stack[0].dev = dev;
-	iop->stack[0].function = kIOPTypeIOCtl;
-	iop->stack[0].mdl = mdl;
-	iop->stack[0].ioctl.type = ioctl;
-	iop->stack[0].ioctl.out_buffer_size = size;
+	frame->dev = dev;
+	iop_frame_setup_ioctl(frame, ioctl, mdl, size);
 
 	return iop;
 }
@@ -269,6 +268,29 @@ cont:
 
 	kfatal("unreached\n");
 	return -1;
+}
+
+iop_frame_t *
+iop_stack_initialise_next(iop_t *iop)
+{
+	iop_frame_t *old = iop_stack_current(iop),
+		    *frame = &iop->stack[iop->stack_current + 1];
+
+	memset(frame, 0x0, sizeof(*frame));
+	frame->dev = old->dev->provider;
+	frame->vnode = old->vnode;
+
+	return frame;
+}
+
+void
+iop_frame_setup_ioctl(iop_frame_t *frame, iop_ioctl_t ioctl, void *buf_or_mdl,
+    size_t size)
+{
+	frame->function = kIOPTypeIOCtl;
+	frame->mdl = buf_or_mdl;
+	frame->ioctl.type = ioctl;
+	frame->ioctl.out_buffer_size = size;
 }
 
 /*! @brief Send and await completion of an IOP. */

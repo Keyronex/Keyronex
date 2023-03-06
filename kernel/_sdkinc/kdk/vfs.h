@@ -60,6 +60,8 @@ typedef struct vfs {
 	vnode_t *vnodecovered;
 	/*! filesystem ops */
 	struct vfsops *ops;
+	/*! the device object of the filesystem (n.b. NOT dev mounted on) */
+	struct device *dev;
 	/*! fs-private data */
 	uintptr_t data;
 } vfs_t;

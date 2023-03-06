@@ -41,14 +41,17 @@ operator delete(void *p, unsigned long something)
 
 class Device : public device_t {
 	static iop_return_t dispatchIOP(device_t *dev, iop_t *iop);
+	static iop_return_t completeIOP(device_t *dev, iop_t *iop);
 
     protected:
 	void attach(device_t *provider)
 	{
 		dispatch = dispatchIOP;
+		complete = completeIOP;
 		dev_attach(this, provider);
 	}
 	virtual iop_return_t dispatchIOP(iop_t *iop);
+	virtual iop_return_t completeIOP(iop_t *iop);
 };
 
 #endif /* KRX_MDF_MDFDEV_HH */

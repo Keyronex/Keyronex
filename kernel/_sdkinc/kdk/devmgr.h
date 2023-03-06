@@ -87,6 +87,8 @@ typedef struct iop_frame {
 
 	/*! Which device processes this stack entry? */
 	struct device *dev;
+	/*! Which vnode, if any? */
+	struct vnode *vnode;
 	/*! MDL or wired kernel buffer for principal input/out */
 	union {
 		vm_mdl_t *mdl;
@@ -226,13 +228,33 @@ iop_return_t iop_send_sync(iop_t *iop);
 iop_return_t iop_continue(iop_t *iop, iop_return_t res);
 
 /*!
- * @brief Return a pointer to the current stack entry of an IOP.
+ * @brief Return a pointer to the current frame of an IOP.
  */
 inline iop_frame_t *
 iop_stack_current(iop_t *iop)
 {
 	return &iop->stack[iop->stack_current];
 }
+
+/*!
+ * @brief Initialise the next frame in an IOP to target the next lower device.
+ *
+ * The frame is empty, apart from the device being set to the next-lower device
+ * (i.e. the provider of iop_stack_current(iop)'s device) and the vnode pointer
+ * being copied in.
+ */
+iop_frame_t *iop_stack_initialise_next(iop_t *iop);
+
+/*!
+ * @brief Set up an IOP frame for an I/O Control request.
+ *
+ * @param ioctl Which IOCtl is to be run.
+ * @param buf_or_mdl  System buffer or MDL for the main input/output buffer.
+ * Which it is is determined by the IOCtl number.
+ * @param size Size of the output buffer if relevant.
+ */
+void iop_frame_setup_ioctl(iop_frame_t *frame, iop_ioctl_t ioctl,
+    void *buf_or_mdl, size_t size);
 
 #ifdef __cplusplus
 }

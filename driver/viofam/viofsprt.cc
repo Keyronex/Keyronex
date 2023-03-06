@@ -188,7 +188,7 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 		di++;
 	}
 
-	if (req->mdl_in) {
+	if (req->mdl_out) {
 		/* kassert(!req->mdl->offset) */
 		for (size_t i = 0; i < req->mdl_out->npages; i++) {
 			req_vq.desc[descs[di]].addr =

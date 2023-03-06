@@ -74,6 +74,12 @@ class FuseFS : public Device {
 	static int readlink(vnode_t *vn, char *out);
 	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
+	/*! @brief IOP dispatch (read/write for pager). */
+	iop_return_t dispatchIOP(iop_t *iop);
+
+	/*! @brief IOP completion (Fuse FS port requests) */
+	iop_return_t completeIOP(iop_t *iop);
+
 	/*!
 	 * @brief Allocate a fusefs_node/vnode pair and cache it.
 	 *

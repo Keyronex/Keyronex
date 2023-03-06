@@ -158,6 +158,7 @@ FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
 	/* todo: factor away into a mount operation */
 	vfs->ops = &vfsops;
 	vfs->data = (uintptr_t)this;
+	vfs->dev = this;
 
 	root_node = findOrCreateNodePair(VDIR, FUSE_ROOT_ID, FUSE_ROOT_ID);
 
@@ -380,35 +381,51 @@ FuseFS::readlink(vnode_t *vn, char *out)
 int
 FuseFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
-	FuseFS *self = (FuseFS *)vn->vfsp->data;
-	fusefs_node *node = ((fusefs_node *)vn->data);
+	/* ... replace with a generic read()/write() that uses page cache */
+	return -EOPNOTSUPP;
+}
+
+iop_return_t
+FuseFS::dispatchIOP(iop_t *iop)
+{
+	iop_frame_t *frame = iop_stack_current(iop), *next_frame;
+	io_fuse_request *req;
+	fuse_read_in *read_in;
+	fusefs_node *node = (fusefs_node *)frame->vnode->data;
 	int r;
 
-	kassert(nbyte <= 8 * PGSIZE);
+	/*
+	 * The only IOPs for filesystems currently are pager in/out requests.
+	 */
 
-	fuse_read_in read_in = { 0 };
-	io_fuse_request *req;
-	iop_t *iop;
+	kassert(frame->function == kIOPTypeRead);
+	next_frame = iop_stack_initialise_next(iop);
 
-	r = self->pagerFileHandle(node, read_in.fh);
+	read_in = (fuse_read_in *)kmem_alloc(sizeof(fuse_read_in));
+	memset(read_in, 0x0, sizeof(fuse_read_in));
+	read_in->offset = frame->read.offset;
+	read_in->size = frame->read.bytes;
+
+	r = pagerFileHandle(node, read_in->fh);
 	if (r != 0) {
-		DKDevLog(self, "Failed to get a pager I/O handle!\n");
-		return r;
+		DKDevLog(this, "Failed to get a pager I/O handle!\n");
+		return kIOPRetCompleted;
 	}
 
-	read_in.offset = off;
-	read_in.size = nbyte;
-
-	req = self->newFuseRequest(FUSE_READ, node->inode, 0, 0, 0, &read_in,
-	    NULL, sizeof(fuse_read_in), buf, NULL, nbyte);
-	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
-	    (vm_mdl_t *)req, sizeof(*req));
+	req = newFuseRequest(FUSE_READ, node->inode, 0, 0, 0, read_in, NULL,
+	    sizeof(fuse_read_in), NULL, frame->mdl, 0);
+	iop_frame_setup_ioctl(next_frame, kIOCTLFuseEnqueuRequest, req,
+	    sizeof(*req));
 	req->iop = iop;
-	iop_send_sync(iop);
 
-	kassert(req->fuse_out_header.error == 0);
+	return kIOPRetContinue;
+}
 
-	return req->fuse_out_header.len - sizeof(fuse_out_header);
+iop_return_t
+FuseFS::completeIOP(iop_t *iop)
+{
+	/* .... inspect the io_fuse_request in here somewhere .... */
+	return kIOPRetCompleted;
 }
 
 struct vfsops FuseFS::vfsops = {
