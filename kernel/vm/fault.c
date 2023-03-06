@@ -51,7 +51,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		kassert(ret == 0);
 
 		page->busy = true;
-		page->file = section->file;
+		page->vnode = section->vnode;
 
 		pageref = kmem_alloc(sizeof(struct vmp_page_ref));
 		pageref->page_index = offset / PGSIZE;

@@ -111,8 +111,8 @@ typedef struct vm_page {
 	union {
 		/*! Virtual page, if ::is_anonymous. */
 		struct vm_vpage *vpage;
-		/*! File, if ::is_file */
-		struct file *file;
+		/*! VNode section, if ::is_vnode */
+		struct vnode *vnode;
 	};
 } vm_page_t;
 
@@ -187,8 +187,8 @@ typedef struct vm_section {
 		/*! If kind = kSectionAnonymous, the file section we copied, if
 		 * this is a virtual copy of a file section. */
 		struct vm_section *parent;
-		/* If this is a file, a (?non-owning) pointer to the file,  */
-		struct file *file;
+		/* If this is a file, a (?non-owning) pointer to the vnode,  */
+		struct vnode *vnode;
 	};
 } vm_section_t;
 

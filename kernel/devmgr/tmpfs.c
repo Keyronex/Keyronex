@@ -243,7 +243,7 @@ tmp_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 #define DIRENT_RECLEN(NAMELEN) \
 	ROUNDUP(offsetof(struct dirent, d_name[0]) + 1 + NAMELEN, 8)
 
-int
+off_t
 tmp_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
     off_t seqno)
 {

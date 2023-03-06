@@ -70,9 +70,13 @@ class FuseFS : public Device {
 	static int vget(vfs_t *vfs, vnode_t **out, ino_t ino);
 
 	/*! VNode ops */
+	static int getattr(vnode_t *vn, vattr_t *out);
+	static int getsection(vnode_t *vn, vm_section_t *out);
 	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
-	static int readlink(vnode_t *vn, char *out);
 	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+	static off_t readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
+	    off_t seqno);
+	static int readlink(vnode_t *vn, char *out);
 
 	/*! @brief IOP dispatch (read/write for pager). */
 	iop_return_t dispatchIOP(iop_t *iop);

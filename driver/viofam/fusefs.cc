@@ -75,6 +75,15 @@ mode_to_vtype(mode_t mode)
 	}
 }
 
+static inline void
+fuse_attr_to_vattr(fuse_attr &fattr, vattr_t &vattr)
+{
+	vattr.mode = fattr.mode;
+	vattr.rdev = fattr.rdev;
+	vattr.size = fattr.size;
+	vattr.type = mode_to_vtype(fattr.mode);
+}
+
 static int64_t
 node_cmp(struct fusefs_node *x, struct fusefs_node *y)
 {
@@ -161,60 +170,6 @@ FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
 	vfs->dev = this;
 
 	root_node = findOrCreateNodePair(VDIR, FUSE_ROOT_ID, FUSE_ROOT_ID);
-
-#if 0
-	fuse_open_in openin = { 0 };
-	fuse_open_out openout;
-
-	req = newFuseRequest(FUSE_OPENDIR, FUSE_ROOT_ID, 0, 0, 0, &openin, NULL,
-	    sizeof(openin), &openout, NULL, sizeof(openout));
-
-	iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest, (vm_mdl_t *)req,
-	    sizeof(*req));
-
-	req->iop = iop;
-	iop_send_sync(iop);
-
-	kassert(req->fuse_out_header.error == 0);
-
-	/*! readdir */
-	char *readbuf = (char *)kmem_alloc(2048);
-	memset(readbuf, 0x0, 2048);
-	fuse_read_in readin = { 0 };
-	readin.size = 2048;
-	readin.fh = openout.fh;
-
-	req = newFuseRequest(FUSE_READDIR, FUSE_ROOT_ID, 0, 0, 0, &readin, NULL,
-	    sizeof(readin), readbuf, NULL, 2048);
-
-	iop = iop_new_ioctl(provider, kIOCTLFuseEnqueuRequest, (vm_mdl_t *)req,
-	    sizeof(*req));
-
-	req->iop = iop;
-	iop_send_sync(iop);
-
-	kdprintf("readdir done\n");
-
-	char *dirbuf = readbuf;
-	while (dirbuf < readbuf + req->fuse_out_header.len) {
-		fuse_dirent *dent = (fuse_dirent *)dirbuf;
-		char name[dent->namelen + 1];
-
-		if (dent->namelen == 0)
-			break;
-
-		memcpy(name, dent->name, dent->namelen);
-		name[dent->namelen] = 0;
-
-		kdprintf("[ino %lu type %u name %s]\n", dent->ino, dent->type,
-		    name);
-
-		dirbuf += FUSE_DIRENT_SIZE(dent);
-	}
-
-	for (;;)
-		;
-#endif
 }
 
 fusefs_node *
@@ -258,6 +213,15 @@ FuseFS::findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
 	node->vnode->vfsp = vfs;
 	node->vnode->ops = &vnops;
 	node->vnode->vfsmountedhere = NULL;
+
+	/*! todo(low): move into vm/something.c? */
+	node->vnode->section = (vm_section_t *)kmem_alloc(sizeof(vm_section_t));
+	obj_initialise_header(&node->vnode->section->header, kObjTypeSection);
+	node->vnode->section->kind = vm_section::kSectionFile;
+	node->vnode->section->size = INT64_MAX;
+	node->vnode->section->parent = NULL;
+	RB_INIT(&node->vnode->section->page_ref_rbtree);
+	node->vnode->section->vnode = node->vnode;
 
 	RB_INSERT(fusefs_node_rbt, &node_rbt, node);
 
@@ -320,6 +284,32 @@ FuseFS::vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 }
 
 int
+FuseFS::getattr(vnode_t *vn, vattr_t *out)
+{
+	FuseFS *self = (FuseFS *)vn->vfsp->data;
+	fusefs_node *node = ((fusefs_node *)vn->data);
+
+	fuse_getattr_in getattr_in = { 0 };
+	fuse_attr_out attr_out;
+	io_fuse_request *req;
+	iop_t *iop;
+
+	req = self->newFuseRequest(FUSE_GETATTR, node->inode, 0, 0, 0,
+	    (void *)&getattr_in, NULL, sizeof(getattr_in), &attr_out, NULL,
+	    sizeof(attr_out));
+	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+
+	fuse_attr_to_vattr(attr_out.attr, *out);
+
+	return 0;
+}
+
+int
 FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 {
 	FuseFS *self = (FuseFS *)vn->vfsp->data;
@@ -354,6 +344,55 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 
 	*out = res->vnode;
 	return 0;
+}
+
+off_t
+FuseFS::readdir(vnode_t *vn, void *buf, size_t nbyte, size_t *bytesRead,
+    off_t seqno)
+{
+	FuseFS *self = (FuseFS *)vn->vfsp->data;
+	fusefs_node *node = ((fusefs_node *)vn->data);
+
+	io_fuse_request *req;
+	iop_t *iop;
+	fuse_read_in readin = { 0 };
+	/* TODO, make read_buf smaller (by an eighth?) then nbyte
+	 * since fuse dirents may be smaller than ours */
+	char *read_buf = NULL;
+
+	readin.size = nbyte;
+
+	req = self->newFuseRequest(FUSE_READDIR, node->inode, 0, 0, 0, &readin,
+	    NULL, sizeof(readin), read_buf, NULL, readin.size);
+	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+
+	/* todo translate Fuse dirents to our dirent format */
+
+	char *dirbuf = read_buf;
+	while (dirbuf < read_buf + req->fuse_out_header.len) {
+		fuse_dirent *dent = (fuse_dirent *)dirbuf;
+		char name[dent->namelen + 1];
+
+		if (dent->namelen == 0)
+			break;
+
+		memcpy(name, dent->name, dent->namelen);
+		name[dent->namelen] = 0;
+
+		kdprintf("[ino %lu type %u name %s]\n", dent->ino, dent->type,
+		    name);
+
+		dirbuf += FUSE_DIRENT_SIZE(dent);
+	}
+
+	*bytesRead = 0 /* number of bytes we wrote to buf goes here */;
+
+	return req->fuse_out_header.len;
 }
 
 int
@@ -434,6 +473,7 @@ struct vfsops FuseFS::vfsops = {
 };
 
 struct vnops FuseFS::vnops = {
+	.getattr = getattr,
 	.lookup = lookup,
 	.read = read,
 	.readlink = readlink,

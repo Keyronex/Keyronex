@@ -52,7 +52,7 @@ vmp_region_add(paddr_t base, size_t length)
 	/* initialise pages */
 	for (b = 0; b < bm->npages; b++) {
 		bm->pages[b].address = bm->base + PGSIZE * b;
-		bm->pages[b].file = NULL;
+		bm->pages[b].vnode = NULL;
 	}
 
 	/* mark off the pages used */

@@ -73,15 +73,13 @@ struct vnops {
 	 * @param dvn directory vnode
 	 * @param out [out] resultant vnode
 	 * @param name new file name
-	 * @param attr attributes of file (including whether file, directory,
-	 * device node...)
+	 * @param attr system buffer for attributes of file to be created
+	 * (including whether file, directory, device node...)
 	 */
 	int (*create)(vnode_t *dvn, vnode_t **out, const char *name,
 	    vattr_t *attr);
 
-	/*!
-	 * Get attributes.
-	 */
+	/*! @brief Get attributes. */
 	int (*getattr)(vnode_t *vn, vattr_t *out);
 
 	/**
@@ -95,23 +93,21 @@ struct vnops {
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
 
 	/*!
-	 * Open a vnode. This may change the vnode.
+	 * @brief Open a vnode. This may replace the vnode.
 	 */
 	int (*open)(krx_inout vnode_t **vn, int mode);
 
-	/*!
-	 * Read (via cache) from a vnode.
-	 */
+	/*! @brief Read (via page cache) from a vnode. */
 	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
 	/*!
-	 * Read directory entries into a buffer.
+	 * @brief Read directory entries into a system buffer.
 	 *
 	 * @returns -errno for an error condition
 	 * @returns 0 for no more entries available
 	 * @returns >= 1 sequence number
 	 */
-	int (*readdir)(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
+	off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
 	    off_t seqno);
 
 	/*!
@@ -119,9 +115,7 @@ struct vnops {
 	 */
 	int (*readlink)(vnode_t *dvn, char *out);
 
-	/*!
-	 * Write (via cache) to a vnode.
-	 */
+	/*! @brief Write (via page cache) to a vnode. */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 };
 

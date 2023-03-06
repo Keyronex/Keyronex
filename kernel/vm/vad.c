@@ -6,6 +6,7 @@
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
+#include "kdk/objhdr.h"
 #include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
@@ -42,6 +43,8 @@ int
 vm_section_new_anonymous(vm_procstate_t *vmps, size_t size, vm_section_t **out)
 {
 	vm_section_t *section = kmem_alloc(sizeof(vm_section_t));
+
+	obj_initialise_header(&section->header, kObjTypeSection);
 
 	section->kind = kSectionAnonymous;
 	section->size = size;
