@@ -47,6 +47,7 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		vn->isroot = false;
 		if (node->attr.type == VREG) {
 			vn->section = node->reg.section;
+			vn->size = node->attr.size;
 		} else if (node->attr.type == VCHR) {
 			kfatal("Unimplemented\n");
 			// spec_setup_vnode(vn, node->attr.rdev);
@@ -188,56 +189,13 @@ tmp_getattr(vnode_t *vn, vattr_t *out)
 int
 tmp_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
-	vaddr_t vaddr = -1;
-	tmpnode_t *tn = VNTOTN(vn);
-	int r;
-
-	if (tn->attr.type != VREG)
-		return -EINVAL;
-
-	if (off + nbyte > tn->attr.size)
-		nbyte = tn->attr.size <= off ? 0 : tn->attr.size - off;
-	if (nbyte == 0)
-		return 0;
-
-	r = vm_ps_map_section_view(&kernel_process.vmps, vn->section, &vaddr,
-	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVADInheritShared,
-	    false);
-	kassert(r == 0);
-
-	memcpy(buf, (void *)(vaddr + off), nbyte);
-
-	r = vm_ps_deallocate(&kernel_process.vmps, vaddr,
-	    PGROUNDUP(nbyte + off));
-	kassert(r == 0);
-
-	return nbyte; /* FIXME */
+	return pgcache_read(vn, buf, nbyte, off);
 }
 
 int
 tmp_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
-	vaddr_t vaddr = -1;
-	tmpnode_t *tn = VNTOTN(vn);
-	int r;
-
-	if (nbyte == 0)
-		return 0;
-
-	if (off + nbyte > tn->attr.size)
-		tn->attr.size = off + nbyte;
-
-	r = vm_ps_map_section_view(&kernel_process.vmps, vn->section, &vaddr,
-	    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVADInheritShared,
-	    false);
-	kassert(r == 0);
-
-	memcpy((void *)(vaddr + off), buf, nbyte);
-
-	r = vm_ps_deallocate(&kernel_process.vmps, vaddr,
-	    PGROUNDUP(nbyte + off));
-
-	return nbyte;
+	return pgcache_write(vn, buf, nbyte, off);
 }
 
 #define DIRENT_RECLEN(NAMELEN) \

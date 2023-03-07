@@ -24,6 +24,7 @@ typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK } vtype_t;
 typedef struct vattr {
 	vtype_t type;
 	mode_t mode;
+	/*! note: can become stale with respect to vnode::size */
 	size_t size;
 	/*! device represented by file */
 	dev_t rdev;
@@ -32,16 +33,24 @@ typedef struct vattr {
 /*!
  * (~) invariant from initialisation
  * (m) mount lock (todo)
+ * (i) interlock
  */
 typedef struct vnode {
 	object_header_t objhdr;
+
+	/*! interlock */
+	kmutex_t interlock;
 
 	/*! (~) operations */
 	struct vnops *ops;
 	/*! (~) type of vnode */
 	vtype_t type;
+
 	/*! (~) section object; one reference held */
 	vm_section_t *section;
+	/*! (i) size of regular file */
+	size_t size;
+
 	/*! (~) mountpoint to which the vnode belongs */
 	struct vfs *vfsp;
 	/*! (~) whether this vnode is the root of its mountpoint */
@@ -107,8 +116,8 @@ struct vnops {
 	 * @returns 0 for no more entries available
 	 * @returns >= 1 sequence number
 	 */
-	off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
-	    off_t seqno);
+	off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte,
+	    size_t *bytesRead, off_t seqno);
 
 	/*!
 	 * @brief Read a symlink's target.
@@ -150,8 +159,26 @@ enum lookup_flags {
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
 
+/*!
+ * @brief Look up a pathname.
+ */
 int vfs_lookup(vnode_t *cwd, vnode_t **out, const char *pathname,
     enum lookup_flags flags, vattr_t *attr);
+
+/*!
+ * \defgroup pgcache Page Cache helpers
+ * These operations should not be used directly because they do nothing in terms
+ * of locking. They are for filesystems to use from within their read/write
+ * vnode ops.
+ * @{
+ */
+/*! @brief Read from the page cache into a user/system buffer. */
+int pgcache_read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+/*! @brief Write into the page cache from a user/system buffer. */
+int pgcache_write(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+/*!
+ * @} pgcache
+ */
 
 /*! VFS of the master DevFS */
 extern vfs_t dev_vfs;

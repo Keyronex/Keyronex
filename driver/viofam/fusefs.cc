@@ -346,6 +346,12 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	return 0;
 }
 
+int
+FuseFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+{
+	return pgcache_read(vn, buf, nbyte, off);
+}
+
 off_t
 FuseFS::readdir(vnode_t *vn, void *buf, size_t nbyte, size_t *bytesRead,
     off_t seqno)
@@ -418,10 +424,9 @@ FuseFS::readlink(vnode_t *vn, char *out)
 }
 
 int
-FuseFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+FuseFS::write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
-	/* ... replace with a generic read()/write() that uses page cache */
-	return -EOPNOTSUPP;
+	return pgcache_write(vn, buf, nbyte, off);
 }
 
 iop_return_t
