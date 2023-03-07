@@ -304,6 +304,9 @@ void vmp_page_copy(vm_page_t *from, vm_page_t *to);
 /*! @brief Translate wired virtual to physical address in current process. */
 paddr_t vm_translate(vaddr_t vaddr);
 
+/*! @brief Allocate an MDL of a given size without initialising page entries. */
+vm_mdl_t *vm_mdl_alloc(size_t npages);
+
 /*! @brief Allocate an MDL populated with pages for a buffer. */
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
 

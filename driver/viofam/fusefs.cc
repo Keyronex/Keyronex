@@ -169,11 +169,11 @@ FuseFS::FuseFS(device_t *provider, vfs_t *vfs)
 	vfs->data = (uintptr_t)this;
 	vfs->dev = this;
 
-	root_node = findOrCreateNodePair(VDIR, FUSE_ROOT_ID, FUSE_ROOT_ID);
+	root_node = findOrCreateNodePair(VDIR, 0, FUSE_ROOT_ID, FUSE_ROOT_ID);
 }
 
 fusefs_node *
-FuseFS::findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
+FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
     ino_t fuse_parent_ino)
 {
 	struct fusefs_node key, *node;
@@ -213,6 +213,7 @@ FuseFS::findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
 	node->vnode->vfsp = vfs;
 	node->vnode->ops = &vnops;
 	node->vnode->vfsmountedhere = NULL;
+	node->vnode->size = size;
 
 	/*! todo(low): move into vm/something.c? */
 	node->vnode->section = (vm_section_t *)kmem_alloc(sizeof(vm_section_t));
@@ -274,7 +275,7 @@ int
 FuseFS::vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 {
 	FuseFS *self = (FuseFS *)vfs->data;
-	struct fusefs_node *node = self->findOrCreateNodePair(VNON, ino, -1);
+	struct fusefs_node *node = self->findOrCreateNodePair(VNON, 0, ino, -1);
 	if (!node)
 		return -EOPNOTSUPP;
 	else {
@@ -338,7 +339,7 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	kassert(req->fuse_out_header.error == 0);
 
 	res = self->findOrCreateNodePair(mode_to_vtype(entry_out.attr.mode),
-	    entry_out.nodeid, node->inode);
+	    entry_out.attr.size, entry_out.nodeid, node->inode);
 	if (!res)
 		return -ENOENT;
 

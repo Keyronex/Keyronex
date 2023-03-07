@@ -90,7 +90,7 @@ class FuseFS : public Device {
 	 *
 	 * @returns a fusefs_node with a reference held, or NULL
 	 */
-	fusefs_node *findOrCreateNodePair(vtype_t type, ino_t fuse_ino,
+	fusefs_node *findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 	    ino_t fuse_parent_ino);
 
 	/*!

@@ -138,6 +138,14 @@ vm_translate(vaddr_t vaddr)
 #define MDL_SIZE(NPAGES) (sizeof(vm_mdl_t) + sizeof(vm_page_t *) * NPAGES)
 
 vm_mdl_t *
+vm_mdl_alloc(size_t npages)
+{
+	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
+	mdl->npages = npages;
+	return mdl;
+}
+
+vm_mdl_t *
 vm_mdl_buffer_alloc(size_t npages)
 {
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));

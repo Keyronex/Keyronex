@@ -14,8 +14,11 @@
  * can't be removed.
  */
 
+#include "kdk/devmgr.h"
 #include "kdk/kmem.h"
 #include "kdk/process.h"
+#include "kdk/vfs.h"
+#include "kdk/vmem.h"
 #include "vm/vm_internal.h"
 
 RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
@@ -53,7 +56,8 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		page->busy = true;
 		page->vnode = section->vnode;
 
-		pageref = kmem_alloc(sizeof(struct vmp_page_ref));
+		pageref = kmem_xalloc(sizeof(struct vmp_page_ref),
+		    kVMemPFNDBHeld);
 		pageref->page_index = offset / PGSIZE;
 		pageref->page = page;
 
@@ -86,7 +90,14 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		// a working set list & page table entry which is invalid but
 		// points to the page, just to keep a reference on it.
 
-		kfatal("Path unimplemented\n");
+		// kfatal("Path unimplemented\n");
+		vm_mdl_t *mdl = vm_mdl_alloc(1);
+		mdl->pages[0] = page;
+		iop_t *iop = iop_new_read(section->vnode->vfsp->dev, mdl, 4096,
+		    offset);
+		iop->stack[0].vnode = section->vnode;
+		iop_return_t res = iop_send_sync(iop);
+		kassert(res == kIOPRetCompleted);
 
 		return kVMFaultRetRetry;
 	}

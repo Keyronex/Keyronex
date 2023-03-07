@@ -30,6 +30,7 @@ init_thread_start(void *rsdp)
 	kdprintf("lookup of root vnode (%p) yielded result %d vnode %p\n",
 	    root_vnode, r, vn);
 
+#if 0
 	vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);
 	char *buf;
 
@@ -42,8 +43,9 @@ init_thread_start(void *rsdp)
 	iop_return_t res = iop_send_sync(iop);
 	kdprintf("IOP result: %d\n", res);
 	kdprintf("Buf: %s\n", buf);
+#endif
 
-#if 0
+#if 1
 	char * buf  = kmem_alloc(256);
 	memset(buf, 0x0, 256);
 	r = vn->ops->read(vn, buf, 255, 0);

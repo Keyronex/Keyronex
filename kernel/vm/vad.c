@@ -136,7 +136,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 
 			r = vmem_xfree(&vmps->vmem, entry->start,
 			    entry->end - entry->start, 0);
-			kassert(r == 0);
+			kassert(r == entry->end - entry->start);
 
 			RB_REMOVE(vm_vad_rbtree, &vmps->vad_queue, entry);
 

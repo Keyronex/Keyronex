@@ -160,10 +160,23 @@ static bool
 page_fault(hl_intr_frame_t *frame, void *arg)
 {
 	vm_fault_return_t ret;
-	ret = vm_fault(&ps_curproc()->vmps, read_cr2(), frame->code, NULL);
-	if (ret != kVMFaultRetOK) {
-		md_intr_frame_trace(frame);
-		kfatal("vm_fault failed")
+	while (true) {
+		ret = vm_fault(&ps_curproc()->vmps, read_cr2(), frame->code,
+		    NULL);
+		switch (ret) {
+		case kVMFaultRetOK:
+			return true;
+
+		case kVMFaultRetRetry:
+			continue;
+
+		case kVMFaultRetFailure:
+			md_intr_frame_trace(frame);
+			kfatal("vm_fault failed");
+
+		case kVMFaultRetPageShortage:
+			kfatal("path unimplemented\n");
+		}
 	}
 	return true;
 }
