@@ -95,11 +95,11 @@ vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 	kassert(page);
 	STAILQ_REMOVE_HEAD(&free_list, queue_entry);
 
-	kassert(page->reference_count == 0);
+	kassert(page->refcnt == 0);
 	vmstat.nfree--;
 
 	page->use = use;
-	page->reference_count = 1;
+	page->refcnt = 1;
 
 	*out = page;
 

@@ -80,7 +80,7 @@ enum vm_page_use {
 	kPageUseActive,
 	/*! The page is on the modified or standby list. */
 	kPageUseModified,
-	/*! The page is in transition. */
+	/*! The page is in transition (I/O going on). */
 	kPageUseTransition,
 	/*! The page is used by kernel wired memory. */
 	kPageUseWired,
@@ -88,57 +88,102 @@ enum vm_page_use {
 	kPageUseVMM,
 };
 
+enum vm_pageable_page_use {
+	/*! Process private anonymous memory. */
+	kPageableUseProcessPrivate,
+	/*! VNode page. */
+	kPageableUseVNode,
+	/*! Fork object use. */
+	kPageableUseFork,
+	/*! Anonymous object use. */
+	kPageableUseAnonObj,
+};
+
 /*!
- * Physical page frame description. Whole thing (?) locked by the PFN lock.
+ * Resident page description. Obviously non-pageable.
  */
 typedef struct vm_page {
-	/*! Queue linkage. */
+	uint64_t
+	    /*! What is the use of this page? */
+	    /*enum vm_page_use */
+	    use		: 4,
+	    /*! Is it dirty? */
+	    dirty	: 1,
+	    /*! Is it busy? */
+	    busy	: 1,
+	    /*! If active/modified/transition, owned by anonymous obj? */
+	    /* enum vm_pageable_page_use */
+	    pageable_use: 2,
+	    /*! How many reasons are there to keep it in-memory? */
+	    refcnt	: 16,
+	    /*! Physical address - multipled by PGSIZE. Gives 4 PiB. */
+	    address	: 40;
+
+	/*! Linkage in free/modified/standby queue. */
 	STAILQ_ENTRY(vm_page) queue_entry;
-	/*! By how many PTEs is it mapped? */
-	uint16_t reference_count;
-	/*! What is its current use? */
-	enum vm_page_use use : 4;
-	/*! Flags */
-	unsigned
-	    /*! the page (may) have been written to; needs to be laundered */
-	    dirty : 1,
-	    /*! the page is being moved in, or out, of memory */
-	    busy : 1;
 
-	/*! Page's physical address. */
-	paddr_t address;
-
+	/*! use and pageable_use dependent-fields */
 	union {
-		/*! Virtual page, if ::is_anonymous. */
-		struct vm_vpage *vpage;
-		/*! VNode section, if ::is_vnode */
-		struct vnode *vnode;
+		/*! kPageableUseProcessPrivate */
+		struct vmp_proc	    *proc;
+		/*! kPageableUseVNode */
+		struct vnode	    *vnode;
+		/*! kPageableUseAnonObj */
+		struct vm_aobj	    *anonobj;
+		/*! kPageableUseFork */
+		struct vmp_forkpage *forkpage;
+
+		/*! use = kPageUseTransition */
+		struct vmp_paging_state *paging_state;
 	};
 } vm_page_t;
 
 /*!
- * Virtual page frame for anonymous pages, which are created both for anonymous
- * memory proper as well as for to provide the copy-on-write layer for mapped
- * files mapped copy-on-write.
+ * Page description either for anonymous objects (in which case the "resident"
+ * bit is meaningful) or for vnode objects (in which case the page must always
+ * be resident).
  *
- * Whole thing (?) locked by the PFN lock.
+ * Non-pageable for now.
  */
-typedef struct vm_vpage {
-#if 0
-	/*! mutex, locks most its fields */
-	kmutex_t mutex;
-#endif
-	/*! physical page frame description if resident */
-	vm_page_t *page;
-	/*! swap descriptor, if it's been written */
-	uintptr_t swapdesc;
-	/*!
-	 * How many section objects contain it? Note not 'how many times is it
-	 * mapped into working sets'. That's what vm_page_t tracks. This
-	 * reference count drives the copy-on-write logic.
-	 */
-	size_t refcount;
-} vm_vpage_t;
+typedef struct vmp_vpage {
+	uint64_t
+	    /*! Whether it's currently resident. */
+	    resident: 1,
+	    /*! Physical page address or swap address. */
+	    address : 40;
+	/*! Offset within the vnode/aobj. */
+	voff_t		       offset;
+	/*! vnode/aobj rbtree linkage */
+	RB_ENTRY(vm_aobj_page) rb_entry;
+} vmp_vpage_t;
+
+RB_HEAD(vmp_vpage_rb, vmp_vpage);
+
+/*!
+ * Anonymous VM object.
+ */
+typedef struct vm_aobj {
+	struct vmp_vpage_rb page_rb;
+} vm_aobj_t;
+
+struct vmp_forkpage {
+	/*! the PTE */
+	uint64_t pte;
+	/*! offset within vmp_forkobj->pages; gives us 16 tib */
+	uint32_t offset;
+	/*! number of references to it, controls CoW behaviour */
+	uint32_t refcnt;
+};
+
+/*!
+ * Fork shared-pages object.
+ */
+typedef struct vmp_forkobj {
+	/*! How many pages are in it? */
+	size_t		      npages;
+	/*! Pointer to array (in packed kernel memory) of the shared pages */
+	struct vmp_fork_page *pages;
+} vmp_forkobj_t;
 
 /*!
  * Working-set list (or WSL). The set of pageable pages resident in a process.
@@ -158,40 +203,6 @@ typedef struct vm_wsl {
 	TAILQ_HEAD(, vmp_wsle) queue;
 } vm_wsl_t;
 
-/*!
- * Section - an object which can be mapped into a process' address space.
- * Contents mostly locked by the PFN DB lock..
- */
-typedef struct vm_section {
-	object_header_t header;
-
-#if 0
-	/*! object lock */
-	kmutex_t mutex;
-#endif
-
-	/*! size in bytes */
-	size_t size;
-
-	/*! what kind is it? */
-	enum vm_section_kind {
-		kSectionFile,
-		kSectionAnonymous,
-	} kind;
-
-	/*! RB tree of references to vpages (for anonymous) or pages (for file).
-	 */
-	RB_HEAD(vmp_page_ref_rbtree, vmp_page_ref) page_ref_rbtree;
-
-	union {
-		/*! If kind = kSectionAnonymous, the file section we copied, if
-		 * this is a virtual copy of a file section. */
-		struct vm_section *parent;
-		/* If this is a file, a (?non-owning) pointer to the vnode,  */
-		struct vnode *vnode;
-	};
-} vm_section_t;
-
 enum vm_vad_inheritance {
 	/*! Inherit a shared entry (though not necessarily writeable!)
 	 */
@@ -208,15 +219,12 @@ enum vm_vad_inheritance {
  */
 typedef struct vm_vad {
 	/*! Entry in vm_procstate::vad_rbtree */
-	RB_ENTRY(vm_vad) rbtree_entry;
+	RB_ENTRY(vm_vad) rb_entry;
 
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
 	/*! Offset into section object. */
 	voff_t offset;
-
-	/*! Section object. */
-	vm_section_t *section;
 
 	/*! Inheritance attributes for fork. */
 	enum vm_vad_inheritance inheritance;
@@ -339,13 +347,6 @@ int vm_ps_allocate(vm_procstate_t *ps, vaddr_t *vaddrp, size_t size,
 /*! @brief Deallocate a range of virtual address space in a process. */
 int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
 
-/*!
- * @brief Map a view of a section into a process.
- */
-int vm_ps_map_section_view(vm_procstate_t *ps, vm_section_t *section,
-    krx_in krx_out vaddr_t *vaddrp, size_t size, voff_t offset,
-    vm_protection_t initial_protection, vm_protection_t max_protection,
-    enum vm_vad_inheritance inheritance, bool exact);
 
 /*!
  * @brief Forks a process' virtual address space
@@ -377,10 +378,6 @@ int vm_ps_map_section_view(vm_procstate_t *ps, vm_section_t *section,
  * @return 0 on success, negative error code on failure
  */
 int vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new);
-
-/*! @brief Allocate a new anonymous section and charge \p vmps for it.*/
-int vm_section_new_anonymous(vm_procstate_t *vmps, size_t size,
-    vm_section_t **out);
 
 extern kspinlock_t vmp_pfn_lock;
 

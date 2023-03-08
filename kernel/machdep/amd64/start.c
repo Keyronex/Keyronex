@@ -280,6 +280,7 @@ smp_init()
 void
 test_cow(void)
 {
+#if 0
 	vaddr_t addr_a, addr_b;
 	vm_section_t *a, *b;
 	int r;
@@ -315,6 +316,7 @@ test_cow(void)
 	kdprintf("*A: <%c>\n", val);
 	val = *(char *)addr_b;
 	kdprintf("*B: <%c>\n", val);
+#endif
 }
 
 // The following will be our kernel's entry point.

@@ -8,22 +8,6 @@
 
 #include "kdk/vm.h"
 
-/*!
- *
- */
-struct vmp_page_ref {
-	/*! Linkage in vm_section::page_ref_rbtree */
-	RB_ENTRY(vmp_page_ref) rbtree_entry;
-	/*! Where in the section does it belong to? */
-	size_t page_index;
-	union {
-		/*! Page reference (used by file sections) */
-		vm_page_t *page;
-		/*! Vpage reference (used by anonymous sections)*/
-		vm_vpage_t *vpage;
-	};
-};
-
 /*! @brief Enter a page mapping. */
 void pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
     vm_protection_t prot);
@@ -116,10 +100,10 @@ vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
 /*! @brief Comparator function for VAD rb-tree. */
 int vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
-/*! @brief Comparator function for page ref rb-tree. */
-int vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y);
+/*! @brief Comparator function for vpage rb-tree. */
+int vmp_vpage_cmp(struct vmp_vpage *x, struct vmp_vpage *y);
 
-RB_PROTOTYPE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
-RB_PROTOTYPE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
+RB_PROTOTYPE(vm_vad_rbtree, vm_vad, rb_entry, vmp_vad_cmp);
+RB_PROTOTYPE(vmp_vpage_rb, vmp_vpage, rb_entry, vmp_vpage_cmp);
 
 #endif /* KRX_VM_VM_INTERNAL_H */

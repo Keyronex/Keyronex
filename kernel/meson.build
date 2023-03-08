@@ -18,10 +18,10 @@ gen = generator(bin2c,
 kernel_sources += gen.process(['logosmall.data'])
 kernel_sources += uuid_sources
 
-subdir('devmgr')
+#subdir('devmgr')
 subdir('executive')
 subdir('kernel')
-subdir('posix')
+#subdir('posix')
 subdir('vm')
 
 if (arch == 'x86_64')

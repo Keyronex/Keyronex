@@ -14,6 +14,8 @@
  * can't be removed.
  */
 
+#include "kdk/vm.h"
+#if 0
 #include "kdk/devmgr.h"
 #include "kdk/kmem.h"
 #include "kdk/process.h"
@@ -21,7 +23,7 @@
 #include "kdk/vmem.h"
 #include "vm/vm_internal.h"
 
-RB_GENERATE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
+RB_GENERATE(vmp_vpage_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 
 int
 vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y)
@@ -38,7 +40,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 
 	/* first: do we already have a page? */
 	key.page_index = offset / PGSIZE;
-	pageref = RB_FIND(vmp_page_ref_rbtree, &section->page_ref_rbtree, &key);
+	pageref = RB_FIND(vmp_vpage_rbtree, &section->page_ref_rbtree, &key);
 
 	if (!pageref) {
 		/*
@@ -61,7 +63,7 @@ fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		pageref->page_index = offset / PGSIZE;
 		pageref->page = page;
 
-		RB_INSERT(vmp_page_ref_rbtree, &section->page_ref_rbtree,
+		RB_INSERT(vmp_vpage_rbtree, &section->page_ref_rbtree,
 		    pageref);
 
 		/*
@@ -135,7 +137,7 @@ make_new_anon(vm_section_t *section, voff_t offset, vm_page_t *page)
 	anon_ref->page_index = offset / PGSIZE;
 	anon_ref->vpage = vpage;
 
-	RB_INSERT(vmp_page_ref_rbtree, &section->page_ref_rbtree, anon_ref);
+	RB_INSERT(vmp_vpage_rbtree, &section->page_ref_rbtree, anon_ref);
 }
 
 static vm_fault_return_t
@@ -355,7 +357,7 @@ fault_anonymous(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 
 	/* first: do we already have a vpage? */
 	key.page_index = offset / PGSIZE;
-	pageref = RB_FIND(vmp_page_ref_rbtree, &section->page_ref_rbtree, &key);
+	pageref = RB_FIND(vmp_vpage_rbtree, &section->page_ref_rbtree, &key);
 
 	if (!pageref && section->parent) {
 		/*!
@@ -388,11 +390,13 @@ fault_anonymous(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 		    section, offset, flags, out);
 	}
 }
+#endif
 
 vm_fault_return_t
 vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
     vm_page_t **out)
 {
+	#if 0
 	vm_fault_return_t r;
 	kwaitstatus_t w;
 	vm_vad_t *vad;
@@ -441,4 +445,7 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 	ke_mutex_release(&vmps->mutex);
 
 	return kVMFaultRetOK;
+	#endif
+
+	return kVMFaultRetFailure;
 }

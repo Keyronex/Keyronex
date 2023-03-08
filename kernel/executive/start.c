@@ -8,9 +8,12 @@
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/process.h"
-#include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "kdk/devmgr.h"
+
+#if 0
+#include "kdk/vfs.h"
+#endif
 
 ethread_t init_thread;
 
@@ -20,6 +23,7 @@ void acpipc_autoconf(void *rsdp);
 void
 init_thread_start(void *rsdp)
 {
+#if 0
 	/*! first we maun setup the device tmpfs */
 	// setup device tmpfs
 	acpipc_autoconf(rsdp);
@@ -53,7 +57,7 @@ init_thread_start(void *rsdp)
 	kdprintf("read of /atestdir/hello.txt yielded result %d:\n%s\n", r,
 	    buf);
 #endif
-
+#endif
 	/* become some sort of worker thread? */
 	for (;;)
 		asm("pause");

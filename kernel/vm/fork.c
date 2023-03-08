@@ -9,6 +9,8 @@
 #include "kdk/vmem.h"
 #include "vm_internal.h"
 
+#if 0
+
 /*!
  * @brief Make a virtual copy of an anonymous section.
  *
@@ -41,13 +43,13 @@ vmp_section_anonymous_copy(vm_procstate_t *vmps_from, vm_procstate_t *vmps_to,
 	r = vm_section_new_anonymous(vmps_to, section->size, &new_section);
 	kassert(r == 0);
 
-	RB_FOREACH (ref, vmp_page_ref_rbtree, &section->page_ref_rbtree) {
+	RB_FOREACH (ref, vmp_vpage_rbtree, &section->page_ref_rbtree) {
 		struct vmp_page_ref *new_ref =
 		    kmem_xalloc(sizeof(struct vmp_page_ref), kVMemPFNDBHeld);
 		new_ref->page_index = ref->page_index;
 		new_ref->vpage = ref->vpage;
 		new_ref->vpage->refcount++;
-		RB_INSERT(vmp_page_ref_rbtree, &new_section->page_ref_rbtree,
+		RB_INSERT(vmp_vpage_rbtree, &new_section->page_ref_rbtree,
 		    new_ref);
 	}
 
@@ -76,6 +78,8 @@ vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
 
 	return 0;
 }
+
+#endif
 
 void
 vm_ps_activate(vm_procstate_t *vmps)

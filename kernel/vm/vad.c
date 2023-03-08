@@ -10,6 +10,8 @@
 #include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
+#if 0
+
 RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
 
 int
@@ -157,3 +159,4 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 
 	return 0;
 }
+#endif

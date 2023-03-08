@@ -73,8 +73,8 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		vm_page_t *page;
 		page = pmap_unenter(&kernel_process.vmps, (vaddr_t)addr + i);
 		pmap_invlpg(addr + i);
-		kassert(page->reference_count == 1);
-		page->reference_count = 0;
+		kassert(page->refcnt == 1);
+		page->refcnt = 0;
 		vmp_page_free(&kernel_process.vmps, page);
 	}
 
