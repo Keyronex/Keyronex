@@ -106,18 +106,18 @@ typedef struct vm_page {
 	uint64_t
 	    /*! What is the use of this page? */
 	    /*enum vm_page_use */
-	    use		: 4,
+	    use : 4,
 	    /*! Is it dirty? */
-	    dirty	: 1,
+	    dirty : 1,
 	    /*! Is it busy? */
-	    busy	: 1,
+	    busy : 1,
 	    /*! If active/modified/transition, owned by anonymous obj? */
 	    /* enum vm_pageable_page_use */
-	    pageable_use: 2,
+	    pageable_use : 2,
 	    /*! How many reasons are there to keep it in-memory? */
-	    refcnt	: 16,
+	    refcnt : 16,
 	    /*! Physical address - multipled by PGSIZE. Gives 4 PiB. */
-	    address	: 40;
+	    address : 40;
 
 	/*! Linkage in free/modified/standby queue. */
 	STAILQ_ENTRY(vm_page) queue_entry;
@@ -125,12 +125,20 @@ typedef struct vm_page {
 	/*! use and pageable_use dependent-fields */
 	union {
 		/*! kPageableUseProcessPrivate */
-		struct vmp_proc	    *proc;
+		struct vm_procstate *proc;
 		/*! kPageableUseVNode */
-		struct vnode	    *vnode;
+		struct vnode *vnode;
 		/*! kPageableUseAnonObj */
-		struct vm_aobj	    *anonobj;
-		/*! kPageableUseFork */
+		struct vm_aobj *anonobj;
+		/*!
+		 * kPageableUseFork.
+		 * We point to the fork page rather than the fork object,
+		 * because if we pointed to the fork object instead, we'd have
+		 * to scan the whole fork object to find the forkpage.
+		 * With the forkpage pointer, we can simply scan all of a
+		 * process' fork objects to determine in which one's array the
+		 * page lies.
+		 */
 		struct vmp_forkpage *forkpage;
 
 		/*! use = kPageUseTransition */
@@ -148,11 +156,11 @@ typedef struct vm_page {
 typedef struct vmp_vpage {
 	uint64_t
 	    /*! Whether it's currently resident. */
-	    resident: 1,
+	    resident : 1,
 	    /*! Physical page address or swap address. */
 	    address : 40;
 	/*! Offset within the vnode/aobj. */
-	voff_t		       offset;
+	voff_t offset;
 	/*! vnode/aobj rbtree linkage */
 	RB_ENTRY(vm_aobj_page) rb_entry;
 } vmp_vpage_t;
@@ -179,8 +187,12 @@ struct vmp_forkpage {
  * Fork shared-pages object.
  */
 typedef struct vmp_forkobj {
+	/*! Mutex - needed??? */
+	kmutex_t mutex;
 	/*! How many pages are in it? */
-	size_t		      npages;
+	size_t npages;
+	/*! How many pages of it are referenced? */
+	size_t npages_referenced;
 	/*! Pointer to array (in packed kernel memory) of the shared pages */
 	struct vmp_fork_page *pages;
 } vmp_forkobj_t;
@@ -346,7 +358,6 @@ int vm_ps_allocate(vm_procstate_t *ps, vaddr_t *vaddrp, size_t size,
 
 /*! @brief Deallocate a range of virtual address space in a process. */
 int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
-
 
 /*!
  * @brief Forks a process' virtual address space

@@ -43,4 +43,6 @@ struct vm_ps_md {
 	paddr_t cr3;
 };
 
+typedef uint64_t pte_t;
+
 #endif /* KRX_AMD64_VMAMD64_H */

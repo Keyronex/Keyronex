@@ -14,14 +14,19 @@
  * can't be removed.
  */
 
+#include "kdk/process.h"
 #include "kdk/vm.h"
+#include "pmapp.h"
+#include "vm/vm_internal.h"
+
+volatile void *volatile toucher;
+
 #if 0
 #include "kdk/devmgr.h"
 #include "kdk/kmem.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kdk/vmem.h"
-#include "vm/vm_internal.h"
 
 RB_GENERATE(vmp_vpage_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
 
@@ -392,22 +397,149 @@ fault_anonymous(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 }
 #endif
 
+static vm_fault_return_t
+fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
+    struct vmp_forkobj *fobj, struct vmp_forkpage *fpage, pte_t *pte,
+    vm_fault_flags_t flags, vm_page_t **out)
+{
+	ipl_t ipl;
+	kwaitstatus_t w;
+	vm_fault_return_t r = kVMFaultRetOK;
+
+	w = ke_wait(&fobj->mutex, "fault_fpage:fobj->mutex", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+
+	ipl = vmp_acquire_pfn_lock();
+
+	if (flags & kVMFaultPresent) {
+		if (!(flags & kVMFaultWrite)) {
+			/*
+			 * probably being asked to wire page for an MDL.
+			 */
+
+			if (out) {
+				vm_page_t *page;
+
+				page = pte_hw_get_page(pte);
+				page->refcnt++;
+				vmp_release_pfn_lock(ipl);
+				*out = page;
+			}
+
+			/* it can't be outwith memory if it's in a pagetable */
+			kassert(pte_is_hw(&fpage->pte));
+			/* if it's present, PTE addresses should match */
+			kassert(pte_hw_get_addr(pte) ==
+			    pte_hw_get_addr(&fpage->pte));
+		} else if (fpage->refcnt == 1) {
+			/*
+			 * easy case, we now own it. Turn it into a
+			 * regular anonymous mapping and make away with
+			 * the prototype.
+			 */
+
+			vm_page_t *page;
+
+			// todo: remove PGSIZE from shared accounting, add to
+			// private accounting...
+
+			/*
+			 * convert the pte to a private anonymous page. WSL
+			 * entry is kept from the read-only mapping.
+			 */
+			pte_hw_set_writeable(pte);
+			pte_hw_unset_fork(pte);
+			pmap_invlpg(vaddr);
+
+			page = pte_hw_get_page(pte);
+			page->pageable_use = kPageableUseProcessPrivate;
+			page->proc = vmps;
+			if (out) {
+				page->refcnt++;
+				*out = page;
+			}
+			vmp_release_pfn_lock(ipl);
+
+			/* can't be outwith memory if it's in a pagetable */
+			kassert(pte_is_hw(&fpage->pte));
+			/* PTE addresses should match */
+			kassert(pte_hw_get_addr(pte) ==
+			    pte_hw_get_addr(&fpage->pte));
+
+			/* trash the fpage so we see if something goes wrong */
+			fpage->pte = 0xDEADBEEFDEADBEEF;
+			fpage->offset = 0xDEADDEAD;
+			fpage->refcnt = 0xBEEFBEEF;
+
+			// todo: we should have an `fobj_ref` type and decrement
+			// number of PTEs we using from it, so we know when to
+			// drop the ref.
+
+			if (fobj->npages_referenced-- == 0) {
+				// todo: free the fobj
+			}
+		} else {
+			/*
+			 * we've copy-on-write faulted and need to duplicate the
+			 * page as others still reference it
+			 */
+
+			vm_page_t *page, *new_page;
+			int ret;
+
+			// todo: remove PGSIZE from shared accounting, add to
+			// private accounting...
+
+			ret = vmp_page_alloc(vmps, false, kPageUseActive,
+			    &new_page);
+			if (ret != 0) {
+				/* low memory, return and let wait */
+				vmp_release_pfn_lock(ipl);
+				r = kVMFaultRetPageShortage;
+				goto finish;
+			}
+
+			page = pte_hw_get_page(pte);
+
+			vmp_page_copy(page, new_page);
+
+			vmp_release_pfn_lock(ipl);
+
+			vmp_page_release(page);
+			fpage->refcnt--;
+
+			/* this new page simply inherits the WSL slot */
+			pte_hw_enter(pte, new_page, vad->protection);
+
+			if (out) {
+				new_page->refcnt++;
+				*out = new_page;
+			}
+		}
+	} else {
+		// do this stuff
+	}
+
+finish:
+	ke_mutex_release(&fobj->mutex);
+	return r;
+}
+
 vm_fault_return_t
 vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
     vm_page_t **out)
 {
-	#if 0
-	vm_fault_return_t r;
+	vm_fault_return_t r = kVMFaultRetOK;
 	kwaitstatus_t w;
 	vm_vad_t *vad;
-	ipl_t ipl;
+	pte_t *pte;
 	voff_t offset;
 
 	w = ke_wait(&vmps->mutex, "vm_fault:vmps->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
 	vad = vmp_ps_vad_find(vmps, vaddr);
-	if (vad == NULL || vad->section == NULL) {
+	if (vad == NULL) {
 		kdprintf("vm_fault: no or bad VAD at address 0x%lx\n", vaddr);
 		return kVMFaultRetFailure;
 	}
@@ -418,22 +550,32 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 		    vaddr);
 	}
 
-	offset = vaddr - vad->start;
+	pte = pte_get_and_pin(vmps, vaddr);
 
-	ipl = vmp_acquire_pfn_lock();
-	if (vad->section->size <= offset) {
-		vmp_release_pfn_lock(ipl);
-		kfatal("vm_fault: fault past end of object"
-		       "(offset 0x%lx, size 0x%lx)\n",
-		    offset, vad->section->size);
-	}
+	if (pte && pte_is_fork(pte)) {
+		struct vmp_forkpage *fpage;
+		struct vmp_forkobj *fobj;
 
-	if (vad->section->kind == kSectionAnonymous) {
-		r = fault_anonymous(vmps, vaddr, vad->protection, vad->section,
-		    offset, flags, out);
+		/*
+		 * We fill in all the fork PTEs at fork-time, and we keep a bit
+		 * set in them when we fault one in for read-only use so that we
+		 * don't have to unnecessarily traverse our fork objects. So
+		 * there will always been an extant fork PTE.
+		 */
+
+		if (flags & kVMFaultPresent) {
+			vm_page_t *page;
+			/* if it's present, we can get the forkpage from the
+			 * vm_page, which holds a backpointer */
+			page = vmp_paddr_to_page(pte_hw_get_addr(pte));
+			fpage = page->forkpage;
+		} else {
+			/* else, we extract the compressed pointer */
+			fpage = (struct vmp_forkpage *)pte_sw_get_addr(pte);
+		}
+
+		r = fault_fpage(vmps, vaddr, vad, fobj, fpage, pte, flags, out);
 	} else {
-		r = fault_file(vmps, vaddr, vad->protection, vad->section,
-		    offset, flags, out);
 	}
 
 	if (r != kVMFaultRetOK) {
@@ -441,11 +583,7 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 		return r;
 	}
 
-	vmp_release_pfn_lock(ipl);
 	ke_mutex_release(&vmps->mutex);
 
 	return kVMFaultRetOK;
-	#endif
-
-	return kVMFaultRetFailure;
 }
