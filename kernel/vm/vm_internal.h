@@ -57,17 +57,12 @@ void vmp_wsl_init(vm_procstate_t *vmps);
  * its size and add the entry.
  * If the expansion fails, the function will dispose of the least recently added
  * entry in the working set list and add the new entry in its place.
- * The provided page is mapped in the process' virtual address space with the
- * requested protection.
+ * The page MUST be already mapped in the page tables.
  *
  * @param ws Pointer to the process vm state.
  * @param entry The virtual address entry to add to the working set list.
- * @param page The page to which \p entry should be set to point.
- * @param protection The level of memory protection to be imposed on the
- * mapping.
  */
-void vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
-    vm_protection_t protection);
+void vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry);
 
 /*!
  * @brief Removes a mapping from a working set list.

@@ -419,6 +419,7 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 
 		if (!(flags & kVMFaultWrite)) {
 			/*
+			 * it's present and this is a read fault
 			 * probably being asked to wire page for an MDL.
 			 */
 
@@ -436,6 +437,8 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			/* if it's present, PTE addresses should match */
 			kassert(pte_hw_get_addr(pte) ==
 			    pte_hw_get_addr(&fpage->pte));
+			/*! should have a WSL entry */
+			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
 		} else if (fpage->refcnt == 1) {
 			/*
 			 * easy case, we now own it. Turn it into a
@@ -470,6 +473,8 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			/* PTE addresses should match */
 			kassert(pte_hw_get_addr(pte) ==
 			    pte_hw_get_addr(&fpage->pte));
+			/*! debug: should have a WSL entry */
+			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
 
 			/* trash the fpage so we see if something goes wrong */
 			fpage->pte = 0xDEADBEEFDEADBEEF;
@@ -513,6 +518,8 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			vmp_page_release(page);
 			fpage->refcnt--;
 
+			/*! debug: should have existing  WSL entry */
+			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
 			/* this new page simply inherits the WSL slot */
 			pte_hw_enter(pte, new_page, vad->protection);
 
@@ -566,14 +573,23 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			page->paging_state = pstate;
 			drumslot = pte_sw_get_addr(&fpage->pte);
 
+			/* enter a transition PTE into the fork page */
 			pte_transition_enter(&fpage->pte, page);
 
-			// todo: !! can't do this yet as we don't actually have
-			// a PTE yet? unconditionally create PTE in vm_fault
-			// maybe?
+			// todo: we need to make sure out pte pin thing actually
+			// made sure we do have a PTE for this address.
+			// we also really want to be putting in a WSL entry.
+			/* ...and into our own page table. */
 			pte_transition_enter(pte, page);
 
 			vmp_release_pfn_lock(ipl);
+
+			/*
+			 * there shouldn't be a WSL entry yet. paranoid assert.
+			 */
+			kassert(vmp_wsl_find(vmps, vaddr) == NULL);
+			vmp_wsl_insert(vmps, vaddr);
+
 			ke_mutex_release(&fobj->mutex);
 			ke_mutex_release(&vmps->mutex);
 
@@ -582,20 +598,42 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			// ... determine if the page is still wanted?
 			// what do we do here? unreference the page and just
 			// refault?
+			//
+			// better: we've inserted a WSL entry ; make sure that
+			// entry has not been removed (we could adjust WSL
+			// removal routine to defer the removal until here if a
+			// certain flag is set?)
+			//
+			// if the entry is still present (meaning that the
+			// mapping wasn't removed or anything like that) then we
+			// can simply relock and set the proper PTE.
 
 			return kVMFaultRetRetry;
 		}
 
-		/* fpage neither in transition nor outpaged; bring it in */
+		/*
+		 * fpage not present, neither in transition nor outpaged; bring
+		 * it in.
+		 * we don't bother with the write case here. we let refault
+		 * instead.
+		 * we don't touch the fpage refcount here because that's
+		 * associated with the actual page table entry.
+		 */
 
 		vm_page_t *page;
 		page = pte_hw_get_page(&fpage->pte);
 		vmp_page_retain(page);
-		pte_hw_enter(pte, page, vad->protection);
+		pte_hw_enter(pte, page, vad->protection, /* isFPage = */ true);
 
 		vmp_release_pfn_lock(ipl);
 
-		vmp_wsl_insert(vmps, vaddr, /* irrel */ NULL, /* irrel */ 0);
+		/*! there shouldn't be a WSL entry yet. paranoid assert. */
+		kassert(vmp_wsl_find(vmps, vaddr) == NULL);
+		vmp_wsl_insert(vmps, vaddr);
+
+		if (flags & kVMFaultWrite) {
+			r = kVMFaultRetRetry;
+		}
 	}
 
 finish:
@@ -656,12 +694,7 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 	} else {
 	}
 
-	if (r != kVMFaultRetOK) {
-		/* locks have already been dropped */
-		return r;
-	}
-
 	ke_mutex_release(&vmps->mutex);
 
-	return kVMFaultRetOK;
+	return r;
 }

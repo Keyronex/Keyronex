@@ -99,3 +99,6 @@ How *do* we allocate anonymous memory?
 
     So let's just accept that anonymous memory objects' supporting structures
     won't be getting paged themselves any time soon.
+
+    ***reconsideration*** - this really isn't nearly as much of a hassle as I
+    first thought. We need a "Pinning page fault" anyway.
