@@ -64,6 +64,8 @@ typedef enum vm_protection {
 	kVMAll = kVMRead | kVMWrite | kVMExecute,
 } vm_protection_t;
 
+typedef uint64_t drumslot_t;
+
 struct vm_stat {
 	size_t npfndb;
 	size_t nfree;
@@ -154,11 +156,8 @@ typedef struct vm_page {
  * Non-pageable for now.
  */
 typedef struct vmp_vpage {
-	uint64_t
-	    /*! Whether it's currently resident. */
-	    resident : 1,
-	    /*! Physical page address or swap address. */
-	    address : 40;
+	/*! PTE */
+	pte_t pte;
 	/*! Offset within the vnode/aobj. */
 	voff_t offset;
 	/*! vnode/aobj rbtree linkage */

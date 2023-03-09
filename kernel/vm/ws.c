@@ -60,14 +60,12 @@ vmp_wsl_init(vm_procstate_t *vmps)
 }
 
 void
-vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
-    vm_protection_t protection)
+vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry)
 {
 	struct vmp_wsle *wsle = kmem_alloc(sizeof(struct vmp_wsle));
 	wsle->vaddr = entry;
 	TAILQ_INSERT_TAIL(&vmps->wsl.queue, wsle, queue_entry);
 	RB_INSERT(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
-	pmap_enter(vmps, page->address, entry, protection);
 	vmps->wsl.count++;
 }
 

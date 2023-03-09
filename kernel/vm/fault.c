@@ -14,9 +14,10 @@
  * can't be removed.
  */
 
+#include "kdk/kmem.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
-#include "pmapp.h"
+#include "vm/pmapp.h"
 #include "vm/vm_internal.h"
 
 volatile void *volatile toucher;
@@ -409,9 +410,13 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 	w = ke_wait(&fobj->mutex, "fault_fpage:fobj->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
+	// some kind of pinning of fpage would be prudent here
+
 	ipl = vmp_acquire_pfn_lock();
 
 	if (flags & kVMFaultPresent) {
+		/* if it's present, we *know* that fpage isn't outpaged */
+
 		if (!(flags & kVMFaultWrite)) {
 			/*
 			 * probably being asked to wire page for an MDL.
@@ -422,9 +427,9 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 
 				page = pte_hw_get_page(pte);
 				page->refcnt++;
-				vmp_release_pfn_lock(ipl);
 				*out = page;
 			}
+			vmp_release_pfn_lock(ipl);
 
 			/* it can't be outwith memory if it's in a pagetable */
 			kassert(pte_is_hw(&fpage->pte));
@@ -517,7 +522,80 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			}
 		}
 	} else {
-		// do this stuff
+		// todo: can we access fpage safely without PFN DB lock held?
+		// probably not, unless we require that fobj lock is acquired
+		// before it can get paged out.
+
+		if (pte_is_transition(&fpage->pte)) {
+			/* wait on the event */
+
+			vm_page_t *page;
+			struct vmp_paging_state *pstate;
+
+			page = pte_trans_get_page(&fpage->pte);
+			pstate = vmp_paging_state_retain(page->paging_state);
+
+			vmp_release_pfn_lock(ipl);
+			ke_mutex_release(&fobj->mutex);
+			ke_mutex_release(&vmps->mutex);
+
+			kfatal("wait on pstate....\n");
+
+			return kVMFaultRetRetry;
+		} else if (pte_is_outpaged(&fpage->pte)) {
+			/* it's paged out. try to page it back in. */
+
+			vm_page_t *page;
+			struct vmp_paging_state *pstate;
+			drumslot_t drumslot;
+			int ret;
+
+			ret = vmp_page_alloc(vmps, false, kPageUseTransition,
+			    &page);
+			if (ret != 0) {
+				/* low memory, return and let wait */
+				vmp_release_pfn_lock(ipl);
+				r = kVMFaultRetPageShortage;
+				goto finish;
+			}
+
+			pstate = kmem_xalloc(sizeof(struct vmp_paging_state),
+			    kVMemPFNDBHeld);
+			ke_event_init(&pstate->event, false);
+
+			page->paging_state = pstate;
+			drumslot = pte_sw_get_addr(&fpage->pte);
+
+			pte_transition_enter(&fpage->pte, page);
+
+			// todo: !! can't do this yet as we don't actually have
+			// a PTE yet? unconditionally create PTE in vm_fault
+			// maybe?
+			pte_transition_enter(pte, page);
+
+			vmp_release_pfn_lock(ipl);
+			ke_mutex_release(&fobj->mutex);
+			ke_mutex_release(&vmps->mutex);
+
+			page_in_anonymous(page, pstate, drumslot);
+
+			// ... determine if the page is still wanted?
+			// what do we do here? unreference the page and just
+			// refault?
+
+			return kVMFaultRetRetry;
+		}
+
+		/* fpage neither in transition nor outpaged; bring it in */
+
+		vm_page_t *page;
+		page = pte_hw_get_page(&fpage->pte);
+		vmp_page_retain(page);
+		pte_hw_enter(pte, page, vad->protection);
+
+		vmp_release_pfn_lock(ipl);
+
+		vmp_wsl_insert(vmps, vaddr, /* irrel */ NULL, /* irrel */ 0);
 	}
 
 finish:

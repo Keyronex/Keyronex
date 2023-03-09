@@ -8,6 +8,10 @@
 
 #include "kdk/vm.h"
 
+struct vmp_paging_state {
+	kevent_t event;
+};
+
 /*! @brief Enter a page mapping. */
 void pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
     vm_protection_t prot);

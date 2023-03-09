@@ -31,6 +31,9 @@ vm_page_t *pte_hw_get_page(pte_t *pte);
 /*! @brief Get the address to which a software PTE points. */
 vaddr_t pte_sw_get_addr(pte_t *pte);
 
+/*! @brief Test if a PTE is for outpaged memory. */
+vaddr_t pte_is_outpaged(pte_t *pte);
+
 /*! @brief Return whether this PTE is a fork PTE. (May be HW or SW PTE.) */
 bool pte_is_fork(pte_t *pte);
 
