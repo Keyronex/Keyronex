@@ -162,8 +162,8 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	if (req->mdl_in) {
 		/* kassert(!req->mdl->offset) */
 		for (size_t i = 0; i < req->mdl_in->npages; i++) {
-			req_vq.desc[descs[di]].addr =
-			    req->mdl_in->pages[i]->address;
+			req_vq.desc[descs[di]].addr = vm_page_paddr(
+			    req->mdl_in->pages[i]);
 			req_vq.desc[descs[di]].len = PGSIZE;
 			req_vq.desc[descs[di]].flags = 0;
 			SET_NEXT();
@@ -191,8 +191,8 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	if (req->mdl_out) {
 		/* kassert(!req->mdl->offset) */
 		for (size_t i = 0; i < req->mdl_out->npages; i++) {
-			req_vq.desc[descs[di]].addr =
-			    req->mdl_out->pages[i]->address;
+			req_vq.desc[descs[di]].addr = vm_page_paddr(
+			    req->mdl_out->pages[i]);
 			req_vq.desc[descs[di]].len = PGSIZE;
 			req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
 			SET_NEXT();

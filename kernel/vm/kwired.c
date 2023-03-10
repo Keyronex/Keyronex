@@ -39,7 +39,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		vm_page_t *page;
 		vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
 		    &page);
-		pmap_enter(&kernel_process.vmps, page->address,
+		pmap_enter(&kernel_process.vmps, vm_page_paddr(page),
 		    (vaddr_t)*out + i, kVMAll);
 	}
 

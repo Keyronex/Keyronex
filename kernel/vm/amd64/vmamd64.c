@@ -60,7 +60,7 @@ pmap_init(void)
 			vm_page_t *page;
 			vmp_page_alloc(&kernel_process.vmps, true, kPageUseVMM,
 			    &page);
-			pte_set(&pml4[i], page->address, kMMUDefaultProt);
+			pte_set(&pml4[i], vm_page_paddr(page), kMMUDefaultProt);
 		}
 	}
 }
@@ -149,7 +149,7 @@ pmap_descend(vm_procstate_t *vmps, uint64_t *table, size_t index, bool alloc,
 	} else if (alloc) {
 		vm_page_t *page;
 		vmp_page_alloc(vmps, true, kPageUseVMM, &page);
-		addr = (uint64_t *)page->address;
+		addr = (uint64_t *)vm_page_paddr(page);
 		pte_set(entry, (paddr_t)addr, mmuprot);
 	}
 
@@ -349,7 +349,7 @@ vm_ps_md_init(vm_procstate_t *vmps)
 {
 	vm_page_t *page;
 	vmp_page_alloc(vmps, true, kPageUseVMM, &page);
-	vmps->md.cr3 = page->address;
+	vmps->md.cr3 = vm_page_paddr(page);
 	for (int i = 255; i < 512; i++) {
 		uint64_t *pml4 = P2V(vmps->md.cr3);
 		uint64_t *kpml4 = P2V(kernel_process.vmps.md.cr3);

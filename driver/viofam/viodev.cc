@@ -195,7 +195,7 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	r = vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
 	    &queue->page);
 	kassert(r == 0);
-	addr = (vaddr_t)P2V(queue->page->address);
+	addr = vm_page_vaddr(page);
 
 	/* allocate a queue of total size 3336 bytes, to nicely fit in a page */
 	queue->num = index;

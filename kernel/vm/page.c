@@ -9,6 +9,7 @@
 #include "kdk/libkern.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "vm/vm_internal.h"
 
 struct vmp_pregion {
 	/*! Linkage to pregion_queue. */
@@ -103,7 +104,7 @@ vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 
 	*out = page;
 
-	memset(P2V(page->address), 0x0, PGSIZE);
+	memset((void*)vm_page_vaddr(page), 0x0, PGSIZE);
 
 	return 0;
 }
@@ -118,7 +119,7 @@ vmp_page_free(vm_procstate_t *ps, vm_page_t *page)
 void
 vmp_page_copy(vm_page_t *from, vm_page_t *to)
 {
-	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
+	memcpy((void*)vm_page_vaddr(to), (void*)vm_page_vaddr(from), PGSIZE);
 }
 
 paddr_t
@@ -162,7 +163,7 @@ void
 vm_mdl_map(vm_mdl_t *mdl, void **out)
 {
 	kassert(mdl->npages == 1);
-	*out = (void *)P2V(mdl->pages[0]->address);
+	*out = (void *)vm_page_vaddr(mdl->pages[0]);
 }
 
 void
@@ -185,7 +186,7 @@ vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n)
 		page = mdl->pages[iPage];
 
 		memcpy(dest + (iPage - firstpage) * PGSIZE,
-		    P2V(page->address) + pageoff, tocopy);
+		    (char*)vm_page_vaddr(page) + pageoff, tocopy);
 
 		n -= tocopy;
 		pageoff = 0;

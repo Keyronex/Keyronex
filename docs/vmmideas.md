@@ -102,3 +102,17 @@ How *do* we allocate anonymous memory?
 
     ***reconsideration*** - this really isn't nearly as much of a hassle as I
     first thought. We need a "Pinning page fault" anyway.
+
+
+Paging page tables
+~~~~~~~~~~~~~~~~~~
+
+Every time an entry pointing to a lower-level table is added to a page table,
+that entry must add one reference to the page table it is contained in.
+Why?
+Because we want to have our `vm_page` for a pageable page table store a pointer
+to the page table entry in which they are defined, so that when that page table
+is to be paged out, the entry for that page table in the next-higher page table
+can be replaced with an invalid PTE denoting the pagefile address.
+All hell breaks loose otherwise. And this technique also mitigates the need for
+fancy mapping schemes for page tables.

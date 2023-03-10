@@ -111,8 +111,8 @@ typedef struct vm_page {
 	    use : 4,
 	    /*! Is it dirty? */
 	    dirty : 1,
-	    /*! Is it busy? */
-	    busy : 1,
+	    /*! Spare slot. */
+	    unused : 1,
 	    /*! If active/modified/transition, owned by anonymous obj? */
 	    /* enum vm_pageable_page_use */
 	    pageable_use : 2,
@@ -124,7 +124,7 @@ typedef struct vm_page {
 	/*! Linkage in free/modified/standby queue. */
 	STAILQ_ENTRY(vm_page) queue_entry;
 
-	/*! use and pageable_use dependent-fields */
+	/*! first use and pageable_use dependent-field */
 	union {
 		/*! kPageableUseProcessPrivate */
 		struct vm_procstate *proc;
@@ -132,19 +132,19 @@ typedef struct vm_page {
 		struct vnode *vnode;
 		/*! kPageableUseAnonObj */
 		struct vm_aobj *anonobj;
-		/*!
-		 * kPageableUseFork.
-		 * We point to the fork page rather than the fork object,
-		 * because if we pointed to the fork object instead, we'd have
-		 * to scan the whole fork object to find the forkpage.
-		 * With the forkpage pointer, we can simply scan all of a
-		 * process' fork objects to determine in which one's array the
-		 * page lies.
-		 */
-		struct vmp_forkpage *forkpage;
+		/*! kPageableUseFork */
+		struct vmp_forkobj *forkobj;
 
 		/*! use = kPageUseTransition */
 		struct vmp_paging_state *paging_state;
+	};
+
+	/*! second use and pageable_use dependent field */
+	union {
+		/*! For private, vnode, and anonobj. */
+		uintptr_t offset;
+		/*! For kPageableUseFork. */
+		struct vmp_forkpage *forkpage;
 	};
 } vm_page_t;
 
@@ -388,6 +388,18 @@ int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
  * @return 0 on success, negative error code on failure
  */
 int vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new);
+
+static inline paddr_t
+vm_page_paddr(const vm_page_t *page)
+{
+	return page->address;
+}
+
+static inline vaddr_t
+vm_page_vaddr(const vm_page_t *page)
+{
+	return (vaddr_t)P2V(vm_page_paddr(page));
+}
 
 extern kspinlock_t vmp_pfn_lock;
 

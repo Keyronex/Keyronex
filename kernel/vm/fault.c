@@ -633,6 +633,10 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 
 		if (flags & kVMFaultWrite) {
 			r = kVMFaultRetRetry;
+			goto finish;
+		} else if (out) {
+			page->refcnt++;
+			*out = page;
 		}
 	}
 

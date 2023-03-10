@@ -68,7 +68,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	vm_page_t *page;
 
 	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
-	vaddr_t addr = (vaddr_t)P2V(page->address);
+	vaddr_t addr = vm_page_vaddr(page);
 	for (int i = 0; i < ROUNDUP(io_queue.length, 3) / 3; i++) {
 		vioblk_request *req = (vioblk_request *)(addr +
 		    sizeof(*req) * i);
@@ -163,7 +163,7 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 		nbytes -= PGSIZE;
 		io_queue.desc[virtq_desc[i]].len = len;
 		io_queue.desc[virtq_desc[i]].addr =
-		    (uint64_t)mdl->pages[i - 1]->address;
+		    vm_page_paddr(mdl->pages[i - 1]);
 		io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
 		io_queue.desc[virtq_desc[i]].flags |= VRING_DESC_F_WRITE;
 		io_queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];
