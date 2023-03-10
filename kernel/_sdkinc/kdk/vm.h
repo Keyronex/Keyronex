@@ -141,9 +141,11 @@ typedef struct vm_page {
 
 	/*! second use and pageable_use dependent field */
 	union {
-		/*! For private, vnode, and anonobj. */
+		/*! kPageableUseProcessPrivate. Offset in address space. */
 		uintptr_t offset;
-		/*! For kPageableUseFork. */
+		/*! kPageableUseVNode or kPageableUseAnonObj */
+		struct vmp_vpage *vpage;
+		/*! kPageableUseFork. */
 		struct vmp_forkpage *forkpage;
 	};
 } vm_page_t;

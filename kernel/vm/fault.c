@@ -546,67 +546,13 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			ke_mutex_release(&fobj->mutex);
 			ke_mutex_release(&vmps->mutex);
 
-			kfatal("wait on pstate....\n");
+			vmp_paging_state_wait(pstate);
 
 			return kVMFaultRetRetry;
 		} else if (pte_is_outpaged(&fpage->pte)) {
 			/* it's paged out. try to page it back in. */
 
-			vm_page_t *page;
-			struct vmp_paging_state *pstate;
-			drumslot_t drumslot;
-			int ret;
-
-			ret = vmp_page_alloc(vmps, false, kPageUseTransition,
-			    &page);
-			if (ret != 0) {
-				/* low memory, return and let wait */
-				vmp_release_pfn_lock(ipl);
-				r = kVMFaultRetPageShortage;
-				goto finish;
-			}
-
-			pstate = kmem_xalloc(sizeof(struct vmp_paging_state),
-			    kVMemPFNDBHeld);
-			ke_event_init(&pstate->event, false);
-
-			page->paging_state = pstate;
-			drumslot = pte_sw_get_addr(&fpage->pte);
-
-			/* enter a transition PTE into the fork page */
-			pte_transition_enter(&fpage->pte, page);
-
-			// todo: we need to make sure out pte pin thing actually
-			// made sure we do have a PTE for this address.
-			// we also really want to be putting in a WSL entry.
-			/* ...and into our own page table. */
-			pte_transition_enter(pte, page);
-
-			vmp_release_pfn_lock(ipl);
-
-			/*
-			 * there shouldn't be a WSL entry yet. paranoid assert.
-			 */
-			kassert(vmp_wsl_find(vmps, vaddr) == NULL);
-			vmp_wsl_insert(vmps, vaddr);
-
-			ke_mutex_release(&fobj->mutex);
-			ke_mutex_release(&vmps->mutex);
-
-			page_in_anonymous(page, pstate, drumslot);
-
-			// ... determine if the page is still wanted?
-			// what do we do here? unreference the page and just
-			// refault?
-			//
-			// better: we've inserted a WSL entry ; make sure that
-			// entry has not been removed (we could adjust WSL
-			// removal routine to defer the removal until here if a
-			// certain flag is set?)
-			//
-			// if the entry is still present (meaning that the
-			// mapping wasn't removed or anything like that) then we
-			// can simply relock and set the proper PTE.
+			// vmp_anonymous_proto_page_in....
 
 			return kVMFaultRetRetry;
 		}
