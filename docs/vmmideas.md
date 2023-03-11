@@ -105,7 +105,7 @@ How *do* we allocate anonymous memory?
 
 
 Paging page tables
-~~~~~~~~~~~~~~~~~~
+------------------
 
 Every time an entry pointing to a lower-level table is added to a page table,
 that entry must add one reference to the page table it is contained in.
@@ -116,3 +116,22 @@ is to be paged out, the entry for that page table in the next-higher page table
 can be replaced with an invalid PTE denoting the pagefile address.
 All hell breaks loose otherwise. And this technique also mitigates the need for
 fancy mapping schemes for page tables.
+
+
+Things happening during pagein
+------------------------------
+
+ - Fork needs to wait for all pageins to complete probably - how else do we deal
+   with the transition PTEs? We've locked the VAD list and are now trying to do
+   things after all. We can't unlock the VAD list mid fork to wait for a
+   transition PTE.
+ - Unmapping private anonymous space needs to perhaps set some "private page was
+   unmapped, delete this page" to be set, e.g. in the paging support structure?
+
+Pageout
+-------
+
+ - Have the pageout threads go like this: lock PFN DB, grab a page, add a
+   reference to the object that owns it, unlock, check the refcount of the
+   object; if = 1, the object is about to go away, so leave the page alone.
+   Otherwise do the pageout.

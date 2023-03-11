@@ -15,6 +15,7 @@
  */
 
 #include "kdk/kmem.h"
+#include "kdk/objhdr.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 #include "vm/pmapp.h"
@@ -407,7 +408,8 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 	kwaitstatus_t w;
 	vm_fault_return_t r = kVMFaultRetOK;
 
-	w = ke_wait(&fobj->mutex, "fault_fpage:fobj->mutex", false, false, -1);
+	w = ke_wait(&fobj->sechdr.mutex, "fault_fpage:fobj->mutex", false,
+	    false, -1);
 	kassert(w == kKernWaitStatusOK);
 
 	// some kind of pinning of fpage would be prudent here
@@ -486,7 +488,7 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			// drop the ref.
 
 			if (fobj->npages_referenced-- == 0) {
-				// todo: free the fobj
+				kfatal("free fork object %p\n", fobj);
 			}
 		} else {
 			/*
@@ -520,7 +522,11 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 
 			/*! debug: should have existing  WSL entry */
 			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
-			/* this new page simply inherits the WSL slot */
+			/*
+			 * this new page simply inherits the WSL slot.
+			 * no retain done because we already have a ref to the
+			 * new page.
+			 */
 			pte_hw_enter(pte, new_page, vad->protection);
 
 			if (out) {
@@ -540,10 +546,11 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			struct vmp_paging_state *pstate;
 
 			page = pte_trans_get_page(&fpage->pte);
-			pstate = vmp_paging_state_retain(page->paging_state);
+			vmp_paging_state_retain(page->paging_state);
+			pstate = page->paging_state;
 
 			vmp_release_pfn_lock(ipl);
-			ke_mutex_release(&fobj->mutex);
+			ke_mutex_release(&fobj->sechdr.mutex);
 			ke_mutex_release(&vmps->mutex);
 
 			vmp_paging_state_wait(pstate);
@@ -587,7 +594,7 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 	}
 
 finish:
-	ke_mutex_release(&fobj->mutex);
+	ke_mutex_release(&fobj->sechdr.mutex);
 	return r;
 }
 
@@ -612,21 +619,34 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 
 	/* verify protection permits */
 	if (flags & kVMFaultWrite && !(vad->protection & kVMWrite)) {
-		kfatal("vm_fault: write fault at 0x%lx in non-writeable VAD\n",
+		kdprintf(
+		    "vm_fault: write fault at 0x%lx in non-writeable VAD\n",
 		    vaddr);
+		return kVMFaultRetFailure;
 	}
 
 	pte = pte_get_and_pin(vmps, vaddr);
 
-	if (pte && pte_is_fork(pte)) {
+	if (pte_denotes_proto(pte)) {
 		struct vmp_forkpage *fpage;
 		struct vmp_forkobj *fobj;
 
 		/*
+		 * It's only in the case of fork pages that we actually keep a
+		 * PTE pointing to the prototype PTE in our address space at all
+		 * times. This is because fork objects point to a densely packed
+		 * array of their pages, in ascending order of offset within the
+		 * virtual address space they were instantiated from, but with
+		 * no easy means to get from a virtual address space in a
+		 * process to the fork page.
+		 *
 		 * We fill in all the fork PTEs at fork-time, and we keep a bit
 		 * set in them when we fault one in for read-only use so that we
 		 * don't have to unnecessarily traverse our fork objects. So
 		 * there will always been an extant fork PTE.
+		 *
+		 * We can count on fork objects not getting manipulated at any
+		 * point.
 		 */
 
 		if (flags & kVMFaultPresent) {
@@ -635,13 +655,25 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 			 * vm_page, which holds a backpointer */
 			page = vmp_paddr_to_page(pte_hw_get_addr(pte));
 			fpage = page->forkpage;
+			fobj = (struct vmp_forkobj *)page->section;
+			kassert(
+			    fobj->sechdr.objhdr.type == kObjTypeSectionFork);
 		} else {
 			/* else, we extract the compressed pointer */
 			fpage = (struct vmp_forkpage *)pte_sw_get_addr(pte);
+
+			/* for each fobj, check if its range encompasses fpage,
+			 * when we find the one that does, set fobj to that */
 		}
 
 		r = fault_fpage(vmps, vaddr, vad, fobj, fpage, pte, flags, out);
-	} else {
+	} else if (pte_is_outpaged(pte)) {
+		/*
+		 * It's private anonymous memory - bring it back in.
+		 */
+
+		ipl_t ipl = vmp_acquire_pfn_lock();
+		r = vmp_anonymous_page_in(vmps, vad, ipl, pte, vaddr, out);
 	}
 
 	ke_mutex_release(&vmps->mutex);

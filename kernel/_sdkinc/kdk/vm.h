@@ -93,12 +93,8 @@ enum vm_page_use {
 enum vm_pageable_page_use {
 	/*! Process private anonymous memory. */
 	kPageableUseProcessPrivate,
-	/*! VNode page. */
-	kPageableUseVNode,
-	/*! Fork object use. */
-	kPageableUseFork,
-	/*! Anonymous object use. */
-	kPageableUseAnonObj,
+	/*! Section object use. */
+	kPageableUseSection,
 };
 
 /*!
@@ -128,12 +124,8 @@ typedef struct vm_page {
 	union {
 		/*! kPageableUseProcessPrivate */
 		struct vm_procstate *proc;
-		/*! kPageableUseVNode */
-		struct vnode *vnode;
-		/*! kPageableUseAnonObj */
-		struct vm_aobj *anonobj;
-		/*! kPageableUseFork */
-		struct vmp_forkobj *forkobj;
+		/*! kPageableUseSection */
+		struct vm_section_header *section;
 
 		/*! use = kPageUseTransition */
 		struct vmp_paging_state *paging_state;
@@ -141,14 +133,23 @@ typedef struct vm_page {
 
 	/*! second use and pageable_use dependent field */
 	union {
-		/*! kPageableUseProcessPrivate. Offset in address space. */
-		uintptr_t offset;
-		/*! kPageableUseVNode or kPageableUseAnonObj */
+		/*! kPageableUseProcessPrivate. Virtual address in process.. */
+		vaddr_t vaddr;
+		/*! kPageableUseSection && section is anonymous/vnode */
 		struct vmp_vpage *vpage;
-		/*! kPageableUseFork. */
+		/*! kPageableUseSection && section is forkobj. */
 		struct vmp_forkpage *forkpage;
 	};
 } vm_page_t;
+
+/*!
+ * Common header for VM sections (anonymous objects, fork objects, vnode
+ * objects)
+ */
+typedef struct vm_section_header {
+	object_header_t objhdr;
+	kmutex_t mutex;
+} vm_section_header_t;
 
 /*!
  * Page description either for anonymous objects (in which case the "resident"
@@ -188,8 +189,8 @@ struct vmp_forkpage {
  * Fork shared-pages object.
  */
 typedef struct vmp_forkobj {
-	/*! Mutex - needed??? */
-	kmutex_t mutex;
+	/*! Section header. */
+	vm_section_header_t sechdr;
 	/*! How many pages are in it? */
 	size_t npages;
 	/*! How many pages of it are referenced? */

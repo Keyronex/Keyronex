@@ -53,17 +53,21 @@ vmp_region_add(paddr_t base, size_t length)
 	/* initialise pages */
 	for (b = 0; b < bm->npages; b++) {
 		bm->pages[b].address = bm->base + PGSIZE * b;
-		bm->pages[b].vnode = NULL;
+		bm->pages[b].dirty = 0;
+		bm->pages[b].proc = NULL;
+		bm->pages[b].vaddr = 0;
 	}
 
 	/* mark off the pages used */
 	for (b = 0; b < used / PGSIZE; b++) {
 		bm->pages[b].use = kPageUseVMM;
+		bm->pages[b].refcnt = 1;
 	}
 
 	/* now zero the remainder */
 	for (; b < bm->npages; b++) {
 		bm->pages[b].use = kPageUseFree;
+		bm->pages[b].refcnt = 0;
 		STAILQ_INSERT_TAIL(&free_list, &bm->pages[b], queue_entry);
 	}
 
@@ -104,7 +108,7 @@ vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 
 	*out = page;
 
-	memset((void*)vm_page_vaddr(page), 0x0, PGSIZE);
+	memset((void *)vm_page_vaddr(page), 0x0, PGSIZE);
 
 	return 0;
 }
@@ -119,7 +123,7 @@ vmp_page_free(vm_procstate_t *ps, vm_page_t *page)
 void
 vmp_page_copy(vm_page_t *from, vm_page_t *to)
 {
-	memcpy((void*)vm_page_vaddr(to), (void*)vm_page_vaddr(from), PGSIZE);
+	memcpy((void *)vm_page_vaddr(to), (void *)vm_page_vaddr(from), PGSIZE);
 }
 
 paddr_t
@@ -186,7 +190,7 @@ vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n)
 		page = mdl->pages[iPage];
 
 		memcpy(dest + (iPage - firstpage) * PGSIZE,
-		    (char*)vm_page_vaddr(page) + pageoff, tocopy);
+		    (char *)vm_page_vaddr(page) + pageoff, tocopy);
 
 		n -= tocopy;
 		pageoff = 0;

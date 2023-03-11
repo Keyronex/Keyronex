@@ -23,7 +23,8 @@ typedef enum object_type {
 	kObjTypeThread,
 	kObjTypeProcess,
 	kObjTypeVNode,
-	kObjTypeSection,
+	kObjTypeSectionAnon,
+	kObjTypeSectionFork,
 } object_type_t;
 
 typedef struct object_header {

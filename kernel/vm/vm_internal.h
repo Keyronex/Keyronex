@@ -47,6 +47,9 @@ bool pmap_is_writeable(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
 /*! @brief Initialise a process' working set list. */
 void vmp_wsl_init(vm_procstate_t *vmps);
 
+/*! @brief Look for a working set entry for a virtual address. */
+struct vmp_wsle *vmp_wsl_find(vm_procstate_t *vmps, vaddr_t vaddr);
+
 /*!
  * @brief Adds a mapping to the working set list.
  *
