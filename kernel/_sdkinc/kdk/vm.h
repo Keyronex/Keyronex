@@ -228,8 +228,9 @@ enum vm_vad_inheritance {
 };
 
 /*!
- * Virtual Address Descriptor - a mapping of a section object. Note that
- * copy-on-write is done at the section object level, not here.
+ * Virtual Address Descriptor - an area of a process' address space, which may
+ * include either or both of private anonymous memory and a section object
+ * pointer.
  */
 typedef struct vm_vad {
 	/*! Entry in vm_procstate::vad_rbtree */
@@ -237,11 +238,21 @@ typedef struct vm_vad {
 
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
-	/*! Offset into section object. */
-	voff_t offset;
 
 	/*! Inheritance attributes for fork. */
 	enum vm_vad_inheritance inheritance;
+
+	/*!
+	 * Is it a private anonymous region? (Does not preclude also having a
+	 * section, in case of MAP_PRIVATE mappings).
+	 */
+	bool is_private;
+
+	/*! Mapped section object. */
+	vm_section_header_t *section;
+
+	/*! Offset into section object. */
+	voff_t offset;
 
 	/*!
 	 * Current protection of the region.

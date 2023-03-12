@@ -400,6 +400,160 @@ fault_anonymous(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
 #endif
 
 static vm_fault_return_t
+fault_private(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad, pte_t *pte,
+    vm_fault_flags_t flags, vm_page_t **out)
+{
+	vm_fault_return_t r = kVMFaultRetOK;
+	ipl_t ipl;
+
+	/*
+	 * We know by this point that if we have a local anonymous page, it
+	 * can't have been paged out; that was checked in the master vm_fault().
+	 *
+	 * We also know in general that we don't have hardware PTEs for pages
+	 * not in the working set list.
+	 *
+	 * So  it could be:
+	 * 1. present but not in working set (and hence set to invalid, and not
+	 * holding a reference to the underlying page)
+	 * 2. present but not writeable (a MAP_PRIVATE page of a section
+	 *   object is in the WS; IF)
+	 * 3. otherwise either: nonpresent, to be fetched from a backing section
+	 * 4 or demand-zero, if there is no backing section.
+	 */
+
+	if (pte_is_hw(pte)) {
+		vm_page_t *page = pte_hw_get_page(pte);
+
+		kassert(page != NULL);
+
+		if (page->pageable_use == kPageableUseSection) {
+			/*
+			 * 2. We must have copy-on-write faulted on a
+			 * MAP_PRIVATE section page.
+			 *
+			 * We know that it is in the working set because we
+			 * replace HW PTEs for section pages in process page
+			 * tables with prototype-denoting PTEs when they leave
+			 * the working set.
+			 *
+			 * So let's confirm that these assumptions are true.
+			 */
+
+			kassert(page->section == vad->section);
+			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
+			kassert(flags & kVMFaultWrite);
+
+			/* Now we can allocate the new page and copy. */
+			vm_page_t *new_page;
+			int ret;
+
+			ipl = vmp_acquire_pfn_lock();
+			ret = vmp_page_alloc(vmps, false, kPageUseActive,
+			    &new_page);
+			if (ret != 0) {
+				/* low memory, return and let wait */
+				vmp_release_pfn_lock(ipl);
+				r = kVMFaultRetPageShortage;
+				goto finish;
+			}
+
+			// todo: credit shared file page, charge private page
+
+			vmp_page_copy(page, new_page);
+			vmp_page_release(page);
+
+			vmp_release_pfn_lock(ipl);
+
+			/*! debug: should have existing  WSL entry */
+			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
+
+			new_page->pageable_use = kPageableUseProcessPrivate;
+			new_page->proc = vmps;
+			new_page->vaddr = vaddr;
+
+			/*
+			 * this new page simply inherits the WSL slot.
+			 * no retain done because we already have a ref to the
+			 * new page.
+			 */
+			pte_hw_enter(pte, new_page, vad->protection);
+
+			if (out) {
+				new_page->refcnt++;
+				*out = new_page;
+			}
+		} else {
+			/*
+			 * 1. Page is present but shouldn't be in the working
+			 * set. So we simply load it back in.
+			 */
+
+			/* Test our assumptions. */
+			kassert(vmp_wsl_find(vmps, vaddr) == NULL);
+			kassert(
+			    page->pageable_use == kPageableUseProcessPrivate);
+
+			ipl = vmp_acquire_pfn_lock();
+			vmp_activate_page(page);
+			vmp_release_pfn_lock(ipl);
+
+			pte_hw_enter(pte, page, vad->protection);
+			vmp_wsl_insert(vmps, vaddr);
+
+			if (out) {
+				page->refcnt++;
+				*out = page;
+			}
+		}
+	} else {
+		if (vad->section != NULL) {
+			/*
+			 * 4. Page is non-present and needs to be demand-zeroed
+			 * into existence.
+			 */
+
+			vm_page_t *new_page;
+			int ret;
+
+			ipl = vmp_acquire_pfn_lock();
+			ret = vmp_page_alloc(vmps, false, kPageUseActive,
+			    &new_page);
+			if (ret != 0) {
+				/* low memory, return and let wait */
+				vmp_release_pfn_lock(ipl);
+				r = kVMFaultRetPageShortage;
+				goto finish;
+			}
+
+			vmp_release_pfn_lock(ipl);
+
+			// todo: charge private page
+
+			new_page->pageable_use = kPageableUseProcessPrivate;
+			new_page->proc = vmps;
+			new_page->vaddr = vaddr;
+
+			pte_hw_enter(pte, new_page, vad->protection);
+			vmp_wsl_insert(vmps, vaddr);
+
+			if (out) {
+				new_page->refcnt++;
+				*out = new_page;
+			}
+		} else {
+			/*
+			 * 4. Page is non-present and should be fetched from a
+			 * backing section.
+			 */
+		}
+	}
+
+finish:
+	return r;
+}
+
+static vm_fault_return_t
 fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
     struct vmp_forkobj *fobj, struct vmp_forkpage *fpage, pte_t *pte,
     vm_fault_flags_t flags, vm_page_t **out)
@@ -453,15 +607,15 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			// todo: remove PGSIZE from shared accounting, add to
 			// private accounting...
 
+			page = pte_hw_get_page(pte);
+
 			/*
-			 * convert the pte to a private anonymous page. WSL
+			 * replace pte to a private anonymous page. WSL
 			 * entry is kept from the read-only mapping.
 			 */
-			pte_hw_set_writeable(pte);
-			pte_hw_unset_fork(pte);
+			pte_hw_enter(pte, page, vad->protection);
 			pmap_invlpg(vaddr);
 
-			page = pte_hw_get_page(pte);
 			page->pageable_use = kPageableUseProcessPrivate;
 			page->proc = vmps;
 			if (out) {
@@ -514,10 +668,10 @@ fault_fpage(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 			page = pte_hw_get_page(pte);
 
 			vmp_page_copy(page, new_page);
+			vmp_page_release(page);
 
 			vmp_release_pfn_lock(ipl);
 
-			vmp_page_release(page);
 			fpage->refcnt--;
 
 			/*! debug: should have existing  WSL entry */
@@ -674,6 +828,15 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 
 		ipl_t ipl = vmp_acquire_pfn_lock();
 		r = vmp_anonymous_page_in(vmps, vad, ipl, pte, vaddr, out);
+	} else if (vad->is_private) {
+		/* It's private anonymous memory and it isn't outpaged. */
+		r = fault_private(vmps, vaddr, vad, pte, flags, out);
+	} else {
+		/*
+		 * It must be a vnode/anonymous object page.
+		 */
+
+		kassert(vad->section != NULL);
 	}
 
 	ke_mutex_release(&vmps->mutex);

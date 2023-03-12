@@ -12,12 +12,12 @@
 
 #include <stdatomic.h>
 
+#include "kdk/kmem.h"
 #include "kdk/machdep.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 #include "machdep/amd64/amd64.h"
 #include "vm/vm_internal.h"
-#include "kdk/kmem.h"
 
 enum {
 	kPML4Shift = 0x39,
