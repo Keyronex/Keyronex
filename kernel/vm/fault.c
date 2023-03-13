@@ -29,217 +29,6 @@ vmp_vpage_cmp(struct vmp_vpage *x, struct vmp_vpage *y)
 	return x->offset - y->offset;
 }
 
-#if 0
-static vm_fault_return_t
-fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
-    vm_protection_t protection, vm_section_t *section, voff_t offset,
-    vm_fault_flags_t flags, vm_page_t **out)
-{
-	vm_fault_return_t r;
-	vm_page_t *file_page;
-	paddr_t paddr;
-
-	kassert(section->parent->kind == kSectionFile);
-
-	if (!pmap_is_present(vmps, vaddr, &paddr)) {
-		/* bring the file's page into the working set read-only */
-		r = fault_file(vmps, vaddr, protection & ~kVMWrite,
-		    section->parent, offset, flags & ~kVMFaultWrite,
-		    &file_page);
-		if (r == kVMFaultRetRetry)
-			return r;
-
-		kassert(r = kVMFaultRetOK);
-	} else {
-		/* check if page busy here? */
-		/* grab the page from the working set list */
-		file_page = vmp_paddr_to_page(paddr);
-		/* we later assume we've got an extra reference */
-		file_page->reference_count++;
-	}
-
-	/*
-	 * if we made it this far, then no locks were released; we can continue.
-	 * we have a pointer to file_page with an extra refcount from
-	 * fault_file(). the page was added to our working set list.
-	 */
-	if (!(flags & kVMFaultWrite)) {
-		/* and if it's just a read fault, then the job's done here.
-		 * fault_file() will have mapped it into our working set and now
-		 * we are free to proceed.
-		 */
-
-		/* we've got an extra refcount from fault_file()/*/
-		if (out)
-			*out = file_page;
-		else
-			file_page->reference_count--;
-
-		return 0;
-	} else {
-		/*
-		 * but if it's a write fault, we now need to copy the page into
-		 * an anon.
-		 */
-
-		int ret;
-		vm_page_t *anon_page;
-
-		/*
-		 * we know be assured by this point that the page is at least
-		 * present in the working set.. But now it's necessary to verify
-		 * it's not writeable
-		 * - which it might be, if we were raced to handle a fault on
-		 * the same page.
-		 */
-
-		if (pmap_is_writeable(vmps, vaddr, &paddr)) {
-			kassert(paddr);
-			if (*out) {
-				anon_page = vmp_paddr_to_page(paddr);
-				anon_page->reference_count++;
-				*out = anon_page;
-			}
-			return kVMFaultRetOK;
-		}
-
-		ret = vmp_page_alloc(vmps, false, kPageUseActive, &anon_page);
-		kassert(ret == 0);
-
-		vmp_page_copy(file_page, anon_page);
-
-		/* now we can drop our extra reference to file_page */
-		file_page->reference_count--;
-
-		/* allocate the vpage and page_ref, and insert */
-		make_new_anon(section, offset, anon_page);
-
-		/*
-		 * now we can drop the WSL entry for the read-only mapping
-		 * (of file_page), and instate the writeable one (of anon_page).
-		 */
-		vmp_wsl_remove(vmps, vaddr);
-		vmp_wsl_insert(vmps, vaddr, anon_page, protection);
-
-		/* page has extra refcount from the vmp_page_alloc */
-		if (out)
-			*out = anon_page;
-		else
-			anon_page->reference_count--;
-	}
-
-	return kVMFaultRetOK;
-}
-
-static vm_fault_return_t
-fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
-    vaddr_t vaddr, vm_protection_t protection, vm_section_t *section,
-    voff_t offset, vm_fault_flags_t flags, vm_page_t **out)
-{
-	vmp_vpage_t *vpage = ref->vpage;
-
-	if (vpage->page == NULL) {
-		/*
-		 * Page needs to be read in from the file. Allocate a backing
-		 * page, busy it, and associate it with the vpage.
-		 */
-
-		vm_page_t *page;
-		int ret;
-
-		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
-
-		kassert(ret == 0);
-
-		page->busy = true;
-		page->vpage = vpage;
-
-		vpage->page = page;
-
-		/*
-		 * Now that that's done, we can drop our locks and initiate the
-		 * I/O. Page faults are always at APC level.
-		 */
-		vmp_release_pfn_lock(kIPLAPC);
-		ke_mutex_release(&vmps->mutex);
-
-		// I/O submission and wait goes here.
-		// see comments in the file_fault()
-
-		kfatal("Path unimplemented\n");
-
-		return kVMFaultRetRetry;
-	}
-
-	if (vpage->refcount > 1) {
-		if (flags & kVMFaultWrite) {
-			vmp_vpage_t *newvpage;
-			vm_page_t *page;
-			int ret;
-
-			ret = vmp_page_alloc(vmps, false, kPageUseActive,
-			    &page);
-			kassert(ret == 0);
-
-			vmp_page_copy(vpage->page, page);
-
-			newvpage = kmem_alloc(sizeof(vmp_vpage_t));
-			newvpage->page = page;
-			newvpage->refcount = 1;
-			newvpage->swapdesc = -1;
-
-			page->vpage = newvpage;
-
-			ref->vpage = newvpage;
-
-			if (pmap_is_present(vmps, vaddr, NULL)) {
-				/* existing read-only mapping must go */
-				vmp_wsl_remove(vmps, vaddr);
-			}
-
-			vmp_wsl_insert(vmps, vaddr, page, protection);
-
-			/* we've got an extra refcount from vmp_page_alloc/*/
-			if (out)
-				*out = page;
-			else
-				page->reference_count--;
-		} else {
-			/* just a read; map existing anon read-only */
-			kassert(!pmap_is_present(vmps, vaddr, NULL));
-			vmp_wsl_insert(vmps, vaddr, vpage->page,
-			    protection & ~kVMWrite);
-
-			if (out) {
-				vpage->page->reference_count++;
-				*out = vpage->page;
-			}
-		}
-	} else /* refcnt */ {
-		if (pmap_is_present(vmps, vaddr, NULL)) {
-			/*
-			 * the ?only possible case where there's a fault where
-			 * page is present and anon has a refcnt of 1 is that it
-			 * was marked copy-on-write, and then a virtual copy
-			 * took a write fault. so remove the existing mapping
-			 * and proceed.
-			 */
-			vmp_wsl_remove(vmps, vaddr);
-		}
-
-		vmp_wsl_insert(vmps, vaddr, vpage->page, protection);
-
-		if (out) {
-			vpage->page->reference_count++;
-			*out = vpage->page;
-		}
-	}
-
-	return kVMFaultRetOK;
-}
-
-#endif
-
 /*!
  * Common part of handling a page fault in a VAD backed by a section, for both
  * private (CoW) and shared mappings of a section.
@@ -342,7 +131,105 @@ static vm_fault_return_t
 fault_private_from_section(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
     pte_t *pte, vm_fault_flags_t flags, vm_page_t **out)
 {
+	// TODO: should this lock the section? Maybe need a "don't unlock
+	// section on exit" flag for fault_section_sub. but as we are putting a
+	// page reference with PTE in our process page tables, this may be
+	// excessive
+
 	struct vmp_section *section = vad->section;
+	vm_fault_return_t r;
+	vm_page_t *file_page;
+	paddr_t paddr;
+
+	// TODO
+	voff_t offset;
+
+	if (vmp_wsl_find(vmps, vaddr) == NULL) {
+		/* bring the file's page into the working set read-only */
+		r = fault_section_sub(vmps, vaddr, vad, section, offset, pte,
+		    flags, true, &file_page);
+		if (r == kVMFaultRetRetry)
+			return r;
+
+		kassert(r == kVMFaultRetOK);
+	} else {
+		/* check if page busy here? */
+		/* grab the page from the working set list */
+		file_page = vmp_paddr_to_page(paddr);
+		/* we later assume we've got an extra reference */
+		file_page->refcnt++;
+	}
+
+	/*
+	 * if we made it this far, then no locks were released; we can continue.
+	 * we have a pointer to file_page with an extra refcount from
+	 * fault_file(). the page was added to our working set list.
+	 */
+	if (!(flags & kVMFaultWrite)) {
+		/* and if it's just a read fault, then the job's done here.
+		 * fault_file() will have mapped it into our working set and now
+		 * we are free to proceed.
+		 */
+
+		/* we've got an extra refcount from fault_file()/*/
+		if (out)
+			*out = file_page;
+		else
+			file_page->refcnt--;
+
+		return kVMFaultRetOK;
+	} else {
+		/*
+		 * but if it's a write fault, we now need to copy the page into
+		 * an anon.
+		 */
+
+		/*
+		 * we know be assured by this point that the page is at least
+		 * present in the working set... But now it's necessary to
+		 * verify it's not writeable
+		 * (could it be? we claim it could below but i'm not sure this
+		 * is correct:) which it might be, if we were raced to handle a
+		 * fault on the same page.
+		 */
+
+		if (pte_hw_is_writeable(pte)) {
+			if (*out) {
+				kassert(pte_hw_get_page(pte) == file_page);
+				*out = file_page;
+			} else {
+				// assert refcnt remains > 1 after....
+				file_page->refcnt--;
+			}
+			return kVMFaultRetOK;
+		}
+
+		int ret;
+		vm_page_t *priv_page;
+
+		ret = vmp_page_alloc(vmps, false, kPageUseActive, &priv_page);
+		kassert(ret == kVMFaultRetOK);
+
+		vmp_page_copy(file_page, priv_page);
+
+		/* now we can drop our extra reference to file_page */
+		file_page->refcnt--;
+
+		/*
+		 * we will let the old WSL slot be inherited
+		 */
+		pte_hw_enter(pte, priv_page, kVMAll);
+
+		/* page has extra refcount from the vmp_page_alloc */
+		if (out)
+			*out = priv_page;
+		else {
+			// todo: this is not sufficient if it's the last ref
+			priv_page->refcnt--;
+		}
+	}
+
+	return kVMFaultRetOK;
 }
 
 static vm_fault_return_t
