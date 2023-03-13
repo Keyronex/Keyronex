@@ -52,8 +52,12 @@ executable(
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
-mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
-mlibc_keyronex_includes = mlibc.get_variable('keyronex_includes')
+if (os != 'elf')
+	mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
+	mlibc_keyronex_includes = mlibc.get_variable('keyronex_includes')
+else
+	mlibc_keyronex_includes = []
+endif
 
 uuid_sources = files('vendor/uuid/uuid.c')
 

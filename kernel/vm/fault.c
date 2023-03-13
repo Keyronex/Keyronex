@@ -21,132 +21,15 @@
 #include "vm/pmapp.h"
 #include "vm/vm_internal.h"
 
-volatile void *volatile toucher;
+RB_GENERATE(vmp_vpage_rb, vmp_vpage, rb_entry, vmp_vpage_cmp);
+
+intptr_t
+vmp_vpage_cmp(struct vmp_vpage *x, struct vmp_vpage *y)
+{
+	return x->offset - y->offset;
+}
 
 #if 0
-#include "kdk/devmgr.h"
-#include "kdk/kmem.h"
-#include "kdk/process.h"
-#include "kdk/vfs.h"
-#include "kdk/vmem.h"
-
-RB_GENERATE(vmp_vpage_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
-
-int
-vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y)
-{
-	return x->page_index - y->page_index;
-}
-
-static vm_fault_return_t
-fault_file(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
-    vm_section_t *section, voff_t offset, vm_fault_flags_t flags,
-    vm_page_t **out)
-{
-	struct vmp_page_ref *pageref, key;
-
-	/* first: do we already have a page? */
-	key.page_index = offset / PGSIZE;
-	pageref = RB_FIND(vmp_vpage_rbtree, &section->page_ref_rbtree, &key);
-
-	if (!pageref) {
-		/*
-		 * Page needs to be read in from the file. Allocate a backing
-		 * page, busy it, and insert it into the section.
-		 */
-
-		vm_page_t *page;
-		int ret;
-
-		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
-
-		kassert(ret == 0);
-
-		page->busy = true;
-		page->vnode = section->vnode;
-
-		pageref = kmem_xalloc(sizeof(struct vmp_page_ref),
-		    kVMemPFNDBHeld);
-		pageref->page_index = offset / PGSIZE;
-		pageref->page = page;
-
-		RB_INSERT(vmp_vpage_rbtree, &section->page_ref_rbtree,
-		    pageref);
-
-		/*
-		 * Now that that's done, we can drop our locks and initiate the
-		 * I/O. Page faults are always at APC level.
-		 * (TODO: they aren't yet so this can leave IPL permanently
-		 * elevated as the normal IPL drop in vm_fault is absent.)
-		 */
-		vmp_release_pfn_lock(kIPLAPC);
-		ke_mutex_release(&vmps->mutex);
-
-		// I/O submission and wait goes here.
-
-		// We could lock the PFN lock again and check if some 'no longer
-		// needed, delete please' flag was set. And if so, we can free
-		// that page. Otherwise, do we leave it busy or what? Surely
-		// not.
-		//
-		// We can just put it onto the standby list and refault in the
-		// hope that it won't be reused before we fault again. That
-		// means we'll need to drop one reference to the page somewhere
-		// around here.
-		//
-		// We can't map it into the address space yet since we don't
-		// know if state has changed. What we *might* do is allocate
-		// a working set list & page table entry which is invalid but
-		// points to the page, just to keep a reference on it.
-
-		// kfatal("Path unimplemented\n");
-		vm_mdl_t *mdl = vm_mdl_alloc(1);
-		mdl->pages[0] = page;
-		iop_t *iop = iop_new_read(section->vnode->vfsp->dev, mdl, 4096,
-		    offset);
-		iop->stack[0].vnode = section->vnode;
-		iop_return_t res = iop_send_sync(iop);
-		kassert(res == kIOPRetCompleted);
-
-		return kVMFaultRetRetry;
-	}
-
-	/* We have the page; map it into the working set list */
-	kassert(!pmap_is_present(vmps, vaddr, NULL));
-
-	vmp_wsl_insert(vmps, vaddr, pageref->page, protection);
-
-	if (out) {
-		pageref->page->reference_count++;
-		*out = pageref->page;
-	}
-
-	return kVMFaultRetOK;
-}
-
-/*!
- * @brief Make a new anon and aref and insert into a section.
- */
-static void
-make_new_anon(vm_section_t *section, voff_t offset, vm_page_t *page)
-{
-	vm_vpage_t *vpage;
-	struct vmp_page_ref *anon_ref;
-
-	vpage = kmem_xalloc(sizeof(vm_vpage_t), kVMemPFNDBHeld);
-	vpage->refcount = 1;
-	vpage->swapdesc = -1;
-	vpage->page = page;
-
-	page->vpage = vpage;
-
-	anon_ref = kmem_xalloc(sizeof(struct vmp_page_ref), kVMemPFNDBHeld);
-	anon_ref->page_index = offset / PGSIZE;
-	anon_ref->vpage = vpage;
-
-	RB_INSERT(vmp_vpage_rbtree, &section->page_ref_rbtree, anon_ref);
-}
-
 static vm_fault_return_t
 fault_anonymous_from_parent(vm_procstate_t *vmps, vaddr_t vaddr,
     vm_protection_t protection, vm_section_t *section, voff_t offset,
@@ -253,7 +136,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
     vaddr_t vaddr, vm_protection_t protection, vm_section_t *section,
     voff_t offset, vm_fault_flags_t flags, vm_page_t **out)
 {
-	vm_vpage_t *vpage = ref->vpage;
+	vmp_vpage_t *vpage = ref->vpage;
 
 	if (vpage->page == NULL) {
 		/*
@@ -290,7 +173,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 
 	if (vpage->refcount > 1) {
 		if (flags & kVMFaultWrite) {
-			vm_vpage_t *newvpage;
+			vmp_vpage_t *newvpage;
 			vm_page_t *page;
 			int ret;
 
@@ -300,7 +183,7 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 
 			vmp_page_copy(vpage->page, page);
 
-			newvpage = kmem_alloc(sizeof(vm_vpage_t));
+			newvpage = kmem_alloc(sizeof(vmp_vpage_t));
 			newvpage->page = page;
 			newvpage->refcount = 1;
 			newvpage->swapdesc = -1;
@@ -355,49 +238,112 @@ fault_anonymous_vpage(vm_procstate_t *vmps, struct vmp_page_ref *ref,
 	return kVMFaultRetOK;
 }
 
+#endif
+
+/*!
+ * Common part of handling a page fault in a VAD backed by a section, for both
+ * private (CoW) and shared mappings of a section.
+ */
 static vm_fault_return_t
-fault_anonymous(vm_procstate_t *vmps, vaddr_t vaddr, vm_protection_t protection,
-    vm_section_t *section, voff_t offset, vm_fault_flags_t flags,
-    vm_page_t **out)
+fault_section_sub(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
+    struct vmp_section *section, voff_t offset, pte_t *pte,
+    vm_fault_flags_t flags, bool is_private, vm_page_t **out)
 {
-	struct vmp_page_ref *pageref, key;
+	struct vmp_vpage *pageref, key;
+	vm_fault_return_t r = kVMFaultRetOK;
 
-	/* first: do we already have a vpage? */
-	key.page_index = offset / PGSIZE;
-	pageref = RB_FIND(vmp_vpage_rbtree, &section->page_ref_rbtree, &key);
+	/* first: do we already have a page? */
+	key.offset = offset;
+	pageref = RB_FIND(vmp_vpage_rb, &section->page_rb, &key);
 
-	if (!pageref && section->parent) {
-		/*!
-		 * if there is no pageref, but there is a parent, we fetch from
-		 * there. the parent shall always be a file object.
+	if (!pageref) {
+		/*
+		 * No vpage means the page needs to be read in from the file.
+		 * Allocate a backing page, busy it, and insert it into the
+		 * section.
+		 *
+		 * (this logic should go to paging.c, and be unified with
+		 * anonymous page logic, with a 'pager' abstraction to do the
+		 * actual I/O.)
 		 */
-		return fault_anonymous_from_parent(vmps, vaddr, protection,
-		    section, offset, flags, out);
-	} else if (!pageref) {
-		/* no pageref, no parent - demand zero one in. */
 
-		int ret;
 		vm_page_t *page;
+		int ret;
 
 		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
+
 		kassert(ret == 0);
 
-		make_new_anon(section, offset, page);
-		vmp_wsl_insert(vmps, vaddr, page, protection);
+		page->use = kPageUseTransition;
+		page->pageable_use = kPageableUseSection;
+		page->section = &section->hdr;
 
-		/* page has extra refcount from the vmp_page_alloc */
-		if (out)
-			*out = page;
-		else
-			page->reference_count--;
+		pageref = kmem_alloc(sizeof(struct vmp_vpage));
+		pageref->offset = offset;
+		pte_transition_enter(&pageref->pte, page);
 
-		return kVMFaultRetOK;
+		RB_INSERT(vmp_vpage_rb, &section->page_rb, pageref);
+
+		// ... and our process working set, and a process transition
+		// PTE?
+
+		kfatal("Path unimplemented\n");
+		// vm_mdl_t *mdl = vm_mdl_alloc(1);
+		// mdl->pages[0] = page;
+		// iop_t *iop = iop_new_read(section->vnode->vfsp->dev, mdl,
+		// 4096,
+		//     offset);
+		// iop->stack[0].vnode = section->vnode;
+		// iop_return_t res = iop_send_sync(iop);
+		// kassert(res == kIOPRetCompleted);
+
+		r = kVMFaultRetRetry;
+		goto finish;
+	} else if (pageref && pte_is_transition(&pageref->pte)) {
+		// todo(high): refactor into a common wait-for-transition func?
+		/* wait on the event */
+
+		vm_page_t *page;
+		struct vmp_paging_state *pstate;
+
+		page = pte_trans_get_page(&pageref->pte);
+		vmp_paging_state_retain(page->paging_state);
+		pstate = page->paging_state;
+
+		ke_mutex_release(&section->hdr.mutex);
+		ke_mutex_release(&vmps->mutex);
+
+		vmp_paging_state_wait(pstate);
+
+		r = kVMFaultRetRetry;
+		goto finish;
 	} else {
-		return fault_anonymous_vpage(vmps, pageref, vaddr, protection,
-		    section, offset, flags, out);
+		/* We have the page; map it into the working set list */
+
+		kassert(!pmap_is_present(vmps, vaddr, NULL));
+
+		// ++page refcnt
+		pte_hw_enter(pte, pte_hw_get_page(&pageref->pte),
+		    is_private ? (kVMRead | kVMExecute) : kVMAll);
+
+		vmp_wsl_insert(vmps, vaddr);
 	}
+
+finish:
+	if (out && r == kVMFaultRetOK) {
+		pte_hw_get_page(&pageref->pte)->refcnt++;
+		*out = pte_hw_get_page(&pageref->pte);
+	}
+
+	return r;
 }
-#endif
+
+static vm_fault_return_t
+fault_private_from_section(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
+    pte_t *pte, vm_fault_flags_t flags, vm_page_t **out)
+{
+	struct vmp_section *section = vad->section;
+}
 
 static vm_fault_return_t
 fault_private(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad, pte_t *pte,
@@ -543,9 +489,11 @@ fault_private(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad, pte_t *pte,
 			}
 		} else {
 			/*
-			 * 4. Page is non-present and should be fetched from a
+			 * 4. Page is non-present and must be fetched from a
 			 * backing section.
 			 */
+			r = fault_private_from_section(vmps, vaddr, vad, pte,
+			    flags, out);
 		}
 	}
 

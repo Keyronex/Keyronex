@@ -125,7 +125,7 @@ typedef struct vm_page {
 		/*! kPageableUseProcessPrivate */
 		struct vm_procstate *proc;
 		/*! kPageableUseSection */
-		struct vm_section_header *section;
+		struct vmp_section_header *section;
 
 		/*! use = kPageUseTransition */
 		struct vmp_paging_state *paging_state;
@@ -142,38 +142,45 @@ typedef struct vm_page {
 	};
 } vm_page_t;
 
-/*!
- * Common header for VM sections (anonymous objects, fork objects, vnode
- * objects)
- */
-typedef struct vm_section_header {
-	object_header_t objhdr;
-	kmutex_t mutex;
-} vm_section_header_t;
+RB_HEAD(vmp_vpage_rb, vmp_vpage);
 
 /*!
- * Page description either for anonymous objects (in which case the "resident"
- * bit is meaningful) or for vnode objects (in which case the page must always
- * be resident).
+ * Page description either for anonymous objects (in which case the PTE may be
+ * a swap PTE) or for vnode objects (in which case the page must always be
+ * resident as the vpage is freed when the page is paged out).
  *
  * Non-pageable for now.
  */
 typedef struct vmp_vpage {
 	/*! PTE */
 	pte_t pte;
-	/*! Offset within the vnode/aobj. */
+	/*! Byte offset within the vnode/aobj. */
 	voff_t offset;
 	/*! vnode/aobj rbtree linkage */
-	RB_ENTRY(vm_aobj_page) rb_entry;
+	RB_ENTRY(vmp_vpage) rb_entry;
 } vmp_vpage_t;
 
-RB_HEAD(vmp_vpage_rb, vmp_vpage);
+/*!
+ * Common part for all sections (forkobjs, aobjs, vnodes)
+ */
+struct vmp_section_header {
+	object_header_t objhdr;
+	kmutex_t mutex;
+};
+
+/*!
+ * Common part for non-forkobj VM sections (anonymous objects, vnodes)
+ */
+struct vmp_section {
+	struct vmp_section_header hdr;
+	struct vmp_vpage_rb page_rb;
+};
 
 /*!
  * Anonymous VM object.
  */
 typedef struct vm_aobj {
-	struct vmp_vpage_rb page_rb;
+	struct vmp_section sect;
 } vm_aobj_t;
 
 struct vmp_forkpage {
@@ -190,7 +197,7 @@ struct vmp_forkpage {
  */
 typedef struct vmp_forkobj {
 	/*! Section header. */
-	vm_section_header_t sechdr;
+	struct vmp_section_header sechdr;
 	/*! How many pages are in it? */
 	size_t npages;
 	/*! How many pages of it are referenced? */
@@ -249,7 +256,7 @@ typedef struct vm_vad {
 	bool is_private;
 
 	/*! Mapped section object. */
-	vm_section_header_t *section;
+	struct vmp_section *section;
 
 	/*! Offset into section object. */
 	voff_t offset;

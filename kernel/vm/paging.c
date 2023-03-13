@@ -36,7 +36,7 @@ page_in_anonymous(vm_page_t *page, struct vmp_paging_state *state,
  */
 vm_fault_return_t
 vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
-    vm_section_header_t *sect, ipl_t ipl, pte_t *proto_pte, pte_t *pte,
+    struct vmp_sectionsect, ipl_t ipl, pte_t *proto_pte, pte_t *pte,
     vaddr_t vaddr, vm_page_t **out)
 {
 	kwaitstatus_t w;
@@ -135,7 +135,7 @@ vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
 }
 
 /*!
- * @brief Page in an anonymous page in a process] pagetable.
+ * @brief Page in an anonymous page in a process pagetable.
  * @pre VAD list mutex of \p vmps held
  * @pre PFN DB lock held.
  * @pre \p pte pinned in-memory

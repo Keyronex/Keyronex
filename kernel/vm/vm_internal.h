@@ -101,9 +101,9 @@ void vmp_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n);
 vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
 /*! @brief Comparator function for VAD rb-tree. */
-int vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
+intptr_t vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
 /*! @brief Comparator function for vpage rb-tree. */
-int vmp_vpage_cmp(struct vmp_vpage *x, struct vmp_vpage *y);
+intptr_t vmp_vpage_cmp(struct vmp_vpage *x, struct vmp_vpage *y);
 
 RB_PROTOTYPE(vm_vad_rbtree, vm_vad, rb_entry, vmp_vad_cmp);
 RB_PROTOTYPE(vmp_vpage_rb, vmp_vpage, rb_entry, vmp_vpage_cmp);
