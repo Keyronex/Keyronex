@@ -36,7 +36,7 @@ page_in_anonymous(vm_page_t *page, struct vmp_paging_state *state,
  */
 vm_fault_return_t
 vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
-    struct vmp_sectionsect, ipl_t ipl, pte_t *proto_pte, pte_t *pte,
+    struct vmp_section *sect, ipl_t ipl, pte_t *proto_pte, pte_t *pte,
     vaddr_t vaddr, vm_page_t **out)
 {
 	kwaitstatus_t w;
@@ -50,7 +50,7 @@ vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
 	if (ret != 0) {
 		/* low memory, return and let wait */
 		vmp_release_pfn_lock(ipl);
-		ke_mutex_release(&sect->mutex);
+		ke_mutex_release(&sect->hdr.mutex);
 		return kVMFaultRetPageShortage;
 	}
 
@@ -79,7 +79,7 @@ vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
 	/* retain the section so it won't go away on us */
 	obj_direct_retain(sect);
 
-	ke_mutex_release(&sect->mutex);
+	ke_mutex_release(&sect->hdr.mutex);
 	ke_mutex_release(&vmps->mutex);
 
 	/* do the actual pagein */
@@ -88,8 +88,8 @@ vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
 	w = ke_wait(&vmps->mutex, "vmp_anonymous_proto_page_in: vmps->mutex",
 	    false, false, -1);
 	kassert(w == kKernWaitStatusOK);
-	w = ke_wait(&sect->mutex, "vmp_anonymous_proto_page_in: sect->mutex",
-	    false, false, -1);
+	w = ke_wait(&sect->hdr.mutex,
+	    "vmp_anonymous_proto_page_in: sect->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
 	/*
@@ -117,11 +117,11 @@ vmp_anonymous_proto_page_in(vm_procstate_t *vmps, vm_vad_t *vad,
 
 	page->pageable_use = kPageableUseSection;
 	page->use = kPageUseActive;
-	if (sect->objhdr.type == kObjTypeSectionAnon ||
-	    sect->objhdr.type == kObjTypeVNode) {
+	if (sect->hdr.objhdr.type == kObjTypeSectionAnon ||
+	    sect->hdr.objhdr.type == kObjTypeVNode) {
 		page->vpage = __containerof(proto_pte, vmp_vpage_t, pte);
 	} else {
-		kassert(sect->objhdr.type == kObjTypeSectionFork);
+		kassert(sect->hdr.objhdr.type == kObjTypeSectionFork);
 		page->forkpage = __containerof(proto_pte, struct vmp_forkpage,
 		    pte);
 	}

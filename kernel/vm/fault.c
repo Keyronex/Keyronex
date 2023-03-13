@@ -34,12 +34,13 @@ vmp_vpage_cmp(struct vmp_vpage *x, struct vmp_vpage *y)
  * private (CoW) and shared mappings of a section.
  */
 static vm_fault_return_t
-fault_section_sub(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
-    struct vmp_section *section, voff_t offset, pte_t *pte,
-    vm_fault_flags_t flags, bool is_private, vm_page_t **out)
+fault_section(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
+    struct vmp_section *section, pte_t *pte, vm_fault_flags_t flags,
+    bool is_private, vm_page_t **out)
 {
 	struct vmp_vpage *pageref, key;
 	vm_fault_return_t r = kVMFaultRetOK;
+	voff_t offset = (vaddr - vad->start) + vad->offset;
 
 	/* first: do we already have a page? */
 	key.offset = offset;
@@ -60,8 +61,7 @@ fault_section_sub(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 		int ret;
 
 		ret = vmp_page_alloc(vmps, false, kPageUseActive, &page);
-
-		kassert(ret == 0);
+		kassert(ret == kVMFaultRetOK);
 
 		page->use = kPageUseTransition;
 		page->pageable_use = kPageableUseSection;
@@ -133,29 +133,25 @@ fault_private_from_section(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad,
 {
 	// TODO: should this lock the section? Maybe need a "don't unlock
 	// section on exit" flag for fault_section_sub. but as we are putting a
-	// page reference with PTE in our process page tables, this may be
+	// page reference with PTE in our process page tables, this probably is
 	// excessive
 
 	struct vmp_section *section = vad->section;
 	vm_fault_return_t r;
 	vm_page_t *file_page;
-	paddr_t paddr;
-
-	// TODO
-	voff_t offset;
 
 	if (vmp_wsl_find(vmps, vaddr) == NULL) {
 		/* bring the file's page into the working set read-only */
-		r = fault_section_sub(vmps, vaddr, vad, section, offset, pte,
-		    flags, true, &file_page);
+		r = fault_section(vmps, vaddr, vad, section, pte, flags, true,
+		    &file_page);
 		if (r == kVMFaultRetRetry)
 			return r;
 
 		kassert(r == kVMFaultRetOK);
 	} else {
-		/* check if page busy here? */
+		kassert(pte_is_hw(pte));
 		/* grab the page from the working set list */
-		file_page = vmp_paddr_to_page(paddr);
+		file_page = pte_hw_get_page(pte);
 		/* we later assume we've got an extra reference */
 		file_page->refcnt++;
 	}
@@ -273,7 +269,7 @@ fault_private(vm_procstate_t *vmps, vaddr_t vaddr, vm_vad_t *vad, pte_t *pte,
 			 * So let's confirm that these assumptions are true.
 			 */
 
-			kassert(page->section == vad->section);
+			kassert(page->section == &vad->section->hdr);
 			kassert(vmp_wsl_find(vmps, vaddr) != NULL);
 			kassert(flags & kVMFaultWrite);
 
@@ -595,7 +591,6 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 	kwaitstatus_t w;
 	vm_vad_t *vad;
 	pte_t *pte;
-	voff_t offset;
 
 	w = ke_wait(&vmps->mutex, "vm_fault:vmps->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
@@ -651,8 +646,25 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 			/* else, we extract the compressed pointer */
 			fpage = (struct vmp_forkpage *)pte_sw_get_addr(pte);
 
-			/* for each fobj, check if its range encompasses fpage,
-			 * when we find the one that does, set fobj to that */
+			/*
+			 * have to find the forkobj within whose range fpage is
+			 * encompassed
+			 */
+			struct vmp_forkobj *iter;
+			fobj = NULL;
+
+			LIST_FOREACH (iter, &vmps->fork_obj_list, list_entry) {
+				if (fpage >= iter->pages &&
+				    iter->pages + iter->npages >= fpage) {
+					fobj = iter;
+					break;
+				}
+			}
+
+			if (fobj == NULL) {
+				kfatal("No fork object found in process"
+				       " for fork page\n");
+			}
 		}
 
 		r = fault_fpage(vmps, vaddr, vad, fobj, fpage, pte, flags, out);
@@ -667,11 +679,10 @@ vm_fault(vm_procstate_t *vmps, vaddr_t vaddr, vm_fault_flags_t flags,
 		/* It's private anonymous memory and it isn't outpaged. */
 		r = fault_private(vmps, vaddr, vad, pte, flags, out);
 	} else {
-		/*
-		 * It must be a vnode/anonymous object page.
-		 */
-
+		/* It must be a vnode/anonymous object page. */
 		kassert(vad->section != NULL);
+		r = fault_section(vmps, vaddr, vad, vad->section, pte, flags,
+		    false, out);
 	}
 
 	ke_mutex_release(&vmps->mutex);

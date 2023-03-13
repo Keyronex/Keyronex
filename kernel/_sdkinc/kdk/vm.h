@@ -198,12 +198,14 @@ struct vmp_forkpage {
 typedef struct vmp_forkobj {
 	/*! Section header. */
 	struct vmp_section_header sechdr;
+	/*! Entry in process fork objects list. */
+	LIST_ENTRY(vmp_forkobj) list_entry;
 	/*! How many pages are in it? */
 	size_t npages;
 	/*! How many pages of it are referenced? */
 	size_t npages_referenced;
 	/*! Pointer to array (in packed kernel memory) of the shared pages */
-	struct vmp_fork_page *pages;
+	struct vmp_forkpage *pages;
 } vmp_forkobj_t;
 
 /*!
@@ -280,6 +282,8 @@ typedef struct vm_procstate {
 	kmutex_t mutex;
 	/*! VAD tree. */
 	RB_HEAD(vm_vad_rbtree, vm_vad) vad_queue;
+	/*! Used fork objects. */
+	LIST_HEAD(, vmp_forkobj) fork_obj_list;
 	/*! VMem allocator state. */
 	vmem_t vmem;
 	/*! Per-port VM state. */
