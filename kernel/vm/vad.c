@@ -10,10 +10,10 @@
 #include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
-RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
+RB_GENERATE(vm_map_entry_rbtree, vm_map_entry, rbtree_entry, vmp_map_entry_cmp);
 
 int
-vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y)
+vmp_map_entry_cmp(vm_map_entry_t *x, vm_map_entry_t *y)
 {
 	/*
 	 * what this actually does is determine whether x's start address is
@@ -31,18 +31,18 @@ vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y)
 		return 0;
 }
 
-vm_vad_t *
-vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr)
+vm_map_entry_t *
+vmp_map_find(vm_map_t *ps, vaddr_t vaddr)
 {
-	vm_vad_t key;
+	vm_map_entry_t key;
 	key.start = vaddr;
-	return RB_FIND(vm_vad_rbtree, &ps->vad_queue, &key);
+	return RB_FIND(vm_map_entry_rbtree, &ps->entry_queue, &key);
 }
 
 int
-vm_section_new_anonymous(vm_procstate_t *vmps, size_t size, vm_section_t **out)
+vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
 {
-	vm_section_t *section = kmem_alloc(sizeof(vm_section_t));
+	vm_object_t *section = kmem_alloc(sizeof(vm_object_t));
 
 	obj_initialise_header(&section->header, kObjTypeSection);
 
@@ -57,16 +57,16 @@ vm_section_new_anonymous(vm_procstate_t *vmps, size_t size, vm_section_t **out)
 }
 
 int
-vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
+vm_map_allocate(vm_map_t *map, vaddr_t *vaddrp, size_t size, bool exact)
 {
-	vm_section_t *section;
+	vm_object_t *section;
 	int r;
 
-	r = vm_section_new_anonymous(vmps, size, &section);
+	r = vm_object_new_anonymous(map, size, &section);
 	kassert(r == 0);
 
-	r = vm_ps_map_section_view(vmps, section, vaddrp, size, 0, kVMAll,
-	    kVMAll, kVADInheritCopy, exact);
+	r = vm_map_object(map, section, vaddrp, size, 0, kVMAll,
+	    kVMAll, kVMInheritCopy, exact);
 
 	obj_direct_release(section);
 
@@ -74,31 +74,31 @@ vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
 }
 
 int
-vm_ps_map_section_view(vm_procstate_t *vmps, vm_section_t *section,
+vm_map_object(vm_map_t *map, vm_object_t *section,
     krx_in krx_out vaddr_t *vaddrp, size_t size, voff_t offset,
     vm_protection_t initial_protection, vm_protection_t max_protection,
-    enum vm_vad_inheritance inheritance, bool exact)
+    enum vm_inheritance inheritance, bool exact)
 {
 	int r;
 	kwaitstatus_t w;
-	vm_vad_t *vad;
+	vm_map_entry_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 
-	w = ke_wait(&vmps->mutex, "map_section_view:vmps->mutex", false, false,
+	w = ke_wait(&map->mutex, "map_section_view:map->mutex", false, false,
 	    -1);
 	kassert(w == kKernWaitStatusOK);
 
-	r = vmem_xalloc(&vmps->vmem, size, 0, 0, 0, addr, 0,
+	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0,
 	    exact ? kVMemExact : 0, &addr);
 	if (r < 0) {
 		kdprintf(
-		    "vm_ps_map_section_view failed at vmem_xalloc with %d\n",
+		    "vm_map_object failed at vmem_xalloc with %d\n",
 		    r);
 	}
 
 	obj_direct_retain(&section->header);
 
-	vad = kmem_alloc(sizeof(vm_vad_t));
+	vad = kmem_alloc(sizeof(vm_map_entry_t));
 	vad->start = (vaddr_t)addr;
 	vad->end = addr + size;
 	vad->offset = offset;
@@ -106,9 +106,9 @@ vm_ps_map_section_view(vm_procstate_t *vmps, vm_section_t *section,
 	vad->protection = initial_protection;
 	vad->section = section;
 
-	RB_INSERT(vm_vad_rbtree, &vmps->vad_queue, vad);
+	RB_INSERT(vm_map_entry_rbtree, &map->entry_queue, vad);
 
-	ke_mutex_release(&vmps->mutex);
+	ke_mutex_release(&map->mutex);
 
 	*vaddrp = addr;
 
@@ -116,17 +116,17 @@ vm_ps_map_section_view(vm_procstate_t *vmps, vm_section_t *section,
 }
 
 int
-vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
+vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 {
-	vm_vad_t *entry, *tmp;
+	vm_map_entry_t *entry, *tmp;
 	vaddr_t end = start + size;
 	kwaitstatus_t w;
 
-	w = ke_wait(&vmps->mutex, "map_section_view:vmps->mutex", false, false,
+	w = ke_wait(&map->mutex, "map_section_view:map->mutex", false, false,
 	    -1);
 	kassert(w == kKernWaitStatusOK);
 
-	RB_FOREACH_SAFE (entry, vm_vad_rbtree, &vmps->vad_queue, tmp) {
+	RB_FOREACH_SAFE (entry, vm_map_entry_rbtree, &map->entry_queue, tmp) {
 		if ((entry->start < start && entry->end <= start) ||
 		    (entry->start >= end))
 			continue;
@@ -134,18 +134,18 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 			int r;
 			ipl_t ipl;
 
-			r = vmem_xfree(&vmps->vmem, entry->start,
+			r = vmem_xfree(&map->vmem, entry->start,
 			    entry->end - entry->start, 0);
 			kassert(r == entry->end - entry->start);
 
-			RB_REMOVE(vm_vad_rbtree, &vmps->vad_queue, entry);
+			RB_REMOVE(vm_map_entry_rbtree, &map->entry_queue, entry);
 
 			ipl = vmp_acquire_pfn_lock();
-			vmp_wsl_remove_range(vmps, entry->start, entry->end);
+			vmp_wsl_remove_range(map, entry->start, entry->end);
 			vmp_release_pfn_lock(ipl);
 
 			obj_direct_release(entry->section);
-			kmem_free(entry, sizeof(vm_vad_t));
+			kmem_free(entry, sizeof(vm_map_entry_t));
 		} else if (entry->start >= start && entry->end <= end) {
 			kfatal("unimplemented deallocate right of vadt\n");
 		} else if (entry->start < start && entry->end < end) {
@@ -153,7 +153,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 		}
 	}
 
-	ke_mutex_release(&vmps->mutex);
+	ke_mutex_release(&map->mutex);
 
 	return 0;
 }

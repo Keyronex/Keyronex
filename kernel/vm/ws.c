@@ -45,68 +45,68 @@ RB_GENERATE(vmp_wsle_rbtree, vmp_wsle, rb_entry, wsle_cmp);
  * page. Doesn't remove the WSLE, that's the job of elsewhere.
  */
 static void
-wsl_dispose(vm_procstate_t *vmps, struct vmp_wsle *wsle)
+wsl_dispose(vm_map_t *map, struct vmp_wsle *wsle)
 {
-	pmap_unenter(vmps, wsle->vaddr);
+	pmap_unenter(map, wsle->vaddr);
 }
 
 void
-vmp_wsl_init(vm_procstate_t *vmps)
+vmp_wsl_init(vm_map_t *map)
 {
-	vm_wsl_t *wsl = &vmps->wsl;
+	vm_wsl_t *wsl = &map->wsl;
 	wsl->count = 0;
 	TAILQ_INIT(&wsl->queue);
 	RB_INIT(&wsl->rbtree);
 }
 
 void
-vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
+vmp_wsl_insert(vm_map_t *map, vaddr_t entry, vm_page_t *page,
     vm_protection_t protection)
 {
 	struct vmp_wsle *wsle = kmem_alloc(sizeof(struct vmp_wsle));
 	wsle->vaddr = entry;
-	TAILQ_INSERT_TAIL(&vmps->wsl.queue, wsle, queue_entry);
-	RB_INSERT(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
-	pmap_enter(vmps, page->address, entry, protection);
-	vmps->wsl.count++;
+	TAILQ_INSERT_TAIL(&map->wsl.queue, wsle, queue_entry);
+	RB_INSERT(vmp_wsle_rbtree, &map->wsl.rbtree, wsle);
+	pmap_enter(map, page->address, entry, protection);
+	map->wsl.count++;
 }
 
 static void
-wsl_remove(vm_procstate_t *vmps, struct vmp_wsle *wsle)
+wsl_remove(vm_map_t *map, struct vmp_wsle *wsle)
 {
-	RB_REMOVE(vmp_wsle_rbtree, &vmps->wsl.rbtree, wsle);
-	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);
-	vmps->wsl.count--;
-	wsl_dispose(vmps, wsle);
+	RB_REMOVE(vmp_wsle_rbtree, &map->wsl.rbtree, wsle);
+	TAILQ_REMOVE(&map->wsl.queue, wsle, queue_entry);
+	map->wsl.count--;
+	wsl_dispose(map, wsle);
 }
 
 void
-vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry)
+vmp_wsl_remove(vm_map_t *map, vaddr_t entry)
 {
 	struct vmp_wsle *wsle, key;
 
 	key.vaddr = entry;
-	wsle = RB_FIND(vmp_wsle_rbtree, &vmps->wsl.rbtree, &key);
+	wsle = RB_FIND(vmp_wsle_rbtree, &map->wsl.rbtree, &key);
 	if (wsle == NULL)
 		kfatal("vmp_wsl_remove: no wsle for virtual address 0x%lx\n",
 		    entry);
 
-	wsl_remove(vmps, wsle);
+	wsl_remove(map, wsle);
 }
 
 void
-vmp_wsl_remove_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
+vmp_wsl_remove_range(vm_map_t *map, vaddr_t start, vaddr_t end)
 {
 	struct vmp_wsle *wsle, *tmp;
 
-	RB_FOREACH_SAFE (wsle, vmp_wsle_rbtree, &vmps->wsl.rbtree, tmp) {
+	RB_FOREACH_SAFE (wsle, vmp_wsle_rbtree, &map->wsl.rbtree, tmp) {
 		if (wsle->vaddr >= start && wsle->vaddr < end)
-			wsl_remove(vmps, wsle);
+			wsl_remove(map, wsle);
 	}
 }
 
 void
-vmp_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n)
+vmp_wsl_trim_n_entries(vm_map_t *map, size_t n)
 {
 	kfatal("Unimplemented\n");
 }

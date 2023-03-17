@@ -36,7 +36,8 @@ typedef struct vattr {
  * (i) interlock
  */
 typedef struct vnode {
-	object_header_t objhdr;
+	/*! (~) */
+	vm_object_t vmobj;
 
 	/*! interlock */
 	kmutex_t interlock;
@@ -46,8 +47,6 @@ typedef struct vnode {
 	/*! (~) type of vnode */
 	vtype_t type;
 
-	/*! (~) section object; one reference held */
-	vm_section_t *section;
 	/*! (i) size of regular file */
 	size_t size;
 

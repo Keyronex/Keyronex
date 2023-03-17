@@ -6,13 +6,6 @@
  * @file vm.h
  * @brief Virtual Memory Manager public interface.
  *
- * Locking
- * -------
- *
- * The general principle: the PFN lock is big and covers everything done from
- * within an object down.
- *
- * The VAD list mutex protects process' trees of VAD lists.
  */
 
 #ifndef KRX_KDK_VM_H
@@ -76,175 +69,132 @@ struct vm_stat {
 enum vm_page_use {
 	/*! The page is on the freelist. */
 	kPageUseFree,
-	/*! The page is mapped in at least one working set. */
-	kPageUseActive,
-	/*! The page is on the modified or standby list. */
-	kPageUseModified,
-	/*! The page is in transition. */
-	kPageUseTransition,
+	/*! The page is used by an anon. */
+	kPageUseAnonymous,
+	/*! The page is used by an object. */
+	kPageUseObject,
 	/*! The page is used by kernel wired memory. */
 	kPageUseWired,
 	/*! The page is used by the VMM directly (wired) */
 	kPageUseVMM,
 };
 
-/*!
- * Physical page frame description. Whole thing (?) locked by the PFN lock.
- */
-typedef struct vm_page {
-	/*! Queue linkage. */
-	STAILQ_ENTRY(vm_page) queue_entry;
-	/*! By how many PTEs is it mapped? */
-	uint16_t reference_count;
-	/*! What is its current use? */
-	enum vm_page_use use : 4;
-	/*! Flags */
-	unsigned
-	    /*! the page (may) have been written to; needs to be laundered */
-	    dirty : 1,
-	    /*! the page is being moved in, or out, of memory */
-	    busy : 1;
-
-	/*! Page's physical address. */
-	paddr_t address;
-
-	union {
-		/*! Virtual page, if ::is_anonymous. */
-		struct vm_vpage *vpage;
-		/*! VNode section, if ::is_vnode */
-		struct vnode *vnode;
-	};
-} vm_page_t;
-
-/*!
- * Virtual page frame for anonymous pages, which are created both for anonymous
- * memory proper as well as for to provide the copy-on-write layer for mapped
- * files mapped copy-on-write.
- *
- * Whole thing (?) locked by the PFN lock.
- */
-typedef struct vm_vpage {
-#if 0
-	/*! mutex, locks most its fields */
-	kmutex_t mutex;
-#endif
-	/*! physical page frame description if resident */
-	vm_page_t *page;
-	/*! swap descriptor, if it's been written */
-	uintptr_t swapdesc;
-	/*!
-	 * How many section objects contain it? Note not 'how many times is it
-	 * mapped into working sets'. That's what vm_page_t tracks. This
-	 * reference count drives the copy-on-write logic.
-	 */
-	size_t refcount;
-} vm_vpage_t;
-
-/*!
- * Working-set list (or WSL). The set of pageable pages resident in a process.
- * (this really needs rewriting to be less space-inefficient)
- * Locked by PFN DB lock currently, in future should be its own mutex.
- */
-typedef struct vm_wsl {
-#if 0
-	/*! Lock on WSL and on page tables of the associated process. */
-	kmutex_t mutex;
-#endif
-	/*! Number of entries in the working set list. */
-	size_t count;
-	/*! RB tree of entries. */
-	RB_HEAD(vmp_wsle_rbtree, vmp_wsle) rbtree;
-	/*! Tailqueue of entries, for FIFO replacement. */
-	TAILQ_HEAD(, vmp_wsle) queue;
-} vm_wsl_t;
-
-/*!
- * Section - an object which can be mapped into a process' address space.
- * Contents mostly locked by the PFN DB lock..
- */
-typedef struct vm_section {
-	object_header_t header;
-
-#if 0
-	/*! object lock */
-	kmutex_t mutex;
-#endif
-
-	/*! size in bytes */
-	size_t size;
-
-	/*! what kind is it? */
-	enum vm_section_kind {
-		kSectionFile,
-		kSectionAnonymous,
-	} kind;
-
-	/*! RB tree of references to vpages (for anonymous) or pages (for file).
-	 */
-	RB_HEAD(vmp_page_ref_rbtree, vmp_page_ref) page_ref_rbtree;
-
-	union {
-		/*! If kind = kSectionAnonymous, the file section we copied, if
-		 * this is a virtual copy of a file section. */
-		struct vm_section *parent;
-		/* If this is a file, a (?non-owning) pointer to the vnode,  */
-		struct vnode *vnode;
-	};
-} vm_section_t;
-
-enum vm_vad_inheritance {
-	/*! Inherit a shared entry (though not necessarily writeable!)
-	 */
-	kVADInheritShared,
-	/*! Inherit a virtual copy. */
-	kVADInheritCopy,
-	/*! Special case for stacks - inherit only current thread's. */
-	kVADInheritStack
+enum vm_page_status {
+	/*! The page is currently wired. */
+	kPageStatusWired,
+	/*! The page is on the active LRU queue. */
+	kPageStatusActive,
+	/*! The page is on the inactive LRU queue. */
+	kPageStatusInactive,
+	/*! The page is being moved to/from memory. */
+	kPageStatusBusy,
 };
 
 /*!
- * Virtual Address Descriptor - a mapping of a section object. Note that
- * copy-on-write is done at the section object level, not here.
+ * Physical page frame description. Whole thing (?) locked by the PFN lock.
  */
-typedef struct vm_vad {
-	/*! Entry in vm_procstate::vad_rbtree */
-	RB_ENTRY(vm_vad) rbtree_entry;
+typedef struct __attribute__((packed)) vm_page {
+	/*! Queue linkage: freelist or LRU queue. */
+	TAILQ_ENTRY(vm_page) queue_entry;
+
+	/*! What is its current use? */
+	enum vm_page_use use : 3;
+	/*! What is its status? */
+	enum vm_page_status status : 2;
+	/*! How many requests are there for it to be wired in-memory? */
+	uint16_t wirecnt;
+	/*! Page's physical address. */
+	paddr_t address : 40;
+
+	union {
+		/*! Virtual page, if ::is_anonymous. */
+		struct vmp_anon *anon;
+		/*! VNode section, if ::is_vnode */
+		struct vm_object *obj;
+	};
+
+	/* Physical-to-Virtual map list */
+	LIST_HEAD(, pv_entry) pv_list;
+} vm_page_t;
+
+enum vm_inheritance {
+	/*! Inherit a shared entry (though not necessarily writeable!)
+	 */
+	kVMInheritShared,
+	/*! Inherit a virtual copy. */
+	kVMInheritCopy,
+	/*! Special case for stacks - inherit only current thread's. */
+	kVMInheritStack
+};
+
+struct vm_amap {
+	struct vm_amap_chunk **chunks; /**< sparse array pointers to chunks */
+	size_t curnchunk;	       /**< number of slots in chunks */
+};
+
+/*!
+ * An entry in an address space map.
+ *
+ * These can contain either:
+ * 1. A VM object only. (Used by mmap() with MAP_SHARED).
+ * 2. An amap only. (Used by mmap() with MAP_ANONYMOUS)
+ * 3. Both an amap and a VM object, with the anonymous memory "superimposed"
+ *    over the VM object. (Used by mmap() with MAP_PRIVATE).
+ *
+ * Note that the VM object will always be a vnode, never an anonymous VM object.
+ * Those are mapped by copying references to the vm_anons instead.
+ */
+typedef struct vm_map_entry {
+	/*! Entry in vm_map::vad_rbtree */
+	RB_ENTRY(vm_map_entry) rbtree_entry;
 
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
-	/*! Offset into section object. */
+	/*! Offset into VM object. */
 	voff_t offset;
 
-	/*! Section object. */
-	vm_section_t *section;
+	/*! VM object, if any. */
+	struct vm_object *object;
+	/*! Anonymous memory, if any. */
+	struct vm_amap amap;
 
 	/*! Inheritance attributes for fork. */
-	enum vm_vad_inheritance inheritance;
-
-	/*!
-	 * Current protection of the region.
-	 */
+	enum vm_inheritance inheritance;
+	/*! Current protection of the region. */
 	vm_protection_t protection;
-
-	/*!
-	 * Maximum protection of the region. Set at creation.
-	 */
+	/*! Maximum protection of the region. Set at creation. */
 	vm_protection_t max_protection;
-} vm_vad_t;
+} vm_map_entry_t;
 
 /*! Per-process memory manager state. */
-typedef struct vm_procstate {
-	/*! Process' working-set list. */
-	vm_wsl_t wsl;
-	/*! VAD queue lock. */
+typedef struct vm_map {
+	/*! Mapping tree lock lock. */
 	kmutex_t mutex;
-	/*! VAD tree. */
-	RB_HEAD(vm_vad_rbtree, vm_vad) vad_queue;
+	/*! Map entry tree. */
+	RB_HEAD(vm_map_entry_rbtree, vm_map_entry) entry_queue;
 	/*! VMem allocator state. */
 	vmem_t vmem;
 	/*! Per-port VM state. */
-	struct vm_ps_md md;
-} vm_procstate_t;
+	struct vm_map_md md;
+} vm_map_t;
+
+RB_HEAD(vmp_objpage_rbtree, vmp_objpage);
+
+/*!
+ * A mappable VM object. Either vnode or anonymous - determined by object header
+ * type.
+ *
+ * Note that in vnodes, this is embedded in the vnode structure (as its first
+ * element.)
+ */
+typedef struct vm_object {
+	object_header_t objhdr;
+	kmutex_t mutex;
+	union {
+		struct vm_amap amap;
+		struct vmp_objpage_rbtree page_rbtree;
+	};
+} vm_object_t;
 
 /*!
  * Memory descriptor list.
@@ -273,7 +223,7 @@ void vmp_kernel_init(void);
  *
  * Reference count of page is set to 1.
  *
- * @param[optional] vmps Process to charge for the allocation.
+ * @param[optional] map Process to charge for the allocation.
  * @param must Whether the allocaton must be served.
  * @param[out] out Allocated page's PFN db entry will be written here.
  * @param use What the page will be used for.
@@ -283,7 +233,7 @@ void vmp_kernel_init(void);
  * @retval 0 Page allocated.
  * @retval 1 Low memory, drop locks and wait on the low-memory event.
  */
-int vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
+int vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use,
     vm_page_t **out);
 
 /*!
@@ -293,7 +243,7 @@ int vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
  *
  * @pre PFN database lock held.
  */
-void vmp_page_free(vm_procstate_t *ps, vm_page_t *page);
+void vmp_page_free(vm_map_t *ps, vm_page_t *page);
 
 /*! @brief Get the PFN database entry for a physical page address. */
 vm_page_t *vmp_paddr_to_page(paddr_t paddr);
@@ -326,35 +276,34 @@ vaddr_t vm_kalloc(size_t npages, vmem_flag_t flags);
 void vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags);
 
 /*! @brief Activate a process' virtual address space. */
-void vm_ps_activate(vm_procstate_t *vmps);
+void vm_map_activate(vm_map_t *map);
 
 /*! @brief Handle a page fault. */
-vm_fault_return_t vm_fault(vm_procstate_t *vmps, vaddr_t vaddr,
-    vm_fault_flags_t flags, vm_page_t **out);
+vm_fault_return_t vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags,
+    vm_page_t **out);
 
 /*! @brief Allocate anonymous memory in a process. */
-int vm_ps_allocate(vm_procstate_t *ps, vaddr_t *vaddrp, size_t size,
-    bool exact);
+int vm_map_allocate(vm_map_t *ps, vaddr_t *vaddrp, size_t size, bool exact);
 
 /*! @brief Deallocate a range of virtual address space in a process. */
-int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
+int vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size);
 
 /*!
- * @brief Map a view of a section into a process.
+ * @brief Map a view of an object into a process.
  */
-int vm_ps_map_section_view(vm_procstate_t *ps, vm_section_t *section,
-    krx_in krx_out vaddr_t *vaddrp, size_t size, voff_t offset,
-    vm_protection_t initial_protection, vm_protection_t max_protection,
-    enum vm_vad_inheritance inheritance, bool exact);
+int vm_map_object(vm_map_t *ps, void *vmobject, krx_in krx_out vaddr_t *vaddrp,
+    size_t size, voff_t offset, vm_protection_t initial_protection,
+    vm_protection_t max_protection, enum vm_inheritance inheritance,
+    bool exact);
 
 /*!
- * @brief Forks a process' virtual address space
+ * @brief Forks a virtual address space
  *
  * This function forks a process' virtual address space according to POSIX
  * semantics. It should be called only from the context of a thread of that
- * process. The existing process' virtual memory process support structure \p
- * vmps is used as a template to fill entries in the new process' VMPS, \p
- * vmps_new, which should have been initialized with `vm_ps_init()`.
+ * process. The existing process' virtual address space structure
+ * \p map is used as a template to fill entries in the new process' map,
+ * \p map_new, which should have been initialized with `vm_map_init()`.
  *
  * VADs are established in the new VMPS which either share or virtual copy
  * (according to the VAD inheritance attributes) the section referred to by the
@@ -365,22 +314,19 @@ int vm_ps_map_section_view(vm_procstate_t *ps, vm_section_t *section,
  * Parts of the old process' address space which have been virtual-copied will
  * be mapped read-only if they are currently mapped read-write.
  *
- * @pre The VAD queue lock of both \p vmps and \p vmps_new must be held, and
+ * @pre The map lock of both \p map and \p map_new must be held, and
  * the PFN database lock must not be held.
- * @post The VAD queue locks and the PFN database locks are not held.
+ * @post The map locks are released.
  *
- * @param vmps The virtual memory process support structure of the existing
- * process
- * @param vmps_new The virtual memory process support structure of the new
- * process
+ * @param map The virtual address space structure of the existing process.
+ * @param map_new The virtual address space structure of the new process.
  *
  * @return 0 on success, negative error code on failure
  */
-int vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new);
+int vm_map_fork(vm_map_t *map, vm_map_t *map_new);
 
-/*! @brief Allocate a new anonymous section and charge \p vmps for it.*/
-int vm_section_new_anonymous(vm_procstate_t *vmps, size_t size,
-    vm_section_t **out);
+/*! @brief Allocate a new anonymous object and charge \p map for it.*/
+int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out);
 
 extern kspinlock_t vmp_pfn_lock;
 

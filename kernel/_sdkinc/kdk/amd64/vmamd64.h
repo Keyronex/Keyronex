@@ -39,7 +39,7 @@
 #define P2V(addr) ((void*)(((char *)(addr)) + HHDM_BASE))
 #define V2P(addr) ((void*)(((char *)(addr)) - HHDM_BASE))
 
-struct vm_ps_md {
+struct vm_map_md {
 	paddr_t cr3;
 };
 

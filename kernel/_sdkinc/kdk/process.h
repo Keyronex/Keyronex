@@ -29,7 +29,7 @@ typedef struct eprocess {
 	/*! (~) Unique process identifier. */
 	uint32_t id;
 	/*! Virtual memory state. */
-	vm_procstate_t vmps;
+	vm_map_t map;
 	/*! (~) Portable Applications Subsystem process. */
 	void *pas_proc;
 

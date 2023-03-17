@@ -6,33 +6,48 @@
 #ifndef KRX_VM_VM_INTERNAL_H
 #define KRX_VM_VM_INTERNAL_H
 
+#include "kdk/kernel.h"
 #include "kdk/vm.h"
 
+/*! How many pages are in an amap chunk? */
+#define kAMapChunkNPages 32
+
 /*!
- *
+ * Page within a VM object (i.e. a vnode)
  */
-struct vmp_page_ref {
-	/*! Linkage in vm_section::page_ref_rbtree */
-	RB_ENTRY(vmp_page_ref) rbtree_entry;
-	/*! Where in the section does it belong to? */
+struct vmp_objpage {
+	/*! Linkage in vm_object::page_ref_rbtree */
+	RB_ENTRY(vmp_objpage) rbtree_entry;
+	/*! Where in the object does it belong to? */
 	size_t page_index;
+	/*! Underlying page.*/
+	vm_page_t *page;
+};
+
+/* Entry in a vm_amap_t. Locked by the vm_object's lock */
+struct vm_amap_chunk {
+	struct vmp_anon *anon[kAMapChunkNPages];
+};
+
+/*! An anonymous page. */
+struct vmp_anon {
+	kmutex_t mutex;
 	union {
-		/*! Page reference (used by file sections) */
 		vm_page_t *page;
-		/*! Vpage reference (used by anonymous sections)*/
-		vm_vpage_t *vpage;
+		uintptr_t drumslot;
 	};
+	unsigned refcnt : 32, resident : 1;
 };
 
 /*! @brief Enter a page mapping. */
-void pmap_enter(vm_procstate_t *vmps, paddr_t phys, vaddr_t virt,
+void pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt,
     vm_protection_t prot);
 
 /*! @brief Remove a page mapping, returning the page previously mapped. */
-vm_page_t *pmap_unenter(vm_procstate_t *vmps, vaddr_t vaddr);
+vm_page_t *pmap_unenter(vm_map_t *map, vaddr_t vaddr);
 
 /*! @brief Translate virtual address to physical. */
-paddr_t pmap_trans(vm_procstate_t *vmps, vaddr_t virt);
+paddr_t pmap_trans(vm_map_t *map, vaddr_t virt);
 
 /*! @brief Locally invalidate a mapping. */
 void pmap_invlpg(vaddr_t vaddr);
@@ -40,86 +55,38 @@ void pmap_invlpg(vaddr_t vaddr);
 /*!
  * @brief Reduce protections on all mappings within some range of memory.
  */
-void pmap_protect_range(vm_procstate_t *vmps, vaddr_t base, vaddr_t limit);
+void pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t limit);
 
 /*!
  * @brief Check if a page is present in a process.
  * @param paddr if this is non-NULL and the page is present, the page's physical
  * address will be written here.
  */
-bool pmap_is_present(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
+bool pmap_is_present(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
 
 /*!
  * @brief Check if a page is writeably mapped in a process.
  * @param paddr if this is non-NULL and the page is writeably mapped, the page's
  * physical address will be written here.
  */
-bool pmap_is_writeable(vm_procstate_t *vmps, vaddr_t vaddr, paddr_t *paddr);
-
-/*! @brief Initialise a process' working set list. */
-void vmp_wsl_init(vm_procstate_t *vmps);
+bool pmap_is_writeable(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
 
 /*!
- * @brief Adds a mapping to the working set list.
+ * @brief Find the map entry in a process to which a virtual address belongs.
  *
- * This function adds a mapping entry to to the working set list.
- * If the working set list is below its maximal size, and there is no low-memory
- * condition, it will be appended.
- * Otherwise, if the working set list is at its maximum, it will try to expand
- * its size and add the entry.
- * If the expansion fails, the function will dispose of the least recently added
- * entry in the working set list and add the new entry in its place.
- * The provided page is mapped in the process' virtual address space with the
- * requested protection.
- *
- * @param ws Pointer to the process vm state.
- * @param entry The virtual address entry to add to the working set list.
- * @param page The page to which \p entry should be set to point.
- * @param protection The level of memory protection to be imposed on the
- * mapping.
+ * @pre Map mutex locked.
  */
-void vmp_wsl_insert(vm_procstate_t *vmps, vaddr_t entry, vm_page_t *page,
-    vm_protection_t protection);
+vm_map_entry_t *vmp_map_find(vm_map_t *ps, vaddr_t vaddr);
 
-/*!
- * @brief Removes a mapping from a working set list.
- *
- * This functions removes a mapping entry from a working set list.
- * The physical mapping will be abolished, a TLB shootdown issued if necessary,
- * and the page will have its reference count dropped.
- *
- */
-void vmp_wsl_remove(vm_procstate_t *vmps, vaddr_t entry);
-
-/*! @brief Remove any mappings within a range from a working set list. */
-void vmp_wsl_remove_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end);
-
-/**
- * @brief Trims a specified number of pages from a working set list.
- *
- * This function removes a specified number of pages, starting with the least
- * recently used, from a working set list. If the number of entries to be
- * trimmed is equal to the current size of the working set list, then all the
- * entries will be disposed.
- *
- * @param ws Pointer to the process vm state.
- * @param n Number of entries to be trimmed.
- */
-void vmp_wsl_trim_n_entries(vm_procstate_t *vmps, size_t n);
-
-/*!
- * @brief Find the VAD in a process to which a virtual address belongs.
- *
- * @pre VAD mutex locked.
- */
-vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
-
-/*! @brief Comparator function for VAD rb-tree. */
-int vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
+/*! @brief Comparator function for map entry rb-tree. */
+int vmp_map_entry_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
 /*! @brief Comparator function for page ref rb-tree. */
-int vmp_page_ref_cmp(struct vmp_page_ref *x, struct vmp_page_ref *y);
+int vmp_objpage_cmp(struct vmp_objpage *x, struct vmp_objpage *y);
+/*! @brief Comparator function for anon rb-tree. */
+int vmp_anon_cmp(struct vmp_anon *x, struct vmp_anon *y);
 
-RB_PROTOTYPE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
-RB_PROTOTYPE(vmp_page_ref_rbtree, vmp_page_ref, rbtree_entry, vmp_page_ref_cmp);
+RB_PROTOTYPE(vm_map_entry_rbtree, vm_map_entry, rbtree_entry,
+    vmp_map_entry_cmp);
+RB_PROTOTYPE(vmp_objpage_rbtree, vmp_objpage, rbtree_entry, vmp_objpage_cmp);
 
 #endif /* KRX_VM_VM_INTERNAL_H */

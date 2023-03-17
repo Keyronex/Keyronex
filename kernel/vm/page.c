@@ -88,7 +88,7 @@ vmp_paddr_to_page(paddr_t paddr)
 }
 
 int
-vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
+vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use,
     vm_page_t **out)
 {
 	vm_page_t *page = STAILQ_FIRST(&free_list);
@@ -109,7 +109,7 @@ vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
 }
 
 void
-vmp_page_free(vm_procstate_t *ps, vm_page_t *page)
+vmp_page_free(vm_map_t *ps, vm_page_t *page)
 {
 	STAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
@@ -129,7 +129,7 @@ vm_translate(vaddr_t vaddr)
 	} else {
 		paddr_t r;
 		kassert(vaddr > HHDM_BASE);
-		r = pmap_trans(&kernel_process.vmps, vaddr);
+		r = pmap_trans(&kernel_process.map, vaddr);
 		kassert(r != 0);
 		return r;
 	}
@@ -151,7 +151,7 @@ vm_mdl_buffer_alloc(size_t npages)
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->npages = npages;
 	for (unsigned i = 0; i < npages; i++) {
-		int r = vmp_page_alloc(&kernel_process.vmps, true,
+		int r = vmp_page_alloc(&kernel_process.map, true,
 		    kPageUseWired, &mdl->pages[i]);
 		kassert(r == 0);
 	}
