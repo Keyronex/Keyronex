@@ -33,18 +33,6 @@ static vm_fault_return_t fault_vnode(vm_map_t *map, vaddr_t vaddr,
 
 RB_GENERATE(vmp_objpage_rbtree, vmp_objpage, rbtree_entry, vmp_objpage_cmp);
 
-struct vmp_amap_l3 {
-	struct vmp_amap_l2 *entries[512];
-};
-
-struct vmp_amap_l2 {
-	struct vmp_amap_l1 *entries[512];
-};
-
-struct vmp_amap_l1 {
-	struct vmp_anon *entries[512];
-};
-
 int
 vmp_objpage_cmp(struct vmp_objpage *x, struct vmp_objpage *y)
 {
@@ -420,7 +408,7 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 
 		return kVMFaultRetRetry;
 	} else if (objpage->page->status == kPageStatusBusy) {
-		kfatal("wait for busy page!\n");
+		kfatal("Unlock everything & wait for busy page!\n");
 	} else {
 		vm_page_t *page = objpage->page;
 

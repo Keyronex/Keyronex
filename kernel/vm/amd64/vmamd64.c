@@ -12,6 +12,7 @@
 
 #include <stdatomic.h>
 
+#include "bsdqueue/queue.h"
 #include "kdk/amd64/vmamd64.h"
 #include "kdk/kmem.h"
 #include "kdk/machdep.h"
@@ -289,13 +290,21 @@ pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
 	pmap_enter_common(map, phys, virt, prot);
 	ke_spinlock_release(&map->md.lock, ipl);
 }
+
 void
 pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
     vm_protection_t prot)
 {
-	ipl_t ipl = ke_spinlock_acquire(&map->md.lock);
+	ipl_t ipl;
 	struct pv_entry *pve;
+
+	pve = kmem_alloc(sizeof(*pve));
+	pve->map = map;
+	pve->vaddr = virt;
+
+	ipl = ke_spinlock_acquire(&map->md.lock);
 	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot);
+	LIST_INSERT_HEAD(&page->pv_list, pve, list_entry);
 	ke_spinlock_release(&map->md.lock, ipl);
 }
 
@@ -323,7 +332,7 @@ pmap_unenter(vm_map_t *map, vaddr_t vaddr)
 }
 
 int
-pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **page, vaddr_t virt)
+pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 {
 	paddr_t paddr;
 	pte_t *pte;
@@ -334,11 +343,30 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **page, vaddr_t virt)
 	pte = pmap_fully_descend(map, virt);
 
 	if (pte && *pte != 0x0) {
+		vm_page_t *page;
+
 		paddr = (paddr_t)pte_get_addr(*pte);
 		*pte = 0x0;
-		if (page)
-			*page = vmp_paddr_to_page(paddr);
-		/* ... free the PV entry thing */
+
+		page = vmp_paddr_to_page(paddr);
+		if (page) {
+			struct pv_entry *pve;
+			bool found;
+
+			LIST_FOREACH (pve, &page->pv_list, list_entry) {
+				if (pve->map == map && pve->vaddr == virt) {
+					found = true;
+					LIST_REMOVE(pve, list_entry);
+					kmem_free(pve, sizeof(*pve));
+				}
+			}
+
+			/* should always be a PV entry for pageable mappings */
+			kassert(found);
+		}
+
+		if (out)
+			*out = page;
 	}
 
 	ke_spinlock_release(&map->md.lock, ipl);

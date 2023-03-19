@@ -32,7 +32,23 @@ struct vmp_anon {
 		uintptr_t drumslot;
 	};
 	voff_t offset;
-	unsigned refcnt : 32, resident : 1;
+	uint32_t refcnt;
+	bool resident : 1;
+};
+
+/*! vm_amap level 3 table. */
+struct vmp_amap_l3 {
+	struct vmp_amap_l2 *entries[512];
+};
+
+/*! vm_amap level 2 table. */
+struct vmp_amap_l2 {
+	struct vmp_amap_l1 *entries[512];
+};
+
+/*! vm_amap level 1 table. */
+struct vmp_amap_l1 {
+	struct vmp_anon *entries[512];
 };
 
 /*! @brief Enter a page mapping. */
