@@ -12,12 +12,12 @@
 
 #include <stdatomic.h>
 
+#include "kdk/kmem.h"
 #include "kdk/machdep.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 #include "machdep/amd64/amd64.h"
 #include "vm/vm_internal.h"
-#include "kdk/kmem.h"
 
 enum {
 	kPML4Shift = 0x39,
@@ -60,7 +60,7 @@ pmap_init(void)
 			vm_page_t *page;
 			vmp_page_alloc(&kernel_process.map, true, kPageUseVMM,
 			    &page);
-			pte_set(&pml4[i], page->address, kMMUDefaultProt);
+			pte_set(&pml4[i], VM_PAGE_PADDR(page), kMMUDefaultProt);
 		}
 	}
 }
@@ -149,7 +149,7 @@ pmap_descend(vm_map_t *map, uint64_t *table, size_t index, bool alloc,
 	} else if (alloc) {
 		vm_page_t *page;
 		vmp_page_alloc(map, true, kPageUseVMM, &page);
-		addr = (uint64_t *)page->address;
+		addr = (uint64_t *)VM_PAGE_PADDR(page);
 		pte_set(entry, (paddr_t)addr, mmuprot);
 	}
 
@@ -230,8 +230,7 @@ pmap_trans(vm_map_t *map, vaddr_t virt)
 }
 
 void
-pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt,
-    vm_protection_t prot)
+pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
 {
 	uintptr_t virta = (uintptr_t)virt;
 	int pml4i = ((virta >> 39) & 0x1FF);
@@ -349,7 +348,7 @@ vm_map_md_init(vm_map_t *map)
 {
 	vm_page_t *page;
 	vmp_page_alloc(map, true, kPageUseVMM, &page);
-	map->md.cr3 = page->address;
+	map->md.cr3 = VM_PAGE_PADDR(page);
 	for (int i = 255; i < 512; i++) {
 		uint64_t *pml4 = P2V(map->md.cr3);
 		uint64_t *kpml4 = P2V(kernel_process.map.md.cr3);

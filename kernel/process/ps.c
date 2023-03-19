@@ -18,7 +18,6 @@ init_common(eprocess_t *process)
 {
 	ke_mutex_init(&process->map.mutex);
 	RB_INIT(&process->map.entry_queue);
-	vmp_wsl_init(&process->map);
 }
 
 void

@@ -93,18 +93,20 @@ enum vm_page_status {
 /*!
  * Physical page frame description. Whole thing (?) locked by the PFN lock.
  */
-typedef struct __attribute__((packed)) vm_page {
+typedef struct vm_page {
 	/*! Queue linkage: freelist or LRU queue. */
 	TAILQ_ENTRY(vm_page) queue_entry;
 
+	/*! Page's physical page frame number. */
+	paddr_t pfn : 40;
 	/*! What is its current use? */
 	enum vm_page_use use : 3;
-	/*! What is its status? */
+	/*! What is its status, if use is anonymous/object? */
 	enum vm_page_status status : 2;
+	/* Padding */
+	uint8_t padding : 3;
 	/*! How many requests are there for it to be wired in-memory? */
 	uint16_t wirecnt;
-	/*! Page's physical address. */
-	paddr_t address : 40;
 
 	union {
 		/*! Virtual page, if ::is_anonymous. */
@@ -118,8 +120,7 @@ typedef struct __attribute__((packed)) vm_page {
 } vm_page_t;
 
 enum vm_inheritance {
-	/*! Inherit a shared entry (though not necessarily writeable!)
-	 */
+	/*! Inherit a shared entry (though not necessarily writeable!) */
 	kVMInheritShared,
 	/*! Inherit a virtual copy. */
 	kVMInheritCopy,
@@ -181,14 +182,14 @@ typedef struct vm_map {
 RB_HEAD(vmp_objpage_rbtree, vmp_objpage);
 
 /*!
- * A mappable VM object. Either vnode or anonymous - determined by object header
- * type.
+ * A mappable VM object. Either regular or anonymous.
  *
  * Note that in vnodes, this is embedded in the vnode structure (as its first
  * element.)
  */
 typedef struct vm_object {
 	object_header_t objhdr;
+	bool is_anonymous;
 	kmutex_t mutex;
 	union {
 		struct vm_amap amap;
@@ -221,7 +222,7 @@ void vmp_kernel_init(void);
 /*!
  * @brief Allocate a physical page.
  *
- * Reference count of page is set to 1.
+ * Page's wire count is initially set to one, and status to kPageStatusWired.
  *
  * @param[optional] map Process to charge for the allocation.
  * @param must Whether the allocaton must be served.
@@ -269,6 +270,9 @@ void vm_mdl_map(vm_mdl_t *mdl, void **out);
 /*! @brief Memcpy out of an MDL. */
 void vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n);
 
+/*! @brief Get the physical address of an offset in an MDL. */
+paddr_t vm_mdl_paddr(vm_mdl_t *mdl, voff_t off);
+
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, vmem_flag_t flags);
 
@@ -291,10 +295,10 @@ int vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size);
 /*!
  * @brief Map a view of an object into a process.
  */
-int vm_map_object(vm_map_t *ps, void *vmobject, krx_in krx_out vaddr_t *vaddrp,
+int vm_map_object(vm_map_t *ps, vm_object_t *object, krx_inout vaddr_t *vaddrp,
     size_t size, voff_t offset, vm_protection_t initial_protection,
-    vm_protection_t max_protection, enum vm_inheritance inheritance,
-    bool exact);
+    vm_protection_t max_protection, enum vm_inheritance inheritance, bool exact,
+    bool copy);
 
 /*!
  * @brief Forks a virtual address space

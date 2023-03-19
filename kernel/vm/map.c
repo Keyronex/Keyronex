@@ -39,6 +39,7 @@ vmp_map_find(vm_map_t *ps, vaddr_t vaddr)
 	return RB_FIND(vm_map_entry_rbtree, &ps->entry_queue, &key);
 }
 
+#if 0
 int
 vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
 {
@@ -55,29 +56,20 @@ vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
 
 	return 0;
 }
+#endif
 
 int
 vm_map_allocate(vm_map_t *map, vaddr_t *vaddrp, size_t size, bool exact)
 {
-	vm_object_t *section;
-	int r;
-
-	r = vm_object_new_anonymous(map, size, &section);
-	kassert(r == 0);
-
-	r = vm_map_object(map, section, vaddrp, size, 0, kVMAll,
-	    kVMAll, kVMInheritCopy, exact);
-
-	obj_direct_release(section);
-
-	return r;
+	return vm_map_object(map, NULL, vaddrp, size, 0, kVMAll, kVMAll,
+	    kVMInheritCopy, exact, false);
 }
 
 int
-vm_map_object(vm_map_t *map, vm_object_t *section,
-    krx_in krx_out vaddr_t *vaddrp, size_t size, voff_t offset,
-    vm_protection_t initial_protection, vm_protection_t max_protection,
-    enum vm_inheritance inheritance, bool exact)
+vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
+    size_t size, voff_t offset, vm_protection_t initial_protection,
+    vm_protection_t max_protection, enum vm_inheritance inheritance, bool exact,
+    bool copy)
 {
 	int r;
 	kwaitstatus_t w;
@@ -91,12 +83,10 @@ vm_map_object(vm_map_t *map, vm_object_t *section,
 	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0,
 	    exact ? kVMemExact : 0, &addr);
 	if (r < 0) {
-		kdprintf(
-		    "vm_map_object failed at vmem_xalloc with %d\n",
-		    r);
+		kdprintf("vm_map_object failed at vmem_xalloc with %d\n", r);
 	}
 
-	obj_direct_retain(&section->header);
+	obj_direct_retain(object);
 
 	vad = kmem_alloc(sizeof(vm_map_entry_t));
 	vad->start = (vaddr_t)addr;
@@ -104,7 +94,13 @@ vm_map_object(vm_map_t *map, vm_object_t *section,
 	vad->offset = offset;
 	vad->inheritance = inheritance;
 	vad->protection = initial_protection;
-	vad->section = section;
+	if (copy) {
+		if (object->is_anonymous)
+			kfatal("implement this by copying amap");
+
+	} else {
+		vad->object = object;
+	}
 
 	RB_INSERT(vm_map_entry_rbtree, &map->entry_queue, vad);
 
@@ -138,13 +134,19 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			    entry->end - entry->start, 0);
 			kassert(r == entry->end - entry->start);
 
-			RB_REMOVE(vm_map_entry_rbtree, &map->entry_queue, entry);
+			RB_REMOVE(vm_map_entry_rbtree, &map->entry_queue,
+			    entry);
 
+#if 0
 			ipl = vmp_acquire_pfn_lock();
 			vmp_wsl_remove_range(map, entry->start, entry->end);
 			vmp_release_pfn_lock(ipl);
 
 			obj_direct_release(entry->section);
+#else
+			kfatal("implement\n");
+#endif
+
 			kmem_free(entry, sizeof(vm_map_entry_t));
 		} else if (entry->start >= start && entry->end <= end) {
 			kfatal("unimplemented deallocate right of vadt\n");

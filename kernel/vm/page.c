@@ -21,13 +21,13 @@ struct vmp_pregion {
 	vm_page_t pages[0];
 };
 
-typedef STAILQ_HEAD(, vm_page) page_queue_t;
+typedef TAILQ_HEAD(, vm_page) page_queue_t;
 
 struct vm_stat vmstat;
 static TAILQ_HEAD(, vmp_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
     pregion_queue);
 kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
-static page_queue_t free_list = STAILQ_HEAD_INITIALIZER(free_list);
+static page_queue_t free_list = TAILQ_HEAD_INITIALIZER(free_list);
 
 void
 vmp_region_add(paddr_t base, size_t length)
@@ -51,19 +51,22 @@ vmp_region_add(paddr_t base, size_t length)
 
 	/* initialise pages */
 	for (b = 0; b < bm->npages; b++) {
-		bm->pages[b].address = bm->base + PGSIZE * b;
-		bm->pages[b].vnode = NULL;
+		bm->pages[b].pfn = (bm->base + PGSIZE * b) >> 12;
+		bm->pages[b].anon = NULL;
+		LIST_INIT(&bm->pages[b].pv_list);
 	}
 
 	/* mark off the pages used */
 	for (b = 0; b < used / PGSIZE; b++) {
 		bm->pages[b].use = kPageUseVMM;
+		bm->pages[b].wirecnt = 1;
 	}
 
 	/* now zero the remainder */
 	for (; b < bm->npages; b++) {
 		bm->pages[b].use = kPageUseFree;
-		STAILQ_INSERT_TAIL(&free_list, &bm->pages[b], queue_entry);
+		bm->pages[b].wirecnt = 0;
+		TAILQ_INSERT_TAIL(&free_list, &bm->pages[b], queue_entry);
 	}
 
 	vmstat.npfndb += used / PGSIZE;
@@ -88,22 +91,21 @@ vmp_paddr_to_page(paddr_t paddr)
 }
 
 int
-vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use,
-    vm_page_t **out)
+vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
 {
-	vm_page_t *page = STAILQ_FIRST(&free_list);
+	vm_page_t *page = TAILQ_FIRST(&free_list);
 	kassert(page);
-	STAILQ_REMOVE_HEAD(&free_list, queue_entry);
+	TAILQ_REMOVE(&free_list, page, queue_entry);
 
-	kassert(page->reference_count == 0);
+	kassert(page->wirecnt == 0);
 	vmstat.nfree--;
 
 	page->use = use;
-	page->reference_count = 1;
+	page->wirecnt = 1;
 
 	*out = page;
 
-	memset(P2V(page->address), 0x0, PGSIZE);
+	memset(VM_PAGE_DIRECT_MAP_ADDR(page), 0x0, PGSIZE);
 
 	return 0;
 }
@@ -111,14 +113,15 @@ vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use,
 void
 vmp_page_free(vm_map_t *ps, vm_page_t *page)
 {
-	STAILQ_INSERT_HEAD(&free_list, page, queue_entry);
+	TAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
 }
 
 void
 vmp_page_copy(vm_page_t *from, vm_page_t *to)
 {
-	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
+	memcpy(VM_PAGE_DIRECT_MAP_ADDR(to), VM_PAGE_DIRECT_MAP_ADDR(from),
+	    PGSIZE);
 }
 
 paddr_t
@@ -151,8 +154,8 @@ vm_mdl_buffer_alloc(size_t npages)
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->npages = npages;
 	for (unsigned i = 0; i < npages; i++) {
-		int r = vmp_page_alloc(&kernel_process.map, true,
-		    kPageUseWired, &mdl->pages[i]);
+		int r = vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
+		    &mdl->pages[i]);
 		kassert(r == 0);
 	}
 	return mdl;
@@ -162,7 +165,7 @@ void
 vm_mdl_map(vm_mdl_t *mdl, void **out)
 {
 	kassert(mdl->npages == 1);
-	*out = (void *)P2V(mdl->pages[0]->address);
+	*out = VM_PAGE_DIRECT_MAP_ADDR(mdl->pages[0]);
 }
 
 void
@@ -185,9 +188,16 @@ vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n)
 		page = mdl->pages[iPage];
 
 		memcpy(dest + (iPage - firstpage) * PGSIZE,
-		    P2V(page->address) + pageoff, tocopy);
+		    VM_PAGE_DIRECT_MAP_ADDR(page) + pageoff, tocopy);
 
 		n -= tocopy;
 		pageoff = 0;
 	}
+}
+
+paddr_t
+vm_mdl_paddr(vm_mdl_t *mdl, voff_t offset)
+{
+	kassert(offset % PGSIZE == 0);
+	return VM_PAGE_PADDR(mdl->pages[offset / PGSIZE]);
 }

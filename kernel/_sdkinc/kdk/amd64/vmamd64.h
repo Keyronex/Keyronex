@@ -36,8 +36,11 @@
 /*! Size of a user program's stack - anonymous memory. */
 #define USER_STACK_SIZE PGSIZE * 32
 
-#define P2V(addr) ((void*)(((char *)(addr)) + HHDM_BASE))
-#define V2P(addr) ((void*)(((char *)(addr)) - HHDM_BASE))
+#define P2V(addr) ((void *)(((char *)(addr)) + HHDM_BASE))
+#define V2P(addr) ((void *)(((char *)(addr)) - HHDM_BASE))
+
+#define VM_PAGE_PADDR(PAGE) ((uint64_t)((PAGE)->pfn) << 12)
+#define VM_PAGE_DIRECT_MAP_ADDR(PAGE) (P2V(VM_PAGE_PADDR(PAGE)))
 
 struct vm_map_md {
 	paddr_t cr3;

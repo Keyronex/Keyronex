@@ -39,7 +39,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		vm_page_t *page;
 		vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
 		    &page);
-		pmap_enter(&kernel_process.map, page->address,
+		pmap_enter(&kernel_process.map, VM_PAGE_PADDR(page),
 		    (vaddr_t)*out + i, kVMAll);
 	}
 
@@ -73,8 +73,8 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		vm_page_t *page;
 		page = pmap_unenter(&kernel_process.map, (vaddr_t)addr + i);
 		pmap_invlpg(addr + i);
-		kassert(page->reference_count == 1);
-		page->reference_count = 0;
+		kassert(page->wirecnt == 1);
+		page->wirecnt = 0;
 		vmp_page_free(&kernel_process.map, page);
 	}
 

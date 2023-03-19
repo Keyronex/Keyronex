@@ -4,6 +4,7 @@
  */
 
 #include "bsdqueue/queue.h"
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/process.h"
@@ -41,7 +42,8 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	if (!exchangeFeatures(VIRTIO_BLK_F_SEG_MAX)) {
 		DKDevLog(this, "Feature exchange failed.\n");
-		for (;;) ;
+		for (;;)
+			;
 		return;
 	}
 
@@ -68,7 +70,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	vm_page_t *page;
 
 	vmp_page_alloc(&kernel_process.map, true, kPageUseWired, &page);
-	vaddr_t addr = (vaddr_t)P2V(page->address);
+	vaddr_t addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(page);
 	for (int i = 0; i < ROUNDUP(io_queue.length, 3) / 3; i++) {
 		vioblk_request *req = (vioblk_request *)(addr +
 		    sizeof(*req) * i);
@@ -162,8 +164,8 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 		size_t len = MIN2(nbytes, PGSIZE);
 		nbytes -= PGSIZE;
 		io_queue.desc[virtq_desc[i]].len = len;
-		io_queue.desc[virtq_desc[i]].addr =
-		    (uint64_t)mdl->pages[i - 1]->address;
+		io_queue.desc[virtq_desc[i]].addr = vm_mdl_paddr(mdl,
+		    (i - 1) * PGSIZE);
 		io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
 		io_queue.desc[virtq_desc[i]].flags |= VRING_DESC_F_WRITE;
 		io_queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];

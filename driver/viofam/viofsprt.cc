@@ -17,6 +17,7 @@
 
 #include "dev/fuse_kernel.h"
 #include "dev/virtioreg.h"
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/process.h"
@@ -162,8 +163,8 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	if (req->mdl_in) {
 		/* kassert(!req->mdl->offset) */
 		for (size_t i = 0; i < req->mdl_in->npages; i++) {
-			req_vq.desc[descs[di]].addr =
-			    req->mdl_in->pages[i]->address;
+			req_vq.desc[descs[di]].addr = vm_mdl_paddr(req->mdl_in,
+			    i * PGSIZE);
 			req_vq.desc[descs[di]].len = PGSIZE;
 			req_vq.desc[descs[di]].flags = 0;
 			SET_NEXT();
@@ -191,8 +192,8 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	if (req->mdl_out) {
 		/* kassert(!req->mdl->offset) */
 		for (size_t i = 0; i < req->mdl_out->npages; i++) {
-			req_vq.desc[descs[di]].addr =
-			    req->mdl_out->pages[i]->address;
+			req_vq.desc[descs[di]].addr = vm_mdl_paddr(req->mdl_out,
+			    i * PGSIZE);
 			req_vq.desc[descs[di]].len = PGSIZE;
 			req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
 			SET_NEXT();
