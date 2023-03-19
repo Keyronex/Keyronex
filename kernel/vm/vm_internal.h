@@ -18,7 +18,7 @@
 struct vmp_objpage {
 	/*! Linkage in vm_object::page_ref_rbtree */
 	RB_ENTRY(vmp_objpage) rbtree_entry;
-	/*! Where in the object does it belong to? */
+	/*! Where in the object does it belong to? (Page number!) */
 	size_t page_index;
 	/*! Underlying page.*/
 	vm_page_t *page;
@@ -43,8 +43,16 @@ struct vmp_anon {
 void pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt,
     vm_protection_t prot);
 
+/*! @brief Enter a pageable page mapping. */
+void pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
+    vm_protection_t prot);
+
 /*! @brief Remove a page mapping, returning the page previously mapped. */
 vm_page_t *pmap_unenter(vm_map_t *map, vaddr_t vaddr);
+
+/*! @brief Remove a pageable mapping, returning any page previously mapped. */
+int pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **page,
+    vaddr_t virt);
 
 /*! @brief Translate virtual address to physical. */
 paddr_t pmap_trans(vm_map_t *map, vaddr_t virt);

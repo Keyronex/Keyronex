@@ -24,10 +24,9 @@ pgcache_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (nbyte == 0)
 		return 0;
 
-	kfatal("FIX\n");
-	//r = vm_map_object(&kernel_process.map, vn->section, &vaddr,
-	//    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVMInheritShared,
-	//    false);
+	r = vm_map_object(&kernel_process.map, &vn->vmobj, &vaddr,
+	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVMInheritShared,
+	    false, false);
 	kassert(r == 0);
 
 	memcpy(buf, (void *)(vaddr + off), nbyte);
@@ -55,10 +54,9 @@ pgcache_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 		vn->size = off + nbyte;
 
 
-	kfatal("FIX\n");
-	//r = vm_map_object(&kernel_process.map, vn->section, &vaddr,
-	//    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVMInheritShared,
-	//    false);
+	r = vm_map_object(&kernel_process.map, &vn->vmobj, &vaddr,
+	    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVMInheritShared,
+	    false, false);
 	kassert(r == 0);
 
 	memcpy((void *)(vaddr + off), buf, nbyte);

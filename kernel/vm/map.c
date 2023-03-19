@@ -144,7 +144,7 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 
 			obj_direct_release(entry->section);
 #else
-			kfatal("implement\n");
+			//	kfatal("implement\n");
 #endif
 
 			kmem_free(entry, sizeof(vm_map_entry_t));

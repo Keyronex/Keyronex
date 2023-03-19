@@ -58,11 +58,12 @@ typedef enum vm_protection {
 } vm_protection_t;
 
 struct vm_stat {
-	size_t npfndb;
 	size_t nfree;
-	size_t nmodified;
 	size_t nactive;
+	size_t ninactive;
+	size_t nwired;
 	size_t ntransitioning;
+	size_t npermwired;
 	size_t nvmm;
 };
 
@@ -105,7 +106,10 @@ typedef struct vm_page {
 	enum vm_page_status status : 2;
 	/* Padding */
 	uint8_t padding : 3;
-	/*! How many requests are there for it to be wired in-memory? */
+	/*!
+	 * How many requests are there for it to be wired in-memory?
+	 * One for each MDL, and another for a busy page.
+	 */
 	uint16_t wirecnt;
 
 	union {
@@ -158,6 +162,8 @@ typedef struct vm_map_entry {
 	struct vm_object *object;
 	/*! Anonymous memory, if any. */
 	struct vm_amap amap;
+	/*! Whether it has anonymous layer. */
+	bool has_anonymous;
 
 	/*! Inheritance attributes for fork. */
 	enum vm_inheritance inheritance;
@@ -251,6 +257,12 @@ vm_page_t *vmp_paddr_to_page(paddr_t paddr);
 
 /*! @brief Copy the contents of one page to another. */
 void vmp_page_copy(vm_page_t *from, vm_page_t *to);
+
+/*! @brief Increment the wiring count of an in-core page. */
+void vm_page_wire(vm_page_t *page);
+
+/*! @brief Decrement wire-count of a resident page, may return to LRU if 0. */
+void vm_page_unwire(vm_page_t *page);
 
 /*! @brief Translate wired virtual to physical address in current process. */
 paddr_t vm_translate(vaddr_t vaddr);

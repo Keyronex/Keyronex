@@ -267,6 +267,12 @@ pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
 	    vm_prot_to_i386(prot) | (virt < KAREA_BASE ? kMMUUser : 0));
 }
 
+void
+pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
+    vm_protection_t prot)
+{
+}
+
 vm_page_t *
 pmap_unenter(vm_map_t *map, vaddr_t vaddr)
 {
@@ -281,6 +287,11 @@ pmap_unenter(vm_map_t *map, vaddr_t vaddr)
 	*pte = 0x0;
 
 	return vmp_paddr_to_page(paddr);
+}
+
+int
+pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **page, vaddr_t virt)
+{
 }
 
 void

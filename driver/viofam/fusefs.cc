@@ -214,6 +214,8 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 	node->vnode->vfsmountedhere = NULL;
 	node->vnode->size = size;
 
+	node->vnode->vmobj.is_anonymous  =false;
+	ke_mutex_init(&node->vnode->vmobj.mutex);
 	RB_INIT(&node->vnode->vmobj.page_rbtree);
 
 	RB_INSERT(fusefs_node_rbt, &node_rbt, node);

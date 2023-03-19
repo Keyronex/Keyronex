@@ -21,6 +21,9 @@ struct vmp_pregion {
 	vm_page_t pages[0];
 };
 
+#define DEFINE_PAGEQUEUE(NAME) \
+	static page_queue_t NAME = TAILQ_HEAD_INITIALIZER(NAME)
+
 typedef TAILQ_HEAD(, vm_page) page_queue_t;
 
 struct vm_stat vmstat;
@@ -28,6 +31,8 @@ static TAILQ_HEAD(, vmp_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
     pregion_queue);
 kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
 static page_queue_t free_list = TAILQ_HEAD_INITIALIZER(free_list);
+DEFINE_PAGEQUEUE(vm_pagequeue_active);
+DEFINE_PAGEQUEUE(vm_pagequeue_inactive);
 
 void
 vmp_region_add(paddr_t base, size_t length)
@@ -69,7 +74,7 @@ vmp_region_add(paddr_t base, size_t length)
 		TAILQ_INSERT_TAIL(&free_list, &bm->pages[b], queue_entry);
 	}
 
-	vmstat.npfndb += used / PGSIZE;
+	vmstat.nvmm += used / PGSIZE;
 	vmstat.nfree += bm->npages - (used / PGSIZE);
 
 	TAILQ_INSERT_TAIL(&pregion_queue, bm, queue_entry);
@@ -200,4 +205,56 @@ vm_mdl_paddr(vm_mdl_t *mdl, voff_t offset)
 {
 	kassert(offset % PGSIZE == 0);
 	return VM_PAGE_PADDR(mdl->pages[offset / PGSIZE]);
+}
+
+void
+vm_page_wire(vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+
+	switch (page->status) {
+	case kPageStatusActive:
+		TAILQ_REMOVE(&vm_pagequeue_active, page, queue_entry);
+		vmstat.nactive--;
+		vmstat.nwired++;
+		break;
+
+	case kPageStatusInactive:
+		TAILQ_REMOVE(&vm_pagequeue_active, page, queue_entry);
+		vmstat.ninactive--;
+		vmstat.nwired++;
+		break;
+
+	case kPageStatusWired:
+	    /* epsilon */
+	    ;
+
+	case kPageStatusBusy:
+		kfatal("Cannot wire a busy page.\n");
+	}
+
+	page->status = kPageStatusWired;
+
+	vmp_release_pfn_lock(ipl);
+}
+
+void
+vm_page_unwire(vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+
+	kassert(page->status == kPageStatusWired);
+	kassert(page->wirecnt > 0);
+
+	if (--page->wirecnt == 0) {
+		if (page->use == kPageUseAnonymous ||
+		    page->use == kPageUseObject) {
+			TAILQ_INSERT_HEAD(&vm_pagequeue_active, page,
+			    queue_entry);
+			vmstat.nwired--;
+			vmstat.nactive++;
+		}
+	}
+
+	vmp_release_pfn_lock(ipl);
 }
