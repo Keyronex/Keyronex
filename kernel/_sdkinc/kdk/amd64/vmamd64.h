@@ -7,6 +7,7 @@
 #define KRX_AMD64_VMAMD64_H
 
 #include "kdk/kerndefs.h"
+#include "kdk/kernel.h"
 
 #define PGSIZE 4096
 
@@ -44,6 +45,7 @@
 
 struct vm_map_md {
 	paddr_t cr3;
+	kspinlock_t lock;
 };
 
 #endif /* KRX_AMD64_VMAMD64_H */

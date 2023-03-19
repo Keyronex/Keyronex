@@ -14,6 +14,7 @@
  * can't be removed.
  */
 
+#include "abi-bits/errno.h"
 #include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
@@ -32,20 +33,109 @@ static vm_fault_return_t fault_vnode(vm_map_t *map, vaddr_t vaddr,
 
 RB_GENERATE(vmp_objpage_rbtree, vmp_objpage, rbtree_entry, vmp_objpage_cmp);
 
+struct vmp_amap_l3 {
+	struct vmp_amap_l2 *entries[512];
+};
+
+struct vmp_amap_l2 {
+	struct vmp_amap_l1 *entries[512];
+};
+
+struct vmp_amap_l1 {
+	struct vmp_anon *entries[512];
+};
+
 int
 vmp_objpage_cmp(struct vmp_objpage *x, struct vmp_objpage *y)
 {
 	return x->page_index - y->page_index;
 }
 
-/*! find anon by offset in bytes */
-struct vmp_anon *vmp_amap_find_anon(struct vm_amap *amap, voff_t offset,
-    krx_out struct vmp_anon ***panon);
+int
+vmp_amap_descend(vm_map_t *map, struct vm_amap *amap, voff_t offset,
+    krx_out struct vmp_anon ***panon, bool create)
+{
+	uint16_t l3i = (offset << 18) & 511;
+	uint16_t l2i = (offset << 9) & 511;
+	uint16_t l1i = offset & 511;
+	struct vmp_amap_l2 *l2;
+	struct vmp_amap_l1 *l1;
 
-/*!
- * @post new anon's page is wired
- */
-int vmp_anon_new(krx_out struct vmp_anon **anon);
+	l2 = amap->l3->entries[l3i];
+	if (!l2) {
+		if (create) {
+			vm_page_t *page;
+			vmp_page_alloc(NULL, true, kPageUseVMM, &page);
+			amap->l3->entries[l3i] = VM_PAGE_DIRECT_MAP_ADDR(page);
+		} else {
+			return -ENOENT;
+		}
+	}
+
+	l1 = l2->entries[l2i];
+	if (!l1) {
+		if (create) {
+			vm_page_t *page;
+			vmp_page_alloc(NULL, true, kPageUseVMM, &page);
+			l2->entries[l2i] = VM_PAGE_DIRECT_MAP_ADDR(page);
+		} else {
+			return -ENOENT;
+		}
+	}
+
+	*panon = &l1->entries[l1i];
+
+	return 0;
+}
+
+/*! @brief Find anon in an amap by its byte offset. */
+struct vmp_anon *
+vmp_amap_find_anon(vm_map_t *map, struct vm_amap *amap, voff_t offset,
+    krx_out struct vmp_anon ***panon)
+{
+	int r = vmp_amap_descend(map, amap, offset, panon, false);
+	if (r != 0)
+		return NULL;
+	else
+		return **panon;
+}
+
+/*! @brief Insert an anon into an amap. */
+void
+vmp_amap_insert_anon(vm_map_t *map, struct vm_amap *amap, struct vmp_anon *anon)
+{
+	struct vmp_anon **panon;
+	int r;
+
+	r = vmp_amap_descend(map, amap, anon->resident, &panon, true);
+	kassert(r == 0);
+	kassert(*panon == NULL);
+
+	*panon = anon;
+}
+
+/*! @brief Create a new anon, its page is wired and refcnt is 1. */
+int
+vmp_anon_new(vm_map_t *map, krx_out struct vmp_anon **out, voff_t offset)
+{
+	vm_page_t *page;
+	struct vmp_anon *anon;
+	int r;
+
+	r = vmp_page_alloc(map, false, kPageUseAnonymous, &page);
+	if (r != 0)
+		return r;
+
+	anon = kmem_alloc(sizeof(*anon));
+	ke_mutex_init(&anon->mutex);
+	anon->offset = offset;
+	anon->page = page;
+	anon->resident = true;
+	anon->refcnt = 1;
+
+	*out = anon;
+	return 0;
+}
 
 /*!
  * @pre \p aobj lock held if aobj not NULL
@@ -59,7 +149,11 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 	struct vmp_anon *anon, **panon;
 	kwaitstatus_t w;
 
-	anon = vmp_amap_find_anon(amap, offset, &panon);
+	w = ke_wait(&amap->mutex, "fault_anonymous:amap->mutex", false, false,
+	    -1);
+	kassert(w == kKernWaitStatusOK);
+
+	anon = vmp_amap_find_anon(map, amap, offset, &panon);
 	if (anon != NULL) {
 		w = ke_wait(&anon->mutex, "fault_anonymous:anon->mutex", false,
 		    false, -1);
@@ -79,7 +173,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 				struct vmp_anon *new_anon;
 				int ret;
 
-				ret = vmp_anon_new(&new_anon);
+				ret = vmp_anon_new(map, &new_anon, offset);
 				kassert(ret == 0);
 
 				memcpy(VM_PAGE_DIRECT_MAP_ADDR(new_anon->page),
@@ -157,6 +251,8 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 			ke_mutex_release(&anon->mutex);
 		}
 
+		ke_mutex_release(&amap->mutex);
+
 		return kVMFaultRetOK;
 	} else if (parent != NULL) {
 		vm_fault_return_t r;
@@ -178,6 +274,8 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 			if (aobj)
 				ke_mutex_release(&aobj->mutex);
 
+			ke_mutex_release(&amap->mutex);
+
 			/* it already released map etc for us */
 			return r;
 		}
@@ -189,6 +287,8 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 				vm_page_unwire(page);
 			}
 
+			ke_mutex_release(&amap->mutex);
+
 			return kVMFaultRetOK;
 		}
 
@@ -197,9 +297,10 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		struct vmp_anon *anon;
 		int ret;
 
-		ret = vmp_anon_new(&anon);
+		ret = vmp_anon_new(map, &anon, offset);
 		if (ret != 0) {
 			ke_mutex_release(&parent->mutex);
+			ke_mutex_release(&amap->mutex);
 			vm_page_unwire(page);
 			kfatal("Unlock everything for a wait-for-free-pages\n");
 		}
@@ -207,7 +308,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		vmp_page_copy(page, anon->page);
 		vm_page_unwire(page);
 
-		vmp_amap_insert_anon(amap, anon);
+		vmp_amap_insert_anon(map, amap, anon);
 
 		/* first remove the existing entry */
 		pmap_unenter_pageable(map, NULL, vaddr);
@@ -226,6 +327,8 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 
 		/* note: new anon wasn't locked */
 
+		ke_mutex_release(&amap->mutex);
+
 		return kVMFaultRetOK;
 	} else {
 		/*
@@ -235,12 +338,12 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		struct vmp_anon *anon;
 		int ret;
 
-		ret = vmp_anon_new(&anon);
+		ret = vmp_anon_new(map, &anon, offset);
 		if (ret != 0) {
 			kfatal("Unlock everything for a wait-for-free-pages\n");
 		}
 
-		vmp_amap_insert_anon(amap, anon);
+		vmp_amap_insert_anon(map, amap, anon);
 
 		/* map the anon  */
 		pmap_enter_pageable(map, anon->page, vaddr, entry->protection);
@@ -251,6 +354,10 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		} else {
 			vm_page_unwire(anon->page);
 		}
+
+		ke_mutex_release(&amap->mutex);
+
+		return kVMFaultRetOK;
 	}
 }
 

@@ -24,11 +24,6 @@ struct vmp_objpage {
 	vm_page_t *page;
 };
 
-/* Entry in a vm_amap_t. Locked by the vm_object's lock */
-struct vm_amap_chunk {
-	struct vmp_anon *anon[kAMapChunkNPages];
-};
-
 /*! An anonymous page. */
 struct vmp_anon {
 	kmutex_t mutex;
@@ -36,6 +31,7 @@ struct vmp_anon {
 		vm_page_t *page;
 		uintptr_t drumslot;
 	};
+	voff_t offset;
 	unsigned refcnt : 32, resident : 1;
 };
 
@@ -53,6 +49,9 @@ vm_page_t *pmap_unenter(vm_map_t *map, vaddr_t vaddr);
 /*! @brief Remove a pageable mapping, returning any page previously mapped. */
 int pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **page,
     vaddr_t virt);
+
+/*! @brief Remove a range of pageable mappings. */
+void pmap_unenter_pageable_range(vm_map_t *map, vaddr_t start, vaddr_t end);
 
 /*! @brief Translate virtual address to physical. */
 paddr_t pmap_trans(vm_map_t *map, vaddr_t virt);

@@ -258,3 +258,9 @@ vm_page_unwire(vm_page_t *page)
 
 	vmp_release_pfn_lock(ipl);
 }
+
+void
+vm_page_activate(vm_page_t *page)
+{
+	/* .... */
+}

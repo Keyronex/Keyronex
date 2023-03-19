@@ -113,9 +113,9 @@ typedef struct vm_page {
 	uint16_t wirecnt;
 
 	union {
-		/*! Virtual page, if ::is_anonymous. */
+		/*! Anonymous page, if ::is_anonymous. */
 		struct vmp_anon *anon;
-		/*! VNode section, if ::is_vnode */
+		/*! VNode object, if ::is_vnode */
 		struct vm_object *obj;
 	};
 
@@ -133,8 +133,8 @@ enum vm_inheritance {
 };
 
 struct vm_amap {
-	struct vm_amap_chunk **chunks; /**< sparse array pointers to chunks */
-	size_t curnchunk;	       /**< number of slots in chunks */
+	kmutex_t mutex;
+	struct vmp_amap_l3 *l3;
 };
 
 /*!

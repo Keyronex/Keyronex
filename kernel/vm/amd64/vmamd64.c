@@ -12,6 +12,7 @@
 
 #include <stdatomic.h>
 
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/kmem.h"
 #include "kdk/machdep.h"
 #include "kdk/process.h"
@@ -39,6 +40,12 @@ enum {
 	kMMUDefaultProt = kMMUPresent | kMMUWrite | kMMUUser,
 
 	kMMUFrame = 0x000FFFFFFFFFF000
+};
+
+struct pv_entry {
+	LIST_ENTRY(pv_entry) list_entry;
+	vm_map_t *map;
+	vaddr_t vaddr;
 };
 
 typedef uint64_t pml4e_t, pdpte_t, pde_t, pte_t;
@@ -137,7 +144,7 @@ vm_prot_to_i386(vm_protection_t prot)
  * allocate a new entry, setting appropriate flags. Table should be a pointer
  * to the physical location of the table.
  */
-uint64_t *
+static uint64_t *
 pmap_descend(vm_map_t *map, uint64_t *table, size_t index, bool alloc,
     uint64_t mmuprot)
 {
@@ -160,7 +167,7 @@ pmap_descend(vm_map_t *map, uint64_t *table, size_t index, bool alloc,
  * @returns (physical) pointer to the pte for this virtual address, or NULL if
  * none exists
  */
-pte_t *
+static pte_t *
 pmap_fully_descend(vm_map_t *map, vaddr_t virt)
 {
 	uintptr_t virta = (uintptr_t)virt;
@@ -201,6 +208,10 @@ pmap_trans(vm_map_t *map, vaddr_t virt)
 	int pdi = ((virta >> 21) & 0x1FF);
 	int pti = ((virta >> 12) & 0x1FF);
 	int pi = ((virta)&0xFFF);
+	paddr_t r;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&map->md.lock);
 
 	pdpte_t *pdpte;
 	pde_t *pde;
@@ -224,13 +235,17 @@ pmap_trans(vm_map_t *map, vaddr_t virt)
 	pte = P2V(pte);
 
 	if (!(pte[pti] & kMMUPresent))
-		return 0x0;
+		r = 0x0;
 	else
-		return (paddr_t)pte_get_addr(pte[pti]) + pi;
+		r = (paddr_t)pte_get_addr(pte[pti]) + pi;
+
+	ke_spinlock_release(&map->md.lock, ipl);
+	return r;
 }
 
 void
-pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
+pmap_enter_common(vm_map_t *map, paddr_t phys, vaddr_t virt,
+    vm_protection_t prot)
 {
 	uintptr_t virta = (uintptr_t)virt;
 	int pml4i = ((virta >> 39) & 0x1FF);
@@ -268,16 +283,32 @@ pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
 }
 
 void
+pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
+{
+	ipl_t ipl = ke_spinlock_acquire(&map->md.lock);
+	pmap_enter_common(map, phys, virt, prot);
+	ke_spinlock_release(&map->md.lock, ipl);
+}
+void
 pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
     vm_protection_t prot)
 {
+	ipl_t ipl = ke_spinlock_acquire(&map->md.lock);
+	struct pv_entry *pve;
+	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot);
+	ke_spinlock_release(&map->md.lock, ipl);
 }
 
 vm_page_t *
 pmap_unenter(vm_map_t *map, vaddr_t vaddr)
 {
 	paddr_t paddr;
-	pte_t *pte = pmap_fully_descend(map, vaddr);
+	pte_t *pte;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&map->md.lock);
+
+	pte = pmap_fully_descend(map, vaddr);
 
 	kassert(pte);
 	pte = P2V(pte);
@@ -286,17 +317,52 @@ pmap_unenter(vm_map_t *map, vaddr_t vaddr)
 	kassert(*pte != 0x0);
 	*pte = 0x0;
 
+	ke_spinlock_release(&map->md.lock, ipl);
+
 	return vmp_paddr_to_page(paddr);
 }
 
 int
 pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **page, vaddr_t virt)
 {
+	paddr_t paddr;
+	pte_t *pte;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&map->md.lock);
+
+	pte = pmap_fully_descend(map, virt);
+
+	if (pte && *pte != 0x0) {
+		paddr = (paddr_t)pte_get_addr(*pte);
+		*pte = 0x0;
+		if (page)
+			*page = vmp_paddr_to_page(paddr);
+		/* ... free the PV entry thing */
+	}
+
+	ke_spinlock_release(&map->md.lock, ipl);
+
+	return 0;
+}
+
+void
+pmap_unenter_pageable_range(vm_map_t *map, vaddr_t vaddr, vaddr_t end)
+{
+	for (; vaddr != end; vaddr += PGSIZE) {
+		pmap_unenter_pageable(map, NULL, vaddr);
+	}
 }
 
 void
 pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t limit)
 {
+	kassert(limit == (kVMRead | kVMExecute));
+
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&map->md.lock);
+
 	/* this is really non-optimal and should be written properly */
 	for (vaddr_t vaddr = base; vaddr < limit; vaddr++) {
 		pte_t *pte = pmap_fully_descend(map, vaddr);
@@ -314,8 +380,11 @@ pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t limit)
 			pmap_invlpg(base);
 		}
 	}
+
+	ke_spinlock_release(&map->md.lock, ipl);
 }
 
+#if 0
 bool
 pmap_is_present(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr)
 {
@@ -353,6 +422,7 @@ pmap_is_writeable(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr)
 		return true;
 	}
 }
+#endif
 
 void
 vm_map_md_init(vm_map_t *map)

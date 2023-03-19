@@ -137,15 +137,13 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			RB_REMOVE(vm_map_entry_rbtree, &map->entry_queue,
 			    entry);
 
-#if 0
 			ipl = vmp_acquire_pfn_lock();
-			vmp_wsl_remove_range(map, entry->start, entry->end);
+			pmap_unenter_pageable_range(map, entry->start,
+			    entry->end);
 			vmp_release_pfn_lock(ipl);
 
-			obj_direct_release(entry->section);
-#else
-			//	kfatal("implement\n");
-#endif
+			if (entry->object)
+				obj_direct_release(entry->object);
 
 			kmem_free(entry, sizeof(vm_map_entry_t));
 		} else if (entry->start >= start && entry->end <= end) {
