@@ -206,23 +206,17 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 
 	node->inode = fuse_ino;
 	node->vnode = new (kmem_general) vnode;
-	obj_initialise_header(&node->vnode->objhdr, kObjTypeVNode);
+	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
 	node->vnode->data = (uintptr_t)node;
-	node->vnode->section = NULL;
 	node->vnode->type = type;
 	node->vnode->vfsp = vfs;
 	node->vnode->ops = &vnops;
 	node->vnode->vfsmountedhere = NULL;
 	node->vnode->size = size;
 
-	/*! todo(low): move into vm/something.c? */
-	node->vnode->section = (vm_section_t *)kmem_alloc(sizeof(vm_section_t));
-	obj_initialise_header(&node->vnode->section->header, kObjTypeSection);
-	node->vnode->section->kind = vm_section::kSectionFile;
-	node->vnode->section->size = INT64_MAX;
-	node->vnode->section->parent = NULL;
-	RB_INIT(&node->vnode->section->page_ref_rbtree);
-	node->vnode->section->vnode = node->vnode;
+	node->vnode->vmobj.is_anonymous  =false;
+	ke_mutex_init(&node->vnode->vmobj.mutex);
+	RB_INIT(&node->vnode->vmobj.page_rbtree);
 
 	RB_INSERT(fusefs_node_rbt, &node_rbt, node);
 

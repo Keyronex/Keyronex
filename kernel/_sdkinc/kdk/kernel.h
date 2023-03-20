@@ -307,12 +307,11 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 /*! @brief Kernel fatal condition. */
 #define kfatal(...)                                              \
 	{                                                        \
+		asm ("cli");					 \
 		kdprintf("at %s:%d (%s):\n", __FILE__, __LINE__, \
 		    __FUNCTION__);                               \
 		kdprintf(__VA_ARGS__);                           \
-		while (1) {                                      \
-			asm("hlt");                              \
-		}                                                \
+		hcf();                                           \
 	}
 
 /*! @brief Kernel assertion */
@@ -322,6 +321,13 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 			kfatal("kernel assertion failed: %s\n", #__VA_ARGS__); \
 		}                                                              \
 	}
+
+/*! @brief Halt forever. */
+static inline void __attribute__((noreturn)) hcf()
+{
+	for (;;)
+		asm("hlt");
+}
 
 /*! @brief Determine if a spinlock is held. */
 static inline bool

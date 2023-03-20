@@ -3,84 +3,134 @@
  * Created on Sun Feb 12 2023.
  */
 
+#include "kdk/amd64/vmamd64.h"
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
-#include "machdep/amd64/amd64.h"
+#include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
+#include "machdep/amd64/amd64.h"
 #include "vm_internal.h"
 
 /*!
- * @brief Make a virtual copy of an anonymous section.
- *
- * This is currently used only for POSIX fork(), which is why it's here
- * in fork.c.
- *
- * For copying anonymous sections, which includes private mappings of files
- * (these are internally implemented as anonymous sections with a file parent),
- * it's necessary to specify the process context and associated VAD from which
- * the copy is being made, so that working set list entries which refer to pages
- * that are to now become copy-on-write will be made read-only as appropriate to
- * ensure copy-on-write semantics.
- *
- * In the long term: we need intelligent copying. If anonymous memory was
- * allocated in POSIX land by mmap then we can copy only that part of the
- * anonymous object to which the VAD refers. Meanwhile for a native API, what if
- * a single anonymous object is deliberately referenced by multiple VADs?
- *
- * @pre PFNDB lock held.
- * @pre \p vmps_from vad mutex held.
+ * Copy entries from one amap to a new empty amap.
  */
 int
-vmp_section_anonymous_copy(vm_procstate_t *vmps_from, vm_procstate_t *vmps_to,
-    vm_vad_t *from_vad, vm_section_t *section, vm_section_t **out)
+vmp_amap_copy(vm_map_t *map_from, vm_map_t *map_to, struct vm_amap *from_amap,
+    struct vm_amap *to_amap)
 {
-	int r;
-	struct vmp_page_ref *ref;
-	vm_section_t *new_section;
+	vm_page_t *page;
+	kwaitstatus_t w;
+	int ret;
 
-	r = vm_section_new_anonymous(vmps_to, section->size, &new_section);
-	kassert(r == 0);
+	w = ke_wait(&from_amap->mutex, "vmp_amap_copy:amap->mutex", false,
+	    false, -1);
+	kassert(w == kKernWaitStatusOK);
 
-	RB_FOREACH (ref, vmp_page_ref_rbtree, &section->page_ref_rbtree) {
-		struct vmp_page_ref *new_ref =
-		    kmem_xalloc(sizeof(struct vmp_page_ref), kVMemPFNDBHeld);
-		new_ref->page_index = ref->page_index;
-		new_ref->vpage = ref->vpage;
-		new_ref->vpage->refcount++;
-		RB_INSERT(vmp_page_ref_rbtree, &new_section->page_ref_rbtree,
-		    new_ref);
+	for (int i = 0; i < elementsof(from_amap->l3->entries); i++) {
+		if (from_amap->l3->entries[i] == NULL)
+			continue;
+
+		struct vmp_amap_l2 *from_l2 = from_amap->l3->entries[i], *to_l2;
+
+		ret = vmp_page_alloc(map_to, true, kPageUseVMM, &page);
+		kassert(ret != 0);
+
+		to_l2 = to_amap->l3->entries[i] = VM_PAGE_DIRECT_MAP_ADDR(page);
+
+		/* copy the l1s of this l2 */
+		for (int i = 0; i < elementsof(from_l2->entries); i++) {
+			if (from_l2->entries[i] == NULL)
+				continue;
+
+			struct vmp_amap_l1 *from_l1 = from_l2->entries[i],
+					   *to_l1;
+
+			ret = vmp_page_alloc(map_to, true, kPageUseVMM, &page);
+			kassert(ret != 0);
+
+			to_l1 = to_l2->entries[i] = VM_PAGE_DIRECT_MAP_ADDR(
+			    page);
+
+			/* todo: read-only-ify the range */
+
+			/* increment the anons' refcnts */
+			for (int i = 0; i < elementsof(from_l1->entries); i++) {
+				if (from_l1->entries[i] == NULL)
+					continue;
+
+				__atomic_add_fetch(&from_l1->entries[i]->refcnt,
+				    1, __ATOMIC_SEQ_CST);
+			}
+
+			/* and copy their pointers */
+			memcpy(to_l1, from_l1, sizeof(*from_l1));
+		}
 	}
 
-	pmap_protect_range(vmps_from, from_vad->start, from_vad->end);
-
-	*out = new_section;
+	ke_mutex_release(&from_amap->mutex);
 
 	return 0;
 }
 
 int
-vm_ps_fork(vm_procstate_t *vmps, vm_procstate_t *vmps_new)
+vm_map_fork(vm_map_t *map, vm_map_t *map_new)
 {
-	vm_vad_t *vad;
+	vm_map_entry_t *vad;
+	kwaitstatus_t w;
 
-	/* todo: lock vad list */
+	w = ke_wait(&map->mutex, "vm_map_fork:map->mutex", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
 
-	RB_FOREACH (vad, vm_vad_rbtree, &vmps->vad_queue) {
+	RB_FOREACH (vad, vm_map_entry_rbtree, &map->entry_queue) {
 		switch (vad->inheritance) {
-		case kVADInheritShared:
-		case kVADInheritCopy:
-		case kVADInheritStack:
+		case kVMInheritShared: {
+			vm_map_entry_t *entry_new = kmem_alloc(
+			    sizeof(*entry_new));
+			vaddr_t vaddr = vad->start;
+			int r;
+
+			kassert(!vad->has_anonymous);
+
+			r = vm_map_object(map_new, vad->object, &vaddr,
+			    vad->end - vad->start - 1, vad->offset,
+			    vad->protection, vad->max_protection,
+			    vad->inheritance, true, false);
+			kassert(r == 0 && vaddr == vad->start);
+		}
+		case kVMInheritCopy: {
+			vm_map_entry_t *entry_new = kmem_alloc(
+			    sizeof(*entry_new));
+			vaddr_t vaddr = vad->start;
+			int r;
+
+			r = vm_map_object(map_new, vad->object, &vaddr,
+			    vad->end - vad->start - 1, vad->offset,
+			    vad->protection, vad->max_protection,
+			    vad->inheritance, true, true);
+			kassert(r == 0 && vaddr == vad->start);
+
+			if (vad->has_anonymous) {
+				r = vmp_amap_copy(map, map_new, &vad->amap,
+				    &entry_new->amap);
+				kassert(r == 0);
+			}
+		}
+		case kVMInheritStack:
+			/* epsilon; handle it explicitly elsewhere */
 			break;
 		}
 	}
+
+	ke_mutex_release(&map->mutex);
 
 	return 0;
 }
 
 void
-vm_ps_activate(vm_procstate_t *vmps)
+vm_map_activate(vm_map_t *map)
 {
-	kassert((uintptr_t)vmps >= HHDM_BASE);
-	uint64_t val = (uint64_t)vmps->md.cr3;
+	kassert((uintptr_t)map >= HHDM_BASE);
+	uint64_t val = (uint64_t)map->md.cr3;
 	write_cr3(val);
 }

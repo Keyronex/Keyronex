@@ -9,6 +9,7 @@
 #include "kdk/libkern.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "vm/vm_internal.h"
 
 struct vmp_pregion {
 	/*! Linkage to pregion_queue. */
@@ -21,13 +22,18 @@ struct vmp_pregion {
 	vm_page_t pages[0];
 };
 
-typedef STAILQ_HEAD(, vm_page) page_queue_t;
+#define DEFINE_PAGEQUEUE(NAME) \
+	static page_queue_t NAME = TAILQ_HEAD_INITIALIZER(NAME)
+
+typedef TAILQ_HEAD(, vm_page) page_queue_t;
 
 struct vm_stat vmstat;
 static TAILQ_HEAD(, vmp_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
     pregion_queue);
 kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
-static page_queue_t free_list = STAILQ_HEAD_INITIALIZER(free_list);
+static page_queue_t free_list = TAILQ_HEAD_INITIALIZER(free_list);
+DEFINE_PAGEQUEUE(vm_pagequeue_active);
+DEFINE_PAGEQUEUE(vm_pagequeue_inactive);
 
 void
 vmp_region_add(paddr_t base, size_t length)
@@ -51,22 +57,25 @@ vmp_region_add(paddr_t base, size_t length)
 
 	/* initialise pages */
 	for (b = 0; b < bm->npages; b++) {
-		bm->pages[b].address = bm->base + PGSIZE * b;
-		bm->pages[b].vnode = NULL;
+		bm->pages[b].pfn = (bm->base + PGSIZE * b) >> 12;
+		bm->pages[b].anon = NULL;
+		LIST_INIT(&bm->pages[b].pv_list);
 	}
 
 	/* mark off the pages used */
 	for (b = 0; b < used / PGSIZE; b++) {
 		bm->pages[b].use = kPageUseVMM;
+		bm->pages[b].wirecnt = 1;
 	}
 
 	/* now zero the remainder */
 	for (; b < bm->npages; b++) {
 		bm->pages[b].use = kPageUseFree;
-		STAILQ_INSERT_TAIL(&free_list, &bm->pages[b], queue_entry);
+		bm->pages[b].wirecnt = 0;
+		TAILQ_INSERT_TAIL(&free_list, &bm->pages[b], queue_entry);
 	}
 
-	vmstat.npfndb += used / PGSIZE;
+	vmstat.nvmm += used / PGSIZE;
 	vmstat.nfree += bm->npages - (used / PGSIZE);
 
 	TAILQ_INSERT_TAIL(&pregion_queue, bm, queue_entry);
@@ -88,37 +97,37 @@ vmp_paddr_to_page(paddr_t paddr)
 }
 
 int
-vmp_page_alloc(vm_procstate_t *ps, bool must, enum vm_page_use use,
-    vm_page_t **out)
+vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
 {
-	vm_page_t *page = STAILQ_FIRST(&free_list);
+	vm_page_t *page = TAILQ_FIRST(&free_list);
 	kassert(page);
-	STAILQ_REMOVE_HEAD(&free_list, queue_entry);
+	TAILQ_REMOVE(&free_list, page, queue_entry);
 
-	kassert(page->reference_count == 0);
+	kassert(page->wirecnt == 0);
 	vmstat.nfree--;
 
 	page->use = use;
-	page->reference_count = 1;
+	page->wirecnt = 1;
 
 	*out = page;
 
-	memset(P2V(page->address), 0x0, PGSIZE);
+	memset(VM_PAGE_DIRECT_MAP_ADDR(page), 0x0, PGSIZE);
 
 	return 0;
 }
 
 void
-vmp_page_free(vm_procstate_t *ps, vm_page_t *page)
+vmp_page_free(vm_map_t *ps, vm_page_t *page)
 {
-	STAILQ_INSERT_HEAD(&free_list, page, queue_entry);
+	TAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
 }
 
 void
 vmp_page_copy(vm_page_t *from, vm_page_t *to)
 {
-	memcpy(P2V(to->address), P2V(from->address), PGSIZE);
+	memcpy(VM_PAGE_DIRECT_MAP_ADDR(to), VM_PAGE_DIRECT_MAP_ADDR(from),
+	    PGSIZE);
 }
 
 paddr_t
@@ -129,7 +138,7 @@ vm_translate(vaddr_t vaddr)
 	} else {
 		paddr_t r;
 		kassert(vaddr > HHDM_BASE);
-		r = pmap_trans(&kernel_process.vmps, vaddr);
+		r = pmap_trans(&kernel_process.map, vaddr);
 		kassert(r != 0);
 		return r;
 	}
@@ -151,8 +160,8 @@ vm_mdl_buffer_alloc(size_t npages)
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->npages = npages;
 	for (unsigned i = 0; i < npages; i++) {
-		int r = vmp_page_alloc(&kernel_process.vmps, true,
-		    kPageUseWired, &mdl->pages[i]);
+		int r = vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
+		    &mdl->pages[i]);
 		kassert(r == 0);
 	}
 	return mdl;
@@ -162,7 +171,7 @@ void
 vm_mdl_map(vm_mdl_t *mdl, void **out)
 {
 	kassert(mdl->npages == 1);
-	*out = (void *)P2V(mdl->pages[0]->address);
+	*out = VM_PAGE_DIRECT_MAP_ADDR(mdl->pages[0]);
 }
 
 void
@@ -185,9 +194,74 @@ vm_mdl_memcpy(void *dest, vm_mdl_t *mdl, voff_t off, size_t n)
 		page = mdl->pages[iPage];
 
 		memcpy(dest + (iPage - firstpage) * PGSIZE,
-		    P2V(page->address) + pageoff, tocopy);
+		    VM_PAGE_DIRECT_MAP_ADDR(page) + pageoff, tocopy);
 
 		n -= tocopy;
 		pageoff = 0;
 	}
+}
+
+paddr_t
+vm_mdl_paddr(vm_mdl_t *mdl, voff_t offset)
+{
+	kassert(offset % PGSIZE == 0);
+	return VM_PAGE_PADDR(mdl->pages[offset / PGSIZE]);
+}
+
+void
+vm_page_wire(vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+
+	switch (page->status) {
+	case kPageStatusActive:
+		TAILQ_REMOVE(&vm_pagequeue_active, page, queue_entry);
+		vmstat.nactive--;
+		vmstat.nwired++;
+		break;
+
+	case kPageStatusInactive:
+		TAILQ_REMOVE(&vm_pagequeue_active, page, queue_entry);
+		vmstat.ninactive--;
+		vmstat.nwired++;
+		break;
+
+	case kPageStatusWired:
+	    /* epsilon */
+	    ;
+
+	case kPageStatusBusy:
+		kfatal("Cannot wire a busy page.\n");
+	}
+
+	page->status = kPageStatusWired;
+
+	vmp_release_pfn_lock(ipl);
+}
+
+void
+vm_page_unwire(vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+
+	kassert(page->status == kPageStatusWired);
+	kassert(page->wirecnt > 0);
+
+	if (--page->wirecnt == 0) {
+		if (page->use == kPageUseAnonymous ||
+		    page->use == kPageUseObject) {
+			TAILQ_INSERT_HEAD(&vm_pagequeue_active, page,
+			    queue_entry);
+			vmstat.nwired--;
+			vmstat.nactive++;
+		}
+	}
+
+	vmp_release_pfn_lock(ipl);
+}
+
+void
+vm_page_activate(vm_page_t *page)
+{
+	/* .... */
 }

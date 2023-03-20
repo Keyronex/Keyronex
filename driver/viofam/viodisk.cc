@@ -4,6 +4,7 @@
  */
 
 #include "bsdqueue/queue.h"
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/process.h"
@@ -41,7 +42,8 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	if (!exchangeFeatures(VIRTIO_BLK_F_SEG_MAX)) {
 		DKDevLog(this, "Feature exchange failed.\n");
-		for (;;) ;
+		for (;;)
+			;
 		return;
 	}
 
@@ -67,8 +69,8 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	/* TODO(high): ugly! do it better */
 	vm_page_t *page;
 
-	vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired, &page);
-	vaddr_t addr = (vaddr_t)P2V(page->address);
+	vmp_page_alloc(&kernel_process.map, true, kPageUseWired, &page);
+	vaddr_t addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(page);
 	for (int i = 0; i < ROUNDUP(io_queue.length, 3) / 3; i++) {
 		vioblk_request *req = (vioblk_request *)(addr +
 		    sizeof(*req) * i);
@@ -118,7 +120,6 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
     vm_mdl_t *mdl, iop_t *iop)
 {
 	uint32_t virtq_desc[7];
-	ipl_t ipl;
 	size_t i = 0;
 	size_t ndatadescs;
 
@@ -133,10 +134,6 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 	for (unsigned i = 0; i < 2 + ndatadescs; i++) {
 		virtq_desc[i] = allocateDescNumOnQueue(&io_queue); // i;
 	}
-
-#if 0
-	ipl = ke_spinlock_acquire(&io_queue.spinlock);
-#endif
 
 	struct vioblk_request *req = TAILQ_FIRST(&free_reqs);
 	TAILQ_REMOVE(&free_reqs, req, queue_entry);
@@ -162,8 +159,8 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 		size_t len = MIN2(nbytes, PGSIZE);
 		nbytes -= PGSIZE;
 		io_queue.desc[virtq_desc[i]].len = len;
-		io_queue.desc[virtq_desc[i]].addr =
-		    (uint64_t)mdl->pages[i - 1]->address;
+		io_queue.desc[virtq_desc[i]].addr = vm_mdl_paddr(mdl,
+		    (i - 1) * PGSIZE);
 		io_queue.desc[virtq_desc[i]].flags = VRING_DESC_F_NEXT;
 		io_queue.desc[virtq_desc[i]].flags |= VRING_DESC_F_WRITE;
 		io_queue.desc[virtq_desc[i]].next = virtq_desc[i + 1];
@@ -177,10 +174,6 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 
 	submitDescNumToQueue(&io_queue, virtq_desc[0]);
 	notifyQueue(&io_queue);
-
-#if 0
-	ke_spinlock_release(&io_queue.spinlock, ipl);
-#endif
 
 	return 0;
 }
@@ -247,8 +240,6 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	iop_continue(req->iop, kIOPRetCompleted);
 
 	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
-
-	// ke_semaphore_release(&sem, 1);
 }
 
 void

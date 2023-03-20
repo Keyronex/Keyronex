@@ -11,17 +11,26 @@
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "kdk/devmgr.h"
+#include "lwip/tcpip.h"
 
 ethread_t init_thread;
 
 /* acpipc/acpipc.cc */
 void acpipc_autoconf(void *rsdp);
 
+static void tcpip_running(void* unused)
+{
+	kdprintf("KeySock version 1\n");
+}
+
 void
 init_thread_start(void *rsdp)
 {
 	/*! first we maun setup the device tmpfs */
 	// setup device tmpfs
+
+	tcpip_init(tcpip_running, NULL);
+
 	acpipc_autoconf(rsdp);
 
 	vnode_t *vn;
@@ -62,9 +71,7 @@ init_thread_start(void *rsdp)
 void
 ex_init(void *arg)
 {
-	kdprintf("Executive Init One!\n");
 	ps_create_system_thread(&init_thread, "executive initialisation",
 	    init_thread_start, arg);
 	ki_thread_start(&init_thread.kthread);
-	kdprintf("Executive Init Two! SPL %d\n", splget());
 }

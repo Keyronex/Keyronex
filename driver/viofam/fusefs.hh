@@ -71,7 +71,7 @@ class FuseFS : public Device {
 
 	/*! VNode ops */
 	static int getattr(vnode_t *vn, vattr_t *out);
-	static int getsection(vnode_t *vn, vm_section_t *out);
+	static int getsection(vnode_t *vn, vm_object_t *out);
 	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
 	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 	static off_t readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,

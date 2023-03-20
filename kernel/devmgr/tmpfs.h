@@ -30,7 +30,7 @@ typedef struct tmpnode {
 
 		/* VREG case */
 		struct {
-			vm_section_t *section;
+			vm_object_t *section;
 		} reg;
 	};
 } tmpnode_t;

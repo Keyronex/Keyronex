@@ -64,5 +64,6 @@ krx_sdk_includes = [ include_directories(
 ), mlibc_keyronex_includes ]
 
 subdir('vendor/lai')
+subdir('vendor/lwip')
 subdir('driver')
 subdir('kernel')

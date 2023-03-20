@@ -3,8 +3,8 @@
  * Created on Sat Feb 11 2023.
  */
 
-#ifndef KRX_PS_PS_H
-#define KRX_PS_PS_H
+#ifndef KRX_KDK_PROCESS_H
+#define KRX_KDK_PROCESS_H
 
 #include "./kernel.h"
 #include "./object.h"
@@ -29,7 +29,7 @@ typedef struct eprocess {
 	/*! (~) Unique process identifier. */
 	uint32_t id;
 	/*! Virtual memory state. */
-	vm_procstate_t vmps;
+	vm_map_t map;
 	/*! (~) Portable Applications Subsystem process. */
 	void *pas_proc;
 
@@ -55,4 +55,4 @@ int ps_create_system_thread(ethread_t *thread, const char *name,
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;
 
-#endif /* KRX_PS_PS_H */
+#endif /* KRX_KDK_PROCESS_H */

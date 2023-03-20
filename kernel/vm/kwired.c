@@ -27,7 +27,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 	if (!(flags & kVMemPFNDBHeld))
 		ipl = vmp_acquire_pfn_lock();
 
-	kassert(vmem == &kernel_process.vmps.vmem);
+	kassert(vmem == &kernel_process.map.vmem);
 
 	r = vmem_xalloc(vmem, size, 0, 0, 0, 0, 0, flags | kVMemPFNDBHeld, out);
 	if (r < 0) {
@@ -37,9 +37,9 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 	for (int i = 0; i < size - 1; i += PGSIZE) {
 		vm_page_t *page;
-		vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
+		vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
 		    &page);
-		pmap_enter(&kernel_process.vmps, page->address,
+		pmap_enter(&kernel_process.map, VM_PAGE_PADDR(page),
 		    (vaddr_t)*out + i, kVMAll);
 	}
 
@@ -56,7 +56,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 	int r;
 	ipl_t ipl;
 
-	kassert(vmem == &kernel_process.vmps.vmem);
+	kassert(vmem == &kernel_process.map.vmem);
 
 	if (!(flags & kVMemPFNDBHeld))
 		ipl = vmp_acquire_pfn_lock();
@@ -71,11 +71,11 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 
 	for (int i = 0; i < r; i += PGSIZE) {
 		vm_page_t *page;
-		page = pmap_unenter(&kernel_process.vmps, (vaddr_t)addr + i);
+		page = pmap_unenter(&kernel_process.map, (vaddr_t)addr + i);
 		pmap_invlpg(addr + i);
-		kassert(page->reference_count == 1);
-		page->reference_count = 0;
-		vmp_page_free(&kernel_process.vmps, page);
+		kassert(page->wirecnt == 1);
+		page->wirecnt = 0;
+		vmp_page_free(&kernel_process.map, page);
 	}
 
 	if (!(flags & kVMemPFNDBHeld))
@@ -85,7 +85,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 void
 vm_kernel_dump()
 {
-	vmem_dump(&kernel_process.vmps.vmem);
+	vmem_dump(&kernel_process.map.vmem);
 	vmem_dump(&vm_kernel_wired);
 }
 
@@ -93,13 +93,13 @@ void
 vmp_kernel_init()
 {
 	vmem_earlyinit();
-	vmem_init(&kernel_process.vmps.vmem, "kernel-va", KHEAP_BASE,
+	vmem_init(&kernel_process.map.vmem, "kernel-va", KHEAP_BASE,
 	    KHEAP_SIZE, PGSIZE, NULL, NULL, NULL, 0, kVMemBootstrap, 0);
 	vmem_init(&vm_kernel_wired, "kernel-wired", 0, 0, PGSIZE,
-	    internal_allocwired, internal_freewired, &kernel_process.vmps.vmem,
+	    internal_allocwired, internal_freewired, &kernel_process.map.vmem,
 	    0, kVMemBootstrap, 0);
 
-	kernel_process.vmps.vmem.flags = 0;
+	kernel_process.map.vmem.flags = 0;
 	vm_kernel_wired.flags = 0;
 }
 

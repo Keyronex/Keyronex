@@ -5,7 +5,6 @@
 
 #include "dev/virtio_pcireg.h"
 #include "dev/virtioreg.h"
-#include "kdk/amd64/mdamd64.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
 #include "kdk/process.h"
@@ -192,10 +191,10 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	vaddr_t addr;
 	vaddr_t offs;
 
-	r = vmp_page_alloc(&kernel_process.vmps, true, kPageUseWired,
+	r = vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
 	    &queue->page);
 	kassert(r == 0);
-	addr = (vaddr_t)P2V(queue->page->address);
+	addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(queue->page);
 
 	/* allocate a queue of total size 3336 bytes, to nicely fit in a page */
 	queue->num = index;

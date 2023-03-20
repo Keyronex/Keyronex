@@ -19,7 +19,7 @@
 #define krx_inout
 #define krx_nullable
 
-#define elementsof(x) (sizeof(x) / sizeof(x[0]))
+#define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))

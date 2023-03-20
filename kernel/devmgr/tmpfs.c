@@ -33,20 +33,21 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 	tmpnode_t *node = (tmpnode_t *)ino;
 
 	if (node->vn != NULL) {
-		obj_retain(&node->vn->objhdr);
+		obj_direct_retain(&node->vn);
 		*vout = node->vn;
 		return 0;
 	} else {
 		vnode_t *vn = kmem_alloc(sizeof(*vn));
 		node->vn = vn;
-		obj_initialise_header(&vn->objhdr, kObjTypeVNode);
+		obj_initialise_header(&vn->vmobj.objhdr, kObjTypeVNode);
 		vn->type = node->attr.type;
 		vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops : &tmpfs_vnops;
 		vn->vfsp = vfs;
 		vn->vfsmountedhere = NULL;
 		vn->isroot = false;
 		if (node->attr.type == VREG) {
-			vn->section = node->reg.section;
+			kfatal("fix\n");
+			// vn->section = node->reg.section;
 			vn->size = node->attr.size;
 		} else if (node->attr.type == VCHR) {
 			kfatal("Unimplemented\n");
@@ -115,10 +116,11 @@ tmakenode(tmpnode_t *dn, const char *name, vattr_t *attr)
 
 	switch (attr->type) {
 	case VREG: {
-		int r;
-		r = vm_section_new_anonymous(&kernel_process.vmps, UINT32_MAX,
-		    &n->reg.section);
-		kassert(r == 0);
+		// int r;
+		//  r = vm_object_new_anonymous(&kernel_process.map, UINT32_MAX,
+		//      &n->reg.section);
+		// kassert(r == 0);
+		kfatal("Implement\n");
 		break;
 	}
 	case VDIR:

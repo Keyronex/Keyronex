@@ -117,7 +117,7 @@ ki_reschedule(void)
 		ke_spinlock_release_nospl(&dispatcher_lock);
 		return;
 	} else {
-		vm_ps_activate(&eprocess(next->process)->vmps);
+		vm_map_activate(&eprocess(next->process)->map);
 	}
 
 	hl_switch(curthread, next);

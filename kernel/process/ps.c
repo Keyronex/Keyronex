@@ -16,9 +16,8 @@ ethread_t kernel_bsp_thread;
 static void
 init_common(eprocess_t *process)
 {
-	ke_mutex_init(&process->vmps.mutex);
-	RB_INIT(&process->vmps.vad_queue);
-	vmp_wsl_init(&process->vmps);
+	ke_mutex_init(&process->map.mutex);
+	RB_INIT(&process->map.entry_queue);
 }
 
 void

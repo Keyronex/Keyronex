@@ -309,7 +309,6 @@ iop_send_sync(iop_t *iop)
 		return 0;
 
 	default:
-		kfatal("should not be returned");
-		return 0;
+		kfatal("%d should never be returned from iop_continue", r);
 	}
 }

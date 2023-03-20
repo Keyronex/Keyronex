@@ -24,14 +24,14 @@ pgcache_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (nbyte == 0)
 		return 0;
 
-	r = vm_ps_map_section_view(&kernel_process.vmps, vn->section, &vaddr,
-	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVADInheritShared,
-	    false);
+	r = vm_map_object(&kernel_process.map, &vn->vmobj, &vaddr,
+	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVMInheritShared,
+	    false, false);
 	kassert(r == 0);
 
 	memcpy(buf, (void *)(vaddr + off), nbyte);
 
-	r = vm_ps_deallocate(&kernel_process.vmps, vaddr,
+	r = vm_map_deallocate(&kernel_process.map, vaddr,
 	    PGROUNDUP(nbyte + off));
 	kassert(r == 0);
 
@@ -53,14 +53,15 @@ pgcache_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (off + nbyte > vn->size)
 		vn->size = off + nbyte;
 
-	r = vm_ps_map_section_view(&kernel_process.vmps, vn->section, &vaddr,
-	    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVADInheritShared,
-	    false);
+
+	r = vm_map_object(&kernel_process.map, &vn->vmobj, &vaddr,
+	    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVMInheritShared,
+	    false, false);
 	kassert(r == 0);
 
 	memcpy((void *)(vaddr + off), buf, nbyte);
 
-	r = vm_ps_deallocate(&kernel_process.vmps, vaddr,
+	r = vm_map_deallocate(&kernel_process.map, vaddr,
 	    PGROUNDUP(nbyte + off));
 
 	return nbyte;
