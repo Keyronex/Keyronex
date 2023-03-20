@@ -120,7 +120,6 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
     vm_mdl_t *mdl, iop_t *iop)
 {
 	uint32_t virtq_desc[7];
-	ipl_t ipl;
 	size_t i = 0;
 	size_t ndatadescs;
 
@@ -135,10 +134,6 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 	for (unsigned i = 0; i < 2 + ndatadescs; i++) {
 		virtq_desc[i] = allocateDescNumOnQueue(&io_queue); // i;
 	}
-
-#if 0
-	ipl = ke_spinlock_acquire(&io_queue.spinlock);
-#endif
 
 	struct vioblk_request *req = TAILQ_FIRST(&free_reqs);
 	TAILQ_REMOVE(&free_reqs, req, queue_entry);
@@ -179,10 +174,6 @@ VirtIODisk::commonRequest(int kind, size_t nblocks, unsigned block,
 
 	submitDescNumToQueue(&io_queue, virtq_desc[0]);
 	notifyQueue(&io_queue);
-
-#if 0
-	ke_spinlock_release(&io_queue.spinlock, ipl);
-#endif
 
 	return 0;
 }
@@ -249,8 +240,6 @@ VirtIODisk::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	iop_continue(req->iop, kIOPRetCompleted);
 
 	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
-
-	// ke_semaphore_release(&sem, 1);
 }
 
 void

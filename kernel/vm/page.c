@@ -9,6 +9,7 @@
 #include "kdk/libkern.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "vm/vm_internal.h"
 
 struct vmp_pregion {
 	/*! Linkage to pregion_queue. */

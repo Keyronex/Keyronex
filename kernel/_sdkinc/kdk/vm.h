@@ -92,22 +92,29 @@ enum vm_page_status {
 };
 
 /*!
- * Physical page frame description. Whole thing (?) locked by the PFN lock.
+ * Physical page frame description.
+ *
+ * Most components are locked by the page owner - i.e. either anon or obj.
+ * For kernel wired memory the page queues lock is used.
+ *
+ * (~) invariant forever
+ * (o) owner obj/anon mutex
+ * (q) page queues lock
  */
 typedef struct vm_page {
-	/*! Queue linkage: freelist or LRU queue. */
+	/*! (q) Queue linkage: freelist or LRU queue. */
 	TAILQ_ENTRY(vm_page) queue_entry;
 
-	/*! Page's physical page frame number. */
+	/*! (~) Page's physical page frame number. */
 	paddr_t pfn : 40;
-	/*! What is its current use? */
+	/*! (o) What is its current use? */
 	enum vm_page_use use : 3;
-	/*! What is its status, if use is anonymous/object? */
+	/*! (o+sometimes q) What is its status, if use is anonymous/object? */
 	enum vm_page_status status : 2;
 	/* Padding */
 	uint8_t padding : 3;
 	/*!
-	 * How many requests are there for it to be wired in-memory?
+	 * (o+q) How many requests are there for it to be wired in-memory?
 	 * One for each MDL, and another for a busy page.
 	 */
 	uint16_t wirecnt;
@@ -119,7 +126,7 @@ typedef struct vm_page {
 		struct vm_object *obj;
 	};
 
-	/* Physical-to-Virtual map list */
+	/* (o) Physical-to-virtual mapping list */
 	LIST_HEAD(, pv_entry) pv_list;
 } vm_page_t;
 
@@ -263,6 +270,9 @@ void vm_page_wire(vm_page_t *page);
 
 /*! @brief Decrement wire-count of a resident page, may return to LRU if 0. */
 void vm_page_unwire(vm_page_t *page);
+
+/*! @brief Bring a page to the front of the LRU queue. */
+void vm_page_activate(vm_page_t *page);
 
 /*! @brief Translate wired virtual to physical address in current process. */
 paddr_t vm_translate(vaddr_t vaddr);

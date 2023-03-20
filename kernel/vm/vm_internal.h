@@ -13,7 +13,7 @@
 #define kAMapChunkNPages 32
 
 /*!
- * Page within a VM object (i.e. a vnode)
+ * Page within a VM object (i.e. a vnode). Locked by VM object's lock.
  */
 struct vmp_objpage {
 	/*! Linkage in vm_object::page_ref_rbtree */
