@@ -109,7 +109,7 @@ struct virtio_net_hdr_mrg_rxbuf {
  * command goes in between.
  */
 struct virtio_net_ctrl_hdr {
-	uint8_t class;
+	uint8_t klass;
 	uint8_t cmd;
 } __packed;
 
@@ -139,7 +139,7 @@ struct virtio_net_ctrl_hdr {
  * non-perfect, ie. based on hypervisor resources, the guest may
  * received packets from sources not specified in the filter list.
  *
- * In addition to the class/cmd header, the TABLE_SET command requires
+ * In addition to the klass/cmd header, the TABLE_SET command requires
  * two out scatterlists.  Each contains a 4 byte count of entries followed
  * by a concatenated byte stream of the ETH_ALEN MAC addresses.  The
  * first sg list contains unicast addresses, the second is for multicast.

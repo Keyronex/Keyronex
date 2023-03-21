@@ -4,13 +4,13 @@
  */
 
 #include "ex_private.h"
+#include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
-#include "kdk/devmgr.h"
 #include "lwip/tcpip.h"
 
 ethread_t init_thread;
@@ -18,7 +18,8 @@ ethread_t init_thread;
 /* acpipc/acpipc.cc */
 void acpipc_autoconf(void *rsdp);
 
-static void tcpip_running(void* unused)
+static void
+tcpip_running(void *unused)
 {
 	kdprintf("KeySock version 1\n");
 }
@@ -33,11 +34,13 @@ init_thread_start(void *rsdp)
 
 	acpipc_autoconf(rsdp);
 
+#if 0
 	vnode_t *vn;
 	int r = vfs_lookup(root_vnode, &vn, "/atestdir/hello.txt", 0, NULL);
 
 	kdprintf("lookup of root vnode (%p) yielded result %d vnode %p\n",
 	    root_vnode, r, vn);
+#endif
 
 #if 0
 	vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);
@@ -54,7 +57,7 @@ init_thread_start(void *rsdp)
 	kdprintf("Buf: %s\n", buf);
 #endif
 
-#if 1
+#if 0
 	char * buf  = kmem_alloc(256);
 	memset(buf, 0x0, 256);
 	r = vn->ops->read(vn, buf, 255, 0);

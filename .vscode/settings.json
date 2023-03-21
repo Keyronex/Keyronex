@@ -20,6 +20,7 @@
 			"${commentend}"
 		]
 	},
-	"esbonio.sphinx.confDir": ""
+	"esbonio.sphinx.confDir": "",
+	"C/C++ Include Guard.Auto Update Include Guard": false
 
 }

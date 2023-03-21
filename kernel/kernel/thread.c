@@ -4,6 +4,7 @@
  */
 
 #include "kdk/kernel.h"
+#include "kdk/process.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
 #include "ke_internal.h"
@@ -19,7 +20,7 @@ static kcpu_t *
 nextcpu()
 {
 	static kspinlock_t lock = KSPINLOCK_INITIALISER;
-	kcpu_t		  *cpu;
+	kcpu_t *cpu;
 
 	ipl_t ipl = ke_spinlock_acquire(&lock);
 	if (++lastcpu >= ncpus)
@@ -29,7 +30,6 @@ nextcpu()
 
 	return cpu;
 }
-
 
 void
 ki_thread_start(kthread_t *thread)
@@ -48,7 +48,6 @@ ki_thread_start(kthread_t *thread)
 	ke_release_dispatcher_lock(ipl);
 }
 
-
 void
 ki_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
     const char *name)
@@ -58,15 +57,17 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *cpu, kprocess_t *proc,
 	thread->saved_ipl = kIPL0;
 	thread->name = name;
 	thread->timeslice = 5;
-	//kmem_asprintf((char **)&thread->wait_timer.name,
-	//    "thread %p wait timeout", thread);
+	// kmem_asprintf((char **)&thread->wait_timer.name,
+	//     "thread %p wait timeout", thread);
 	thread->wait_timer.state = kTimerDisabled;
 	ipl_t ipl = ke_spinlock_acquire(&proc->lock);
 	SLIST_INSERT_HEAD(&proc->threads, thread, kproc_threads_link);
 	ke_spinlock_release(&proc->lock, ipl);
 }
 
-int ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name, void (*start)(void*), void *arg)
+int
+ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name,
+    void (*start)(void *), void *arg)
 {
 	kcpu_t *cpu = nextcpu();
 
@@ -77,4 +78,28 @@ int ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name, void (
 	kmd_thread_init(thread, start, arg);
 
 	return 0;
+}
+
+void
+dbg_dump_threads(void)
+{
+	kthread_t *thr;
+	SLIST_FOREACH (thr, &kernel_process.kproc.threads, kproc_threads_link) {
+		kdprintf("thread %s <%p>: ", thr->name, thr);
+		if (thr->state == kThreadStateWaiting) {
+			kdprintf("waiting (%s)", thr->wait_reason);
+		} else
+			kdprintf("state: %d", thr->state);
+		kdprintf("\n");
+	}
+}
+
+void
+dbg_trace_threads(void)
+{
+	kthread_t *thr;
+	SLIST_FOREACH (thr, &kernel_process.kproc.threads, kproc_threads_link) {
+		kdprintf("thread %s <%p>: \n", thr->name, thr);
+		md_intr_frame_trace(&thr->frame);
+	}
 }

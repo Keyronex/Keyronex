@@ -16,24 +16,26 @@ eprocess(kprocess_t *process)
 	return (eprocess_t *)process;
 }
 
+
 static void
 ki_dpc_int_dispatch(void)
 {
 	ipl_t ipl = spldpc();
 	kcpu_t *cpu = hl_curcpu();
 
+
 	/* FIXME: xxx test/set with ints off, or atomic test/set?  */
 	while (cpu->dpc_int) {
 		cpu->dpc_int = false;
 		while (true) {
-			ipl_t ipl = ke_acquire_dpc_lock();
+			ipl_t hiipl = ke_acquire_dpc_lock();
 
 			kdpc_t *dpc = TAILQ_FIRST(&cpu->dpc_queue);
 			if (dpc) {
 				TAILQ_REMOVE(&cpu->dpc_queue, dpc, queue_entry);
 			}
 
-			ke_release_dpc_lock(ipl);
+			ke_release_dpc_lock(hiipl);
 
 			if (dpc == NULL)
 				break;
@@ -42,6 +44,7 @@ ki_dpc_int_dispatch(void)
 			dpc->callback(dpc->arg);
 		}
 	}
+
 	splx(ipl);
 }
 

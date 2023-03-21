@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK } vtype_t;
+typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK } vtype_t;
 
 typedef struct vattr {
 	vtype_t type;

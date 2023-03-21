@@ -6,7 +6,7 @@ gen = generator(bin2c,
 kernel_c_args = [freestanding_c_args, '-D_KERNEL']
 kernel_cpp_args = [freestanding_cpp_args]
 kernel_link_args = []
-kernel_include_directories = [ krx_sdk_includes, lwip_include_directories,
+kernel_include_directories = [ krx_sdk_includes,
 	include_directories('./') ]
 
 kernel_sources = []

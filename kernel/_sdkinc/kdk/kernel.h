@@ -307,7 +307,7 @@ int64_t ke_get_ticks(kcpu_t *cpu);
 /*! @brief Kernel fatal condition. */
 #define kfatal(...)                                              \
 	{                                                        \
-		asm ("cli");					 \
+		asm("cli");                                      \
 		kdprintf("at %s:%d (%s):\n", __FILE__, __LINE__, \
 		    __FUNCTION__);                               \
 		kdprintf(__VA_ARGS__);                           \

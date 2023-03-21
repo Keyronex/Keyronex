@@ -5,12 +5,14 @@ USAGE+="[+NAME?amd64_run.sh -- run Keyronex under QEmu]"
 USAGE+="[d:dax?Enable VirtIO-FS DAX.]"
 USAGE+="[f:virtiofs?Enable VirtIO-FS.]"
 USAGE+="[k:kvm?Enable hardware accelerated virtualisation.]"
+USAGE+="[n:virtio-net?Enable VirtIO-net.]"
 USAGE+="[q:qemu-exe?Path to QEmu executable.]:?[/path/to/qemu]"
 USAGE+="[s:smp]#[smp:=4?Set number of cores.]"
 
 qemu_exe=qemu-system-x86_64
 dax=0
 virtiofs=0
+virtionet=0
 kvm=0
 smpnum=4
 
@@ -18,6 +20,7 @@ while getopts "$USAGE" optchar ; do
 	case $optchar in
 	d) dax=1 ;;
 	f) virtiofs=1 ;;
+	n) virtionet=1 ;;
 	k) kvm=1 ;;
 	q) qemu_exe=$OPTARG ;;
 	s) smpnum=$OPTARG ;;
@@ -32,6 +35,10 @@ virtio_fs_args="-object memory-backend-file,id=mem,size=128M,mem-path=/dev/shm,s
 (($dax)) && {
 	echo "Using DAX" ;
 	virtio_fs_args+=",cache-size=64M" ;
+}
+
+(($virtionet)) && {
+	qemu_args+="-net bridge,br=virbr0 -net nic,model=virtio "
 }
 
 (($virtiofs)) && qemu_args+="${virtio_fs_args} "

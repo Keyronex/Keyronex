@@ -78,6 +78,8 @@ enum vm_page_use {
 	kPageUseWired,
 	/*! The page is used by the VMM directly (wired) */
 	kPageUseVMM,
+	/*! The page is a device buffer. */
+	kPageUseDevBuf,
 };
 
 enum vm_page_status {

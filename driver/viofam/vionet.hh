@@ -6,5 +6,51 @@
 #ifndef KRX_VIOFAM_VIONET_HH
 #define KRX_VIOFAM_VIONET_HH
 
+#include "lwip/netif.h"
+
+#include "viodev.hh"
+
+class VirtIONIC : VirtIODevice {
+	/*! VirtIO-FS configuration */
+	struct virtio_net_config *cfg;
+	/*! Virtqueue 0 - transmit */
+	virtio_queue tx_vq;
+	/*! Virtqueue 1 - receive */
+	virtio_queue rx_vq;
+
+	/*! Fuse unique ID counter. */
+	uint64_t fuse_unique = 0;
+
+	/*! Nethdrs page. */
+	vm_page_t *nethdrs_page;
+	/*! Packet buffer pages - 64x 2KiB for RX and TX queues. */
+	vm_page_t *packet_bufs_pages[64];
+
+	struct pbuf_rx {
+		struct pbuf_custom pbuf;
+		uint16_t hdr_desc_id;
+	};
+
+	/*! Pre-allocated custom pbufs. One for each RX queue entry. */
+	pbuf_rx pbufs[64];
+
+	/*! Network interface state. */
+	struct netif nic;
+
+	/*! Free RX pbuf callback. */
+	static void freeRXPBuf(struct pbuf *p);
+	/*! Initialise netif callback. */
+	static err_t netifInit(struct netif *netif);
+	/*! Output a packet netif callback. */
+	static err_t netifOutput(struct netif *netif, struct pbuf *p);
+
+	void intrDpc();
+	void processUsed(virtio_queue *queue, struct vring_used_elem *e);
+
+	void initRXQueue();
+
+    public:
+	VirtIONIC(PCIDevice *provider, pci_device_info &info);
+};
 
 #endif /* KRX_VIOFAM_VIONET_HH */

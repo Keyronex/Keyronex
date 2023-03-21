@@ -3,8 +3,8 @@
  * Created on Tue Feb 14 2023.
  */
 
-#include "kdk/machdep.h"
 #include "kdk/kernel.h"
+#include "kdk/machdep.h"
 
 inline int64_t
 ke_get_ticks(kcpu_t *cpu)
@@ -93,7 +93,8 @@ ki_cpu_hardclock(hl_intr_frame_t *frame, void *arg)
 
 	/* we are actually already at spl high */
 	ipl = ke_acquire_dpc_lock();
-	ticks = __atomic_fetch_add(&cpu->ticks, NS_PER_S / KERN_HZ, __ATOMIC_SEQ_CST);
+	ticks = __atomic_fetch_add(&cpu->ticks, NS_PER_S / KERN_HZ,
+	    __ATOMIC_SEQ_CST);
 
 	if (cpu->current_thread->timeslice-- <= 0) {
 		cpu->reschedule_reason = kRescheduleReasonPreempted;
@@ -114,7 +115,8 @@ ki_cpu_hardclock(hl_intr_frame_t *frame, void *arg)
 		/* ! do we want kCalloutElapsed? Do we need it? */
 		co->state = kTimerDisabled;
 
-		ke_dpc_enqueue(&co->dpc);
+		TAILQ_INSERT_TAIL(&cpu->dpc_queue, &co->dpc, queue_entry);
+		ki_raise_dpc_interrupt();
 	}
 
 next:
