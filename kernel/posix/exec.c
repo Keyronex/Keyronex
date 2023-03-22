@@ -199,12 +199,11 @@ strv_free(char **strv)
 }
 
 int
-    sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
-	const char *u_envp[], hl_intr_frame_t *frame)
+sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
+    const char *u_envp[], hl_intr_frame_t *frame)
 {
 	int r = 0;
 	exec_package_t pkg, rtldpkg;
-	kthread_t *thread = ke_curthread();
 	char *path = NULL, **argp = NULL, **envp = NULL;
 	vm_map_t *oldmap = proc->eprocess->map;
 
@@ -215,7 +214,7 @@ int
 #endif
 
 	kassert(oldmap != kernel_process.map);
-	pkg.map = rtldpkg.map =  NULL; // make a new map
+	pkg.map = rtldpkg.map = NULL; // make a new map
 	kassert(pkg.map != NULL);
 
 	path = strdup(u_path);

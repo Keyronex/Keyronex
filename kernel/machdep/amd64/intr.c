@@ -161,7 +161,7 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 {
 	vm_fault_return_t ret;
 	while (true) {
-		ret = vm_fault(&ps_curproc()->map, read_cr2(), frame->code,
+		ret = vm_fault(ps_curproc()->map, read_cr2(), frame->code,
 		    NULL);
 		switch (ret) {
 		case kVMFaultRetOK:

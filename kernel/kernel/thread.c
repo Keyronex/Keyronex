@@ -80,6 +80,12 @@ ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name,
 	return 0;
 }
 
+int ke_process_init(kprocess_t *kproc) {
+	SLIST_INIT(&kproc->threads);
+	ke_spinlock_init(&kproc->lock);
+	return 0;
+}
+
 void
 dbg_dump_threads(void)
 {

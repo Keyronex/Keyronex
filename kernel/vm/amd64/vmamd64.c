@@ -56,7 +56,7 @@ static void pte_set(uint64_t *pte, paddr_t addr, uint64_t flags);
 void pmap_invlpg(vaddr_t addr);
 
 void
-pmap_init(void)
+pmap_kernel_init(void)
 {
 	uint64_t *cr3 = (void *)read_cr3();
 	kernel_process.map->md.cr3 = (paddr_t)cr3;
@@ -70,6 +70,23 @@ pmap_init(void)
 			    &page);
 			pte_set(&pml4[i], VM_PAGE_PADDR(page), kMMUDefaultProt);
 		}
+	}
+}
+
+void
+pmap_new(struct vm_map *map)
+{
+	vm_page_t *page;
+
+	ke_spinlock_init(&map->md.lock);
+	vmp_page_alloc(map, true, kPageUseVMM, &page);
+	map->md.cr3 = VM_PAGE_PADDR(page);
+
+	/* copy over the higher half mappings */
+	for (int i = 255; i < 512; i++) {
+		uint64_t *pml4 = P2V(map->md.cr3);
+		uint64_t *kpml4 = P2V(kernel_process.map->md.cr3);
+		pte_set(&pml4[i], (paddr_t)kpml4[i], kMMUDefaultProt);
 	}
 }
 

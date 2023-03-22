@@ -49,8 +49,19 @@ typedef struct eprocess {
  *
  * @post New thread is created, with one reference held to it.
  */
-int ps_create_system_thread(ethread_t *thread, const char *name,
+int ps_create_system_thread(krx_in ethread_t *thread, const char *name,
     void (*start)(void *), void *arg);
+
+/*!
+ * @brief Create a new process with no threads, inheriting VM and files.
+ *
+ */
+int ps_process_create(krx_out eprocess_t **process_out, eprocess_t *parent);
+
+/*!
+ * @brief Create a new thread in a given process. Thread needs setup.
+ */
+int ps_thread_create(krx_out ethread_t **thread_out, eprocess_t *eproc);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

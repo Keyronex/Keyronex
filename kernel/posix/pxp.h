@@ -47,4 +47,12 @@ typedef struct posix_proc {
 	posix_file_t files[64];
 } posix_proc_t;
 
+static inline posix_proc_t *
+px_curproc(void)
+{
+	posix_proc_t *psx_proc = (posix_proc_t *)ps_curproc()->pas_proc;
+	kassert(psx_proc != NULL);
+	return psx_proc;
+}
+
 #endif /* KRX_POSIX_PASP_H */

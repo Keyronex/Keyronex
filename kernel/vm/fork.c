@@ -7,6 +7,7 @@
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/process.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
 #include "machdep/amd64/amd64.h"
@@ -74,10 +75,17 @@ vmp_amap_copy(vm_map_t *map_from, vm_map_t *map_to, struct vm_amap *from_amap,
 }
 
 int
-vm_map_fork(vm_map_t *map, vm_map_t *map_new)
+vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 {
+	vm_map_t *map_new;
 	vm_map_entry_t *vad;
 	kwaitstatus_t w;
+
+	map_new = kmem_alloc(sizeof(*map_new));
+	vm_map_init(map_new);
+
+	if (map == kernel_process.map)
+		goto out;
 
 	w = ke_wait(&map->mutex, "vm_map_fork:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
@@ -123,6 +131,9 @@ vm_map_fork(vm_map_t *map, vm_map_t *map_new)
 	}
 
 	ke_mutex_release(&map->mutex);
+
+out:
+	*map_out = map_new;
 
 	return 0;
 }

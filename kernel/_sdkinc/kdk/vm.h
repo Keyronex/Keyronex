@@ -310,14 +310,17 @@ void vm_map_activate(vm_map_t *map);
 vm_fault_return_t vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags,
     vm_page_t **out);
 
-/*! @brief Allocate anonymous memory in a process. */
+/*! @brief Initialise a new map. */
+int vm_map_init(vm_map_t *map);
+
+/*! @brief Allocate anonymous memory in a map. */
 int vm_map_allocate(vm_map_t *ps, vaddr_t *vaddrp, size_t size, bool exact);
 
-/*! @brief Deallocate a range of virtual address space in a process. */
+/*! @brief Deallocate a range of virtual address space in a map. */
 int vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size);
 
 /*!
- * @brief Map a view of an object into a process.
+ * @brief Map a view of an object into a map.
  */
 int vm_map_object(vm_map_t *ps, vm_object_t *object, krx_inout vaddr_t *vaddrp,
     size_t size, voff_t offset, vm_protection_t initial_protection,
@@ -325,19 +328,19 @@ int vm_map_object(vm_map_t *ps, vm_object_t *object, krx_inout vaddr_t *vaddrp,
     bool copy);
 
 /*!
- * @brief Forks a virtual address space
+ * @brief Forks a virtual address space map.
  *
  * This function forks a process' virtual address space according to POSIX
  * semantics. It should be called only from the context of a thread of that
  * process. The existing process' virtual address space structure
- * \p map is used as a template to fill entries in the new process' map,
- * \p map_new, which should have been initialized with `vm_map_init()`.
+ * \p map is used as a template to fill entries in a new map, the address of
+ * which will be written to the out parameter \p map_new.
  *
- * VADs are established in the new VMPS which either share or virtual copy
- * (according to the VAD inheritance attributes) the section referred to by the
- * corresponding VAD in the old process. The reason why this function must be
- * invoked from the context of a thread which already exists is because, per
- * POSIX semantics, only the stack of the invoking thread is copied.
+ * Map entries are established in the new map which either share or virtual copy
+ * (according to the map entry inheritance attributes) the memory referred to by
+ * the corresponding map entry in the old process. The reason why this function
+ * must be invoked from the context of a thread which already exists is because
+ * only the stack of the invoking thread is copied.
  *
  * Parts of the old process' address space which have been virtual-copied will
  * be mapped read-only if they are currently mapped read-write.
@@ -347,11 +350,12 @@ int vm_map_object(vm_map_t *ps, vm_object_t *object, krx_inout vaddr_t *vaddrp,
  * @post The map locks are released.
  *
  * @param map The virtual address space structure of the existing process.
- * @param map_new The virtual address space structure of the new process.
+ * @param map_new Where to write the pointer to the newly-created virtual
+ * address space structure.
  *
  * @return 0 on success, negative error code on failure
  */
-int vm_map_fork(vm_map_t *map, vm_map_t *map_new);
+int vm_map_fork(vm_map_t *map, vm_map_t **map_new);
 
 /*! @brief Allocate a new anonymous object and charge \p map for it.*/
 int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out);

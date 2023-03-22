@@ -7,6 +7,7 @@
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
+#include "kdk/process.h"
 #include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
@@ -39,24 +40,17 @@ vmp_map_find(vm_map_t *ps, vaddr_t vaddr)
 	return RB_FIND(vm_map_entry_rbtree, &ps->entry_queue, &key);
 }
 
-#if 0
 int
-vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
+vm_map_init(vm_map_t *map)
 {
-	vm_object_t *section = kmem_alloc(sizeof(vm_object_t));
-
-	obj_initialise_header(&section->header, kObjTypeSection);
-
-	section->kind = kSectionAnonymous;
-	section->size = size;
-	section->parent = NULL;
-	RB_INIT(&section->page_ref_rbtree);
-
-	*out = section;
-
+	ke_mutex_init(&map->mutex);
+	RB_INIT(&map->entry_queue);
+	if (map != kernel_process.map) {
+		/* kernel pmap already gets initialised especially */
+		pmap_new(map);
+	}
 	return 0;
 }
-#endif
 
 int
 vm_map_allocate(vm_map_t *map, vaddr_t *vaddrp, size_t size, bool exact)

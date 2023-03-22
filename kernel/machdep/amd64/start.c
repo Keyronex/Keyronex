@@ -26,7 +26,7 @@ void idt_load(void);
 void idt_setup(void);
 
 /* vmamd64.c */
-void pmap_init(void);
+void pmap_kernel_init(void);
 
 // The Limine requests can be placed anywhere, but it is important that
 // the compiler does not optimise them away, so, usually, they should
@@ -302,7 +302,7 @@ _start(void)
 
 	idt_setup();
 	mem_init();
-	pmap_init();
+	pmap_kernel_init();
 	vmp_kernel_init();
 	kmem_init();
 

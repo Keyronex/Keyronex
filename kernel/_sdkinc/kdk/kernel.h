@@ -232,7 +232,7 @@ typedef struct kthread {
 typedef struct kprocess {
 	/*! Object manager header. */
 	object_header_t objhdr;
-
+	/*! Lock on state. */
 	kspinlock_t lock;
 	/*! (l) threads of the process; linked by kthread::kproc_threads_link */
 	SLIST_HEAD(, kthread) threads;
@@ -471,6 +471,9 @@ void ke_mutex_init(kmutex_t *mutex);
  * @brief Release a kernel mutex.
  */
 void ke_mutex_release(kmutex_t *mutex);
+
+/*! @brief Initialise a new process. */
+int ke_process_init(kprocess_t *kproc);
 
 /*!
  * @brief Initialise a kernel semaphore.

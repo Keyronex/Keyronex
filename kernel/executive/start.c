@@ -115,9 +115,7 @@ init_thread_start(void *rsdp)
 	// setup device tmpfs
 
 	tcpip_init(tcpip_running, NULL);
-
 	acpipc_autoconf(rsdp);
-
 	test_sockets();
 
 #if 0
@@ -126,24 +124,7 @@ init_thread_start(void *rsdp)
 
 	kdprintf("lookup of root vnode (%p) yielded result %d vnode %p\n",
 	    root_vnode, r, vn);
-#endif
 
-#if 0
-	vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);
-	char *buf;
-
-	vm_mdl_map(mdl, (void**)&buf);
-
-	memset(buf, 0x0, PGSIZE);
-
-	iop_t *iop = iop_new_read(root_vnode->vfsp->dev, mdl, 4096, 0);
-	iop->stack[0].vnode = vn;
-	iop_return_t res = iop_send_sync(iop);
-	kdprintf("IOP result: %d\n", res);
-	kdprintf("Buf: %s\n", buf);
-#endif
-
-#if 0
 	char * buf  = kmem_alloc(256);
 	memset(buf, 0x0, 256);
 	r = vn->ops->read(vn, buf, 255, 0);
@@ -151,6 +132,9 @@ init_thread_start(void *rsdp)
 	kdprintf("read of /atestdir/hello.txt yielded result %d:\n%s\n", r,
 	    buf);
 #endif
+
+	int psx_init(void);
+	psx_init();
 
 	/* become some sort of worker thread? */
 	for (;;)
