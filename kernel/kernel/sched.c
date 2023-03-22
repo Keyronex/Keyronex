@@ -7,8 +7,25 @@
 #include "kdk/machdep.h"
 #include "kdk/process.h"
 
+#define NANOPRINTF_IMPLEMENTATION
+#include <nanoprintf/nanoprintf.h>
+
 kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER;
 kspinlock_t dpc_queues_lock = KSPINLOCK_INITIALISER;
+kspinlock_t dprintf_lock = KSPINLOCK_INITIALISER;
+kcpu_t cpu_bsp;
+kcpu_t **all_cpus;
+size_t ncpus;
+
+ipl_t
+splraise(ipl_t spl)
+{
+	ipl_t oldspl = splget();
+	kassert(oldspl <= spl);
+	if (oldspl < spl)
+		splx(spl);
+	return oldspl;
+}
 
 eprocess_t *
 eprocess(kprocess_t *process)
@@ -16,13 +33,11 @@ eprocess(kprocess_t *process)
 	return (eprocess_t *)process;
 }
 
-
 static void
 ki_dpc_int_dispatch(void)
 {
 	ipl_t ipl = spldpc();
 	kcpu_t *cpu = hl_curcpu();
-
 
 	/* FIXME: xxx test/set with ints off, or atomic test/set?  */
 	while (cpu->dpc_int) {
@@ -120,7 +135,7 @@ ki_reschedule(void)
 		ke_spinlock_release_nospl(&dispatcher_lock);
 		return;
 	} else {
-		vm_map_activate(&eprocess(next->process)->map);
+		vm_map_activate(eprocess(next->process)->map);
 	}
 
 	hl_switch(curthread, next);

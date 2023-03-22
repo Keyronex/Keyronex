@@ -59,14 +59,14 @@ void
 pmap_init(void)
 {
 	uint64_t *cr3 = (void *)read_cr3();
-	kernel_process.map.md.cr3 = (paddr_t)cr3;
+	kernel_process.map->md.cr3 = (paddr_t)cr3;
 
 	/* pre-allocate the top 256. they are globally shared. */
 	for (int i = 255; i < 511; i++) {
 		uint64_t *pml4 = P2V(cr3);
 		if (pte_get_addr(pml4[i]) == NULL) {
 			vm_page_t *page;
-			vmp_page_alloc(&kernel_process.map, true, kPageUseVMM,
+			vmp_page_alloc(kernel_process.map, true, kPageUseVMM,
 			    &page);
 			pte_set(&pml4[i], VM_PAGE_PADDR(page), kMMUDefaultProt);
 		}
@@ -271,7 +271,7 @@ pmap_enter_common(vm_map_t *map, paddr_t phys, vaddr_t virt,
 
 	if ((oldaddr = pte_get_addr(*pti_virt)) != NULL) {
 		/*! this may turn out to be excessive */
-		vmem_dump(&kernel_process.map.vmem);
+		vmem_dump(&kernel_process.map->vmem);
 		kmem_dump();
 		kfatal("not remapping a PTE without explicit request\n"
 		       "(requested vaddr=>phys 0x%lx=>0x%lx\n"
@@ -460,7 +460,7 @@ vm_map_md_init(vm_map_t *map)
 	map->md.cr3 = VM_PAGE_PADDR(page);
 	for (int i = 255; i < 512; i++) {
 		uint64_t *pml4 = P2V(map->md.cr3);
-		uint64_t *kpml4 = P2V(kernel_process.map.md.cr3);
+		uint64_t *kpml4 = P2V(kernel_process.map->md.cr3);
 		pte_set(&pml4[i], kpml4[i], kMMUDefaultProt);
 	}
 }

@@ -6,18 +6,20 @@
 #include "kdk/kernel.h"
 #include "kdk/machdep.h"
 #include "kdk/process.h"
+#include "kdk/vm.h"
 #include "kdk/vmem.h"
 #include "kernel/ke_internal.h"
 #include "vm/vm_internal.h"
 
-eprocess_t kernel_process;
+vm_map_t kmap;
+eprocess_t kernel_process = {.map = &kmap};
 ethread_t kernel_bsp_thread;
 
 static void
 init_common(eprocess_t *process)
 {
-	ke_mutex_init(&process->map.mutex);
-	RB_INIT(&process->map.entry_queue);
+	ke_mutex_init(&process->map->mutex);
+	RB_INIT(&process->map->entry_queue);
 }
 
 void

@@ -27,16 +27,16 @@ typedef struct posix_file {
  * (p) = posix_proc_mtx
  * (~) = invariant after initialisation
  */
-typedef struct px_proc {
+typedef struct posix_proc {
 	/*! (~) corresponding executive process */
 	eprocess_t *eprocess;
 
 	/*! (p) parent process */
-	struct px_proc *parent;
+	struct posix_proc *parent;
 	/*! (p) subprocesses */
-	LIST_HEAD(, px_proc) subprocs;
+	LIST_HEAD(, posix_proc) subprocs;
 	/*! (p) parent->subprocs linkage */
-	LIST_ENTRY(px_proc) subprocs_link;
+	LIST_ENTRY(posix_proc) subprocs_link;
 
 	/*! (p) wait status of an exiting/waited process */
 	int wait_stat;
@@ -45,6 +45,6 @@ typedef struct px_proc {
 
 	/* (p) open files */
 	posix_file_t files[64];
-} px_proc_t;
+} posix_proc_t;
 
 #endif /* KRX_POSIX_PASP_H */

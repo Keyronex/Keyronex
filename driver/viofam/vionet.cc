@@ -99,8 +99,10 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 	DKDevLog(this, "MAC address: " MAC_FMT, cfg->mac[0], cfg->mac[1],
 	    cfg->mac[2], cfg->mac[3], cfg->mac[4], cfg->mac[5]);
 
+#if 0
 	for (;;)
 		asm("pause");
+#endif
 }
 
 void
@@ -108,12 +110,12 @@ VirtIONIC::initRXQueue()
 {
 	vaddr_t nethdr_rx_pagebase;
 
-	vmp_page_alloc(&kernel_process.map, true, kPageUseWired, &nethdrs_page);
+	vmp_page_alloc(kernel_process.map, true, kPageUseWired, &nethdrs_page);
 
 	nethdr_rx_pagebase = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(nethdrs_page);
 
 	for (int i = 0; i < 64; i++) {
-		vmp_page_alloc(&kernel_process.map, true, kPageUseDevBuf,
+		vmp_page_alloc(kernel_process.map, true, kPageUseDevBuf,
 		    &packet_bufs_pages[i]);
 	}
 
@@ -201,7 +203,6 @@ VirtIONIC::freeRXPBuf(struct pbuf *p)
 	VirtIONIC *self = (VirtIONIC *)netif_get_by_index(p->if_idx)->state;
 	pbuf_rx *pbuf = (pbuf_rx *)p;
 	ipl_t ipl = ke_spinlock_acquire(&self->rx_vq.spinlock);
-	kdprintf("free DescNum %d\n", pbuf->hdr_desc_id);
 	self->submitDescNumToQueue(&self->rx_vq, pbuf->hdr_desc_id);
 	ke_spinlock_release(&self->rx_vq.spinlock, ipl);
 }

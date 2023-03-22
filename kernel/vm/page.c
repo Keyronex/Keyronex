@@ -138,7 +138,7 @@ vm_translate(vaddr_t vaddr)
 	} else {
 		paddr_t r;
 		kassert(vaddr > HHDM_BASE);
-		r = pmap_trans(&kernel_process.map, vaddr);
+		r = pmap_trans(kernel_process.map, vaddr);
 		kassert(r != 0);
 		return r;
 	}
@@ -160,7 +160,7 @@ vm_mdl_buffer_alloc(size_t npages)
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->npages = npages;
 	for (unsigned i = 0; i < npages; i++) {
-		int r = vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
+		int r = vmp_page_alloc(kernel_process.map, true, kPageUseWired,
 		    &mdl->pages[i]);
 		kassert(r == 0);
 	}

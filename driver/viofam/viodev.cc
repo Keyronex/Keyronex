@@ -191,7 +191,7 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	vaddr_t addr;
 	vaddr_t offs;
 
-	r = vmp_page_alloc(&kernel_process.map, true, kPageUseWired,
+	r = vmp_page_alloc(kernel_process.map, true, kPageUseWired,
 	    &queue->page);
 	kassert(r == 0);
 	addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(queue->page);

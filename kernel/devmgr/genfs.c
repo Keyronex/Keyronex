@@ -24,14 +24,14 @@ pgcache_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (nbyte == 0)
 		return 0;
 
-	r = vm_map_object(&kernel_process.map, &vn->vmobj, &vaddr,
+	r = vm_map_object(kernel_process.map, &vn->vmobj, &vaddr,
 	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVMInheritShared,
 	    false, false);
 	kassert(r == 0);
 
 	memcpy(buf, (void *)(vaddr + off), nbyte);
 
-	r = vm_map_deallocate(&kernel_process.map, vaddr,
+	r = vm_map_deallocate(kernel_process.map, vaddr,
 	    PGROUNDUP(nbyte + off));
 	kassert(r == 0);
 
@@ -54,14 +54,14 @@ pgcache_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 		vn->size = off + nbyte;
 
 
-	r = vm_map_object(&kernel_process.map, &vn->vmobj, &vaddr,
+	r = vm_map_object(kernel_process.map, &vn->vmobj, &vaddr,
 	    PGROUNDUP(nbyte + off), 0x0, kVMAll, kVMAll, kVMInheritShared,
 	    false, false);
 	kassert(r == 0);
 
 	memcpy((void *)(vaddr + off), buf, nbyte);
 
-	r = vm_map_deallocate(&kernel_process.map, vaddr,
+	r = vm_map_deallocate(kernel_process.map, vaddr,
 	    PGROUNDUP(nbyte + off));
 
 	return nbyte;

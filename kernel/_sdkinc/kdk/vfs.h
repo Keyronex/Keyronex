@@ -155,6 +155,17 @@ enum lookup_flags {
 	kLookupMustDir = 1 << 2,
 };
 
+#define VOP_OPEN(vnode, out, mode) vnode->ops->open(vnode, out, mode)
+#define VOP_READ(vnode, buf, nbyte, off) \
+	vnode->ops->read(vnode, buf, nbyte, off)
+#define VOP_WRITE(vnode, buf, nbyte, off) \
+	vnode->ops->write(vnode, buf, nbyte, off)
+#define VOP_CREAT(vnode, out, name, attr) \
+	vnode->ops->create(vnode, out, name, attr)
+#define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
+#define VOP_MKDIR(vnode, out, name, attr) \
+	vnode->ops->mkdir(vnode, out, name, attr)
+
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
 

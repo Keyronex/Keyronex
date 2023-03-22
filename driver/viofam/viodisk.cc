@@ -69,7 +69,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	/* TODO(high): ugly! do it better */
 	vm_page_t *page;
 
-	vmp_page_alloc(&kernel_process.map, true, kPageUseWired, &page);
+	vmp_page_alloc(kernel_process.map, true, kPageUseWired, &page);
 	vaddr_t addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(page);
 	for (int i = 0; i < ROUNDUP(io_queue.length, 3) / 3; i++) {
 		vioblk_request *req = (vioblk_request *)(addr +

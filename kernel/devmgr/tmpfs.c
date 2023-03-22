@@ -117,7 +117,7 @@ tmakenode(tmpnode_t *dn, const char *name, vattr_t *attr)
 	switch (attr->type) {
 	case VREG: {
 		// int r;
-		//  r = vm_object_new_anonymous(&kernel_process.map, UINT32_MAX,
+		//  r = vm_object_new_anonymous(kernel_process.map, UINT32_MAX,
 		//      &n->reg.section);
 		// kassert(r == 0);
 		kfatal("Implement\n");

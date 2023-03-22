@@ -36,7 +36,7 @@ sock_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
  * Create a new unbound UDP socket.
  */
 int
-udp_create(int domain, int protocol, krx_out vnode_t **vnode)
+sock_udp_create(int domain, int protocol, krx_out vnode_t **vnode)
 {
 	struct sock_udp *sock;
 	vnode_t *vn;
