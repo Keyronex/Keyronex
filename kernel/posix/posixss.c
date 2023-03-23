@@ -28,6 +28,7 @@
 #include "kdk/process.h"
 #include "kernel/ke_internal.h"
 #include "posix/pxp.h"
+#include "kdk/posixss.h"
 
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
@@ -36,10 +37,15 @@ kmutex_t px_proctree_mutex;
 static void
 fork_init(void *unused)
 {
-	/* can't do anything here yet */
-	kdprintf("Hello\n");
-	for (;;)
-		;
+	const char *argv[] = { "hello", NULL };
+	const char *envp[] = { NULL };
+	uintptr_t   err;
+	int	    r;
+
+	r = syscall3(kPXSysExecVE, (uintptr_t) "/hello", (uintptr_t)argv,
+	    (uintptr_t)envp, &err);
+
+	kfatal("failed to exec init: r %d, err %lu\n", r, err);
 }
 
 static void
@@ -52,6 +58,8 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 
 	proc->wait_stat = 0;
 	ke_event_init(&proc->subproc_state_change, false);
+
+	eproc->pas_proc = proc;
 }
 
 int

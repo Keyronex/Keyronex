@@ -214,7 +214,8 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 #endif
 
 	kassert(oldmap != kernel_process.map);
-	pkg.map = rtldpkg.map = NULL; // make a new map
+	pkg.map = rtldpkg.map = kmem_alloc(sizeof(*pkg.map));
+	vm_map_init(pkg.map);
 	kassert(pkg.map != NULL);
 
 	path = strdup(u_path);

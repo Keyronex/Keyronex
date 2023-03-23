@@ -464,18 +464,28 @@ vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t **out)
 	vm_map_entry_t *entry;
 	voff_t offset;
 
+	if (vaddr >= HHDM_BASE) {
+		if (flags & kVMFaultUser) {
+			kfatal("User fault in kernel space.\n");
+		}
+		map = kernel_process.map;
+	}
+
 	w = ke_wait(&map->mutex, "vm_fault:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
 	entry = vmp_map_find(map, vaddr);
 	if (entry == NULL) {
-		kdprintf("vm_fault: no VAD at address 0x%lx\n", vaddr);
+		kdprintf("vm_fault: map %p no entry at address 0x%lx\n", map,
+		    vaddr);
+		vmp_map_dump(map);
 		return kVMFaultRetFailure;
 	}
 
 	/* verify protection permits */
 	if (flags & kVMFaultWrite && !(entry->protection & kVMWrite)) {
-		kfatal("vm_fault: write fault at 0x%lx in non-writeable VAD\n",
+		kfatal(
+		    "vm_fault: write fault at 0x%lx in non-writeable entry\n",
 		    vaddr);
 	}
 

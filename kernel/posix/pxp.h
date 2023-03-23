@@ -48,8 +48,10 @@ typedef struct posix_proc {
 } posix_proc_t;
 
 #define stringify(x) #x
-#define px_acquire_proctree_mutex() ke_wait(&px_proctree_mutex, __FILE__ ":" stringify(__LINE__), false, false, -1)
-#define px_release_proctree_mutex()	ke_mutex_release(&px_proctree_mutex);
+#define px_acquire_proctree_mutex()                                          \
+	ke_wait(&px_proctree_mutex, __FILE__ ":" stringify(__LINE__), false, \
+	    false, -1)
+#define px_release_proctree_mutex() ke_mutex_release(&px_proctree_mutex);
 
 static inline posix_proc_t *
 px_curproc(void)
@@ -58,6 +60,9 @@ px_curproc(void)
 	kassert(psx_proc != NULL);
 	return psx_proc;
 }
+
+int sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
+    const char *u_envp[], hl_intr_frame_t *frame);
 
 extern kmutex_t px_proctree_mutex;
 

@@ -15,30 +15,30 @@
  */
 
 static inline uintptr_t
-syscall0(uintptr_t num, uintptr_t *errp)
+syscall0(uintptr_t num, uintptr_t *out)
 {
 	uintptr_t ret, err;
 	asm volatile("int $0x80" : "=a"(ret), "=D"(err) : "a"(num) : "memory");
-	if (errp)
-		*errp = err;
+	if (out)
+		*out = err;
 	return ret;
 }
 
 static inline uintptr_t
-syscall1(uintptr_t num, uintptr_t arg1, uintptr_t *errp)
+syscall1(uintptr_t num, uintptr_t arg1, uintptr_t *out)
 {
 	uintptr_t ret, err;
 	asm volatile("int $0x80"
 		     : "=a"(ret), "=D"(err)
 		     : "a"(num), "D"(arg1)
 		     : "memory");
-	if (errp)
-		*errp = err;
+	if (out)
+		*out = err;
 	return ret;
 }
 
 static inline uintptr_t
-syscall2(uintptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t *errp)
+syscall2(uintptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t *out)
 {
 	uintptr_t ret, err;
 
@@ -47,15 +47,15 @@ syscall2(uintptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t *errp)
 		     : "a"(num), "D"(arg1), "S"(arg2)
 		     : "memory");
 
-	if (errp)
-		*errp = err;
+	if (out)
+		*out = err;
 
 	return ret;
 }
 
 static inline uintptr_t
 syscall3(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
-    uintptr_t *errp)
+    uintptr_t *out)
 {
 	uintptr_t ret, err;
 
@@ -64,15 +64,15 @@ syscall3(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
 		     : "a"(num), "D"(arg1), "S"(arg2), "d"(arg3)
 		     : "memory");
 
-	if (errp)
-		*errp = err;
+	if (out)
+		*out = err;
 
 	return ret;
 }
 
 static inline uintptr_t
 syscall4(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
-    uintptr_t *errp)
+    uintptr_t *out)
 {
 	register uintptr_t r10 asm("r10") = arg4;
 	uintptr_t ret, err;
@@ -82,15 +82,15 @@ syscall4(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t
 		     : "a"(num), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10)
 		     : "memory");
 
-	if (errp)
-		*errp = err;
+	if (out)
+		*out = err;
 
 	return ret;
 }
 
 static inline uintptr_t
 syscall6(uintptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
-    uintptr_t arg4, uintptr_t arg5, uintptr_t arg6, uintptr_t *errp)
+    uintptr_t arg4, uintptr_t arg5, uintptr_t arg6, uintptr_t *out)
 {
 	register uintptr_t r10 asm("r10") = arg4, r8 asm("r8") = arg5,
 			       r9 asm("r9") = arg6;
@@ -102,8 +102,8 @@ syscall6(uintptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
 		     "r"(r8), "r"(r9)
 		     : "memory");
 
-	if (errp)
-		*errp = err;
+	if (out)
+		*out = err;
 
 	return ret;
 }

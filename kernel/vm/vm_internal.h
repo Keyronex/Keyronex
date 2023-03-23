@@ -104,6 +104,9 @@ bool pmap_is_writeable(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
  */
 vm_map_entry_t *vmp_map_find(vm_map_t *ps, vaddr_t vaddr);
 
+/*! @brief Dump all entries in a map. */
+void vmp_map_dump(vm_map_t *map);
+
 /*! @brief Comparator function for map entry rb-tree. */
 int vmp_map_entry_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
 /*! @brief Comparator function for page ref rb-tree. */

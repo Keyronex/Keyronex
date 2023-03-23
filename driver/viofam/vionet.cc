@@ -192,26 +192,33 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	p->hdr_desc_id = e->id;
 	p->pbuf.pbuf.if_idx = netif_get_index(&nic);
 
-	MIB2_STATS_NETIF_ADD(nic, ifinoctets, p->tot_len);
-	if (((u8_t *)p->pbuf.pbuf.payload)[0] & 1) {
-		MIB2_STATS_NETIF_INC(nic, ifinnucastpkts);
-	} else {
-		MIB2_STATS_NETIF_INC(nic, ifinucastpkts);
-	}
-	LINK_STATS_INC(link.recv);
-
 	err = tcpip_input(&p->pbuf.pbuf, &nic);
 	if (err != ERR_OK) {
-		DKDevLog(this, "ip input error: %d\n", err);
-		/* this is recursive, can't do that */
+#if 0
+		DKDevLog(this, "ip input error: %d; packed dropped\n", err);
+#endif
+		/* mark the pbuf for locked free*/
+		p->locked = true;
 		pbuf_free(&p->pbuf.pbuf);
 		p = NULL;
+		LINK_STATS_INC(link.memerr);
+		LINK_STATS_INC(link.drop);
+		MIB2_STATS_NETIF_INC(netif, ifindiscards);
+	} else {
+		MIB2_STATS_NETIF_ADD(nic, ifinoctets, p->tot_len);
+		if (((u8_t *)p->pbuf.pbuf.payload)[0] & 1) {
+			MIB2_STATS_NETIF_INC(nic, ifinnucastpkts);
+		} else {
+			MIB2_STATS_NETIF_INC(nic, ifinucastpkts);
+		}
+		LINK_STATS_INC(link.recv);
 	}
 }
 
 void
 VirtIONIC::freeRXPBuf(struct pbuf *p)
 {
+	ipl_t ipl;
 	struct netif *netif;
 	VirtIONIC *self;
 	pbuf_rx *pbuf = (pbuf_rx *)p;
@@ -221,7 +228,11 @@ VirtIONIC::freeRXPBuf(struct pbuf *p)
 	self = (VirtIONIC *)netif->state;
 	kassert(self != NULL);
 
-	ipl_t ipl = ke_spinlock_acquire(&self->rx_vq.spinlock);
+	if (!pbuf->locked)
+		ipl = ke_spinlock_acquire(&self->rx_vq.spinlock);
+
 	self->submitDescNumToQueue(&self->rx_vq, pbuf->hdr_desc_id);
-	ke_spinlock_release(&self->rx_vq.spinlock, ipl);
+
+	if (!pbuf->locked)
+		ke_spinlock_release(&self->rx_vq.spinlock, ipl);
 }

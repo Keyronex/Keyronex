@@ -315,9 +315,15 @@ pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
 	ipl_t ipl;
 	struct pv_entry *pve;
 
+	kassert((virt & 4095) == 0);
+
 	pve = kmem_alloc(sizeof(*pve));
 	pve->map = map;
 	pve->vaddr = virt;
+
+#if 0
+	kdprintf("ENTER PVE %p at VADDR 0x%lx\n", pve, pve->vaddr);
+#endif
 
 	ipl = ke_spinlock_acquire(&map->md.lock);
 	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot);
@@ -358,6 +364,9 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 	ipl = ke_spinlock_acquire(&map->md.lock);
 
 	pte = pmap_fully_descend(map, virt);
+
+	if (pte)
+		pte = P2V(pte);
 
 	if (pte && *pte != 0x0) {
 		vm_page_t *page;

@@ -28,7 +28,10 @@ class VirtIONIC : VirtIODevice {
 
 	struct pbuf_rx {
 		struct pbuf_custom pbuf;
+		/*! nethdr descriptor ID of */
 		uint16_t hdr_desc_id;
+		/* whether this is being freed from within processBuffers() */
+		bool locked;
 	};
 
 	/*! Pre-allocated custom pbufs. One for each RX queue entry. */

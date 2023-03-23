@@ -3,6 +3,7 @@
  * Created on Fri Feb 17 2023.
  */
 
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
@@ -40,9 +41,23 @@ vmp_map_find(vm_map_t *ps, vaddr_t vaddr)
 	return RB_FIND(vm_map_entry_rbtree, &ps->entry_queue, &key);
 }
 
+void
+vmp_map_dump(vm_map_t *map)
+{
+	vm_map_entry_t *ent;
+
+	RB_FOREACH (ent, vm_map_entry_rbtree, &map->entry_queue) {
+		kdprintf("0x%lx - 0x%lx\n", ent->start, ent->end);
+	}
+}
+
 int
 vm_map_init(vm_map_t *map)
 {
+	if (map != kernel_process.map)
+		vmem_init(&map->vmem, "process map", USER_BASE, USER_SIZE,
+		    PGSIZE, NULL, NULL, NULL, 0, 0, kIPL0);
+
 	ke_mutex_init(&map->mutex);
 	RB_INIT(&map->entry_queue);
 	if (map != kernel_process.map) {
@@ -70,6 +85,9 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	vm_map_entry_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 
+	kassert((uintptr_t)object >= KHEAP_BASE &&
+	    (uintptr_t)object <= KHEAP_BASE + KHEAP_SIZE);
+
 	w = ke_wait(&map->mutex, "map_section_view:map->mutex", false, false,
 	    -1);
 	kassert(w == kKernWaitStatusOK);
@@ -89,12 +107,19 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	vad->inheritance = inheritance;
 	vad->protection = initial_protection;
 	if (copy) {
-		if (object->is_anonymous)
+		if (object->is_anonymous) {
 			kfatal("implement this by copying amap");
+		} else {
+			kfatal("Implement this\n");
+		}
 
 	} else {
 		vad->object = object;
 	}
+
+#if 0
+	kdprintf("%p: Mapping object at 0x%lx\n", map, vad->start);
+#endif
 
 	RB_INSERT(vm_map_entry_rbtree, &map->entry_queue, vad);
 

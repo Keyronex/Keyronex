@@ -23,6 +23,7 @@ typedef struct {
 	uint32_t zero;
 } __attribute__((packed)) idt_entry_t;
 
+static bool syscall(hl_intr_frame_t *frame, void *arg);
 static bool double_fault(hl_intr_frame_t *frame, void *arg);
 static bool page_fault(hl_intr_frame_t *frame, void *arg);
 
@@ -52,10 +53,8 @@ idt_set(uint8_t index, vaddr_t isr, uint8_t type, uint8_t ist)
 	idt[index].zero = 0x0;
 }
 
-static struct intr_entry pagefault_intr_entry;
-static struct intr_entry doublefault_intr_entry;
-struct intr_entry hardclock_intr_entry;
-struct intr_entry reschedule_ipi_intr_entry;
+static struct intr_entry pagefault_intr_entry, doublefault_intr_entry,
+    syscall_entry, hardclock_intr_entry, reschedule_ipi_intr_entry;
 
 /* setup the initial IDT */
 void
@@ -82,6 +81,9 @@ idt_setup(void)
 	    ki_reschedule_ipi, NULL, false, &reschedule_ipi_intr_entry);
 	md_intr_register("hardclock", kIntNumLAPICTimer, kIPLHigh,
 	    ki_cpu_hardclock, NULL, false, &hardclock_intr_entry);
+
+	md_intr_register("syscall", kIntNumSyscall, kIPL0, syscall, NULL, false,
+	    &syscall_entry);
 }
 
 #define DEBUG_SCHED 0
@@ -102,10 +104,12 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		kdprintf("Switch from %p to %p\n", old, next);
 #endif
 
+		old->hl.fs = rdmsr(kAMD64MSRFSBase);
 		old->frame = *frame;
-		*frame = next->frame;
 
+		*frame = next->frame;
 		hl_curcpu()->hl.tss->rsp0 = next->kstack;
+		wrmsr(kAMD64MSRFSBase, next->hl.fs);
 
 		ke_spinlock_release_nospl(&dispatcher_lock);
 		splx(next->saved_ipl);
@@ -160,9 +164,10 @@ static bool
 page_fault(hl_intr_frame_t *frame, void *arg)
 {
 	vm_fault_return_t ret;
+	vaddr_t vaddr = read_cr2() & ~(PGSIZE - 1);
+
 	while (true) {
-		ret = vm_fault(ps_curproc()->map, read_cr2(), frame->code,
-		    NULL);
+		ret = vm_fault(ps_curproc()->map, vaddr, frame->code, NULL);
 		switch (ret) {
 		case kVMFaultRetOK:
 			return true;
@@ -178,6 +183,14 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 			kfatal("path unimplemented\n");
 		}
 	}
+	return true;
+}
+
+static bool
+syscall(hl_intr_frame_t *frame, void *arg)
+{
+	int posix_syscall(hl_intr_frame_t * frame);
+	posix_syscall(frame);
 	return true;
 }
 

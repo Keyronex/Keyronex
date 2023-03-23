@@ -3,9 +3,9 @@
  * Created on Wed Jan 17 2023.
  */
 
-#include "kernel/ke_internal.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
+#include "kernel/ke_internal.h"
 
 /*! @pre dispatcher_lock held */
 static void
@@ -214,11 +214,16 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 
 	/* should we really be dropping the lock here? */
 #if DEBUG_SCHED == 1
-	ke_dbg("ke_wait_multi: going to sleep\n");
+	kdprintf("ke_wait_multi: thread %p going to sleep on %s\n", thread,
+	    reason);
 #endif
 	ki_reschedule();
 
 	splx(ipl);
+
+#if DEBUG_SCHED == 1
+	kdprintf("ke_wait_multi: thread %p woke on %s\n", thread, reason);
+#endif
 
 	return thread->wait_result;
 }
