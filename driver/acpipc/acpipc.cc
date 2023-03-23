@@ -13,6 +13,7 @@
 #include "lai/host.h"
 
 #include "../pcibus/pcibus.hh"
+#include "../fbcons/fbcons.hh"
 #include "acpipc.hh"
 #include "ioapic.hh"
 
@@ -588,5 +589,9 @@ acpipc_autoconf(void *rsdp)
 {
 	kdprintf("Probing hardware devices...\n");
 	AcpiPC::probeWithRSDP((rsdp_desc_t *)rsdp);
+
+	new(kmem_general) FBConsole();
+	for (;;) ;
+
 	printTree(acpipc, indent, kRoot);
 }

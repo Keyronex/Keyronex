@@ -10,8 +10,19 @@
  * -------
  *
  * Forks are arranged to return directly to userland.
+ *
+ * Lifetimes
+ * ---------
+ *
+ * - The lifetime of an eprocess_t associated with a POSIX process is shorter
+ *   than the lifetime of the associated posix_proc_t.
+ * - Accordingly if going from an eprocess_t to a posix_proc_t, unless it is via
+ *   the current thread (since the current thread will be maintaining the
+ *   posix_proc_t), the posix proctree lock should be held.
+ *
  */
 
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "kdk/process.h"
@@ -20,12 +31,15 @@
 
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
-// static uint64_t pid_counter = 1;
+kmutex_t px_proctree_mutex;
 
 static void
-fork_init(void *)
+fork_init(void *unused)
 {
+	/* can't do anything here yet */
+#if 0
 	kdprintf("FORK INIT!\n");
+#endif
 	for (;;)
 		;
 }
@@ -73,7 +87,11 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 	}
 
 	newproc = kmem_alloc(sizeof(*newproc));
+	px_acquire_proctree_mutex();
 	proc_init_common(newproc, proc, eproc);
+	px_release_proctree_mutex();
+
+	ki_thread_start(&ethread->kthread);
 
 	return 0;
 }
@@ -82,6 +100,8 @@ int
 psx_init(void)
 {
 	int r;
+
+	ke_mutex_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
 

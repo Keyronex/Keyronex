@@ -9,6 +9,7 @@
 #include <bsdqueue/queue.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <limine.h>
 
 #include "kdk/kerndefs.h"
 
@@ -226,6 +227,11 @@ ipl_t splraise(ipl_t ipl);
 
 #define splapc() splraise(kIPLAPC)
 #define spldpc() splraise(kIPLDPC)
+
+extern volatile struct limine_framebuffer_request framebuffer_request;
+extern volatile struct limine_module_request module_request;
+extern volatile struct limine_rsdp_request rsdp_request;
+extern volatile struct limine_terminal_request terminal_request;
 
 #ifdef __cplusplus
 } /* extern "C" */

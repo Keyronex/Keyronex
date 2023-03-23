@@ -8,3 +8,6 @@
 [submodule "vendor/lwip"]
 	path = vendor/lwip
 	url = ../lwip
+[submodule "vendor/limine-terminal"]
+	path = vendor/limine-terminal
+	url = ../../NetaScale/keyronex-limine-terminal

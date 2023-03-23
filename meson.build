@@ -52,6 +52,11 @@ executable(
 # miscellaneous tools
 bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
 
+bin2c_gen = generator(bin2c,
+    output : '@PLAINNAME@.c',
+    arguments : [ '-i', '@INPUT@', '-o', '@OUTPUT@', '-s', '@BASENAME@'  ]
+)
+
 mlibc = subproject('mlibc', default_options: [ 'prefix=/usr', 'libdir=lib' ])
 #mlibc_keyronex_includes = mlibc.get_variable('keyronex_includes')
 mlibc_keyronex_includes = mlibc.get_variable('libc_include_dirs')
@@ -65,7 +70,8 @@ krx_sdk_includes = [ include_directories(
 	'vendor/bsd-includes',
 	'vendor/uuid',
 	'kernel/_sdkinc'
-	), mlibc_keyronex_includes, lwip_include_directories ]
+	), limine_include_directories, mlibc_keyronex_includes,
+	lwip_include_directories ]
 
 subdir('driver')
 subdir('kernel')

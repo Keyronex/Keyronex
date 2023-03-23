@@ -140,9 +140,11 @@ hl_dputc(int ch, void *ctx)
 
 	/* put to syscon/limine terminal */
 	// if (!syscon) {
+#if 0
 	struct limine_terminal *terminal =
 	    terminal_request.response->terminals[0];
 	terminal_request.response->write(terminal, (char *)&ch, 1);
+#endif
 	//} else {
 	//	sysconputc(ch);
 	//}
