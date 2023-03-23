@@ -116,7 +116,9 @@ ki_reschedule(void)
 		TAILQ_INSERT_TAIL(&cpu->runqueue, curthread, runqueue_link);
 	} else if (curthread->state == kThreadStateWaiting) {
 		/*! thread wants to go to sleep, don't enqueue on runqueue */
+#if 0
 		kdprintf("thread %p going to wait\n", curthread);
+#endif
 		/* accounting? */
 	}
 

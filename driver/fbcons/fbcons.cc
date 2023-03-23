@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2023 NetaScale Object Solutions.
+ * Created on Thu Mar 23 2023.
+ */
+
 #include "../../vendor/limine-terminal/backends/framebuffer.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -8,7 +13,9 @@
 
 extern char key272x70[76160];
 extern char netascale102x82[33456];
-const int logow = 272;
+
+FBConsole *FBConsole::syscon = NULL;
+static unsigned sequence_num = 0;
 
 static void *
 term_alloc(size_t size)
@@ -39,20 +46,82 @@ draw(uint8_t *src, uint8_t *dst, size_t dstx, size_t dsty, size_t dstw,
 	}
 }
 
-FBConsole::FBConsole()
+void
+plot_char_abs(struct fbterm_context *gterm, struct fbterm_char *c, size_t x,
+    size_t y)
 {
-	struct limine_framebuffer *fb;
-	struct term_context *term;
+	bool *glyph =
+	    &gterm->font_bool[c->c * gterm->font_height * gterm->font_width];
+
+	for (size_t gy = 0; gy < gterm->glyph_height; gy++) {
+		uint8_t fy = gy / gterm->font_scale_y;
+		volatile uint32_t *fb_line = gterm->framebuffer + x +
+		    (y + gy) * (gterm->pitch / 4);
+		uint32_t *canvas_line = gterm->canvas + x +
+		    (y + gy) * gterm->width;
+		for (size_t fx = 0; fx < gterm->font_width; fx++) {
+			bool draw = glyph[fy * gterm->font_width + fx];
+			for (size_t i = 0; i < gterm->font_scale_x; i++) {
+				size_t gx = gterm->font_scale_x * fx + i;
+				uint32_t bg = c->bg == 0xFFFFFFFF ?
+				    canvas_line[gx] :
+				    c->bg;
+				uint32_t fg = c->fg == 0xFFFFFFFF ?
+				    canvas_line[gx] :
+				    c->fg;
+				fb_line[gx] = draw ? fg : bg;
+			}
+		}
+	}
+}
+
+void
+FBConsole::puts(const char *buf, size_t len)
+{
+	term_write(syscon->term, buf, len);
+}
+
+void
+FBConsole::printstats()
+{
+	struct fbterm_context *gterm = (fbterm_context *)syscon->term;
+	struct pctx {
+		struct fbterm_context *gterm;
+		unsigned x, y;
+	};
+
+	auto putc = [](int ch, void *ctx) {
+		pctx *pctx = (struct pctx *)ctx;
+		struct fbterm_char chr = { .c = (uint32_t)ch,
+			.fg = 0x030303,
+			.bg = 0xc3c3c3 };
+		plot_char_abs(pctx->gterm, &chr, 8 + pctx->x,
+		    syscon->fb->height - 32 + pctx->y);
+		pctx->x += pctx->gterm->font_width;
+	};
+
+#define STPRINT(X, Y, ...)                                      \
+	({                                                      \
+		pctx pctx = { .gterm = gterm, .x = X, .y = Y }; \
+		npf_pprintf(putc, &pctx, __VA_ARGS__);          \
+	})
+	STPRINT(0, 0,
+	    "Pages: FREE %lu; ACT %lu; INACT %lu; WIRE %lu; VMM %lu; DEV %lu",
+	    vmstat.nfree, vmstat.nactive, vmstat.ninactive,
+	    vmstat.nwired + vmstat.npermwired, vmstat.nvmm, vmstat.ndev);
+	STPRINT(0, 16, "Console: %s", syscon->objhdr.name);
+}
+
+FBConsole::FBConsole(Device *provider)
+{
 	struct fbterm_context *gterm;
-	uint32_t *bg_canvas;
+	unsigned num;
 
 	fb = framebuffer_request.response->framebuffers[0];
-	bg_canvas = NULL; /*(uint32_t *)kmem_alloc(
-	    fb->width * fb->height * sizeof(uint32_t));*/
 
 	term = fbterm_init(term_alloc, (uint32_t *)fb->address, fb->width,
-	    fb->height, fb->pitch, bg_canvas, NULL, NULL, NULL, NULL, NULL,
-	    NULL, NULL, 0, 0, 0, 1, 1, 12, 98, 70);
+	    fb->height, fb->pitch, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+	    NULL, 0, 0, 0, 1, 1, 8, 93, 36);
 	term_context_reinit(term);
 
 	gterm = (fbterm_context *)term;
@@ -74,15 +143,25 @@ FBConsole::FBConsole()
 	/* upper white box */
 	BOX(1, 1, fb->width, 86, 0xffffffff);
 	/* purple border below white box */
-	BOX(1, 87, fb->width, 91, 0x515191);
+	BOX(1, 87, fb->width, 91, 0x6f6fa3);
 	/* grey box at bottom */
-	BOX(1, fb->height - 64, fb->width, fb->height, 0xc3c3c3);
+	BOX(1, fb->height - 32, fb->width, fb->height, 0xc3c3c3);
 
 	draw((uint8_t *)key272x70, (uint8_t *)fb->address, 8, 8, fb->width, 272,
 	    70);
 	draw((uint8_t *)netascale102x82, (uint8_t *)fb->address,
 	    fb->width - 108, 2, fb->width, 102, 82);
 
-	for (int i = 0; i < 40; i++)
-		term_write(term, "Hello World\n", strlen("Hello Warudo\n"));
+	num = sequence_num++;
+
+	if (num == 0) {
+		syscon = this;
+		syscon_puts = puts;
+		syscon_printstats = printstats;
+	}
+
+	kmem_asprintf(&objhdr.name, "fbcons%u", num);
+	attach(provider);
+
+	DKDevLog(this, "%lux%lux%d\n", fb->width, fb->height, fb->bpp);
 }

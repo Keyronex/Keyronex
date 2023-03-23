@@ -532,6 +532,8 @@ AcpiPC::AcpiPC()
 	kmem_asprintf(&objhdr.name, "acpipc");
 	attach(NULL);
 
+	new(kmem_general) FBConsole(this);
+
 	madt = (acpi_madt_t *)laihost_scan("APIC", 0);
 	madt_walk(madt, parse_ioapics, NULL);
 	madt_walk(madt, parse_intrs, NULL);
@@ -590,8 +592,7 @@ acpipc_autoconf(void *rsdp)
 	kdprintf("Probing hardware devices...\n");
 	AcpiPC::probeWithRSDP((rsdp_desc_t *)rsdp);
 
-	new(kmem_general) FBConsole();
-	for (;;) ;
-
 	printTree(acpipc, indent, kRoot);
+
+	syscon_printstats();
 }

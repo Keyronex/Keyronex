@@ -37,9 +37,7 @@ static void
 fork_init(void *unused)
 {
 	/* can't do anything here yet */
-#if 0
-	kdprintf("FORK INIT!\n");
-#endif
+	kdprintf("Hello\n");
 	for (;;)
 		;
 }
@@ -105,10 +103,10 @@ psx_init(void)
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
 
+
+	kdprintf("Launch POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);
 	kassert(r == 0);
-
-	kdprintf("Forked off Init\n");
 
 	return 0;
 }

@@ -76,6 +76,8 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 
 	attach(provider);
 
+	DKDevLog(this, "Tag: %s\n", cfg->tag);
+
 	/* todo: factor out */
 	vfs_t *vfs = (vfs_t *)kmem_alloc(sizeof(vfs_t));
 	vfs->vnodecovered = NULL;

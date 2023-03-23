@@ -59,7 +59,7 @@ PCIDevice::PCIDevice(PCIBus *provider, pci_device_info &info)
 		}
 	}
 
-	kdprintf("PCI device: vendor %x device %x\n", info.vendorId,
+	kdprintf("PCI device: %x:%x\n", info.vendorId,
 	    info.deviceId);
 	if (info.vendorId == 0x1af4 && info.deviceId == 0x1001) {
 		new (kmem_general) VirtIODisk(this, info);

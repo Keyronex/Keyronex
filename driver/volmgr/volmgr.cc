@@ -102,8 +102,8 @@ VolumeManager::enumerateGPTPartitions()
 								   ent->name[i];
 			uuid_unparse(ent->type, parttype);
 
-			DKDevLog(this, "Found (i = %ld) %s (type %s)\n", i,
-			    partname, parttype);
+			DKDevLog(this, "Found %s (type %s)\n", partname,
+			    parttype);
 		}
 	}
 }

@@ -65,6 +65,7 @@ struct vm_stat {
 	size_t ntransitioning;
 	size_t npermwired;
 	size_t nvmm;
+	size_t ndev;
 };
 
 enum vm_page_use {

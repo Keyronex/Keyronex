@@ -105,6 +105,27 @@ vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
 
 	kassert(page->wirecnt == 0);
 	vmstat.nfree--;
+	switch (use) {
+	case kPageUseAnonymous:
+	case kPageUseObject:
+		vmstat.nwired++;
+		break;
+
+	case kPageUseWired:
+		vmstat.npermwired++;
+		break;
+
+	case kPageUseVMM:
+		vmstat.nvmm++;
+		break;
+
+	case kPageUseDevBuf:
+		vmstat.ndev++;
+		break;
+
+	default:
+		kfatal("unexpected use %d\n", use);
+	}
 
 	page->use = use;
 	page->wirecnt = 1;

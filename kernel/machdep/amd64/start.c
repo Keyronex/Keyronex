@@ -75,6 +75,13 @@ volatile struct limine_terminal_request terminal_request = {
 	.revision = 0
 };
 
+const unsigned logow = 74, logoh = 22;
+const unsigned logosize = logow * logoh * 4;
+extern const char logosmall[6512];
+void (*syscon_puts)(const char *buf, size_t len) = NULL;
+void (*syscon_printstats)(void) = NULL;
+
+
 static void
 done(void)
 {
@@ -83,10 +90,6 @@ done(void)
 		__asm__("hlt");
 	}
 }
-
-const unsigned logow = 74, logoh = 22;
-const unsigned logosize = logow * logoh * 4;
-extern const char logosmall[6512];
 
 void
 draw_logo(void)
@@ -139,15 +142,13 @@ hl_dputc(int ch, void *ctx)
 	outb(kPortCOM1, ch);
 
 	/* put to syscon/limine terminal */
-	// if (!syscon) {
-#if 0
-	struct limine_terminal *terminal =
-	    terminal_request.response->terminals[0];
-	terminal_request.response->write(terminal, (char *)&ch, 1);
-#endif
-	//} else {
-	//	sysconputc(ch);
-	//}
+	if (!syscon_puts) {
+		struct limine_terminal *terminal =
+		    terminal_request.response->terminals[0];
+		terminal_request.response->write(terminal, (char *)&ch, 1);
+	} else {
+		syscon_puts((char *)&ch, 1);
+	}
 }
 
 static void

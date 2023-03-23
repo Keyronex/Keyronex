@@ -102,7 +102,7 @@ VirtIODevice::enumerateCapabilitiesCallback(pci_device_info *info, voff_t pCap,
 		void *data = dev->device_cfg =
 		    ((char *)P2V(PCIDevice::getBar(dev->pci_info, cap.bar)) +
 			cap.offset);
-		kdprintf("Shared Memory is at %p\n", data);
+		DKLog("virtio", "Shared Memory is at %p\n", data);
 		break;
 	}
 
@@ -191,7 +191,7 @@ VirtIODevice::setupQueue(virtio_queue *queue, uint16_t index)
 	vaddr_t addr;
 	vaddr_t offs;
 
-	r = vmp_page_alloc(kernel_process.map, true, kPageUseWired,
+	r = vmp_page_alloc(kernel_process.map, true, kPageUseDevBuf,
 	    &queue->page);
 	kassert(r == 0);
 	addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(queue->page);

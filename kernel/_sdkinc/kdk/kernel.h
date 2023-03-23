@@ -509,6 +509,12 @@ kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
 /*! Platform-specific debug putc(). */
 void hl_dputc(int ch, void *ctx);
 
+/*! System console puts - initially NULL. */
+extern void (*syscon_puts)(const char *buf, size_t len);
+/*! System console print stats - initially NULL - invoked every second. */
+extern void (*syscon_printstats)(void);
+
+
 /*! Dispatcher database lock. */
 extern kspinlock_t dispatcher_lock;
 /*! DPC queues lock. */

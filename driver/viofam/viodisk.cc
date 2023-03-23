@@ -69,7 +69,7 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 	/* TODO(high): ugly! do it better */
 	vm_page_t *page;
 
-	vmp_page_alloc(kernel_process.map, true, kPageUseWired, &page);
+	vmp_page_alloc(kernel_process.map, true, kPageUseDevBuf, &page);
 	vaddr_t addr = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(page);
 	for (int i = 0; i < ROUNDUP(io_queue.length, 3) / 3; i++) {
 		vioblk_request *req = (vioblk_request *)(addr +
@@ -98,6 +98,8 @@ VirtIODisk::VirtIODisk(PCIDevice *provider, pci_device_info &info)
 
 	vol_info.block_size = 512;
 	vol_info.nblocks = cfg->capacity;
+
+	DKDevLog(this, "%lu MiB\n", vol_info.nblocks * 512 / 1024 / 1024);
 
 	new (kmem_general) VolumeManager(this, vol_info);
 }

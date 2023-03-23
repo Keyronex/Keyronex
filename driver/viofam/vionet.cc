@@ -9,6 +9,7 @@
 #include "kdk/amd64/vmamd64.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "lwip/err.h"
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
 #include "lwip/netifapi.h"
@@ -64,6 +65,7 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
     : VirtIODevice(provider, info)
 {
 	int r;
+	err_t err;
 
 	kmem_asprintf(&objhdr.name, "vionic%d", sequence_num++);
 	cfg = (virtio_net_config *)device_cfg;
@@ -86,9 +88,17 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 	}
 
 	initRXQueue();
-	netifapi_netif_add(&nic, NULL, NULL, NULL, this, netifInit,
+
+	err = netifapi_netif_add(&nic, NULL, NULL, NULL, this, netifInit,
 	    ethernet_input);
-	netifapi_netif_set_up(&nic);
+	if (err != ERR_OK) {
+		DKDevLog(this, "Failed to add interface: %d\n", err);
+	}
+
+	err = netifapi_netif_set_up(&nic);
+	if (err != ERR_OK) {
+		DKDevLog(this, "Failed to set interface up: %d\n", err);
+	}
 
 	r = enableDevice();
 	if (r != 0) {
@@ -96,7 +106,7 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 	}
 
 	attach(provider);
-	DKDevLog(this, "MAC address: " MAC_FMT, cfg->mac[0], cfg->mac[1],
+	DKDevLog(this, "MAC address: " MAC_FMT "\n", cfg->mac[0], cfg->mac[1],
 	    cfg->mac[2], cfg->mac[3], cfg->mac[4], cfg->mac[5]);
 
 #if 0
@@ -110,7 +120,7 @@ VirtIONIC::initRXQueue()
 {
 	vaddr_t nethdr_rx_pagebase;
 
-	vmp_page_alloc(kernel_process.map, true, kPageUseWired, &nethdrs_page);
+	vmp_page_alloc(kernel_process.map, true, kPageUseDevBuf, &nethdrs_page);
 
 	nethdr_rx_pagebase = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(nethdrs_page);
 
@@ -180,6 +190,7 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	    (void *)dataaddr, 2048);
 	p->pbuf.custom_free_function = freeRXPBuf;
 	p->hdr_desc_id = e->id;
+	p->pbuf.pbuf.if_idx = netif_get_index(&nic);
 
 	MIB2_STATS_NETIF_ADD(nic, ifinoctets, p->tot_len);
 	if (((u8_t *)p->pbuf.pbuf.payload)[0] & 1) {
@@ -192,6 +203,7 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	err = tcpip_input(&p->pbuf.pbuf, &nic);
 	if (err != ERR_OK) {
 		DKDevLog(this, "ip input error: %d\n", err);
+		/* this is recursive, can't do that */
 		pbuf_free(&p->pbuf.pbuf);
 		p = NULL;
 	}
@@ -200,8 +212,15 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 void
 VirtIONIC::freeRXPBuf(struct pbuf *p)
 {
-	VirtIONIC *self = (VirtIONIC *)netif_get_by_index(p->if_idx)->state;
+	struct netif *netif;
+	VirtIONIC *self;
 	pbuf_rx *pbuf = (pbuf_rx *)p;
+
+	netif = netif_get_by_index(p->if_idx);
+	kassert(netif != NULL);
+	self = (VirtIONIC *)netif->state;
+	kassert(self != NULL);
+
 	ipl_t ipl = ke_spinlock_acquire(&self->rx_vq.spinlock);
 	self->submitDescNumToQueue(&self->rx_vq, pbuf->hdr_desc_id);
 	ke_spinlock_release(&self->rx_vq.spinlock, ipl);
