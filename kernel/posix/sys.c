@@ -24,12 +24,13 @@ posix_syscall(hl_intr_frame_t *frame)
 	switch (frame->rax) {
 	case kPXSysDebug:
 		kdprintf("<DEBUG>: %s\n", (char *)ARG1);
+		syscon_printstats();
 		break;
 
 	case kPXSysExecVE: {
 		RET = sys_exec(px_curproc(), (char *)ARG1, (const char **)ARG2,
 		    (const char **)ARG3, frame);
-		    break;
+		break;
 	}
 
 	default:

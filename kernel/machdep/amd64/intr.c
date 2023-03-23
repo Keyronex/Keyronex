@@ -165,9 +165,18 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 {
 	vm_fault_return_t ret;
 	vaddr_t vaddr = read_cr2() & ~(PGSIZE - 1);
+	ethread_t *thr = ps_curthread();
 
 	while (true) {
+		if (thr->in_pagefault) {
+			kdprintf("vm_fault: nested fault\n");
+			for (;;)
+				;
+		}
+		thr->in_pagefault = true;
 		ret = vm_fault(ps_curproc()->map, vaddr, frame->code, NULL);
+		thr->in_pagefault = false;
+
 		switch (ret) {
 		case kVMFaultRetOK:
 			return true;

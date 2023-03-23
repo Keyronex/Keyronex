@@ -19,6 +19,8 @@
 
 #include "fusefs.hh"
 
+#define DEBUG_FUSEFS 0
+
 struct initpair {
 	// Device-readable part
 	struct fuse_init_in init_in;
@@ -214,7 +216,7 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 	node->vnode->vfsmountedhere = NULL;
 	node->vnode->size = size;
 
-	node->vnode->vmobj.is_anonymous  =false;
+	node->vnode->vmobj.is_anonymous = false;
 	ke_mutex_init(&node->vnode->vmobj.mutex);
 	RB_INIT(&node->vnode->vmobj.page_rbtree);
 
@@ -228,8 +230,10 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 int
 FuseFS::pagerFileHandle(fusefs_node *node, uint64_t &handle_out)
 {
-	if (node->have_pager_file_handle)
-		return node->pager_file_handle;
+	if (node->have_pager_file_handle) {
+		handle_out = node->pager_file_handle;
+		return 0;
+	}
 
 	if (node->vnode->type != VREG)
 		return -EBADF;
@@ -252,6 +256,7 @@ FuseFS::pagerFileHandle(fusefs_node *node, uint64_t &handle_out)
 
 	node->have_pager_file_handle = true;
 	node->pager_file_handle = open_out.fh;
+	handle_out = open_out.fh;
 
 	return 0;
 }
@@ -326,7 +331,7 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	iop_send_sync(iop);
 
 #if DEBUG_FUSEFS == 1
-	kdprintf("INode resulted from looking up %s: %lu\n\n", pathname,
+	kdprintf("I-node resulted from looking up %s: %lu\n", pathname,
 	    entry_out.nodeid);
 #endif
 
@@ -447,7 +452,8 @@ FuseFS::dispatchIOP(iop_t *iop)
 
 	r = pagerFileHandle(node, read_in->fh);
 	if (r != 0) {
-		DKDevLog(this, "Failed to get a pager I/O handle!\n");
+		DKDevLog(this, "Failed to get a pager I/O handle! Error %d\n",
+		    r);
 		return kIOPRetCompleted;
 	}
 

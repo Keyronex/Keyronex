@@ -16,6 +16,9 @@
 typedef struct ethread {
 	/*! Kernel thread. */
 	kthread_t kthread;
+
+	/*! Is it currently handling a page fault? */
+	bool in_pagefault;
 } ethread_t;
 
 /*!
@@ -40,6 +43,9 @@ typedef struct eprocess {
 
 /*! Get the currently-running process. */
 #define ps_curproc() ((eprocess_t *)ke_curthread()->process)
+
+/*! Get the currently-running thread. */
+#define ps_curthread() ((ethread_t *)ke_curthread())
 
 /*!
  * Create a new thread of a kernel process.

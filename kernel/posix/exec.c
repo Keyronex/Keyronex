@@ -195,6 +195,8 @@ strv_free(char **strv)
 		cnt++;
 	}
 
+	/* cnt mismatches that in copyin_strv!! needs to be fixed */
+
 	kmem_free(strv, sizeof(*strv) * cnt);
 }
 
@@ -247,6 +249,7 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	// thread->stack = stack;
 
 	/* todo(low): separate this machine-dependent stuff */
+	memset(frame, 0x0, sizeof(*frame));
 	frame->rip = (uint64_t)rtldpkg.entry;
 	frame->rsp = (uint64_t)pkg.sp;
 	frame->cs = 0x38 | 0x3;
@@ -262,8 +265,10 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	}
 
 	kmem_strfree(path);
+#if 0
 	strv_free(argp);
 	strv_free(envp);
+#endif
 
 	return r;
 }

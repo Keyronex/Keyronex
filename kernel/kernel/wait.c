@@ -212,7 +212,6 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 		ki_timer_enqueue(&thread->wait_timer);
 	}
 
-	/* should we really be dropping the lock here? */
 #if DEBUG_SCHED == 1
 	kdprintf("ke_wait_multi: thread %p going to sleep on %s\n", thread,
 	    reason);

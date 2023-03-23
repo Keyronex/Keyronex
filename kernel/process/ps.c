@@ -33,6 +33,7 @@ int
 ps_create_system_thread(ethread_t *thread, const char *name,
     void (*start)(void *), void *arg)
 {
+	thread->in_pagefault = false;
 	return ki_thread_init(&thread->kthread, &kernel_process.kproc, name,
 	    start, arg);
 }
@@ -69,6 +70,7 @@ ps_thread_create(krx_out ethread_t **thread_out, eprocess_t *eproc)
 		kmem_free(ethread, sizeof(*ethread));
 		return r;
 	}
+	ethread->in_pagefault = false;
 
 	*thread_out = ethread;
 	return 0;
