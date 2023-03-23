@@ -395,6 +395,8 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 			*out = page;
 	}
 
+	pmap_invlpg(virt);
+
 	ke_spinlock_release(&map->md.lock, ipl);
 
 	return 0;

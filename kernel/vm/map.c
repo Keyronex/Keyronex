@@ -85,10 +85,7 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	vm_map_entry_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 
-	kassert((uintptr_t)object >= KHEAP_BASE &&
-	    (uintptr_t)object <= KHEAP_BASE + KHEAP_SIZE);
-
-	w = ke_wait(&map->mutex, "map_section_view:map->mutex", false, false,
+	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false,
 	    -1);
 	kassert(w == kKernWaitStatusOK);
 
@@ -98,7 +95,8 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 		kdprintf("vm_map_object failed at vmem_xalloc with %d\n", r);
 	}
 
-	obj_direct_retain(object);
+	if (object != NULL)
+		obj_direct_retain(object);
 
 	vad = kmem_alloc(sizeof(vm_map_entry_t));
 	vad->start = (vaddr_t)addr;
@@ -106,15 +104,25 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	vad->offset = offset;
 	vad->inheritance = inheritance;
 	vad->protection = initial_protection;
-	if (copy) {
+
+	if (object != NULL && copy) {
+		vad->has_anonymous = true;
+
 		if (object->is_anonymous) {
 			kfatal("implement this by copying amap");
 		} else {
 			kfatal("Implement this\n");
+			vmp_amap_init(map, &vad->amap);
 		}
 
-	} else {
+	} else if (object != NULL) {
 		vad->object = object;
+		vad->has_anonymous = false;
+	} else {
+		kassert(!copy);
+		vad->object = NULL;
+		vad->has_anonymous = true;
+		vmp_amap_init(map, &vad->amap);
 	}
 
 #if 0

@@ -40,12 +40,23 @@ vmp_objpage_cmp(struct vmp_objpage *x, struct vmp_objpage *y)
 }
 
 int
+vmp_amap_init(vm_map_t *map, struct vm_amap *amap)
+{
+	vm_page_t *page;
+	vmp_page_alloc(map, true, kPageUseVMM, &page);
+	amap->l3 = VM_PAGE_DIRECT_MAP_ADDR(page);
+	ke_mutex_init(&amap->mutex);
+	return 0;
+}
+
+int
 vmp_amap_descend(vm_map_t *map, struct vm_amap *amap, voff_t offset,
     krx_out struct vmp_anon ***panon, bool create)
 {
-	uint16_t l3i = (offset << 18) & 511;
-	uint16_t l2i = (offset << 9) & 511;
-	uint16_t l1i = offset & 511;
+	uint64_t pageoff = offset / 4096;
+	uint16_t l3i = (pageoff >> 18) & 511;
+	uint16_t l2i = (pageoff >> 9) & 511;
+	uint16_t l1i = pageoff & 511;
 	struct vmp_amap_l2 *l2;
 	struct vmp_amap_l1 *l1;
 
@@ -54,7 +65,8 @@ vmp_amap_descend(vm_map_t *map, struct vm_amap *amap, voff_t offset,
 		if (create) {
 			vm_page_t *page;
 			vmp_page_alloc(NULL, true, kPageUseVMM, &page);
-			amap->l3->entries[l3i] = VM_PAGE_DIRECT_MAP_ADDR(page);
+			l2 = VM_PAGE_DIRECT_MAP_ADDR(page);
+			amap->l3->entries[l3i] = l2;
 		} else {
 			return -ENOENT;
 		}
@@ -65,7 +77,8 @@ vmp_amap_descend(vm_map_t *map, struct vm_amap *amap, voff_t offset,
 		if (create) {
 			vm_page_t *page;
 			vmp_page_alloc(NULL, true, kPageUseVMM, &page);
-			l2->entries[l2i] = VM_PAGE_DIRECT_MAP_ADDR(page);
+			l1 = VM_PAGE_DIRECT_MAP_ADDR(page);
+			l2->entries[l2i] = l1;
 		} else {
 			return -ENOENT;
 		}
@@ -77,15 +90,11 @@ vmp_amap_descend(vm_map_t *map, struct vm_amap *amap, voff_t offset,
 }
 
 /*! @brief Find anon in an amap by its byte offset. */
-struct vmp_anon *
+int
 vmp_amap_find_anon(vm_map_t *map, struct vm_amap *amap, voff_t offset,
     krx_out struct vmp_anon ***panon)
 {
-	int r = vmp_amap_descend(map, amap, offset, panon, false);
-	if (r != 0)
-		return NULL;
-	else
-		return **panon;
+	return vmp_amap_descend(map, amap, offset, panon, false);
 }
 
 /*! @brief Insert an anon into an amap. */
@@ -95,7 +104,7 @@ vmp_amap_insert_anon(vm_map_t *map, struct vm_amap *amap, struct vmp_anon *anon)
 	struct vmp_anon **panon;
 	int r;
 
-	r = vmp_amap_descend(map, amap, anon->resident, &panon, true);
+	r = vmp_amap_descend(map, amap, anon->offset, &panon, true);
 	kassert(r == 0);
 	kassert(*panon == NULL);
 
@@ -134,14 +143,17 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
     struct vm_amap *amap, vm_object_t *aobj, vm_object_t *parent, voff_t offset,
     vm_fault_flags_t flags, vm_page_t **out)
 {
-	struct vmp_anon *anon, **panon;
+	struct vmp_anon *anon = NULL, **panon = NULL;
 	kwaitstatus_t w;
 
 	w = ke_wait(&amap->mutex, "fault_anonymous:amap->mutex", false, false,
 	    -1);
 	kassert(w == kKernWaitStatusOK);
 
-	anon = vmp_amap_find_anon(map, amap, offset, &panon);
+	(void)vmp_amap_find_anon(map, amap, offset, &panon);
+	if (panon)
+		anon = *panon;
+
 	if (anon != NULL) {
 		w = ke_wait(&anon->mutex, "fault_anonymous:anon->mutex", false,
 		    false, -1);
@@ -504,5 +516,6 @@ vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t **out)
 	}
 
 	ke_mutex_release(&map->mutex);
+
 	return r;
 }

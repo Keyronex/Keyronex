@@ -104,6 +104,9 @@ bool pmap_is_writeable(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
  */
 vm_map_entry_t *vmp_map_find(vm_map_t *ps, vaddr_t vaddr);
 
+/*! @brief Initialise an amap. */
+int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);
+
 /*! @brief Dump all entries in a map. */
 void vmp_map_dump(vm_map_t *map);
 
