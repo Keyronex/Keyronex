@@ -31,23 +31,32 @@ typedef struct vattr {
 } vattr_t;
 
 /*!
+ * For pgcache_read()/pgcache_write(), the vnode lock is acquired to prevent
+ * changes in size during the operation. The flag `locked_for_paging` is set to
+ * indicate this, so that if a page fault associated with the pgcache operation
+ * must do paging I/O, which would typically involve acquiring the vnode lock,
+ * this can be elided to eliminate a lock ordering problem.
+ *
  * (~) invariant from initialisation
  * (m) mount lock (todo)
- * (i) interlock
+ * (l) vnode lock
  */
 typedef struct vnode {
 	/*! (~) */
 	vm_object_t vmobj;
 
-	/*! interlock */
-	kmutex_t interlock;
+	/* (l) vnode is locked for paging I/O */
+	bool locked_for_paging : 1;
+
+	/*! the vnode read/wriet lock */
+	kmutex_t lock;
 
 	/*! (~) operations */
 	struct vnops *ops;
 	/*! (~) type of vnode */
 	vtype_t type;
 
-	/*! (i) size of regular file */
+	/*! (l) size of regular file */
 	size_t size;
 
 	/*! (~) mountpoint to which the vnode belongs */
@@ -155,7 +164,7 @@ enum lookup_flags {
 	kLookupMustDir = 1 << 2,
 };
 
-#define VOP_OPEN(vnode, out, mode) vnode->ops->open(vnode, out, mode)
+#define VOP_OPEN(PVN, mode) (*PVN)->ops->open(PVN, mode)
 #define VOP_READ(vnode, buf, nbyte, off) \
 	vnode->ops->read(vnode, buf, nbyte, off)
 #define VOP_WRITE(vnode, buf, nbyte, off) \

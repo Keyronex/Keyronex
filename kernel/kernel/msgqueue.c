@@ -3,14 +3,14 @@
  * Created on Tue Jan 14 2023.
  */
 
-
-#include "kernel/ke_internal.h"
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kernel/ke_internal.h"
 
 void
 ke_event_init(kevent_t *ev, bool signalled)
 {
-	ev->hdr.type = kDispatchMsgQueue;
+	ev->hdr.type = kDispatchEvent;
 	ev->hdr.signalled = signalled;
 	TAILQ_INIT(&ev->hdr.waitblock_queue);
 }

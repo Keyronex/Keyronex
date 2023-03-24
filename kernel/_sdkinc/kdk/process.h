@@ -9,6 +9,7 @@
 #include "./kernel.h"
 #include "./object.h"
 #include "./vm.h"
+#include "kdk/objhdr.h"
 
 /*!
  * An executive thread.
@@ -22,9 +23,19 @@ typedef struct ethread {
 } ethread_t;
 
 /*!
+ * A file handle.
+ */
+struct file {
+	object_header_t objhdr;
+	struct vnode *vn;
+	int64_t offset;
+};
+
+/*!
  * An executive process
  *
  * (~) => invariant after initialisation
+ * (fd) => #fd_mutex
  */
 typedef struct eprocess {
 	/*! Kernel process part. */
@@ -36,6 +47,10 @@ typedef struct eprocess {
 	/*! (~) Portable Applications Subsystem process. */
 	void *pas_proc;
 
+	/*! (~) File table mutex */
+	kmutex_t fd_mutex;
+	/*! (fd) File table. */
+	struct file * files[64];
 } eprocess_t;
 
 /*! Eternal handle to the kernel process. Only useable by  */
@@ -68,6 +83,11 @@ int ps_process_create(krx_out eprocess_t **process_out, eprocess_t *parent);
  * @brief Create a new thread in a given process. Thread needs setup.
  */
 int ps_thread_create(krx_out ethread_t **thread_out, eprocess_t *eproc);
+
+/*!
+ * @brief Get the file at a particular index in a process' table.
+ */
+struct file *ps_getfile(eprocess_t *proc, size_t index);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

@@ -3,9 +3,9 @@
  * Created on Tue Feb 14 2023.
  */
 
-
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/machdep.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
@@ -20,6 +20,14 @@ eprocess_t kernel_process = { .map = &kmap };
 ethread_t kernel_bsp_thread;
 uint64_t id = 1;
 
+static void
+process_common_init(eprocess_t *eproc)
+{
+	obj_initialise_header(&eproc->kproc.objhdr, kObjTypeProcess);
+	memset(eproc->files, 0x0, sizeof(eproc->files));
+	ke_mutex_init(&eproc->fd_mutex);
+}
+
 void
 psp_init_0(void)
 {
@@ -27,6 +35,7 @@ psp_init_0(void)
 	kernel_bsp_thread.kthread.process = &kernel_process.kproc;
 	kernel_bsp_thread.kthread.cpu = hl_curcpu();
 	vm_map_init(kernel_process.map);
+	process_common_init(&kernel_process);
 }
 
 int
@@ -44,7 +53,7 @@ ps_process_create(krx_out eprocess_t **process_out, eprocess_t *parent)
 	eprocess_t *eproc = kmem_alloc(sizeof(*eproc));
 	int r;
 
-	obj_initialise_header(&eproc->kproc.objhdr, kObjTypeProcess);
+	process_common_init(eproc);
 
 	eproc->id = id++;
 
@@ -74,4 +83,21 @@ ps_thread_create(krx_out ethread_t **thread_out, eprocess_t *eproc)
 
 	*thread_out = ethread;
 	return 0;
+}
+
+struct file *
+ps_getfile(eprocess_t *proc, size_t index)
+{
+	struct file *file;
+	kwaitstatus_t w;
+
+	if (index < 0 || index >= 64)
+		return NULL;
+
+	w = ke_wait(&proc->fd_mutex, "ps_getfile", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+	file = proc->files[index];
+	ke_mutex_release(&proc->fd_mutex);
+
+	return file;
 }

@@ -15,14 +15,6 @@
 #include "kdk/vfs.h"
 
 /*!
- * a posix kernel file descriptor
- */
-typedef struct posix_file {
-	vnode_t *vnode;
-	size_t pos;
-} posix_file_t;
-
-/*!
  * a posix process
  * (p) = proctree_mtx
  * (~) = invariant after initialisation
@@ -42,9 +34,6 @@ typedef struct posix_proc {
 	int wait_stat;
 	/*! (p) subprocess state change event */
 	kevent_t subproc_state_change;
-
-	/* (p) open files */
-	posix_file_t files[64];
 } posix_proc_t;
 
 #define stringify(x) #x

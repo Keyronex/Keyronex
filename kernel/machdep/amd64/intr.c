@@ -104,12 +104,10 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		kdprintf("Switch from %p to %p\n", old, next);
 #endif
 
-		old->hl.fs = rdmsr(kAMD64MSRFSBase);
 		old->frame = *frame;
 
 		*frame = next->frame;
 		hl_curcpu()->hl.tss->rsp0 = next->kstack;
-		wrmsr(kAMD64MSRFSBase, next->hl.fs);
 
 		ke_spinlock_release_nospl(&dispatcher_lock);
 		splx(next->saved_ipl);
@@ -186,6 +184,9 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 
 		case kVMFaultRetFailure:
 			md_intr_frame_trace(frame);
+			if (frame->cs & 0x3)
+				kfatal("vm_fault failed in userland (proc %u)",
+				    ps_curproc()->id);
 			kfatal("vm_fault failed");
 
 		case kVMFaultRetPageShortage:

@@ -249,12 +249,13 @@ vm_page_wire(vm_page_t *page)
 
 	case kPageStatusWired:
 	    /* epsilon */
-	    ;
+	    break;
 
 	case kPageStatusBusy:
 		kfatal("Cannot wire a busy page.\n");
 	}
 
+	page->wirecnt++;
 	page->status = kPageStatusWired;
 
 	vmp_release_pfn_lock(ipl);

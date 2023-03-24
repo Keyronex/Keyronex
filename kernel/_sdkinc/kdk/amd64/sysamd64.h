@@ -10,8 +10,8 @@
 
 /*
  * todo(low): move this into platform-specific code
- * number in rax, arg1 rdi, arg2 rsi, arg3 rdx, arg4 r10, arg5 r8, arg6 r9
- * result out rax, error code out rdi
+ * number in %rax, arg1 %rdi, arg2 %rsi, arg3 rdx, arg4 r10, arg5 r8, arg6 r9
+ * result out %rax, secondary output %rdi
  */
 
 static inline uintptr_t

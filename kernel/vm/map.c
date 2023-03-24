@@ -85,8 +85,7 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	vm_map_entry_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 
-	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false,
-	    -1);
+	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
 	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0,
@@ -111,7 +110,8 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 		if (object->is_anonymous) {
 			kfatal("implement this by copying amap");
 		} else {
-			kfatal("Implement this\n");
+			vad->object = object;
+			vad->has_anonymous = true;
 			vmp_amap_init(map, &vad->amap);
 		}
 

@@ -2,6 +2,12 @@
  * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Wed Mar 01 2023.
  */
+/*!
+ * @file viofam/fusefs.cc
+ * @brief Fuse filesystem driver.
+ *
+ * Note that our errnos align with Linux, so we can pass them on unmodified.
+ */
 
 #include "abi-bits/errno.h"
 #include "abi-bits/fcntl.h"
@@ -215,6 +221,7 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 	node->vnode->ops = &vnops;
 	node->vnode->vfsmountedhere = NULL;
 	node->vnode->size = size;
+	ke_mutex_init(&node->vnode->lock);
 
 	node->vnode->vmobj.is_anonymous = false;
 	ke_mutex_init(&node->vnode->vmobj.mutex);
@@ -252,13 +259,14 @@ FuseFS::pagerFileHandle(fusefs_node *node, uint64_t &handle_out)
 	req->iop = iop;
 	iop_send_sync(iop);
 
-	kassert(req->fuse_out_header.error == 0);
-
-	node->have_pager_file_handle = true;
-	node->pager_file_handle = open_out.fh;
-	handle_out = open_out.fh;
-
-	return 0;
+	if (req->fuse_out_header.error == 0) {
+		node->have_pager_file_handle = true;
+		node->pager_file_handle = open_out.fh;
+		handle_out = open_out.fh;
+		return 0;
+	} else {
+		return req->fuse_out_header.error;
+	}
 }
 
 int
@@ -314,6 +322,7 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 {
 	FuseFS *self = (FuseFS *)vn->vfsp->data;
 	fusefs_node *node = ((fusefs_node *)vn->data), *res;
+	int r = 0;
 
 	kdprintf("fusefs_lookup(vnode: %p, ino: %lu, \"%s\");\n", node->vnode,
 	    node->inode, pathname);
@@ -335,7 +344,10 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	    entry_out.nodeid);
 #endif
 
-	kassert(req->fuse_out_header.error == 0);
+	if (req->fuse_out_header.error != 0) {
+		r = req->fuse_out_header.error;
+		goto ret;
+	}
 
 	res = self->findOrCreateNodePair(mode_to_vtype(entry_out.attr.mode),
 	    entry_out.attr.size, entry_out.nodeid, node->inode);
@@ -343,7 +355,9 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 		return -ENOENT;
 
 	*out = res->vnode;
-	return 0;
+
+ret:
+	return r;
 }
 
 int

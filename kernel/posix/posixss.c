@@ -25,10 +25,10 @@
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
+#include "kdk/posixss.h"
 #include "kdk/process.h"
 #include "kernel/ke_internal.h"
 #include "posix/pxp.h"
-#include "kdk/posixss.h"
 
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
@@ -39,8 +39,8 @@ fork_init(void *unused)
 {
 	const char *argv[] = { "hello", NULL };
 	const char *envp[] = { NULL };
-	uintptr_t   err;
-	int	    r;
+	uintptr_t err;
+	int r;
 
 	r = syscall3(kPXSysExecVE, (uintptr_t) "/hello", (uintptr_t)argv,
 	    (uintptr_t)envp, &err);
@@ -97,6 +97,8 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 	proc_init_common(newproc, proc, eproc);
 	px_release_proctree_mutex();
 
+	*out = newproc;
+
 	ki_thread_start(&ethread->kthread);
 
 	return 0;
@@ -110,7 +112,6 @@ psx_init(void)
 	ke_mutex_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
-
 
 	kdprintf("Launch POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);

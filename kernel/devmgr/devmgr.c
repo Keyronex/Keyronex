@@ -48,6 +48,9 @@ iop_new(device_t *dev)
 	ke_event_init(&iop->event, false);
 	iop->master_iop = NULL;
 	iop->begun = true;
+	iop->associated_iops_link.sle_next = NULL;
+
+	memset(iop->stack, 0x0, sizeof(iop_frame_t) * iop->stack_count);
 
 	return iop;
 }
@@ -118,6 +121,7 @@ cont:
 
 		if (!SLIST_EMPTY(&frame->associated_iops)) {
 			/* begin running associated IOPs */
+			kdprintf("Beginning associated IOP 1.\n");
 			iop = SLIST_FIRST(&frame->associated_iops);
 			kassert(!iop->begun);
 			goto start;
@@ -160,6 +164,8 @@ cont:
 				iop_t *next = SLIST_NEXT(iop,
 				    associated_iops_link);
 				if (!next->begun) {
+					kdprintf(
+					    "Beginning associated IOP 2.\n");
 					iop = next;
 					res = -1;
 					goto start;
@@ -211,6 +217,8 @@ cont:
 					iop_t *next = SLIST_NEXT(iop,
 					    associated_iops_link);
 					if (!next->begun) {
+						kdprintf(
+						    "Beginning associated IOP 3.\n");
 						iop = next;
 						res = -1;
 						goto start;
@@ -255,6 +263,8 @@ cont:
 				iop_t *next = SLIST_NEXT(iop,
 				    associated_iops_link);
 				if (!next->begun) {
+					kdprintf(
+					    "Beginning associated IOP 4.\n");
 					iop = next;
 					res = -1;
 					goto start;

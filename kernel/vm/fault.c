@@ -257,6 +257,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 	} else if (parent != NULL) {
 		vm_fault_return_t r;
 		vm_page_t *page;
+		vaddr_t parent_offset;
 
 		/* can't fault from an anonymous parent */
 		kassert(!parent->is_anonymous &&
@@ -264,19 +265,26 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		/* anonymous objects don't have parents */
 		kassert(!aobj);
 
+		parent_offset = offset + entry->offset;
+
 		w = ke_wait(&parent->mutex, "fault_anonymous:parent->mutex",
 		    false, false, -1);
 		kassert(w == kKernWaitStatusOK);
 
-		r = fault_vnode(map, vaddr, entry, parent, offset, flags, &page,
-		    true);
+#if 0
+		kdprintf(
+		    " !! Anonymous fault from parent: Base %lx, Addr %lx, offset %lx\n",
+		    entry->start, vaddr, offset);
+#endif
+
+		r = fault_vnode(map, vaddr, entry, parent, parent_offset, flags,
+		    &page, true);
 		if (r != kVMFaultRetOK) {
 			if (aobj)
 				ke_mutex_release(&aobj->mutex);
-
 			ke_mutex_release(&amap->mutex);
-
-			/* it already released map etc for us */
+			/* it already released map mutex and its object mutex
+			 * for us */
 			return r;
 		}
 
@@ -287,6 +295,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 				vm_page_unwire(page);
 			}
 
+			ke_mutex_release(&parent->mutex);
 			ke_mutex_release(&amap->mutex);
 
 			return kVMFaultRetOK;
@@ -317,6 +326,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 
 		/* then map the anon  */
 		pmap_enter_pageable(map, anon->page, vaddr, entry->protection);
+		pmap_invlpg(vaddr);
 
 		if (out) {
 			/* still wired from vmp_anon_new */
@@ -396,6 +406,11 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 
 		vnode_t *vnode = (vnode_t *)obj;
 		vm_mdl_t *mdl = vm_mdl_alloc(1);
+
+#if 0
+		/*! do we need a reader lock? */
+		kwaitstatus_t w;
+#endif
 
 		mdl->pages[0] = page;
 		iop_t *iop = iop_new_read(vnode->vfsp->dev, mdl, PGSIZE,
@@ -507,7 +522,8 @@ vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t **out)
 		r = fault_anonymous(map, vaddr, entry, &entry->amap, NULL,
 		    entry->object, offset, flags, out);
 	} else {
-		r = fault_object(map, vaddr, entry, offset, flags, out);
+		r = fault_object(map, vaddr, entry, offset + entry->offset,
+		    flags, out);
 	}
 
 	if (r != kVMFaultRetOK) {
