@@ -26,8 +26,12 @@ typedef struct vattr {
 	mode_t mode;
 	/*! note: can become stale with respect to vnode::size */
 	size_t size;
-	/*! device represented by file */
+	/*! legacy device represented by file */
 	dev_t rdev;
+	/*! new-style device represented by file */
+	struct device *rdevice;
+	/*! new-style device operations vector */
+	struct vnops *rdevops;
 } vattr_t;
 
 /*!
@@ -67,6 +71,11 @@ typedef struct vnode {
 	struct vfs *vfsmountedhere;
 	/*! (fs-dependent) fs private data */
 	uintptr_t data;
+
+	/*! (~) device */
+	struct device *rdevice;
+	/*! (~) device ops */
+	struct vnops *rdeviceops;
 } vnode_t;
 
 /*!

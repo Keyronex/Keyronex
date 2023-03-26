@@ -1,2 +1,2 @@
-kernel_sources += files('devmgr.c', 'genfs.c', 'tmpfs.c', 'vfs.c')
+kernel_sources += files('devfs.c', 'devmgr.c', 'genfs.c', 'tmpfs.c', 'vfs.c')
 

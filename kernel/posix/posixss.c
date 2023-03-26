@@ -30,6 +30,8 @@
 #include "kernel/ke_internal.h"
 #include "posix/pxp.h"
 
+int pxp_make_syscon_tty(void);
+
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
 kmutex_t px_proctree_mutex;
@@ -112,6 +114,12 @@ psx_init(void)
 	ke_mutex_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
+
+	r = vfs_mountdev1();
+	kassert(r == 0);
+
+	r = pxp_make_syscon_tty();
+	kassert(r == 0);
 
 	kdprintf("Launch POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);

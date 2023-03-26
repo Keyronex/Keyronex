@@ -11,7 +11,7 @@
 typedef struct tmpdirent {
 	TAILQ_ENTRY(tmpdirent) entries;
 
-	char	       *name;
+	char *name;
 	struct tmpnode *node;
 } tmpdirent_t;
 
@@ -32,6 +32,12 @@ typedef struct tmpnode {
 		struct {
 			vm_object_t *section;
 		} reg;
+
+		/* VCHR case */
+		struct {
+			struct device *rdevice;
+			struct devops *rdevops;
+		} chr;
 	};
 } tmpnode_t;
 

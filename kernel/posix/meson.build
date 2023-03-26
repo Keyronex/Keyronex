@@ -1,1 +1,1 @@
-kernel_sources += files('exec.c', 'posixss.c', 'sys.c')
+kernel_sources += files('exec.c', 'posixss.c', 'sctty.c', 'sys.c', 'tty.c')

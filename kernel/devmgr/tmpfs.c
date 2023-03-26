@@ -21,6 +21,26 @@ extern struct vnops tmpfs_spec_vnops;
 extern struct vfsops tmpfs_vfsops;
 
 static int
+devfs_setup_vnode(vnode_t *vn, struct device *rdevice, struct vnops *devvnops)
+{
+	vn->rdevice = rdevice;
+	vn->rdeviceops = devvnops;
+	return 0;
+}
+
+static int
+devfs_read(vnode_t *vn, void *buf, size_t size, off_t off)
+{
+	return vn->rdeviceops->read(vn, buf, size, off);
+}
+
+static int
+devfs_write(vnode_t *vn, void *buf, size_t size, off_t off)
+{
+	return vn->rdeviceops->write(vn, buf, size, off);
+}
+
+static int
 tmpfs_root(vfs_t *vfs, vnode_t **out)
 {
 	*out = (vnode_t *)vfs->data;
@@ -50,8 +70,8 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 			// vn->section = node->reg.section;
 			vn->size = node->attr.size;
 		} else if (node->attr.type == VCHR) {
-			kfatal("Unimplemented\n");
-			// spec_setup_vnode(vn, node->attr.rdev);
+			devfs_setup_vnode(vn, node->attr.rdevice,
+			    node->attr.rdevops);
 		}
 		vn->data = (uintptr_t)node;
 		*vout = vn;
@@ -72,6 +92,7 @@ vfs_mountdev1(void)
 
 	tmpfs_vget(&dev_vfs, &vroot, (ino_t)root);
 	vroot->isroot = true;
+	dev_vfs.ops = &tmpfs_vfsops;
 	dev_vfs.data = (uintptr_t)vroot;
 	dev_vnode = vroot;
 
@@ -151,6 +172,7 @@ tmp_create(vnode_t *dvn, vnode_t **out, const char *pathname, vattr_t *attr)
 	n = tmakenode(VNTOTN(dvn), pathname, attr);
 	kassert(n != NULL);
 
+	kassert(dvn && dvn->vfsp && dvn->vfsp->ops && dvn->vfsp->ops->vget);
 	return dvn->vfsp->ops->vget(dvn->vfsp, out, (ino_t)n);
 }
 
@@ -265,6 +287,8 @@ struct vnops tmpfs_vnops = {
 
 struct vnops tmpfs_spec_vnops = {
 	.getattr = tmp_getattr,
+	.read = devfs_read,
+	.write = devfs_write,
 #if 0
 	.open = spec_open,
 	.read = spec_read,
