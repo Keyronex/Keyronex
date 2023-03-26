@@ -13,6 +13,8 @@
 #include "abi-bits/in.h"
 #include "kdk/vfs.h"
 
+enum chpoll_kind;
+
 /*!
  * Base type of a node in the socket filesystem representing a KeySock socket.
  *
@@ -36,6 +38,11 @@ struct socknode {
 struct socknodeops {
 	int (*create)(krx_out vnode_t **out_vn, int domain, int protocol);
 	int (*accept)(vnode_t *vn, krx_out vnode_t **out_vn);
+	int (*bind)(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen);
+	int (*listen)(vnode_t *vn, uint8_t backlog);
+	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
+	    socklen_t addr_len);
+	int (*chpoll)(vnode_t *vn, enum chpoll_kind kind);
 };
 
 /* internal functions */

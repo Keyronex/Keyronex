@@ -1,1 +1,1 @@
-kernel_sources += files('start.c')
+kernel_sources += files('epoll.c', 'start.c')
