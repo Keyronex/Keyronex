@@ -7,6 +7,7 @@
 
 #include "dev/virtio_net.h"
 #include "kdk/amd64/vmamd64.h"
+#include "kdk/kernel.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 #include "lwip/err.h"
@@ -20,6 +21,8 @@
 #include "netif/ethernet.h"
 
 #include "vionet.hh"
+
+#define TEST_IP 1
 
 #define VIRTIO_NET_Q_RX 0
 #define VIRTIO_NET_Q_TX 1
@@ -58,7 +61,12 @@ VirtIONIC::netifInit(struct netif *nic)
 err_t
 VirtIONIC::netifOutput(struct netif *nic, struct pbuf *p)
 {
-	kfatal("\n\n\n!!!!netifOutput\n\n\n\n");
+	VirtIONIC *self = (VirtIONIC *)nic->state;
+	ipl_t ipl = ke_spinlock_acquire(&self->tx_vq.spinlock);
+	STAILQ_INSERT_TAIL(&self->pbuf_txq, p, stailq_entry);
+	ke_dpc_enqueue(&self->interrupt_dpc);
+	ke_spinlock_release(&self->tx_vq.spinlock, ipl);
+	return ERR_OK;
 }
 
 VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
@@ -88,16 +96,12 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 	}
 
 	initRXQueue();
+	STAILQ_INIT(&pbuf_txq);
 
 	err = netifapi_netif_add(&nic, NULL, NULL, NULL, this, netifInit,
 	    ethernet_input);
 	if (err != ERR_OK) {
 		DKDevLog(this, "Failed to add interface: %d\n", err);
-	}
-
-	err = netifapi_netif_set_up(&nic);
-	if (err != ERR_OK) {
-		DKDevLog(this, "Failed to set interface up: %d\n", err);
 	}
 
 	r = enableDevice();
@@ -108,6 +112,23 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 	attach(provider);
 	DKDevLog(this, "MAC address: " MAC_FMT "\n", cfg->mac[0], cfg->mac[1],
 	    cfg->mac[2], cfg->mac[3], cfg->mac[4], cfg->mac[5]);
+
+#if TEST_IP == 1
+	ip4_addr_t ip, netmask, gw;
+	ip.addr = ipaddr_addr("192.168.122.50");
+	netmask.addr = ipaddr_addr("255.255.255.0");
+	gw.addr = ipaddr_addr("192.168.122.1");
+
+	err = netifapi_netif_set_addr(&nic, &ip, &netmask, &gw);
+	if (err != ERR_OK) {
+		DKDevLog(this, "Failed to set interface IP: %d\n", err);
+	}
+#endif
+
+	err = netifapi_netif_set_up(&nic);
+	if (err != ERR_OK) {
+		DKDevLog(this, "Failed to set interface up: %d\n", err);
+	}
 
 #if 0
 	for (;;)
@@ -167,7 +188,10 @@ VirtIONIC::intrDpc()
 	ipl_t ipl = ke_spinlock_acquire(&rx_vq.spinlock);
 	processVirtQueue(&rx_vq);
 	ke_spinlock_release(&rx_vq.spinlock, ipl);
-	// tryStartRequests();
+	ipl = ke_spinlock_acquire(&tx_vq.spinlock);
+	processVirtQueue(&tx_vq);
+	tryStartRequests();
+	ke_spinlock_release(&tx_vq.spinlock, ipl);
 }
 
 void
@@ -213,6 +237,73 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 		}
 		LINK_STATS_INC(link.recv);
 	}
+}
+
+void
+VirtIONIC::tryStartRequests()
+{
+	vaddr_t nethdr_tx_pagebase = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(
+	    nethdrs_page) + 64 * sizeof(struct virtio_net_hdr_mrg_rxbuf);
+	struct pbuf *p;
+	struct virtio_net_hdr_mrg_rxbuf *hdr;
+	struct vring_desc *dhdr, *ddata;
+	uint16_t dhdridx, ddataidx;
+	uint16_t i;
+
+again:
+	if (tx_vq.nfree_descs < 2)
+		return;
+
+	p = STAILQ_FIRST(&pbuf_txq);
+	if (!p)
+		return;
+
+	STAILQ_REMOVE(&pbuf_txq, p, pbuf, stailq_entry);
+
+	dhdridx = allocateDescNumOnQueue(&tx_vq);
+	ddataidx = allocateDescNumOnQueue(&tx_vq);
+
+	dhdr = &QUEUE_DESC_AT(&tx_vq, dhdridx);
+	ddata = &QUEUE_DESC_AT(&tx_vq, ddataidx);
+
+	i = dhdridx / 2;
+
+	hdr = (virtio_net_hdr_mrg_rxbuf *)(nethdr_tx_pagebase +
+	    i * sizeof(*hdr));
+	hdr->num_buffers = 1;
+
+	dhdr->len = sizeof(*hdr);
+	dhdr->addr = (uint64_t)V2P(hdr);
+	dhdr->next = ddataidx;
+	dhdr->flags = VRING_DESC_F_NEXT;
+
+	ddata->len = p->tot_len;
+	ddata->addr = VM_PAGE_PADDR(packet_bufs_pages[32 + i / 2]) +
+	    (i % 2) * 2048;
+	ddata->flags = 0;
+
+	memcpy(P2V(ddata->addr), p->payload, p->len);
+	kassert(!p->next);
+
+	submitDescNumToQueue(&tx_vq, dhdridx);
+	notifyQueue(&tx_vq);
+
+	MIB2_STATS_NETIF_ADD(netif, ifoutoctets, p->tot_len);
+	if (((u8_t *)p->payload)[0] & 1) {
+		/* multicast */
+		MIB2_STATS_NETIF_INC(netif, ifoutnucastpkts);
+	} else {
+		/* unicast */
+		MIB2_STATS_NETIF_INC(netif, ifoutucastpkts);
+	}
+
+#if ETH_PAD_SIZE
+	pbuf_add_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
+#endif
+
+	LINK_STATS_INC(link.xmit);
+
+	goto again;
 }
 
 void

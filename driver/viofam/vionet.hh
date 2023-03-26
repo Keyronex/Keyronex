@@ -18,8 +18,8 @@ class VirtIONIC : VirtIODevice {
 	/*! Virtqueue 1 - receive */
 	virtio_queue rx_vq;
 
-	/*! Fuse unique ID counter. */
-	uint64_t fuse_unique = 0;
+	/*! Pbuf transmission queue. */
+	STAILQ_HEAD(, pbuf) pbuf_txq;
 
 	/*! Nethdrs page. */
 	vm_page_t *nethdrs_page;
@@ -51,6 +51,7 @@ class VirtIONIC : VirtIODevice {
 	void processUsed(virtio_queue *queue, struct vring_used_elem *e);
 
 	void initRXQueue();
+	void tryStartRequests();
 
     public:
 	VirtIONIC(PCIDevice *provider, pci_device_info &info);

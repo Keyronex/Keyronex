@@ -123,6 +123,7 @@ psx_init(void)
 {
 	int r;
 
+#if 0
 	ke_mutex_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
@@ -136,6 +137,7 @@ psx_init(void)
 	kdprintf("Launch POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);
 	kassert(r == 0);
+#endif
 
 	return 0;
 }
