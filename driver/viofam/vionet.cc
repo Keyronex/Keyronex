@@ -63,6 +63,7 @@ VirtIONIC::netifOutput(struct netif *nic, struct pbuf *p)
 {
 	VirtIONIC *self = (VirtIONIC *)nic->state;
 	ipl_t ipl = ke_spinlock_acquire(&self->tx_vq.spinlock);
+	/* !!! lwip may have freed the pbuf; we need to copy it really */
 	STAILQ_INSERT_TAIL(&self->pbuf_txq, p, stailq_entry);
 	ke_dpc_enqueue(&self->interrupt_dpc);
 	ke_spinlock_release(&self->tx_vq.spinlock, ipl);
@@ -282,8 +283,8 @@ again:
 	    (i % 2) * 2048;
 	ddata->flags = 0;
 
-	memcpy(P2V(ddata->addr), p->payload, p->len);
-	kassert(!p->next);
+	kassert(p->tot_len <= 2048);
+	pbuf_copy_partial(p, P2V(ddata->addr), 2048, 0);
 
 	submitDescNumToQueue(&tx_vq, dhdridx);
 	notifyQueue(&tx_vq);

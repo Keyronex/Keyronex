@@ -1,1 +1,1 @@
-kernel_sources += files('sock_udp.c', 'sysdep.c')
+kernel_sources += files('ip.c', 'sock_udp.c', 'sock_tcp.c', 'sysdep.c')

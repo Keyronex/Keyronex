@@ -68,15 +68,15 @@ sock_udp_create(int domain, int protocol, krx_out vnode_t **vnode)
  * Assign an address to a UDP socket.
  */
 int
-sock_udp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
+sock_udp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen)
 {
 	err_t err;
 	ip_addr_t ip_addr;
 	uint16_t port;
-	struct sockaddr_in *sin = (struct sockaddr_in *)nam;
 
-	inet_addr_to_ip4addr(ip_2_ip4(&ip_addr), &(sin->sin_addr));
-	port = lwip_ntohs((sin)->sin_port);
+	err = addr_unpack_ip(nam, namlen, &ip_addr, &port);
+	if (err != 0)
+		return err;
 
 	err = udp_bind(VNTOUDP(vn)->udp_pcb, &ip_addr, port);
 
@@ -95,19 +95,22 @@ sock_udp_connect(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 /*!
  * Send on an UDP socket.
  */
-int sock_udp_sendto(vnode_t *vn, void *buf, size_t len, const struct sockaddr *nam, socklen_t addr_len) {
+int
+sock_udp_sendto(vnode_t *vn, void *buf, size_t len, const struct sockaddr *nam,
+    socklen_t namlen)
+{
 	struct pbuf *p;
 	err_t err;
 	ip_addr_t ip_addr;
 	uint16_t port;
-	struct sockaddr_in *sin = (struct sockaddr_in *)nam;
+
+	err = addr_unpack_ip(nam, namlen, &ip_addr, &port);
+	if (err != 0)
+		return err;
 
 	p = pbuf_alloc_reference(buf, len, PBUF_ROM);
 	if (!p)
 		return -ENOBUFS;
-	
-	inet_addr_to_ip4addr(ip_2_ip4(&ip_addr), &(sin->sin_addr));
-	port = lwip_ntohs((sin)->sin_port);
 
 	err = udp_sendto(VNTOUDP(vn)->udp_pcb, p, &ip_addr, port);
 

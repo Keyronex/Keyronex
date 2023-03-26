@@ -133,6 +133,9 @@ init_thread_start(void *rsdp)
 	    buf);
 #endif
 
+	int test_tcpserver(void);
+	test_tcpserver();
+
 	int psx_init(void);
 	psx_init();
 
