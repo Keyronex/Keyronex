@@ -32,12 +32,6 @@ typedef struct tmpnode {
 		struct {
 			vm_object_t *section;
 		} reg;
-
-		/* VCHR case */
-		struct {
-			struct device *rdevice;
-			struct devops *rdevops;
-		} chr;
 	};
 } tmpnode_t;
 

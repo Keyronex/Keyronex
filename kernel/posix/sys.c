@@ -71,7 +71,7 @@ vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 }
 
 int
-sys_open(const char *path, int mode)
+posix_do_openat(vnode_t *dvn, const char *path, int mode)
 {
 	eprocess_t *eproc = ps_curproc();
 	vnode_t *vn;
@@ -98,9 +98,9 @@ sys_open(const char *path, int mode)
 	if (fd == -1)
 		return -ENFILE;
 
-	r = vfs_lookup(root_vnode, &vn, path, 0, NULL);
+	r = vfs_lookup(dvn, &vn, path, 0, NULL);
 	if (r < 0 && mode & O_CREAT)
-		r = vfs_lookup(root_vnode, &vn, path, kLookupCreate, NULL);
+		r = vfs_lookup(dvn, &vn, path, kLookupCreate, NULL);
 
 	if (r < 0) {
 #if DEBUG_SYSCALLS == 1
@@ -129,6 +129,12 @@ sys_open(const char *path, int mode)
 out:
 	ke_mutex_release(&eproc->fd_mutex);
 	return r;
+}
+
+int
+sys_open(const char *path, int mode)
+{
+	return posix_do_openat(root_vnode, path, mode);
 }
 
 int
@@ -173,6 +179,30 @@ sys_read(int fd, void *buf, size_t nbyte)
 	r = VOP_READ(file->vn, buf, nbyte, file->offset);
 	if (r < 0) {
 		kdprintf("VOP_READ got %d\n", r);
+		return r;
+	}
+
+	file->offset += r;
+
+	return r;
+}
+
+int
+sys_write(int fd, void *buf, size_t nbyte)
+{
+	struct file *file = ps_getfile(ps_curproc(), fd);
+	int r;
+
+#if 0
+	kdprintf("SYS_WRITE(%d, nbytes: %lu off: %lu)\n", fd, nbyte, file->pos);
+#endif
+
+	if (file == NULL)
+		return -EBADF;
+
+	r = VOP_WRITE(file->vn, buf, nbyte, file->offset);
+	if (r < 0) {
+		kdprintf("VOP_WRITE got %d\n", r);
 		return r;
 	}
 
@@ -253,6 +283,10 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysRead:
 		RET = sys_read(ARG1, (void *)ARG2, ARG3);
+		break;
+
+	case kPXSysWrite:
+		RET = sys_write(ARG1, (void *)ARG2, ARG3);
 		break;
 
 	case kPXSysSeek:

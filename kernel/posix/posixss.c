@@ -22,15 +22,18 @@
  *
  */
 
+#include "abi-bits/fcntl.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "kdk/posixss.h"
 #include "kdk/process.h"
+#include "kdk/vfs.h"
 #include "kernel/ke_internal.h"
 #include "posix/pxp.h"
 
 int pxp_make_syscon_tty(void);
+int posix_do_openat(vnode_t *dvn, const char *path, int mode);
 
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
@@ -43,6 +46,15 @@ fork_init(void *unused)
 	const char *envp[] = { NULL };
 	uintptr_t err;
 	int r;
+
+	r = posix_do_openat(dev_vnode, "console", O_RDWR);
+	kassert(r == 0);
+
+	r = posix_do_openat(dev_vnode, "console", O_RDWR);
+	kassert(r == 1);
+
+	r = posix_do_openat(dev_vnode, "console", O_RDWR);
+	kassert(r == 2);
 
 	r = syscall3(kPXSysExecVE, (uintptr_t) "/hello", (uintptr_t)argv,
 	    (uintptr_t)envp, &err);
