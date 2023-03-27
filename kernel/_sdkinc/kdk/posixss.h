@@ -22,7 +22,7 @@ enum posix_syscall {
 	kPXSysRead,
 	kPXSysWrite,
 	kPXSysSeek,
-	kPXSysPSelect,
+	kPXSysPPoll,
 	kPXSysIsATTY,
 	kPXSysReadDir,
 	kPXSysStat,
@@ -32,6 +32,8 @@ enum posix_syscall {
 	kPXSysExit,
 	kPXSysFork,
 	kPXSysWaitPID,
+	kPXSysGetPID,
+	kPXSysGetPPID,
 };
 
 #endif /* KRX_POSIX_POSIXSS_H */

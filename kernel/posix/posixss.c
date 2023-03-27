@@ -42,7 +42,7 @@ kmutex_t px_proctree_mutex;
 static void
 fork_init(void *unused)
 {
-	const char *argv[] = { "hello", NULL };
+	const char *argv[] = { "bash", "-l", NULL };
 	const char *envp[] = { NULL };
 	uintptr_t err;
 	int r;
@@ -56,7 +56,7 @@ fork_init(void *unused)
 	r = posix_do_openat(dev_vnode, "console", O_RDWR);
 	kassert(r == 2);
 
-	r = syscall3(kPXSysExecVE, (uintptr_t) "/hello", (uintptr_t)argv,
+	r = syscall3(kPXSysExecVE, (uintptr_t) "/usr/bin/bash", (uintptr_t)argv,
 	    (uintptr_t)envp, &err);
 
 	kfatal("failed to exec init: r %d, err %lu\n", r, err);
@@ -123,7 +123,7 @@ psx_init(void)
 {
 	int r;
 
-#if 0
+#if 1
 	ke_mutex_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);

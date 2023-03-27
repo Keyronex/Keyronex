@@ -3,11 +3,14 @@
  * Created on Thu Mar 23 2023.
  */
 
+#include <sys/poll.h>
+
 #include "abi-bits/errno.h"
 #include "abi-bits/fcntl.h"
 #include "abi-bits/seek-whence.h"
 #include "abi-bits/vm-flags.h"
 #include "amd64.h"
+#include "executive/epoll.h"
 #include "kdk/amd64/portio.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
@@ -26,7 +29,7 @@ vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 	eprocess_t *proc = ps_curproc();
 	uintptr_t r;
 
-#if DEBUG_SYSCALLS == 0
+#if DEBUG_SYSCALLS == 1
 	kdprintf(
 	    " !!! VM_POSIX: mmap addr %p, len %lu, prot %d, flags %d, fd %d, "
 	    "offs %ld\n",
@@ -169,8 +172,9 @@ sys_read(int fd, void *buf, size_t nbyte)
 	struct file *file = ps_getfile(ps_curproc(), fd);
 	int r;
 
-#if 0
-	kdprintf("SYS_READ(%d, nbytes: %lu off: %lu)\n", fd, nbyte, file->pos);
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_READ(%d, nbytes: %lu off: %lu)\n", fd, nbyte,
+	    file->offset);
 #endif
 
 	if (file == NULL)
@@ -193,8 +197,9 @@ sys_write(int fd, void *buf, size_t nbyte)
 	struct file *file = ps_getfile(ps_curproc(), fd);
 	int r;
 
-#if 0
-	kdprintf("SYS_WRITE(%d, nbytes: %lu off: %lu)\n", fd, nbyte, file->pos);
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_WRITE(%d, nbytes: %lu off: %lu)\n", fd, nbyte,
+	    file->offset);
 #endif
 
 	if (file == NULL)
@@ -242,6 +247,62 @@ sys_seek(int fd, off_t offset, int whence)
 	}
 
 	return file->offset;
+}
+
+uintptr_t
+sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
+    const sigset_t *sigmask)
+{
+	int r;
+	struct epoll *epoll;
+
+	kassert(nfds > 0 && nfds < 25);
+
+	epoll = epoll_new();
+
+	for (size_t i = 0; i < nfds; i++) {
+		struct epoll_event ev;
+		struct pollfd *pfd = &pfds[i];
+
+		ev.data.u32 = i;
+		ev.events = 0;
+		if (pfd->events & POLLIN)
+			ev.events |= EPOLLIN;
+		if (pfd->events & POLLOUT)
+			ev.events |= EPOLLOUT;
+
+		r = epoll_do_ctl(epoll, EPOLL_CTL_ADD, pfd->fd, &ev);
+		if (r != 0) {
+			epoll_do_destroy(epoll);
+			return r;
+		}
+	}
+
+	struct epoll_event *revents = NULL;
+	revents = kmem_alloc(sizeof(struct epoll_event) * nfds);
+
+	nanosecs_t nanosecs;
+	if (!timeout)
+		nanosecs = -1;
+	else if (timeout->tv_nsec <= 100000 && timeout->tv_nsec == 0)
+		nanosecs = 0;
+	else
+		nanosecs = (nanosecs_t)timeout->tv_sec * NS_PER_S +
+		    (nanosecs_t)timeout->tv_nsec;
+
+	r = epoll_do_wait(epoll, revents, nfds, nanosecs);
+	kassert(r >= 0);
+	epoll_do_destroy(epoll);
+
+	for (int i = 0; i < nfds; i++)
+		pfds[i].revents = 0;
+
+	for (int i = 0; i < r; i++) {
+		/* todo: that's not right */
+		pfds[revents[i].data.u32].revents = revents[i].events;
+	}
+
+	return r;
 }
 
 int
@@ -293,6 +354,11 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_seek(ARG1, ARG2, ARG3);
 		break;
 
+	case kPXSysPPoll:
+		RET = sys_ppoll((struct pollfd *)ARG1, ARG2,
+		    (const struct timespec *)ARG3, (const sigset_t *)ARG4);
+		break;
+
 	/* process & misc misc */
 	case kPXSysExecVE:
 		RET = sys_exec(px_curproc(), (char *)ARG1, (const char **)ARG2,
@@ -303,6 +369,14 @@ posix_syscall(hl_intr_frame_t *frame)
 		ke_curthread()->hl.fs = ARG1;
 		wrmsr(kAMD64MSRFSBase, ARG1);
 		RET = 0;
+		break;
+
+	case kPXSysGetPID:
+		RET = px_curproc()->eprocess->id;
+		break;
+
+	case kPXSysGetPPID:
+		RET = px_curproc()->parent->eprocess->id;
 		break;
 
 	default:
