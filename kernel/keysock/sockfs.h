@@ -21,16 +21,16 @@ enum chpoll_kind;
  *
  * Protocols extend this struct.
  *
- * The lifetime of the socket is the lifetime of the vnode describing it. The
- * #vnode pointer is weak. The exception is when a socket is on an accept queue.
- * In that case the reference to the socket is considered to also keep alive the
- * reference to the vnode.
+ * The lifetime of the socket is by default the lifetime of the vnode describing
+ * it. The #vnode pointer is weak. The exception is when a socket is on an
+ * accept queue. In that case the reference to the socket is considered to also
+ * keep alive the reference to the vnode.
  *
  * (l) => #lock
  * (p) => #polllist->lock
  */
 struct socknode {
-	/*! (~) Associated vnode; weak unless socket on accept queue */
+	/*! (per-socket) Associated vnode; weak unless socket on accept queue */
 	vnode_t *vnode;
 	/*! (~) Socket operations vector. */
 	struct socknodeops *sockops;
@@ -53,7 +53,7 @@ struct socknode {
  * Socket node operations. They are all entered unlocked for the time being.
  */
 struct socknodeops {
-	int (*create)(krx_out vnode_t **out_vn, int domain, int protocol);
+	int (*create)(krx_out vnode_t **out_vn, int domain, int type, int protocol);
 	int (*accept)(vnode_t *vn, krx_out struct sockaddr *addr,
 	    krx_inout socklen_t *addrlen);
 	int (*bind)(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen);

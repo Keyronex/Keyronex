@@ -18,7 +18,7 @@ sock_accept(vnode_t *vn, struct sockaddr *addr, socklen_t *addrlen,
 
 again:
 	ipl = ke_spinlock_acquire(&sock->lock);
-	newsock = (struct sock_tcp *)STAILQ_FIRST(&sock->accept_stailq);
+	newsock = STAILQ_FIRST(&sock->accept_stailq);
 
 	if (newsock == NULL) {
 		ke_spinlock_release(&sock->lock, ipl);
