@@ -12,11 +12,13 @@
 #include "abi-bits/in.h"
 #include "executive/epoll.h"
 #include "kdk/kerndefs.h"
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "keysock/sockfs.h"
 #include "lwip/err.h"
 #include "lwip/inet.h"
 #include "lwip/tcp.h"
+#include "lwip/tcpip.h"
 
 #define VNTOTCP(VN) ((struct sock_tcp *)(VN)->data)
 
@@ -24,10 +26,6 @@ struct sock_tcp {
 	struct socknode socknode;
 
 	struct tcp_pcb *tcp_pcb;
-
-	kevent_t accept_evobj;
-	STAILQ_HEAD(, sock_tcp) accept_stailq;
-	STAILQ_ENTRY(sock_tcp) accept_stailq_entry;
 };
 
 static struct socknodeops tcp_soops;
@@ -41,8 +39,6 @@ sock_tcp_common_alloc(krx_out vnode_t **vnode)
 	sock = kmem_alloc(sizeof(*sock));
 	r = sock_init(&sock->socknode, &tcp_soops);
 	kassert(r == 0);
-	ke_event_init(&sock->accept_evobj, false);
-	STAILQ_INIT(&sock->accept_stailq);
 
 	*vnode = sock->socknode.vnode;
 
@@ -70,6 +66,9 @@ sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 	struct sock_tcp *sock = (struct sock_tcp *)arg, *newsock;
 	vnode_t *newvn;
 	int r;
+	ipl_t ipl;
+
+	/* This is called with the TCP/IP core lock locked. */
 
 	r = sock_tcp_common_alloc(&newvn);
 	if (r != 0)
@@ -77,11 +76,15 @@ sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 
 	newsock = VNTOTCP(newvn);
 	newsock->tcp_pcb = newpcb;
-	STAILQ_INSERT_TAIL(&sock->accept_stailq, newsock, accept_stailq_entry);
 
 	tcp_backlog_delayed(newpcb);
-	ke_event_signal(&sock->accept_evobj);
+
+	ipl = ke_spinlock_acquire(&sock->socknode.lock);
+	STAILQ_INSERT_TAIL(&sock->socknode.accept_stailq, &newsock->socknode,
+	    accept_stailq_entry);
+	ke_event_signal(&sock->socknode.accept_evobj);
 	sock_event_raise(&sock->socknode, EPOLLIN);
+	ke_spinlock_release(&sock->socknode.lock, ipl);
 
 	return ERR_OK;
 }
@@ -105,15 +108,18 @@ sock_tcp_create(int domain, int protocol, krx_out vnode_t **vnode)
 
 	sock = VNTOTCP(vn);
 
+	LOCK_TCPIP_CORE();
 	sock->tcp_pcb = tcp_new_ip_type(
 	    domain == AF_INET ? IPADDR_TYPE_V4 : IPADDR_TYPE_ANY);
 	if (!sock->tcp_pcb) {
+		UNLOCK_TCPIP_CORE();
 		kmem_free(vn, sizeof(*vn));
 		kmem_free(sock, sizeof(*sock));
 		return -ENOBUFS;
 	}
 
 	tcp_recv(sock->tcp_pcb, sock_tcp_recv_cb);
+	UNLOCK_TCPIP_CORE();
 
 	*vnode = vn;
 
@@ -136,7 +142,9 @@ sock_tcp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 
 	kdprintf("Binding to %x:%d\n", ip_addr.addr, port);
 
+	LOCK_TCPIP_CORE();
 	err = tcp_bind(VNTOTCP(vn)->tcp_pcb, &ip_addr, port);
+	UNLOCK_TCPIP_CORE();
 
 	return err_to_errno(err);
 }
@@ -157,8 +165,10 @@ sock_tcp_listen(vnode_t *vn, uint8_t backlog)
 	struct sock_tcp *sock = VNTOTCP(vn);
 	struct tcp_pcb *new_pcb;
 
+	LOCK_TCPIP_CORE();
 	new_pcb = tcp_listen_with_backlog_and_err(sock->tcp_pcb, backlog, &err);
 	if (new_pcb == NULL) {
+		UNLOCK_TCPIP_CORE();
 		return err_to_errno(err);
 	}
 
@@ -166,6 +176,7 @@ sock_tcp_listen(vnode_t *vn, uint8_t backlog)
 
 	tcp_arg(sock->tcp_pcb, sock);
 	tcp_accept(sock->tcp_pcb, sock_tcp_cb_accept);
+	UNLOCK_TCPIP_CORE();
 
 	return 0;
 }
@@ -180,30 +191,27 @@ sock_tcp_sendto(vnode_t *vn, void *buf, size_t len,
 	err_t err;
 	struct sock_tcp *sock = VNTOTCP(vn);
 
+	LOCK_TCPIP_CORE();
 	err = tcp_write(sock->tcp_pcb, buf, len, 0);
+	UNLOCK_TCPIP_CORE();
 
 	return err_to_errno(err);
 }
 
 int
-sock_tcp_accept(vnode_t *vn, krx_out vnode_t **new_vn)
+sock_tcp_accept(vnode_t *vn, krx_out struct sockaddr *addr,
+    krx_inout socklen_t *addrlen)
 {
-	struct sock_tcp *sock = VNTOTCP(vn), *newsock;
+	struct sock_tcp *sock = VNTOTCP(vn);
+	ip_addr_t ip;
+	uint16_t port;
 
-again:
-	newsock = STAILQ_FIRST(&sock->accept_stailq);
+	LOCK_TCPIP_CORE();
+	tcp_backlog_accepted(newsock->tcp_pcb);
+	tcp_tcp_get_tcp_addrinfo(sock->tcp_pcb, 0, &ip, &port);
+	UNLOCK_TCPIP_CORE();
 
-	if (newsock == NULL) {
-		ke_wait(&sock->accept_evobj,
-		    "sock_tcp_accept:sock->accept_evobj", false, false, -1);
-		goto again;
-	}
-
-	STAILQ_REMOVE_HEAD(&sock->accept_stailq, accept_stailq_entry);
-	if (STAILQ_EMPTY(&sock->accept_stailq))
-		ke_event_clear(&sock->accept_evobj);
-
-	*new_vn = newsock->socknode.vnode;
+	addr_pack_ip(addr, addrlen, &ip, port);
 
 	return 0;
 }
@@ -212,6 +220,7 @@ int
 test_tcpserver(void)
 {
 	struct sockaddr_in nam;
+	socklen_t addrlen = sizeof(nam);
 	vnode_t *vnode, *peer_vn;
 	int r;
 
@@ -247,7 +256,7 @@ test_tcpserver(void)
 	r = epoll_do_wait(epoll, &rev, 1, -1);
 	kdprintf("Epoll Do Wait returned: %d\n", r);
 
-	r = sock_tcp_accept(vnode, &peer_vn);
+	r = sock_accept(vnode, (struct sockaddr *)&nam, &addrlen, &peer_vn);
 	if (r != 0)
 		kfatal("sock_tcp_accept failed: %d\n", r);
 
@@ -261,3 +270,7 @@ test_tcpserver(void)
 
 	return 0;
 }
+
+static struct socknodeops tcp_soops = {
+	.accept = sock_tcp_accept,
+};

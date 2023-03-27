@@ -25,22 +25,37 @@ enum chpoll_kind;
  * #vnode pointer is weak. The exception is when a socket is on an accept queue.
  * In that case the reference to the socket is considered to also keep alive the
  * reference to the vnode.
+ *
+ * (l) => #lock
+ * (p) => #polllist->lock
  */
 struct socknode {
-	/*! Associated vnode; weak unless socket on accept queue */
+	/*! (~) Associated vnode; weak unless socket on accept queue */
 	vnode_t *vnode;
-	/*! Socket operations vector. */
+	/*! (~) Socket operations vector. */
 	struct socknodeops *sockops;
-	/*! Poll list. */
+
+	/*! Lock. */
+	kspinlock_t lock;
+
+	/*! () Poll list. */
 	struct polllist polllist;
+
+	/*! (l to set) Event to wait on for accept() */
+	kevent_t accept_evobj;
+	/*! (l) Queue of sockets awaiting accept() */
+	STAILQ_HEAD(, socknode) accept_stailq;
+	/* Linkage in another socket's #accept_stailq */
+	STAILQ_ENTRY(socknode) accept_stailq_entry;
 };
 
 /*!
- * Socket node operations.
+ * Socket node operations. They are all entered unlocked for the time being.
  */
 struct socknodeops {
 	int (*create)(krx_out vnode_t **out_vn, int domain, int protocol);
-	int (*accept)(vnode_t *vn, krx_out vnode_t **out_vn);
+	int (*accept)(vnode_t *vn, krx_out struct sockaddr *addr,
+	    krx_inout socklen_t *addrlen);
 	int (*bind)(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen);
 	int (*listen)(vnode_t *vn, uint8_t backlog);
 	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
@@ -48,9 +63,16 @@ struct socknodeops {
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
 };
 
+int sock_accept(vnode_t *vn, krx_out struct sockaddr *addr,
+    krx_inout socklen_t *addrlen, krx_out vnode_t **out);
+
 /* internal functions */
+/*! @brief Unack an IP/port from a sockaddr. */
 int addr_unpack_ip(const struct sockaddr *nam, socklen_t namlen,
-    ip_addr_t *ip_out, uint16_t *port_out);
+    krx_out ip_addr_t *ip_out, krx_out uint16_t *port_out);
+/*! @brief Pack an IP/port into a sockaddr. */
+int addr_pack_ip(krx_out struct sockaddr *addr, krx_inout socklen_t *addrlen,
+    ip_addr_t *ip, uint16_t port);
 
 /*! @brief Initialise a new socket node.*/
 int sock_init(struct socknode *sock, struct socknodeops *ops);

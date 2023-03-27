@@ -155,7 +155,7 @@ struct vnops {
 	/*! @brief Write (via page cache) to a vnode. */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
-	/*! @brief Change poll state. */
+	/*! @brief Change poll state. Entered unlocked. */
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
 };
 

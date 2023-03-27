@@ -10,11 +10,44 @@
 #define VNTOSON(VN) ((struct socknode *)(VN)->data)
 
 int
+sock_accept(vnode_t *vn, struct sockaddr *addr, socklen_t *addrlen,
+    krx_out vnode_t **out)
+{
+	struct socknode *sock = VNTOSON(vn), *newsock;
+	ipl_t ipl;
+
+again:
+	ipl = ke_spinlock_acquire(&sock->lock);
+	newsock = (struct sock_tcp *)STAILQ_FIRST(&sock->accept_stailq);
+
+	if (newsock == NULL) {
+		ke_spinlock_release(&sock->lock, ipl);
+		ke_wait(&sock->accept_evobj,
+		    "sock_tcp_accept:sock->accept_evobj", false, false, -1);
+		goto again;
+	}
+
+	STAILQ_REMOVE_HEAD(&sock->accept_stailq, accept_stailq_entry);
+	if (STAILQ_EMPTY(&sock->accept_stailq))
+		ke_event_clear(&sock->accept_evobj);
+	ke_spinlock_release(&sock->lock, ipl);
+
+	*out = newsock->vnode;
+
+	return newsock->sockops->accept(vn, addr, addrlen);
+}
+
+int
 sock_init(struct socknode *sock, struct socknodeops *ops)
 {
 	vnode_t *vn;
+
 	sock->sockops = ops;
+	ke_spinlock_init(&sock->lock);
 	LIST_INIT(&sock->polllist.pollhead_list);
+	ke_event_init(&sock->accept_evobj, false);
+	STAILQ_INIT(&sock->accept_stailq);
+
 	vn = kmem_alloc(sizeof(*vn));
 	vn->type = VSOCK;
 	vn->data = (uintptr_t)sock;
