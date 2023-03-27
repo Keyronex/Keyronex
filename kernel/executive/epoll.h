@@ -14,17 +14,7 @@
 
 #include "kdk/kernel.h"
 
-/*!
- * which kind of chpoll call?
- */
-typedef enum chpoll_kind {
-	/*! poll is being added; the pollhead should NOT exist in the list */
-	kChPollAdd,
-	/*! poll is being removed; the pollhead MUST exist in the list */
-	kChPollRemove,
-	/*! poll conditions are being changed */
-	kChPollChange
-} chpoll_kind_t;
+struct vnode;
 
 /*!
  * Entry in a pollable object's poll-list, representing a current poll on the
@@ -46,11 +36,11 @@ typedef enum chpoll_kind {
  * (o) = #vnode lock
  * .... figure this all out.
  */
-typedef struct epollhead {
+struct pollhead {
 	/*! linkage in struct epoll::entries */
-	LIST_ENTRY(epollhead) watch_link;
+	LIST_ENTRY(pollhead) watch_link;
 	/*!
-	 * Which open file is being epolled?
+	 * Which open file is being epolled? Optional entry; can be absent.
 	 *
 	 * A non-owning reference. It is worth noting that when the file becomes
 	 * inaccessible (due to refcount dropping sufficiently) this will be the
@@ -61,19 +51,42 @@ typedef struct epollhead {
 	 */
 	struct file *file;
 	/*! Which vnode is being polled? */
+	struct vnode *vnode;
 	/*! which events to poll + userdata */
 	struct epoll_event event;
 
-	/*! linkage in vnode's polllist */
-	LIST_ENTRY(epollhead) vnode_list_entry;
+	/*! linkage in object's polllist */
+	LIST_ENTRY(pollhead) polllist_entry;
 	/*! linkage in #file polllist */
-	LIST_ENTRY(epollhead) file_list_entry;
+	LIST_ENTRY(pollhead) file_list_entry;
 	/*! to which epoll does it belong? */
 	struct epoll *epoll;
 	/*! (e) what events did we get? */
 	uint32_t revents;
 	/*! is the pollhead inserted and live in the vnode's pollist? */
 	bool live;
-} epollhead_t;
+};
+
+/*!
+ * A list of pollers on some object.
+ */
+struct polllist {
+	kspinlock_t lock;
+	LIST_HEAD(, pollhead) pollhead_list;
+};
+
+struct epoll *epoll_new(void);
+int epoll_do_add(struct epoll *epoll, struct file *file, struct vnode *vnode,
+    struct epoll_event *event);
+int epoll_do_ctl(struct epoll *epoll, int op, int fd,
+    struct epoll_event *event);
+void epoll_do_destroy(struct epoll *epoll);
+int epoll_do_wait(struct epoll *epoll, struct epoll_event *events, int nevents,
+    nanosecs_t nanosecs);
+
+/*! @brief Initialise a polllist. */
+void pollist_init(struct polllist *pl);
+/*! @brief Raise events on a pollhead */
+int pollhead_raise(struct pollhead *ph, int events);
 
 #endif /* KRX_EXECUTIVE_EPOLL_H */

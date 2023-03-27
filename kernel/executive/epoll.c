@@ -1,9 +1,24 @@
+/*!
+ * @file executive/epoll.c
+ * @brief Event poll objects.
+ *
+ * Locking orders being complicated, this is not currently the most efficiently
+ * implemented thing.
+ * There is an epoll->lock and there is a polllist->lock, acquired in that
+ * order. To eliminate the need for any tricks, an event is raised simply by
+ * signalling an event object in the epoll. More complicated schemes might be
+ * necessary for nested epolls and suchlike.
+ *
+ */
+
 #include <sys/select.h>
 
 #include "epoll.h"
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
-#include "kdk/process.h"
 #include "kdk/libkern.h"
+#include "kdk/process.h"
+#include "kdk/vfs.h"
 
 #define LOCK_REQUIRES(lock)
 #define LOCK_RELEASE(lock)
@@ -15,10 +30,13 @@ struct epoll {
 	/*! mutex */
 	kspinlock_t lock;
 
-	/*! (l) list of epoll watches */
-	LIST_HEAD(, epollhead) watches;
+	/*! is it waiting? */
+	bool waiting;
 
-	/*! (l) event to signal to wake up the poller */
+	/*! list of all epoll watches */
+	LIST_HEAD(, pollhead) watches;
+
+	/*! event to signal when a watch completes */
 	kevent_t ev;
 };
 
@@ -51,66 +69,47 @@ struct epoll *
 epoll_new(void)
 {
 	struct epoll *epoll = kmem_alloc(sizeof(*epoll));
+	epoll->waiting = false;
 	ke_spinlock_init(&epoll->lock);
+	ke_event_init(&epoll->ev, false);
 	LIST_INIT(&epoll->watches);
 	return epoll;
 }
 
-/*!
- * Add a watch to an epoll.
- */
-int
-epoll_add(struct epoll *epoll, struct epollhead *watch)
+static int
+epoll_insert(struct epoll *epoll, struct pollhead *watch)
 {
 	LIST_INSERT_HEAD(&epoll->watches, watch, watch_link);
 	/* todo: if poll is live, register pollhead? */
 	return 0;
 }
 
-#if 0
-void epoll_del(struct epoll *epoll, int fd) {
-	struct epollhead *watch;
-
-		kwaitstatus_t ret = ke_wait(&epoll->mutex,
-	    "epoll_del: acquire epoll->mutex", false, false, 0);
-	kassert(ret == kKernWaitStatusOK);
-
-	LIST_FOREACH(watch, )
-}
-#endif
-
 /*!
- * destroy a locked epoll. unlocks the mutex and destroys the epoll altgoether.
+ * Destroy an epoll. unlocks the mutex and destroys the epoll altgoether.
  * no reference to the epoll should remain, because it gets unlocked and then
  * destroyed.
  */
 void
-epoll_destroy(struct epoll *epoll, ipl_t ipl) LOCK_REQUIRES(epoll->lock)
+epoll_do_destroy(struct epoll *epoll)
 {
-	struct epollhead *watch;
+	struct pollhead *watch;
+	ipl_t ipl;
+
 	/* todo: make sure poll isn't live! if it is, do the needful */
 
+	ipl = ke_spinlock_acquire(&epoll->lock);
+
 	LIST_FOREACH (watch, &epoll->watches, watch_link) {
-		/* one solution to the locking problem
-		 * when we are in the middle of trying to remove something from
-		 * an object's polllist but the object is trying to lock us so
-		 * it can wake us
+		/*
+		 * One solution to the locking problem:
 		 *
-		 * we can trylock the watch's object's lock on its watch list.
-		 * if we fail to acquire the lock, we unlock everything and
-		 * retry later?? is this reasonable to do? i think it is
-		 *
-		 * alternatively can the object do a trylock? i fear that's
-		 * non-viable because of the lengthy delay that might entail.
-		 * plus the object is probably locked in its own way.
-		 *
-		 * my best solution so far: we can instead perhaps set a "watch
-		 * being destroyed" flag in the watch, (and in this case also on
-		 * the epoll itself??) and spin on the object's polllist lock.
-		 * if the object sees that flag, it backs off and moves on to
-		 * the next task. (!!! i raelly think this can actually work!)
+		 * We could set a "watch being destroyed" flag in the watch
+		 * (and in this case also on the epoll itself) and spin on the
+		 * object's polllist lock. If the object sees that flag, it
+		 * backs off and moves on to the next task.
 		 */
-		// VOP_POLL(watch->file->vn, watch, kChPollChange);
+		if (watch->live)
+			VOP_CHPOLL(watch->vnode, watch, kChPollRemove);
 		kmem_free(watch, sizeof(*watch));
 	}
 
@@ -127,27 +126,27 @@ int
 poll_wait_locked(struct epoll *epoll, struct epoll_event *events, int nevents,
     nanosecs_t nanosecs, ipl_t ipl) LOCK_RELEASE(epoll->lock)
 {
-	struct epollhead *watch;
+	struct pollhead *watch;
 	int r = 0;
 
 	if (nevents == 0)
 		goto wait;
 
-	/* NOTE FOR PROPER EPOLL SUPPORT
-	 * instead: test if it's set, if so immediately return with events?
-	 * do we need to create separate pollheads for each poll? my thinking:
-	 * we need to remove all the pollheads after an iteration....
-	 * or can we simply check if there's a live poll_wait going on??
-	 */
+	if (epoll->waiting)
+		kfatal("Multiply waiting on epoll not yet implemented.");
+
+	epoll->waiting = true;
+
+	/* for proper epoll support, this shouldn't happen*/
 	ke_event_clear(&epoll->ev);
 
 	LIST_FOREACH (watch, &epoll->watches, watch_link) {
 		/*
 		 * NOTE FOR PROPER EPOLL SUPPORT:
-		 * todo: check if watch is already live (someone else did it, or
-		 * maybe it's edge-triggered)
+		 * Check if watch is already live
 		 */
-		// VOP_POLL(watch->file->vn, watch, kChPollAdd);
+		r = VOP_CHPOLL(watch->vnode, watch, kChPollAdd);
+		watch->live = true;
 	}
 
 wait:
@@ -158,12 +157,13 @@ wait:
 	kassert(ws == kKernWaitStatusOK || ws == kKernWaitStatusTimedOut);
 
 	ipl = ke_spinlock_acquire(&epoll->lock);
+	r = 0;
 
 	if (nevents == 0)
 		goto finish;
 
 	LIST_FOREACH (watch, &epoll->watches, watch_link) {
-		if (watch->revents != 0) {
+		if (r != nevents && watch->revents != 0) {
 			/* revents must be a subset of watch events */
 			kassert((watch->event.events | watch->revents) ==
 			    watch->event.events);
@@ -172,31 +172,83 @@ wait:
 			events[r].events = watch->revents;
 
 			/*
-			 * NOTE FOR PROPER EPOLL SUPPORT
-			 * can we really set revents to 0 here? what if there
-			 * are multiple people polling this epoll? it seems to
-			 * me we need to get revents from the vnode.
-			 *
-			 * we MAY want to reset state if EPOLLET is set?
-			 *
-			 * chatgpt said: To support multiple pollers, you would
-			 * need to maintain a separate revents value for each
-			 * poller and reset the value only for the specific
-			 * poller that retrieved the events.
-			 * can we trust chatgpt? lmao
+			 * NOTE FOR PROPER EPOLL SUPPORT:
+			 * We shouldn't set revents to 0.
 			 */
 			watch->revents = 0;
 
-			/* increment r for each event we get*/
-			if (++r == nevents)
-				break;
+			/* increment r for each event we get */
+			r++;
 		}
+		if (watch->live)
+			VOP_CHPOLL(watch->vnode, watch, kChPollRemove);
 	}
+
+	epoll->waiting = false;
 
 finish:
 	ke_spinlock_release(&epoll->lock, ipl);
 
 	return r;
+}
+
+int
+epoll_do_add(struct epoll *epoll, struct file *file, vnode_t *vnode,
+    struct epoll_event *event)
+{
+	struct pollhead *watch;
+	ipl_t ipl;
+	int r;
+
+	watch = kmem_alloc(sizeof(*watch));
+	watch->file = file;
+	watch->vnode = vnode;
+	watch->event = *event;
+	watch->epoll = epoll;
+	watch->live = false;
+	watch->revents = 0;
+
+	ipl = ke_spinlock_acquire(&epoll->lock);
+	r = epoll_insert(epoll, watch);
+	ke_spinlock_release(&epoll->lock, ipl);
+
+	return r;
+}
+
+int
+epoll_do_ctl(struct epoll *epoll, int op, int fd, struct epoll_event *event)
+{
+	switch (op) {
+	case EPOLL_CTL_ADD: {
+		struct file *file;
+
+		file = ps_getfile(ps_curproc(), fd);
+		kassert(file != NULL);
+
+		return epoll_do_add(epoll, file, file->vn, event);
+
+	default:
+		kfatal("Unimplemented\n");
+	}
+	}
+}
+
+int
+epoll_do_wait(struct epoll *epoll, struct epoll_event *events, int nevents,
+    nanosecs_t nanosecs)
+{
+	ipl_t ipl = ke_spinlock_acquire(&epoll->lock);
+	return poll_wait_locked(epoll, events, nevents, nanosecs, ipl);
+}
+
+int
+pollhead_raise(struct pollhead *ph, int events)
+{
+	if (ph->event.events & events) {
+		ph->revents = ph->event.events & events;
+		ke_event_signal(&ph->epoll->ev);
+	}
+	return 0;
 }
 
 uintptr_t
@@ -212,26 +264,18 @@ sys_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	kassert(nevents <= 25);
 	epoll = epoll_new();
 
-	ipl = ke_spinlock_acquire(&epoll->lock);
-
 	for (size_t i = 0; i < nfds; i++) {
-		uint32_t events = 0;
+		struct epoll_event ev;
 
 		if (FD_ISSET(i, readfds))
-			events |= EPOLLIN;
+			ev.events |= EPOLLIN;
 		if (FD_ISSET(i, writefds))
-			events |= EPOLLOUT;
+			ev.events |= EPOLLOUT;
 		if (FD_ISSET(i, exceptfds))
-			events |= EPOLLERR;
+			ev.events |= EPOLLERR;
 
-		if (events != 0) {
-			struct epollhead *watch = kmem_alloc(sizeof(*watch));
-			watch->file = ps_curproc()->files[i];
-			watch->event.events = events;
-			watch->epoll = epoll;
-			watch->live = false;
-			watch->revents = 0;
-			r = epoll_add(epoll, watch);
+		if (ev.events != 0) {
+			r = epoll_do_ctl(epoll, EPOLL_CTL_ADD, i, &ev);
 			if (r != 0)
 				goto finish;
 			nevents++;
@@ -252,10 +296,11 @@ sys_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 		nanosecs = (nanosecs_t)timeout->tv_sec * NS_PER_S +
 		    (nanosecs_t)timeout->tv_nsec;
 
+	ipl = ke_spinlock_acquire(&epoll->lock);
 	r = poll_wait_locked(epoll, events, nevents, nanosecs, ipl);
 
 finish:
-	epoll_destroy(epoll, ipl);
+	epoll_do_destroy(epoll);
 
 	return r;
 }

@@ -10,6 +10,7 @@
 
 #include "abi-bits/errno.h"
 #include "abi-bits/in.h"
+#include "executive/epoll.h"
 #include "kdk/kerndefs.h"
 #include "kdk/kmem.h"
 #include "keysock/sockfs.h"
@@ -29,22 +30,21 @@ struct sock_tcp {
 	STAILQ_ENTRY(sock_tcp) accept_stailq_entry;
 };
 
+static struct socknodeops tcp_soops;
+
 static int
 sock_tcp_common_alloc(krx_out vnode_t **vnode)
 {
 	struct sock_tcp *sock;
-	vnode_t *vn;
+	int r;
 
 	sock = kmem_alloc(sizeof(*sock));
+	r = sock_init(&sock->socknode, &tcp_soops);
+	kassert(r == 0);
 	ke_event_init(&sock->accept_evobj, false);
 	STAILQ_INIT(&sock->accept_stailq);
 
-	vn = kmem_alloc(sizeof(*vn));
-	vn->type = VSOCK;
-	vn->data = (uintptr_t)sock;
-	sock->socknode.vnode = vn;
-
-	*vnode = vn;
+	*vnode = sock->socknode.vnode;
 
 	return 0;
 }
@@ -81,6 +81,7 @@ sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 
 	tcp_backlog_delayed(newpcb);
 	ke_event_signal(&sock->accept_evobj);
+	sock_event_raise(&sock->socknode, EPOLLIN);
 
 	return ERR_OK;
 }
@@ -199,6 +200,8 @@ again:
 	}
 
 	STAILQ_REMOVE_HEAD(&sock->accept_stailq, accept_stailq_entry);
+	if (STAILQ_EMPTY(&sock->accept_stailq))
+		ke_event_clear(&sock->accept_evobj);
 
 	*new_vn = newsock->socknode.vnode;
 
@@ -220,7 +223,7 @@ test_tcpserver(void)
 	if (r != 0)
 		kfatal("sock_tcp_created failed: %d\n", r);
 
-	r = sock_tcp_bind(vnode, &nam, sizeof(nam));
+	r = sock_tcp_bind(vnode, (struct sockaddr *)&nam, sizeof(nam));
 	if (r != 0)
 		kfatal("sock_tcp_bind failed: %d\n", r);
 
@@ -229,6 +232,20 @@ test_tcpserver(void)
 		kfatal("sock_tcp_listen failed: %d\n", r);
 
 	kdprintf("listening on socket...\n");
+
+	struct epoll *epoll;
+	struct epoll_event listen_ev, rev;
+
+	epoll = epoll_new();
+	kassert(epoll != NULL);
+
+	listen_ev.events = EPOLLIN | EPOLLERR;
+
+	r = epoll_do_add(epoll, NULL, vnode, &listen_ev);
+	kassert(r == 0);
+
+	r = epoll_do_wait(epoll, &rev, 1, -1);
+	kdprintf("Epoll Do Wait returned: %d\n", r);
 
 	r = sock_tcp_accept(vnode, &peer_vn);
 	if (r != 0)

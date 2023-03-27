@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "abi-bits/in.h"
+#include "executive/epoll.h"
 #include "kdk/vfs.h"
 
 enum chpoll_kind;
@@ -30,6 +31,8 @@ struct socknode {
 	vnode_t *vnode;
 	/*! Socket operations vector. */
 	struct socknodeops *sockops;
+	/*! Poll list. */
+	struct polllist polllist;
 };
 
 /*!
@@ -42,11 +45,18 @@ struct socknodeops {
 	int (*listen)(vnode_t *vn, uint8_t backlog);
 	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
 	    socklen_t addr_len);
-	int (*chpoll)(vnode_t *vn, enum chpoll_kind kind);
+	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
 };
 
 /* internal functions */
 int addr_unpack_ip(const struct sockaddr *nam, socklen_t namlen,
     ip_addr_t *ip_out, uint16_t *port_out);
+
+/*! @brief Initialise a new socket node.*/
+int sock_init(struct socknode *sock, struct socknodeops *ops);
+/*! @brief Raise an event with a socket. */
+int sock_event_raise(struct socknode *sock, int events);
+
+extern struct vnops sock_vnops;
 
 #endif /* KRX_KEYSOCK_SOCKFS_H */

@@ -19,6 +19,17 @@
 extern "C" {
 #endif
 
+struct pollhead;
+
+enum chpoll_kind {
+	/*! poll is being added; the pollhead should NOT exist in the list */
+	kChPollAdd,
+	/*! poll is being removed; the pollhead MUST exist in the list */
+	kChPollRemove,
+	/*! poll conditions are being changed */
+	kChPollChange
+};
+
 typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK } vtype_t;
 
 typedef struct vattr {
@@ -143,6 +154,9 @@ struct vnops {
 
 	/*! @brief Write (via page cache) to a vnode. */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+
+	/*! @brief Change poll state. */
+	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
 };
 
 struct vfsops {
@@ -183,6 +197,7 @@ enum lookup_flags {
 #define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
 #define VOP_MKDIR(vnode, out, name, attr) \
 	vnode->ops->mkdir(vnode, out, name, attr)
+#define VOP_CHPOLL(VN, PH, KIND) (VN)->ops->chpoll(VN, PH, KIND)
 
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
