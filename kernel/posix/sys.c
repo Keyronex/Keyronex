@@ -22,6 +22,7 @@
 #include "kdk/objhdr.h"
 #include "kdk/posixss.h"
 #include "kdk/process.h"
+#include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "posix/pxp.h"
 
@@ -105,8 +106,12 @@ posix_do_openat(vnode_t *dvn, const char *path, int mode)
 		return -ENFILE;
 
 	r = vfs_lookup(dvn, &vn, path, 0, NULL);
-	if (r < 0 && mode & O_CREAT)
-		r = vfs_lookup(dvn, &vn, path, kLookupCreate, NULL);
+	if (r < 0 && mode & O_CREAT) {
+		vattr_t attr;
+		attr.mode = S_IFREG | 0755;
+		attr.type = VREG;
+		r = vfs_lookup(dvn, &vn, path, kLookupCreate, &attr);
+	}
 
 	if (r < 0) {
 #if DEBUG_SYSCALLS == 1
@@ -195,6 +200,23 @@ sys_read(int fd, void *buf, size_t nbyte)
 }
 
 int
+sys_readlink(const char *path, char *buf, size_t bufsize)
+{
+#if 0
+	int r;
+	char *mypath = strdup(path);
+	vnode_t *vn;
+
+
+	//r = vfs_lookup(root_vnode, &vn, mypath, kLookupNoFollow, NULL);
+
+	return r;
+#else
+	kfatal("readlink(%s): unimplemented\n", path);
+#endif
+}
+
+int
 sys_write(int fd, void *buf, size_t nbyte)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
@@ -210,6 +232,8 @@ sys_write(int fd, void *buf, size_t nbyte)
 
 	r = VOP_WRITE(file->vn, buf, nbyte, file->offset);
 	if (r < 0) {
+		for (;;)
+			;
 		kdprintf("VOP_WRITE got %d\n", r);
 		return r;
 	}
@@ -431,7 +455,7 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	switch (frame->rax) {
 	case kPXSysDebug:
-		kdprintf("<DEBUG>: %s\n", (char *)ARG1);
+		// kdprintf("<DEBUG>: %s\n", (char *)ARG1);
 		syscon_printstats();
 		break;
 
@@ -451,6 +475,10 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysRead:
 		RET = sys_read(ARG1, (void *)ARG2, ARG3);
+		break;
+
+	case kPXSysReadLink:
+		RET = sys_readlink((const char *)ARG1, (char *)ARG2, ARG3);
 		break;
 
 	case kPXSysWrite:

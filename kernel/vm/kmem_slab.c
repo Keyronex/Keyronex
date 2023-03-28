@@ -618,7 +618,7 @@ kmem_asprintf(char **str, const char *fmt, ...)
 void *
 kmem_strfree(char *str)
 {
-	kmem_free(str, strlen(str));
+	kmem_free(str, strlen(str) + 1);
 	return NULL;
 }
 

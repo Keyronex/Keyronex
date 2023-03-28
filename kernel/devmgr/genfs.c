@@ -44,6 +44,9 @@ pgcache_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	if (off + nbyte > vn->size)
 		nbyte = vn->size <= off ? 0 : vn->size - off;
 
+	if (nbyte == 0)
+		goto out;
+
 	r = vm_map_object(kernel_process.map, &vn->vmobj, &vaddr,
 	    PGROUNDUP(nbyte + off), 0x0, kVMRead, kVMRead, kVMInheritShared,
 	    false, false);
@@ -55,6 +58,7 @@ pgcache_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	    PGROUNDUP(nbyte + off));
 	kassert(r == 0);
 
+out:
 	vn_unlock_for_paging(vn);
 
 	return nbyte;

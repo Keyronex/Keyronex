@@ -155,7 +155,7 @@ psx_waitpid(pid_t pid, int *status, int flags)
 	kassert((flags & WNOHANG) == 0);
 	kassert((flags & WNOWAIT) == 0);
 
-	kassert(pid == 0 || pid == -1);
+	//kassert(pid == 0 || pid == -1);
 
 	w = ke_wait(&proc->subproc_state_change,
 	    "psx_waitpid:subproc_state_change", false, false, -1);

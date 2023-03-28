@@ -27,7 +27,7 @@ while getopts "$USAGE" optchar ; do
 esac done
 
 qemu_args=""
-virtio_fs_args="-object memory-backend-file,id=mem,size=128M,mem-path=/dev/shm,share=on \
+virtio_fs_args="-object memory-backend-file,id=mem,size=256M,mem-path=/dev/shm,share=on \
   -numa node,memdev=mem \
   -chardev socket,id=char0,path=/tmp/vhostqemu \
   -device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=myfs"
@@ -52,4 +52,4 @@ echo "Launching: ${qemu_exe} ${qemu_args} -smp $smpnum -boot d"
 echo ""
 echo ""
 
-${qemu_exe} ${qemu_args} -M q35 -smp $smpnum -boot d -s
+${qemu_exe} ${qemu_args} -m 256 -M q35 -smp $smpnum -boot d -s

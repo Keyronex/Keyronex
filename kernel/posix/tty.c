@@ -5,6 +5,8 @@
 
 #include "kdk/kernel.h"
 #include "kdk/vfs.h"
+#include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "posix/tty.h"
 
 #define ISSET(FIELD, VAL) ((FIELD)&VAL)
@@ -204,12 +206,17 @@ tty_write(struct vnode *vn, void *buf, size_t nbyte, io_off_t off)
 
 	(void)off;
 
+	char *mybuf = kmem_alloc(nbyte);
+	memcpy(mybuf, buf, nbyte);
+
 	ipl = ke_spinlock_acquire(&dprintf_lock);
 	for (unsigned i = 0; i < nbyte; i++) {
-		int c = ((char *)buf)[i];
+		int c = ((char *)mybuf)[i];
 		hl_dputc(c, NULL);
 	}
 	ke_spinlock_release(&dprintf_lock, ipl);
+
+	kmem_free(mybuf, nbyte);
 
 	return nbyte;
 }

@@ -188,6 +188,7 @@ enum lookup_flags {
 	kLookupCreate = 1 << 0,
 	kLookupFollowSymlinks = 1 << 1,
 	kLookupMustDir = 1 << 2,
+	kLookupNoFollow = 1 << 3,
 };
 
 #define VOP_OPEN(PVN, mode) (*PVN)->ops->open(PVN, mode)

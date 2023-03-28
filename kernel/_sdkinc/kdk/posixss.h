@@ -20,6 +20,7 @@ enum posix_syscall {
 	kPXSysOpen,
 	kPXSysClose,
 	kPXSysRead,
+	kPXSysReadLink,
 	kPXSysWrite,
 	kPXSysSeek,
 	kPXSysPPoll,
