@@ -11,6 +11,7 @@
 #include "abi-bits/vm-flags.h"
 #include "amd64.h"
 #include "executive/epoll.h"
+#include "kdk/amd64/mdamd64.h"
 #include "kdk/amd64/portio.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
@@ -305,6 +306,23 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 	return r;
 }
 
+uintptr_t
+sys_fork(hl_intr_frame_t *frame)
+{
+	struct posix_proc *parent, *child;
+	int r;
+
+	parent = px_curproc();
+	r = psx_fork(frame, parent, &child);
+
+	if (r != 0) {
+		kassert(r < 0);
+		return r;
+	} else {
+		return child->eprocess->id;
+	}
+}
+
 int
 posix_syscall(hl_intr_frame_t *frame)
 {
@@ -364,6 +382,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 
 	/* process & misc misc */
+	case kPXSysFork:
+		RET = sys_fork(frame);
+		break;
+
 	case kPXSysExecVE:
 		RET = sys_exec(px_curproc(), (char *)ARG1, (const char **)ARG2,
 		    (const char **)ARG3, frame);

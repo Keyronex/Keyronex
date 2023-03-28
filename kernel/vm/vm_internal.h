@@ -81,7 +81,8 @@ void pmap_invlpg(vaddr_t vaddr);
 /*!
  * @brief Reduce protections on all mappings within some range of memory.
  */
-void pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t limit);
+void pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t end,
+    vm_protection_t limit);
 
 /*!
  * @brief Check if a page is present in a process.

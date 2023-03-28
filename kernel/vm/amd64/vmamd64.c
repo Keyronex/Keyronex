@@ -14,6 +14,7 @@
 
 #include "bsdqueue/queue.h"
 #include "kdk/amd64/vmamd64.h"
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/machdep.h"
 #include "kdk/process.h"
@@ -409,9 +410,9 @@ pmap_unenter_pageable_range(vm_map_t *map, vaddr_t vaddr, vaddr_t end)
 		pmap_unenter_pageable(map, NULL, vaddr);
 	}
 }
-
 void
-pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t limit)
+pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t end,
+    vm_protection_t limit)
 {
 	kassert(limit == (kVMRead | kVMExecute));
 
@@ -420,7 +421,7 @@ pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t limit)
 	ipl = ke_spinlock_acquire(&map->md.lock);
 
 	/* this is really non-optimal and should be written properly */
-	for (vaddr_t vaddr = base; vaddr < limit; vaddr++) {
+	for (vaddr_t vaddr = base; vaddr < end; vaddr++) {
 		pte_t *pte = pmap_fully_descend(map, vaddr);
 
 		if (!pte)

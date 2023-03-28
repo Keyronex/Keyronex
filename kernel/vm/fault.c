@@ -176,8 +176,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 				ret = vmp_anon_new(map, &new_anon, offset);
 				kassert(ret == 0);
 
-				memcpy(VM_PAGE_DIRECT_MAP_ADDR(new_anon->page),
-				    anon->page, PGSIZE);
+				vmp_page_copy(anon->page, new_anon->page);
 
 				/* unmap any old entry */
 				pmap_unenter_pageable(map, NULL, vaddr);

@@ -98,7 +98,7 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 		ethread->kthread.frame = *frame;
 		/* todo: move to MD */
 		ethread->kthread.frame.rax = 0;
-		ethread->kthread.frame.rdi = 0;
+		ethread->kthread.hl.fs = ke_curthread()->hl.fs;
 	} else {
 		/* we fork without a frame in this case */
 		kassert(proc == &posix_proc0);

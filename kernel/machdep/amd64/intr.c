@@ -167,6 +167,7 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 
 	while (true) {
 		if (thr->in_pagefault) {
+			md_intr_frame_trace(frame);
 			kdprintf("vm_fault: nested fault\n");
 			for (;;)
 				;

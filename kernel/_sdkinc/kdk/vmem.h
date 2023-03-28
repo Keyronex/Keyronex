@@ -33,8 +33,6 @@ typedef struct vmem vmem_t;
 typedef enum vmem_flag {
 	/*! It is acceptable for the allocation to sleep. */
 	kVMemSleep = 0x1,
-	/*! The allocation must succeed. */
-	kVMemMust = 0x2,
 	/*! The requested address should be allocated. */
 	kVMemExact = 0x2,
 	/*! @private VMem to use statically allocated segments */

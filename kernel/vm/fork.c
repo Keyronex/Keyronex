@@ -35,7 +35,7 @@ vmp_amap_copy(vm_map_t *map_from, vm_map_t *map_to, struct vm_amap *from_amap,
 		struct vmp_amap_l2 *from_l2 = from_amap->l3->entries[i], *to_l2;
 
 		ret = vmp_page_alloc(map_to, true, kPageUseVMM, &page);
-		kassert(ret != 0);
+		kassert(ret == 0);
 
 		to_l2 = to_amap->l3->entries[i] = VM_PAGE_DIRECT_MAP_ADDR(page);
 
@@ -48,7 +48,7 @@ vmp_amap_copy(vm_map_t *map_from, vm_map_t *map_to, struct vm_amap *from_amap,
 					   *to_l1;
 
 			ret = vmp_page_alloc(map_to, true, kPageUseVMM, &page);
-			kassert(ret != 0);
+			kassert(ret == 0);
 
 			to_l1 = to_l2->entries[i] = VM_PAGE_DIRECT_MAP_ADDR(
 			    page);
@@ -87,6 +87,8 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 	if (map == kernel_process.map)
 		goto out;
 
+	ps_curthread()->in_pagefault = true;
+
 	w = ke_wait(&map->mutex, "vm_map_fork:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
@@ -107,8 +109,7 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 			kassert(r == 0 && vaddr == vad->start);
 		}
 		case kVMInheritCopy: {
-			vm_map_entry_t *entry_new = kmem_alloc(
-			    sizeof(*entry_new));
+			vm_map_entry_t *entry_new;
 			vaddr_t vaddr = vad->start;
 			int r;
 
@@ -118,7 +119,12 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 			    vad->inheritance, true, true);
 			kassert(r == 0 && vaddr == vad->start);
 
+			entry_new = vmp_map_find(map_new, vad->start);
+			kassert(entry_new != NULL);
+
 			if (vad->has_anonymous) {
+				pmap_protect_range(map, vad->start, vad->end,
+				    kVMRead | kVMExecute);
 				r = vmp_amap_copy(map, map_new, &vad->amap,
 				    &entry_new->amap);
 				kassert(r == 0);
@@ -129,6 +135,11 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 			break;
 		}
 	}
+
+	ps_curthread()->in_pagefault = false;
+
+	/* try to force TLB clear */
+	vm_map_activate(map);
 
 	ke_mutex_release(&map->mutex);
 

@@ -87,12 +87,11 @@
  * @brief Implementation of the VMem resource allocator.
  */
 
-
 #include "kdk/vmem_impl.h"
 #ifdef _KERNEL
-#include "kdk/vm.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
+#include "kdk/vm.h"
 #else
 #include <assert.h>
 #include <stdio.h>
@@ -101,10 +100,10 @@
 #define vm_kalloc(SIZE, FLAGS) malloc(SIZE)
 #define kmalloc malloc
 #define kdprintf printf
-#define fatal(...)                              \
-	{                                       \
+#define fatal(...)                               \
+	{                                        \
 		kdprintf("fatal: " __VA_ARGS__); \
-		exit(EXIT_FAILURE);             \
+		exit(EXIT_FAILURE);              \
 	}
 #endif
 
@@ -113,7 +112,7 @@
 #endif
 
 struct seg_chunk {
-	bool	   used;
+	bool used;
 	vmem_seg_t seg;
 };
 
@@ -122,10 +121,10 @@ typedef struct seg_block {
 	struct seg_chunk _chunks[63];
 } seg_slab_t;
 
-static vmem_seg_t     static_segs[128];
+static vmem_seg_t static_segs[128];
 static vmem_seglist_t free_segs = LIST_HEAD_INITIALIZER(free_segs);
-static kspinlock_t     free_segs_lock = KSPINLOCK_INITIALISER;
-static int	      nfreesegs = 0;
+static kspinlock_t free_segs_lock = KSPINLOCK_INITIALISER;
+static int nfreesegs = 0;
 // static LIST_HEAD(, seg_block) seg_blocks = LIST_HEAD_INITIALIZER(seg_blocks);
 
 static const char *vmem_seg_type_str[] = {
@@ -167,7 +166,7 @@ static vmem_seg_t *
 seg_alloc(vmem_t *vmem, vmem_flag_t flags)
 {
 	vmem_seg_t *seg;
-	ipl_t	    ipl;
+	ipl_t ipl;
 
 	ipl = ke_spinlock_acquire(&free_segs_lock);
 	kassert(!LIST_EMPTY(&free_segs));
@@ -183,7 +182,7 @@ seg_alloc(vmem_t *vmem, vmem_flag_t flags)
 static void
 seg_free(vmem_t *vmem, vmem_seg_t *seg)
 {
-	ipl_t	    ipl;
+	ipl_t ipl;
 
 	ipl = ke_spinlock_acquire(&free_segs_lock);
 	LIST_INSERT_HEAD(&free_segs, seg, seglist);
@@ -201,7 +200,11 @@ seg_refill(int flags)
 		return;
 
 	/* passing kVMemBootstrap means recursive VMem won't try to refill. */
-	block = (void*)vm_kalloc(1, flags | kVMemBootstrap);
+	flags |= kVMemBootstrap;
+	/* don't want to propagate exact here! */
+	flags &= ~kVMemExact;
+
+	block = (void *)vm_kalloc(1, flags);
 	kassert(block != NULL);
 	for (int i = 0; i < elementsof(block->_chunks); i++) {
 		memset(&block->_chunks[i].seg, 0x0,
@@ -376,7 +379,7 @@ static int
 try_import(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags, vmem_seg_t **out)
 {
 	vmem_addr_t addr;
-	int	    r;
+	int r;
 
 	if (!vmem->allocfn)
 		return -ERESOURCEEXHAUSTED;
@@ -398,11 +401,11 @@ vmem_xalloc(vmem_t *vmem, vmem_size_t size, vmem_size_t align,
     vmem_size_t phase, vmem_size_t nocross, vmem_addr_t min, vmem_addr_t max,
     vmem_flag_t flags, vmem_addr_t *out)
 {
-	size_t		freelist_idx = freelist(size) - 1;
+	size_t freelist_idx = freelist(size) - 1;
 	vmem_seglist_t *list;
-	vmem_seg_t	   *freeseg, *newlseg, *newrseg;
-	vmem_addr_t	addr;
-	bool		tried_import = false;
+	vmem_seg_t *freeseg, *newlseg, *newrseg;
+	vmem_addr_t addr;
+	bool tried_import = false;
 
 	kassert(align == 0 && "not supported yet\n");
 	kassert(phase == 0 && "not supported yet\n");
@@ -480,8 +483,8 @@ int
 vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size, vmem_flag_t flags)
 {
 	vmem_seglist_t *bucket = hashbucket_for_addr(vmem, addr);
-	vmem_seg_t	   *seg, *left, *right;
-	bool		coalesced_left = false, coalesced = false;
+	vmem_seg_t *seg, *left, *right;
+	bool coalesced_left = false, coalesced = false;
 
 	LIST_FOREACH (seg, bucket, seglist) {
 		if (seg->base == addr)
@@ -598,7 +601,7 @@ vmem_dump(const vmem_t *vmem)
 int
 main()
 {
-	vmem_t     *vmem = malloc(sizeof *vmem);
+	vmem_t *vmem = malloc(sizeof *vmem);
 	vmem_seg_t *span;
 	vmem_addr_t addr = -1ul;
 

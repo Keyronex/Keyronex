@@ -119,7 +119,9 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 		vad->object = object;
 		vad->has_anonymous = false;
 	} else {
+#if 0
 		kassert(!copy);
+#endif
 		vad->object = NULL;
 		vad->has_anonymous = true;
 		vmp_amap_init(map, &vad->amap);
