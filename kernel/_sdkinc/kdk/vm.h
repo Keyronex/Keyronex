@@ -130,7 +130,7 @@ typedef struct vm_page {
 	};
 
 	/* (o) Physical-to-virtual mapping list */
-	LIST_HEAD(, pv_entry) pv_list;
+	LIST_HEAD(pv_entry_list, pv_entry) pv_list;
 } vm_page_t;
 
 enum vm_inheritance {
@@ -251,6 +251,9 @@ void vmp_kernel_init(void);
  * @retval 1 Low memory, drop locks and wait on the low-memory event.
  */
 int vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use,
+    vm_page_t **out);
+
+int vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
     vm_page_t **out);
 
 /*!

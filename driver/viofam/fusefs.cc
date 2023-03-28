@@ -90,6 +90,12 @@ fuse_attr_to_vattr(fuse_attr &fattr, vattr_t &vattr)
 	vattr.rdev = fattr.rdev;
 	vattr.size = fattr.size;
 	vattr.type = mode_to_vtype(fattr.mode);
+	vattr.atim.tv_sec = fattr.atime;
+	vattr.atim.tv_nsec = fattr.atimensec;
+	vattr.ctim.tv_sec = fattr.ctime;
+	vattr.ctim.tv_nsec = fattr.ctimensec;
+	vattr.mtim.tv_sec = fattr.mtime;
+	vattr.mtim.tv_nsec = fattr.mtimensec;
 }
 
 static int64_t
@@ -324,8 +330,10 @@ FuseFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	fusefs_node *node = ((fusefs_node *)vn->data), *res;
 	int r = 0;
 
+#if DEBUG_FUSEFS == 1
 	kdprintf("fusefs_lookup(vnode: %p, ino: %lu, \"%s\");\n", node->vnode,
 	    node->inode, pathname);
+#endif
 
 	fuse_entry_out entry_out = { 0 };
 	io_fuse_request *req;

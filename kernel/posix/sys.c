@@ -329,6 +329,9 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	sb->st_size = vattr.size;
 	sb->st_blocks = vattr.size / 512;
 	sb->st_blksize = 512;
+	sb->st_atim = vattr.atim;
+	sb->st_ctim = vattr.ctim;
+	sb->st_mtim = vattr.mtim;
 
 out:
 	if (pathcpy != NULL)
@@ -476,6 +479,14 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysExecVE:
 		RET = sys_exec(px_curproc(), (char *)ARG1, (const char **)ARG2,
 		    (const char **)ARG3, frame);
+		break;
+
+	case kPXSysExit:
+		psx_exit(ARG1);
+		__builtin_unreachable();
+
+	case kPXSysWaitPID:
+		RET = psx_waitpid(ARG1, (int *)ARG2, ARG3);
 		break;
 
 	case kPXSysSetFSBase:

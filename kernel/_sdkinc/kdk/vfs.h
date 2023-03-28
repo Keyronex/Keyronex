@@ -10,6 +10,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "./object.h"
 #include "kdk/objhdr.h"
@@ -37,6 +38,8 @@ typedef struct vattr {
 	mode_t mode;
 	/*! note: can become stale with respect to vnode::size */
 	size_t size;
+	/* access, modification, creation times */
+	struct timespec atim, mtim, ctim;
 	/*! legacy device represented by file */
 	dev_t rdev;
 	/*! new-style device represented by file */

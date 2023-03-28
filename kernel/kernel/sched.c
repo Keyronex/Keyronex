@@ -120,6 +120,8 @@ ki_reschedule(void)
 		kdprintf("thread %p going to wait\n", curthread);
 #endif
 		/* accounting? */
+	} else if (curthread->state == kThreadStateDone) {
+		/* exit the thread */
 	}
 
 	curthread->stats.total_run_time +=

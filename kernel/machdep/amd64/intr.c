@@ -185,10 +185,16 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 
 		case kVMFaultRetFailure:
 			md_intr_frame_trace(frame);
+			volatile bool leave = false;
+
 			if (frame->cs & 0x3)
-				kfatal("vm_fault failed in userland (proc %u)",
+				kdprintf(
+				    "vm_fault failed in userland (proc %u)",
 				    ps_curproc()->id);
-			kfatal("vm_fault failed");
+			kdprintf("vm_fault failed");
+
+			while (!leave)
+				;
 
 		case kVMFaultRetPageShortage:
 			kfatal("path unimplemented\n");

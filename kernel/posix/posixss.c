@@ -23,6 +23,7 @@
  */
 
 #include "abi-bits/fcntl.h"
+#include "abi-bits/wait.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
@@ -70,6 +71,10 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 	proc->parent = parent_proc;
 	LIST_INIT(&proc->subprocs);
 
+	if (parent_proc)
+		LIST_INSERT_HEAD(&parent_proc->subprocs, proc, subprocs_link);
+
+	proc->exited = false;
 	proc->wait_stat = 0;
 	ke_event_init(&proc->subproc_state_change, false);
 
@@ -116,6 +121,63 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 	ki_thread_start(&ethread->kthread);
 
 	return 0;
+}
+
+int
+psx_exit(int status)
+{
+	posix_proc_t *proc = px_curproc();
+
+	kassert(proc->eprocess->id != 1);
+
+	/* todo: multithread support */
+
+	px_acquire_proctree_mutex();
+	proc->wait_stat = W_EXITCODE(status, 0);
+	proc->exited = true;
+	ke_event_signal(&proc->parent->subproc_state_change);
+	px_release_proctree_mutex();
+
+	ke_acquire_dispatcher_lock();
+	ke_curthread()->state = kThreadStateDone;
+	ki_reschedule();
+
+	kfatal("Unreachable\n");
+}
+
+pid_t
+psx_waitpid(pid_t pid, int *status, int flags)
+{
+	posix_proc_t *subproc, *proc = px_curproc();
+	kwaitstatus_t w;
+	int r = 0;
+
+	kassert((flags & WNOHANG) == 0);
+	kassert((flags & WNOWAIT) == 0);
+
+	kassert(pid == 0 || pid == -1);
+
+	w = ke_wait(&proc->subproc_state_change,
+	    "psx_waitpid:subproc_state_change", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+
+	px_acquire_proctree_mutex();
+	LIST_FOREACH (subproc, &proc->subprocs, subprocs_link) {
+		if (subproc->exited) {
+			*status = subproc->wait_stat;
+			r = subproc->eprocess->id;
+			LIST_REMOVE(subproc, subprocs_link);
+			/* free the process stucture */
+			break;
+		}
+	}
+
+	if (r == 0)
+		ke_event_clear(&proc->subproc_state_change);
+
+	px_release_proctree_mutex();
+
+	return r;
 }
 
 int
