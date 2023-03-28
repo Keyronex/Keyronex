@@ -43,13 +43,13 @@
 #include <stdint.h>
 
 #include "kdk/kernel.h"
-#include "kdk/vmem.h"
 #include "kdk/kmem.h"
+#include "kdk/vmem.h"
 
 #ifdef _KERNEL
 #include "kdk/libkern.h"
-#include "kdk/vmem.h"
 #include "kdk/vm.h"
+#include "kdk/vmem.h"
 #else
 #include <sys/mman.h>
 
@@ -311,7 +311,8 @@ slab_free(kmem_zone_t *zone, struct kmem_slab *slab, vmem_flag_t flags)
 	kdprintf("Freeing slab %p in zone %s\n", slab, zone->name);
 #endif
 	if (zone->size > kSmallSlabMax) {
-		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE, flags);
+		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE,
+		    flags);
 		kmem_xzonefree(&kmem_slab, slab, flags);
 	} else {
 		vm_kfree(PGROUNDDOWN((uintptr_t)slab), 1, flags);
@@ -342,7 +343,7 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 	}
 
 	__atomic_sub_fetch(&slab->nfree, 1, __ATOMIC_RELAXED);
-	slab->nalloced ++;
+	slab->nalloced++;
 	entry = slab->firstfree;
 
 #if KMEM_SANITY_CHECKS == 1
@@ -411,13 +412,13 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 #if KMEM_SANITY_CHECKS == 1
 		{
 			struct kmem_slab *iter;
-			STAILQ_FOREACH(iter, &zone->slablist,slablist) {
+			STAILQ_FOREACH (iter, &zone->slablist, slablist) {
 				if (iter == slab)
 					goto next;
 			}
 			kfatal("No such slab!\n");
 		}
-		next:
+	next:
 #endif
 		newfree = (struct kmem_bufctl *)ptr;
 	} else {
@@ -444,7 +445,7 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 	slab->nalloced--;
 
 #if KMEM_SANITY_CHECKS == 1
-	kassert (slab->nfree + slab->nalloced == slabcapacity(zone));
+	kassert(slab->nfree + slab->nalloced == slabcapacity(zone));
 #endif
 
 	if (slab->nfree == slabcapacity(zone)) {

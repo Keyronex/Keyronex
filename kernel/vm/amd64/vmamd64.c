@@ -19,6 +19,7 @@
 #include "kdk/machdep.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "kdk/vmem.h"
 #include "machdep/amd64/amd64.h"
 #include "vm/vm_internal.h"
 
@@ -166,7 +167,7 @@ vm_prot_to_i386(vm_protection_t prot)
  */
 static uint64_t *
 pmap_descend(vm_map_t *map, uint64_t *table, size_t index, bool alloc,
-    uint64_t mmuprot)
+    uint64_t mmuprot, enum vmem_flag flag)
 {
 	uint64_t *entry = P2V((&table[index]));
 	uint64_t *addr = NULL;
@@ -175,7 +176,10 @@ pmap_descend(vm_map_t *map, uint64_t *table, size_t index, bool alloc,
 		addr = pte_get_addr(*entry);
 	} else if (alloc) {
 		vm_page_t *page;
-		vmp_page_alloc(map, true, kPageUseVMM, &page);
+		if (flag & kVMemPFNDBHeld)
+			vmp_page_alloc_locked(map, true, kPageUseVMM, &page);
+		else
+			vmp_page_alloc(map, true, kPageUseVMM, &page);
 		addr = (uint64_t *)VM_PAGE_PADDR(page);
 		pte_set(entry, (paddr_t)addr, mmuprot);
 	}
@@ -200,17 +204,17 @@ pmap_fully_descend(vm_map_t *map, vaddr_t virt)
 	pde_t *pdes;
 	pte_t *ptes;
 
-	pdptes = pmap_descend(map, pml4, pml4i, false, 0);
+	pdptes = pmap_descend(map, pml4, pml4i, false, 0, 0);
 	if (!pdptes) {
 		return 0x0;
 	}
 
-	pdes = pmap_descend(map, pdptes, pdpti, false, 0);
+	pdes = pmap_descend(map, pdptes, pdpti, false, 0, 0);
 	if (!pdes) {
 		return 0x0;
 	}
 
-	ptes = pmap_descend(map, pdes, pdi, false, 0);
+	ptes = pmap_descend(map, pdes, pdi, false, 0, 0);
 	if (!ptes) {
 		return 0x0;
 	}
@@ -237,17 +241,17 @@ pmap_trans(vm_map_t *map, vaddr_t virt)
 	pde_t *pde;
 	pte_t *pte;
 
-	pdpte = pmap_descend(map, pml4, pml4i, false, 0);
+	pdpte = pmap_descend(map, pml4, pml4i, false, 0, 0);
 	if (!pdpte) {
 		return 0x0;
 	}
 
-	pde = pmap_descend(map, pdpte, pdpti, false, 0);
+	pde = pmap_descend(map, pdpte, pdpti, false, 0, 0);
 	if (!pde) {
 		return 0x0;
 	}
 
-	pte = pmap_descend(map, pde, pdi, false, 0);
+	pte = pmap_descend(map, pde, pdi, false, 0, 0);
 	if (!pte) {
 		return 0x0;
 	}
@@ -265,7 +269,7 @@ pmap_trans(vm_map_t *map, vaddr_t virt)
 
 void
 pmap_enter_common(vm_map_t *map, paddr_t phys, vaddr_t virt,
-    vm_protection_t prot)
+    vm_protection_t prot, enum vmem_flag flag)
 {
 	uintptr_t virta = (uintptr_t)virt;
 	int pml4i = ((virta >> 39) & 0x1FF);
@@ -278,9 +282,9 @@ pmap_enter_common(vm_map_t *map, paddr_t phys, vaddr_t virt,
 	pte_t *pt;
 	pte_t *pti_virt;
 
-	pdpte = pmap_descend(map, pml4, pml4i, true, kMMUDefaultProt);
-	pde = pmap_descend(map, pdpte, pdpti, true, kMMUDefaultProt);
-	pt = pmap_descend(map, pde, pdi, true, kMMUDefaultProt);
+	pdpte = pmap_descend(map, pml4, pml4i, true, kMMUDefaultProt, flag);
+	pde = pmap_descend(map, pdpte, pdpti, true, kMMUDefaultProt, flag);
+	pt = pmap_descend(map, pde, pdi, true, kMMUDefaultProt, flag);
 
 	pti_virt = P2V(&pt[pti]);
 	void *oldaddr;
@@ -302,11 +306,12 @@ pmap_enter_common(vm_map_t *map, paddr_t phys, vaddr_t virt,
 	    vm_prot_to_i386(prot) | (virt < KAREA_BASE ? kMMUUser : 0));
 }
 
+/* the sole user of this should be kwired!! */
 void
 pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt, vm_protection_t prot)
 {
 	ipl_t ipl = ke_spinlock_acquire(&map->md.lock);
-	pmap_enter_common(map, phys, virt, prot);
+	pmap_enter_common(map, phys, virt, prot, kVMemPFNDBHeld);
 	ke_spinlock_release(&map->md.lock, ipl);
 }
 
@@ -328,7 +333,7 @@ pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
 #endif
 
 	ipl = ke_spinlock_acquire(&map->md.lock);
-	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot);
+	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot, 0);
 	LIST_INSERT_HEAD(&page->pv_list, pve, list_entry);
 	ke_spinlock_release(&map->md.lock, ipl);
 }
@@ -362,8 +367,10 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 	paddr_t paddr;
 	pte_t *pte;
 	ipl_t ipl;
+	struct pv_entry *pve = NULL;
 
-	ipl = ke_spinlock_acquire(&map->md.lock);
+	ipl = vmp_acquire_pfn_lock();
+	ke_spinlock_acquire_nospl(&map->md.lock);
 
 	pte = pmap_fully_descend(map, virt);
 
@@ -378,14 +385,14 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 
 		page = vmp_paddr_to_page(paddr);
 		if (page) {
-			struct pv_entry *pve;
-			bool found;
+			struct pv_entry *pve, *tmp;
+			bool found = false;
 
-			LIST_FOREACH (pve, &page->pv_list, list_entry) {
+			LIST_FOREACH_SAFE (pve, &page->pv_list, list_entry,
+			    tmp) {
 				if (pve->map == map && pve->vaddr == virt) {
-					found = true;
+					kassert(!found) found = true;
 					LIST_REMOVE(pve, list_entry);
-					kmem_free(pve, sizeof(*pve));
 				}
 			}
 
@@ -399,7 +406,11 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 
 	pmap_invlpg(virt);
 
-	ke_spinlock_release(&map->md.lock, ipl);
+	ke_spinlock_release_nospl(&map->md.lock);
+	vmp_release_pfn_lock(ipl);
+
+	if (pve)
+		kmem_free(pve, sizeof(*pve));
 
 	return 0;
 }

@@ -157,7 +157,6 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			continue;
 		else if (entry->start >= start && entry->end <= end) {
 			int r;
-			ipl_t ipl;
 
 			r = vmem_xfree(&map->vmem, entry->start,
 			    entry->end - entry->start, 0);
@@ -166,10 +165,8 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			RB_REMOVE(vm_map_entry_rbtree, &map->entry_queue,
 			    entry);
 
-			ipl = vmp_acquire_pfn_lock();
 			pmap_unenter_pageable_range(map, entry->start,
 			    entry->end);
-			vmp_release_pfn_lock(ipl);
 
 			if (entry->object)
 				obj_direct_release(entry->object);

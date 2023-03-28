@@ -111,6 +111,10 @@ int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);
 /*! @brief Dump all entries in a map. */
 void vmp_map_dump(vm_map_t *map);
 
+/*! @brief Allocate a page when PFN DB lock is held. */
+int vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
+    vm_page_t **out);
+
 /*! @brief Comparator function for map entry rb-tree. */
 int vmp_map_entry_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
 /*! @brief Comparator function for page ref rb-tree. */

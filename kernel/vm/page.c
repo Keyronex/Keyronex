@@ -97,7 +97,8 @@ vmp_paddr_to_page(paddr_t paddr)
 }
 
 int
-vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
+vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
+    vm_page_t **out)
 {
 	vm_page_t *page = TAILQ_FIRST(&free_list);
 	kassert(page);
@@ -135,6 +136,15 @@ vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
 	memset(VM_PAGE_DIRECT_MAP_ADDR(page), 0x0, PGSIZE);
 
 	return 0;
+}
+
+int
+vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+	int r = vmp_page_alloc_locked(ps, must, use, out);
+	vmp_release_pfn_lock(ipl);
+	return r;
 }
 
 void
@@ -248,8 +258,8 @@ vm_page_wire(vm_page_t *page)
 		break;
 
 	case kPageStatusWired:
-	    /* epsilon */
-	    break;
+		/* epsilon */
+		break;
 
 	case kPageStatusBusy:
 		kfatal("Cannot wire a busy page.\n");
