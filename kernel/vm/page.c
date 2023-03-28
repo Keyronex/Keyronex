@@ -128,6 +128,7 @@ vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
 		kfatal("unexpected use %d\n", use);
 	}
 
+	page->status = kPageStatusWired;
 	page->use = use;
 	page->wirecnt = 1;
 
@@ -150,6 +151,28 @@ vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
 void
 vmp_page_free(vm_map_t *ps, vm_page_t *page)
 {
+	switch (page->use) {
+	case kPageUseAnonymous:
+	case kPageUseObject:
+		vmstat.nactive--;
+		break;
+
+	case kPageUseWired:
+		vmstat.npermwired--;
+		break;
+
+	case kPageUseVMM:
+		vmstat.nvmm--;
+		break;
+
+	case kPageUseDevBuf:
+		vmstat.ndev--;
+		break;
+
+	default:
+		kfatal("unexpected use %d\n", page->use);
+	}
+
 	TAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
 }
@@ -282,6 +305,7 @@ vm_page_unwire(vm_page_t *page)
 	if (--page->wirecnt == 0) {
 		if (page->use == kPageUseAnonymous ||
 		    page->use == kPageUseObject) {
+			page->status = kPageStatusActive;
 			TAILQ_INSERT_HEAD(&vm_pagequeue_active, page,
 			    queue_entry);
 			vmstat.nwired--;
