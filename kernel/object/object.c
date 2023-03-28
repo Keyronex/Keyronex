@@ -52,8 +52,10 @@ obj_release(object_header_t *hdr)
 	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
 	    1) {
 		//kassert(hdr->reference_count == 0);
+#ifdef DEBUG_OBJ
 		kdprintf("objmgr: <%p> (type %d) is to be freed\n", hdr,
 		    hdr->type);
+#endif
 	}
 }
 

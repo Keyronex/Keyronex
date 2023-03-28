@@ -8,6 +8,7 @@
 #include "abi-bits/errno.h"
 #include "abi-bits/fcntl.h"
 #include "abi-bits/seek-whence.h"
+#include "abi-bits/stat.h"
 #include "abi-bits/vm-flags.h"
 #include "amd64.h"
 #include "executive/epoll.h"
@@ -15,6 +16,7 @@
 #include "kdk/amd64/portio.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/machdep.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
@@ -250,6 +252,90 @@ sys_seek(int fd, off_t offset, int whence)
 	return file->offset;
 }
 
+int
+sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
+    struct stat *sb)
+{
+	int r;
+	vnode_t *vn;
+	vattr_t vattr;
+	char *pathcpy = NULL;
+
+	if (kind == kPXStatKindAt) {
+		struct file *file = ps_getfile(ps_curproc(), fd);
+
+		pathcpy = strdup(path);
+
+		if (file == NULL) {
+			r = -EBADF;
+			goto out;
+		}
+
+		r = VOP_LOOKUP(file->vn, &vn, pathcpy);
+		if (r != 0)
+			goto out;
+	} else if (kind == kPXStatKindCWD) {
+		pathcpy = strdup(path);
+
+		r = VOP_LOOKUP(root_vnode, &vn, pathcpy);
+		if (r != 0)
+			goto out;
+	} else {
+		kassert(kind == kPXStatKindFD);
+
+		struct file *file = ps_getfile(ps_curproc(), fd);
+
+		if (file == NULL)
+			return -EBADF;
+
+		vn = file->vn;
+		obj_direct_retain(vn);
+	}
+
+	r = VOP_GETATTR(vn, &vattr);
+	if (r != 0) {
+		obj_direct_release(vn);
+		goto out;
+	}
+
+	memset(sb, 0x0, sizeof(*sb));
+	sb->st_mode = vattr.mode;
+
+	switch (vattr.type) {
+	case VREG:
+		sb->st_mode |= S_IFREG;
+		break;
+
+	case VDIR:
+		sb->st_mode |= S_IFDIR;
+		break;
+
+	case VCHR:
+		sb->st_mode |= S_IFCHR;
+		break;
+
+	case VLNK:
+		sb->st_mode |= S_IFLNK;
+		break;
+
+	case VSOCK:
+		sb->st_mode |= S_IFSOCK;
+		break;
+
+	case VNON:
+		kfatal("Should be unreachable!\n");
+	}
+
+	sb->st_size = vattr.size;
+	sb->st_blocks = vattr.size / 512;
+	sb->st_blksize = 512;
+
+out:
+	if (pathcpy != NULL)
+		kmem_strfree(pathcpy);
+	return r;
+}
+
 uintptr_t
 sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
     const sigset_t *sigmask)
@@ -373,7 +459,8 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 
 	case kPXSysStat:
-		kfatal("Unimplemented\n");
+		RET = sys_stat(ARG1, ARG2, (const char *)ARG3, ARG4,
+		    (struct stat *)ARG5);
 		break;
 
 	case kPXSysPPoll:

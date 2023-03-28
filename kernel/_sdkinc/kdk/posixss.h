@@ -36,4 +36,10 @@ enum posix_syscall {
 	kPXSysGetPPID,
 };
 
+enum posix_stat_kind {
+	kPXStatKindFD,
+	kPXStatKindAt,
+	kPXStatKindCWD,
+};
+
 #endif /* KRX_POSIX_POSIXSS_H */

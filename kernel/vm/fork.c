@@ -136,6 +136,7 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 		}
 	}
 
+
 	ps_curthread()->in_pagefault = false;
 
 	/* try to force TLB clear */

@@ -71,8 +71,8 @@ syscall3(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
 }
 
 static inline uintptr_t
-syscall4(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
-    uintptr_t *out)
+syscall4(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+    uintptr_t arg4, uintptr_t *out)
 {
 	register uintptr_t r10 asm("r10") = arg4;
 	uintptr_t ret, err;
@@ -80,6 +80,25 @@ syscall4(intptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t
 	asm volatile("int $0x80"
 		     : "=a"(ret), "=D"(err)
 		     : "a"(num), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10)
+		     : "memory");
+
+	if (out)
+		*out = err;
+
+	return ret;
+}
+
+static inline uintptr_t
+syscall5(uintptr_t num, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
+    uintptr_t arg4, uintptr_t arg5, uintptr_t *out)
+{
+	register uintptr_t r10 asm("r10") = arg4, r8 asm("r8") = arg5;
+	uintptr_t ret, err;
+
+	asm volatile("int $0x80"
+		     : "=a"(ret), "=D"(err)
+		     : "a"(num), "D"(arg1), "S"(arg2), "d"(arg3), "r"(r10),
+		     "r"(r8)
 		     : "memory");
 
 	if (out)

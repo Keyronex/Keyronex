@@ -194,6 +194,7 @@ enum lookup_flags {
 	vnode->ops->write(vnode, buf, nbyte, off)
 #define VOP_CREAT(vnode, out, name, attr) \
 	vnode->ops->create(vnode, out, name, attr)
+#define VOP_GETATTR(VN, OUT) (VN)->ops->getattr(VN, OUT)
 #define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
 #define VOP_MKDIR(vnode, out, name, attr) \
 	vnode->ops->mkdir(vnode, out, name, attr)

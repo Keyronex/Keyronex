@@ -185,8 +185,6 @@ in:
 		int c = dequeue(tty);
 		((char *)buf)[nread++] = c;
 		if (c == '\n' || c == tty->termios.c_cc[VEOL]) {
-			kdprintf("Next char is %d or %d, breaking.\n", '\n',
-			    tty->termios.c_cc[VEOL]);
 			break;
 		}
 	}
