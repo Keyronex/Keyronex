@@ -92,14 +92,14 @@ epoll_insert(struct epoll *epoll, struct pollhead *watch)
 void
 epoll_do_destroy(struct epoll *epoll)
 {
-	struct pollhead *watch;
+	struct pollhead *watch, *tmp;
 	ipl_t ipl;
 
 	/* todo: make sure poll isn't live! if it is, do the needful */
 
 	ipl = ke_spinlock_acquire(&epoll->lock);
 
-	LIST_FOREACH (watch, &epoll->watches, watch_link) {
+	LIST_FOREACH_SAFE (watch, &epoll->watches, watch_link, tmp) {
 		/*
 		 * One solution to the locking problem:
 		 *
@@ -146,6 +146,10 @@ poll_wait_locked(struct epoll *epoll, struct epoll_event *events, int nevents,
 		 * Check if watch is already live
 		 */
 		r = VOP_CHPOLL(watch->vnode, watch, kChPollAdd);
+		if (r != 0) {
+			ke_spinlock_release(&epoll->lock, ipl);
+			goto process;
+		}
 		watch->live = true;
 	}
 
@@ -156,6 +160,7 @@ wait:
 	    true, true, nanosecs);
 	kassert(ws == kKernWaitStatusOK || ws == kKernWaitStatusTimedOut);
 
+process:
 	ipl = ke_spinlock_acquire(&epoll->lock);
 	r = 0;
 
@@ -180,8 +185,10 @@ wait:
 			/* increment r for each event we get */
 			r++;
 		}
-		if (watch->live)
+		if (watch->live) {
+			watch->live = false;
 			VOP_CHPOLL(watch->vnode, watch, kChPollRemove);
+		}
 	}
 
 	epoll->waiting = false;

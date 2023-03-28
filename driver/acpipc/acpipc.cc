@@ -12,8 +12,9 @@
 #include "lai/helpers/sci.h"
 #include "lai/host.h"
 
-#include "../pcibus/pcibus.hh"
 #include "../fbcons/fbcons.hh"
+#include "../pcibus/pcibus.hh"
+#include "../ps2/ps2kb.hh"
 #include "acpipc.hh"
 #include "ioapic.hh"
 
@@ -466,10 +467,9 @@ AcpiPC::matchDevice(lai_nsnode_t *node)
 		devid = eisaid_to_string(id.integer);
 
 	/* TODO: matching on device classes by a more elegant means */
-	/*if (strcmp(devid, "PNP0303") == 0)
-		[PS2Keyboard probeWithAcpiNode:node];
-	else */
-	if (strcmp(devid, ACPI_PCI_ROOT_BUS_PNP_ID) == 0 ||
+	if (strcmp(devid, "PNP0303") == 0)
+		new (kmem_general) PS2Keyboard(this, node);
+	else if (strcmp(devid, ACPI_PCI_ROOT_BUS_PNP_ID) == 0 ||
 	    strcmp(devid, ACPI_PCIE_ROOT_BUS_PNP_ID) == 0) {
 		doPCIBus(node);
 	}
@@ -532,7 +532,7 @@ AcpiPC::AcpiPC()
 	kmem_asprintf(&objhdr.name, "acpipc");
 	attach(NULL);
 
-	new(kmem_general) FBConsole(this);
+	new (kmem_general) FBConsole(this);
 
 	madt = (acpi_madt_t *)laihost_scan("APIC", 0);
 	madt_walk(madt, parse_ioapics, NULL);

@@ -16,6 +16,9 @@ static struct tty sctty;
 int
 pxp_make_syscon_tty(void)
 {
+	ke_spinlock_init(&sctty.polllist.lock);
+	LIST_INIT(&sctty.polllist.pollhead_list);
+
 	sctty.termios.c_cc[VINTR] = 0x03;
 	sctty.termios.c_cc[VEOL] = '\n';
 	sctty.termios.c_cc[VEOF] = '\0';
@@ -34,4 +37,17 @@ pxp_make_syscon_tty(void)
 	sctty.nlines = 0;
 
 	return devfs_create(&sctty.dev, "console", &tty_vnops);
+}
+
+void
+syscon_instr(const char *str)
+{
+	while (*str != '\0')
+		tty_input(&sctty, *str++);
+}
+
+void
+syscon_inchar(char c)
+{
+	tty_input(&sctty, c);
 }

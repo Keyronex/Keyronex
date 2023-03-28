@@ -41,6 +41,12 @@ devfs_write(vnode_t *vn, void *buf, size_t size, off_t off)
 }
 
 static int
+devfs_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
+{
+	return vn->rdeviceops->chpoll(vn, ph, kind);
+}
+
+static int
 tmpfs_root(vfs_t *vfs, vnode_t **out)
 {
 	*out = (vnode_t *)vfs->data;
@@ -289,6 +295,7 @@ struct vnops tmpfs_spec_vnops = {
 	.getattr = tmp_getattr,
 	.read = devfs_read,
 	.write = devfs_write,
+	.chpoll = devfs_chpoll,
 #if 0
 	.open = spec_open,
 	.read = spec_read,

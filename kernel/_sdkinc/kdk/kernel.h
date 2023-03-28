@@ -513,7 +513,10 @@ void hl_dputc(int ch, void *ctx);
 extern void (*syscon_puts)(const char *buf, size_t len);
 /*! System console print stats - initially NULL - invoked every second. */
 extern void (*syscon_printstats)(void);
-
+/*! System console input string  */
+void syscon_instr(const char *str);
+/*! System console input char  */
+void syscon_inchar(char);
 
 /*! Dispatcher database lock. */
 extern kspinlock_t dispatcher_lock;

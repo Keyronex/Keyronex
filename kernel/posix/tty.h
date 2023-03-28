@@ -8,6 +8,7 @@
 
 #include "abi-bits/termios.h"
 #include "kdk/devmgr.h"
+#include "executive/epoll.h"
 
 /*!
  * A teletype.
@@ -19,6 +20,8 @@ struct tty {
 
 	kspinlock_t lock;    /*!< (~) tty lock */
 	kevent_t read_evobj; /*<- (~)  data available for read */
+
+	struct polllist polllist;
 
 	struct termios termios; /*!< (l) terminal attributes */
 	char buf[2048];		/*!< (l) input buffer */

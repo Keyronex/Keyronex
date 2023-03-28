@@ -52,6 +52,7 @@ px_curproc(void)
 
 int sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
     const char *u_envp[], hl_intr_frame_t *frame);
+int psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out);
 
 extern kmutex_t px_proctree_mutex;
 

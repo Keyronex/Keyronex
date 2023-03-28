@@ -354,6 +354,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_seek(ARG1, ARG2, ARG3);
 		break;
 
+	case kPXSysStat:
+		kfatal("Unimplemented\n");
+		break;
+
 	case kPXSysPPoll:
 		RET = sys_ppoll((struct pollfd *)ARG1, ARG2,
 		    (const struct timespec *)ARG3, (const sigset_t *)ARG4);
