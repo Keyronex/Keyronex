@@ -36,6 +36,7 @@ class VirtIOFSPort : VirtIODevice {
 		uint16_t ndescs;
 		/*! the first desc, by that this request is identified */
 		uint16_t first_desc_id;
+		bool pending;
 	};
 
 	/*! request array. */

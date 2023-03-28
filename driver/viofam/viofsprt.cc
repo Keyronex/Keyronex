@@ -138,6 +138,10 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	vreq->ndescs = ndescs;
 	vreq->first_desc_id = descs[0];
 
+#if 0
+	kdprintf("vreq %p assigned desc id %d\n", vreq, descs[0]);
+#endif
+
 	/* set the next desc, if there is a next */
 #define SET_NEXT()                                                 \
 	if (di + 1 < ndescs) {                                     \
@@ -203,7 +207,12 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 		}
 	}
 
-	in_flight_reqs.insert_tail(vreq);
+	vreq->pending = true;
+	in_flight_reqs.insert_head(vreq);
+
+	for (int i = 0; i < 1024; i++)
+		asm("pause");
+
 	// for (;;) ;
 
 	submitDescNumToQueue(&req_vq, descs[0]);
@@ -237,10 +246,17 @@ VirtIOFSPort::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 			break;
 	}
 
-	if (!vreq || vreq->first_desc_id != e->id)
-		kfatal("viofs completion without a request\n");
+	if (!vreq || vreq->first_desc_id != e->id) {
+		// kfatal("viofs completion without a request\n");
+		return;
+	}
+#if 0
+	else
+		kdprintf("completing req %d\n", vreq->first_desc_id);
+#endif
 
 	in_flight_reqs.remove(vreq);
+	vreq->pending = false;
 
 	while (true) {
 		desc = &QUEUE_DESC_AT(&req_vq, descidx);

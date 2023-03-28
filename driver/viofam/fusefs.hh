@@ -70,12 +70,14 @@ class FuseFS : public Device {
 	static int vget(vfs_t *vfs, vnode_t **out, ino_t ino);
 
 	/*! VNode ops */
+	static int create(vnode_t *vn, vnode_t **out, const char *name,
+	    vattr_t *attr);
 	static int getattr(vnode_t *vn, vattr_t *out);
 	static int getsection(vnode_t *vn, vm_object_t *out);
 	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
 	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
-	static off_t readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
-	    off_t seqno);
+	static off_t readdir(vnode_t *dvn, void *buf, size_t nbyte,
+	    size_t *bytesRead, off_t seqno);
 	static int readlink(vnode_t *vn, char *out);
 	static int write(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
@@ -90,8 +92,8 @@ class FuseFS : public Device {
 	 *
 	 * @returns a fusefs_node with a reference held, or NULL
 	 */
-	fusefs_node *findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
-	    ino_t fuse_parent_ino);
+	fusefs_node *findOrCreateNodePair(vtype_t type, size_t size,
+	    ino_t fuse_ino, ino_t fuse_parent_ino);
 
 	/*!
 	 * @brief Get or create the built-in pager file handle for a node.

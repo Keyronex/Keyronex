@@ -298,6 +298,52 @@ FuseFS::vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 }
 
 int
+FuseFS::create(vnode_t *vn,vnode_t **out, const char *name,
+	    vattr_t *attr)
+{
+	FuseFS *self = (FuseFS *)vn->vfsp->data;
+	fusefs_node *node = ((fusefs_node *)vn->data), *res;
+
+	kassert(attr->type == VREG);
+
+	fuse_create_in create_in = { 0 };
+	fuse_entry_out entry_out;
+	io_fuse_request *req;
+	iop_t *iop;
+
+	create_in.mode = 0755;
+	create_in.open_flags = 0;
+	create_in.umask = 0;
+	create_in.flags = 0;
+
+	size_t siz = sizeof(fuse_create_in) + strlen(name) + 1;
+	char *buf = (char*)kmem_alloc(siz);
+	memcpy(buf, &create_in, sizeof(create_in));
+	strcpy(buf + sizeof(create_in), name);
+
+	req = self->newFuseRequest(FUSE_CREATE, node->inode, 0, 0, 0,
+	    (void *)buf, NULL, siz, &entry_out, NULL,
+	    sizeof(entry_out));
+	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	kassert(req->fuse_out_header.error == 0);
+
+	res = self->findOrCreateNodePair(/*mode_to_vtype(entry_out.attr.mode)*/ VREG,
+	    entry_out.attr.size, entry_out.nodeid, node->inode);
+	if (!res) {
+		kdprintf("Res failed! Haha\n");
+		return -ENOENT;
+	}
+
+	*out = res->vnode;
+
+	return 0;
+}
+
+int
 FuseFS::getattr(vnode_t *vn, vattr_t *out)
 {
 	FuseFS *self = (FuseFS *)vn->vfsp->data;
@@ -501,8 +547,10 @@ struct vfsops FuseFS::vfsops = {
 };
 
 struct vnops FuseFS::vnops = {
+	.create = create,
 	.getattr = getattr,
 	.lookup = lookup,
 	.read = read,
 	.readlink = readlink,
+	.write = write,
 };
