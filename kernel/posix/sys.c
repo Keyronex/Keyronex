@@ -271,13 +271,13 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 			goto out;
 		}
 
-		r = VOP_LOOKUP(file->vn, &vn, pathcpy);
+		r = vfs_lookup(file->vn, &vn, pathcpy, 0, NULL);
 		if (r != 0)
 			goto out;
 	} else if (kind == kPXStatKindCWD) {
 		pathcpy = strdup(path);
 
-		r = VOP_LOOKUP(root_vnode, &vn, pathcpy);
+		r = vfs_lookup(root_vnode, &vn, pathcpy, 0, NULL);
 		if (r != 0)
 			goto out;
 	} else {

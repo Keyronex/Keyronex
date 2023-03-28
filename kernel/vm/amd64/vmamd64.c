@@ -154,6 +154,7 @@ pte_set(uint64_t *pte, paddr_t addr, uint64_t flags)
 static uint64_t
 vm_prot_to_i386(vm_protection_t prot)
 {
+	kassert(prot & kVMRead);
 	return (prot & kVMRead ? kMMUPresent : 0) |
 	    (prot & kVMWrite ? kMMUWrite : 0) | kMMUUser;
 }
