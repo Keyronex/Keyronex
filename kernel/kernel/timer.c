@@ -41,7 +41,7 @@ ke_timer_set(ktimer_t *timer, uint64_t nanosecs)
 {
 	ipl_t ipl = ke_acquire_dispatcher_lock();
 
-	if (timer->state != kTimerPending) {
+	if (timer->state == kTimerPending) {
 		ki_timer_dequeue(timer);
 	}
 

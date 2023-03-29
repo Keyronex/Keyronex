@@ -108,7 +108,12 @@ vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
 	vmstat.nfree--;
 	switch (use) {
 	case kPageUseAnonymous:
+		vmstat.nanon++;
+		vmstat.nwired++;
+		break;
+
 	case kPageUseObject:
+		vmstat.nobject++;
 		vmstat.nwired++;
 		break;
 
@@ -153,7 +158,12 @@ vmp_page_free(vm_map_t *ps, vm_page_t *page)
 {
 	switch (page->use) {
 	case kPageUseAnonymous:
+		vmstat.nanon--;
+		vmstat.nactive--;
+		break;
+
 	case kPageUseObject:
+		vmstat.nobject--;
 		vmstat.nactive--;
 		break;
 

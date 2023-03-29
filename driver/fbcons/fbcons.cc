@@ -106,10 +106,11 @@ FBConsole::printstats()
 		npf_pprintf(putc, &pctx, __VA_ARGS__);          \
 	})
 	STPRINT(0, 0,
-	    "Pages: FREE %lu; ACT %lu; INACT %lu; WIRE %lu; VMM %lu; DEV %lu",
+	    "FREE %lu; ACT %lu; INACT %lu; WIRE %lu; VMM %lu; DEV %lu",
 	    vmstat.nfree, vmstat.nactive, vmstat.ninactive,
 	    vmstat.nwired + vmstat.npermwired, vmstat.nvmm, vmstat.ndev);
-	STPRINT(0, 16, "Console: %s", syscon->objhdr.name);
+	STPRINT(0, 16, "OBJ: %lu; ANON: %lu | Console: %s", vmstat.nobject,
+	    vmstat.nanon, syscon->objhdr.name);
 }
 
 FBConsole::FBConsole(Device *provider)

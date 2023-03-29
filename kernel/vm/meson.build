@@ -1,4 +1,4 @@
-kernel_sources += files('fault.c', 'fork.c', 'kmem_slab.c', 'kwired.c',
+kernel_sources += files('cleaner.c', 'fault.c', 'fork.c', 'kmem_slab.c', 'kwired.c',
 	'page.c', 'map.c', 'vmem.c')
 
 if (arch == 'x86_64')

@@ -112,6 +112,10 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		ke_spinlock_release_nospl(&dispatcher_lock);
 		splx(next->saved_ipl);
 		return;
+	} else if (num == kIntNumIPIInvlPG) {
+		void pmap_global_invlpg_cb(void);
+		pmap_global_invlpg_cb();
+		goto out;
 	}
 
 	entries = &intr_entries[num];
@@ -142,6 +146,7 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		(void)r;
 	}
 
+out:
 	if (num >= 32) {
 		void lapic_eoi(void);
 		lapic_eoi();

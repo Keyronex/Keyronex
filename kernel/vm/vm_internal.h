@@ -13,13 +13,35 @@
 #define kAMapChunkNPages 32
 
 /*!
+ * Cleanliness of a vmp_objpage. Pages go onto the dirty queue as soon as they
+ * are mapped writeable, and this queue is periodically processed to move pages
+ * onto the clean queue by testing whether they are really dirty. The pages have
+ * all their write mappings made away with and if they are dirty, they must be
+ * written to disk.
+ *
+ * Pages thus migrate slowly to the clean queue.
+ */
+enum vmp_objpage_status {
+	kVMPObjPageDirty,
+	kVMPObjPageClean,
+};
+
+/*!
+ * vmp_objpage cleanliness queue type
+ */
+TAILQ_HEAD(vmp_objpage_dirty_queue, vmp_objpage);
+
+/*!
  * Page within a VM object (i.e. a vnode). Locked by VM object's lock.
  */
 struct vmp_objpage {
 	/*! Linkage in vm_object::page_ref_rbtree */
 	RB_ENTRY(vmp_objpage) rbtree_entry;
+	/*! Linkage in maybe-dirty, dirty, or clean queue. */
+	TAILQ_ENTRY(vmp_objpage) dirtyqueue_entry;
 	/*! Where in the object does it belong to? (Page number!) */
-	size_t page_index;
+	uint64_t page_index : 48;
+	enum vmp_objpage_status stat : 4;
 	/*! Underlying page.*/
 	vm_page_t *page;
 };
@@ -85,6 +107,12 @@ void pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t end,
     vm_protection_t limit);
 
 /*!
+ * @brief Remove writeable mappings of a page and return its dirtiness.
+ * \pre PQ lock held.
+ */
+bool pmap_pageable_undirty(vm_page_t *page);
+
+/*!
  * @brief Check if a page is present in a process.
  * @param paddr if this is non-NULL and the page is present, the page's physical
  * address will be written here.
@@ -104,6 +132,12 @@ bool pmap_is_writeable(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
  * @pre Map mutex locked.
  */
 vm_map_entry_t *vmp_map_find(vm_map_t *ps, vaddr_t vaddr);
+
+/*! @brief Inform the cleaner of a new (clean) object page. */
+void vmp_objpage_created(struct vmp_objpage *opage);
+
+/*! @brief Inform the cleaner an object page is potentially dirty. */
+void vmp_objpage_dirty(struct vmp_objpage *opage);
 
 /*! @brief Initialise an amap. */
 int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);

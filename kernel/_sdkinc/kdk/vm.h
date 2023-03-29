@@ -66,6 +66,9 @@ struct vm_stat {
 	size_t npermwired;
 	size_t nvmm;
 	size_t ndev;
+
+	size_t nanon;
+	size_t nobject;
 };
 
 enum vm_page_use {
@@ -114,8 +117,10 @@ typedef struct vm_page {
 	enum vm_page_use use : 3;
 	/*! (o+sometimes q) What is its status, if use is anonymous/object? */
 	enum vm_page_status status : 2;
+	/*! (q) Is the page dirty? */
+	bool dirty: 1;
 	/* Padding */
-	uint8_t padding : 3;
+	uint8_t padding : 2;
 	/*!
 	 * (o+q) How many requests are there for it to be wired in-memory?
 	 * One for each MDL, and another for a busy page.

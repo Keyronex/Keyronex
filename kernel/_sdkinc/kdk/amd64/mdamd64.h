@@ -194,6 +194,9 @@ void hl_switch(struct kthread *from, struct kthread *to);
 /*! @brief Send a reschedule IPI to a CPU. */
 void hl_ipi_reschedule(struct kcpu *cpu);
 
+/*! @brief Send an invlpg IPI to a CPU. */
+void hl_ipi_invlpg(struct kcpu *cpu);
+
 /*!
  * @brief Get thec current interrupt priority level.
  */

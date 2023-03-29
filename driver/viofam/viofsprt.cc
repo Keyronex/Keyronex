@@ -241,35 +241,20 @@ VirtIOFSPort::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 
 	iop_t *iop;
 	size_t ndescs = 0, bytes_out = 0;
-	size_t n_reqs = ROUNDUP(req_vq.length, 4) / 4;
 
-	for (size_t i = 0; i < n_reqs; i++) {
-		if (req_array[i].pending &&
-		    req_array[i].first_desc_id == e->id) {
-			vreq = &req_array[i];
-			n_reqs_inflight--;
+	CXXSLIST_FOREACH(vreq, &in_flight_reqs, queue_entry)
+	{
+		if (vreq->first_desc_id == e->id) {
+			in_flight_reqs.remove(vreq);
+			vreq->pending = false;
 			break;
 		}
 	}
-#if 0
-	CXXSLIST_FOREACH(vreq, &in_flight_reqs, queue_entry)
-	{
-		if (vreq->first_desc_id == e->id)
-			break;
-	}
-#endif
 
 	if (!vreq || vreq->first_desc_id != e->id) {
 		kfatal("viofs completion without a request\n");
 		return;
 	}
-#if 0
-	else
-		kdprintf("completing req %d\n", vreq->first_desc_id);
-#endif
-
-	in_flight_reqs.remove(vreq);
-	vreq->pending = false;
 
 	while (true) {
 		desc = &QUEUE_DESC_AT(&req_vq, descidx);

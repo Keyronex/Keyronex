@@ -56,6 +56,8 @@ typedef uint64_t pml4e_t, pdpte_t, pde_t, pte_t;
 static uint64_t *pte_get_addr(uint64_t pte);
 static void pte_set(uint64_t *pte, paddr_t addr, uint64_t flags);
 void pmap_invlpg(vaddr_t addr);
+/*! \pre PFN DB lock held */
+void pmap_global_invlpg(vaddr_t vaddr);
 
 void
 pmap_kernel_init(void)
@@ -328,14 +330,22 @@ pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
 	pve->map = map;
 	pve->vaddr = virt;
 
-#if 0
-	kdprintf("ENTER PVE %p at VADDR 0x%lx\n", pve, pve->vaddr);
+#if 1
+	ipl = ke_spinlock_acquire(&map->md.lock);
+#else
+	ipl = vmp_acquire_pfn_lock();
+	ke_spinlock_acquire_nospl(&map->md.lock);
 #endif
 
-	ipl = ke_spinlock_acquire(&map->md.lock);
 	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot, 0);
 	LIST_INSERT_HEAD(&page->pv_list, pve, list_entry);
+
+#if 1
 	ke_spinlock_release(&map->md.lock, ipl);
+#else
+	ke_spinlock_release_nospl(&map->md.lock);
+	vmp_release_pfn_lock(ipl);
+#endif
 }
 
 vm_page_t *
@@ -379,8 +389,10 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 
 	if (pte && *pte != 0x0) {
 		vm_page_t *page;
+		bool dirty;
 
 		paddr = (paddr_t)pte_get_addr(*pte);
+		dirty = *pte & kMMUDirty;
 		*pte = 0x0;
 
 		page = vmp_paddr_to_page(paddr);
@@ -395,6 +407,9 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 					LIST_REMOVE(pve, list_entry);
 				}
 			}
+
+			if (dirty)
+				page->dirty = true;
 
 			/* should always be a PV entry for pageable mappings */
 			kassert(found);
@@ -451,6 +466,37 @@ pmap_protect_range(vm_map_t *map, vaddr_t base, vaddr_t end,
 	}
 
 	ke_spinlock_release(&map->md.lock, ipl);
+}
+
+bool
+pmap_pageable_undirty(vm_page_t *page)
+{
+	struct pv_entry *pv, *tmp;
+	bool dirty = page->dirty;
+
+	LIST_FOREACH_SAFE (pv, &page->pv_list, list_entry, tmp) {
+		ipl_t ipl = ke_spinlock_acquire(&pv->map->md.lock);
+		pte_t *pte = pmap_fully_descend(pv->map, pv->vaddr);
+
+		kassert(pte != NULL);
+		pte = P2V(pte);
+
+		if ((*pte & kMMUDirty))
+			dirty = true;
+
+		if (!dirty && !(*pte & kMMUWrite)) {
+			ke_spinlock_release(&pv->map->md.lock, ipl);
+			continue;
+		}
+
+		*pte = *pte & (~kMMUDirty | kMMUWrite);
+		ke_spinlock_release(&pv->map->md.lock, ipl);
+		pmap_global_invlpg(pv->vaddr);
+	}
+
+	page->dirty = false;
+
+	return dirty;
 }
 
 #if 0
@@ -513,28 +559,32 @@ pmap_invlpg(vaddr_t addr)
 }
 
 vaddr_t invlpg_addr;
-volatile atomic_int invlpg_done_cnt;
+volatile atomic_uint invlpg_done_cnt;
 
 void
 pmap_global_invlpg(vaddr_t vaddr)
 {
-#if 0
 	ipl_t ipl = splraise(kIPLHigh);
 
 	invlpg_addr = vaddr;
 	invlpg_done_cnt = 1;
 	for (int i = 0; i < ncpus; i++) {
-		if (all_cpus[i] == curcpu())
+		if (all_cpus[i] == ke_curthread()->cpu)
 			continue;
 
-		md_ipi_invlpg(all_cpus[i]);
+		hl_ipi_invlpg(all_cpus[i]);
 	}
 	pmap_invlpg(vaddr);
 	while (invlpg_done_cnt != ncpus)
 		__asm__("pause");
 
 	splx(ipl);
-#else
-	kfatal("umimplemented\n");
-#endif
+}
+
+void
+pmap_global_invlpg_cb(void)
+{
+	pmap_invlpg(invlpg_addr);
+	atomic_fetch_add(&invlpg_done_cnt, 1);
+	return;
 }

@@ -298,8 +298,7 @@ FuseFS::vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 }
 
 int
-FuseFS::create(vnode_t *vn,vnode_t **out, const char *name,
-	    vattr_t *attr)
+FuseFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
 {
 	FuseFS *self = (FuseFS *)vn->vfsp->data;
 	fusefs_node *node = ((fusefs_node *)vn->data), *res;
@@ -319,13 +318,12 @@ FuseFS::create(vnode_t *vn,vnode_t **out, const char *name,
 	create_in.flags = 0;
 
 	size_t siz = sizeof(fuse_create_in) + strlen(name) + 1;
-	char *buf = (char*)kmem_alloc(siz);
+	char *buf = (char *)kmem_alloc(siz);
 	memcpy(buf, &create_in, sizeof(create_in));
 	strcpy(buf + sizeof(create_in), name);
 
 	req = self->newFuseRequest(FUSE_CREATE, node->inode, 0, 0, 0,
-	    (void *)buf, NULL, siz, &entry_out, NULL,
-	    sizeof(entry_out));
+	    (void *)buf, NULL, siz, &entry_out, NULL, sizeof(entry_out));
 	iop = iop_new_ioctl(self->provider, kIOCTLFuseEnqueuRequest,
 	    (vm_mdl_t *)req, sizeof(*req));
 	req->iop = iop;
