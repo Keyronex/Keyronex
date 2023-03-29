@@ -259,6 +259,7 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	r = 0;
 
 	if (r != 0) {
+		kfatal("Failuer!\n");
 	fail:
 		vm_map_activate(oldmap);
 		proc->eprocess->map = oldmap;

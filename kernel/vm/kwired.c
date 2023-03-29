@@ -75,7 +75,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		pmap_invlpg(addr + i);
 		kassert(page->wirecnt == 1);
 		page->wirecnt = 0;
-		vmp_page_free(kernel_process.map, page);
+		vmp_page_free_locked(kernel_process.map, page);
 	}
 
 	if (!(flags & kVMemPFNDBHeld))

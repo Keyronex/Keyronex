@@ -127,6 +127,9 @@ bool pmap_is_present(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
  */
 bool pmap_is_writeable(vm_map_t *map, vaddr_t vaddr, paddr_t *paddr);
 
+/*! @brief Invalidate a virtual address everywhere. */
+void pmap_global_invlpg(vaddr_t vaddr);
+
 /*!
  * @brief Find the map entry in a process to which a virtual address belongs.
  *
@@ -142,6 +145,9 @@ void vmp_objpage_dirty(struct vmp_objpage *opage);
 
 /*! @brief Initialise an amap. */
 int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);
+
+/*! @brief Free an amap. */
+int vmp_amap_free(vm_map_t *map, struct vm_amap *amap);
 
 /*! @brief Dump all entries in a map. */
 void vmp_map_dump(vm_map_t *map);

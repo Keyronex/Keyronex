@@ -250,8 +250,6 @@ void vmp_kernel_init(void);
  * @param[out] out Allocated page's PFN db entry will be written here.
  * @param use What the page will be used for.
  *
- * @pre PFN database lock held.
- *
  * @retval 0 Page allocated.
  * @retval 1 Low memory, drop locks and wait on the low-memory event.
  */
@@ -269,6 +267,8 @@ int vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
  * @pre PFN database lock held.
  */
 void vmp_page_free(vm_map_t *ps, vm_page_t *page);
+
+void vmp_page_free_locked(vm_map_t *map, vm_page_t *page);
 
 /*! @brief Get the PFN database entry for a physical page address. */
 vm_page_t *vmp_paddr_to_page(paddr_t paddr);
@@ -314,6 +314,9 @@ void vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags);
 
 /*! @brief Activate a process' virtual address space. */
 void vm_map_activate(vm_map_t *map);
+
+/*! @brief Free a map. */
+void vm_map_free(vm_map_t *map);
 
 /*! @brief Handle a page fault. */
 vm_fault_return_t vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags,

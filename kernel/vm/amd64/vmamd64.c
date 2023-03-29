@@ -574,7 +574,10 @@ pmap_global_invlpg(vaddr_t vaddr)
 
 		hl_ipi_invlpg(all_cpus[i]);
 	}
-	pmap_invlpg(vaddr);
+	if (vaddr == -1)
+		write_cr3(read_cr3());
+	else
+		pmap_invlpg(vaddr);
 	while (invlpg_done_cnt != ncpus)
 		__asm__("pause");
 
@@ -584,7 +587,10 @@ pmap_global_invlpg(vaddr_t vaddr)
 void
 pmap_global_invlpg_cb(void)
 {
-	pmap_invlpg(invlpg_addr);
+	if (invlpg_addr == -1)
+		write_cr3(read_cr3());
+	else
+		pmap_invlpg(invlpg_addr);
 	atomic_fetch_add(&invlpg_done_cnt, 1);
 	return;
 }

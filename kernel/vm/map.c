@@ -171,6 +171,9 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			if (entry->object)
 				obj_direct_release(entry->object);
 
+			if (entry->has_anonymous)
+				vmp_amap_free(map, &entry->amap);
+
 			kmem_free(entry, sizeof(vm_map_entry_t));
 		} else if (entry->start >= start && entry->end <= end) {
 			kfatal("unimplemented deallocate right of vadt\n");
@@ -182,4 +185,11 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 	ke_mutex_release(&map->mutex);
 
 	return 0;
+}
+
+void
+vm_map_free(vm_map_t *map)
+{
+	int r = vm_map_deallocate(map, 0x0, USER_SIZE);
+	kassert(r == 0);
 }

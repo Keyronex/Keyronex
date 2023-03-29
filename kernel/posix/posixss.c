@@ -127,6 +127,7 @@ int
 psx_exit(int status)
 {
 	posix_proc_t *proc = px_curproc();
+	vm_map_t *map;
 
 	kassert(proc->eprocess->id != 1);
 
@@ -137,6 +138,11 @@ psx_exit(int status)
 	proc->exited = true;
 	ke_event_signal(&proc->parent->subproc_state_change);
 	px_release_proctree_mutex();
+
+	map = proc->eprocess->map;
+	proc->eprocess->map = kernel_process.map;
+	vm_map_activate(kernel_process.map);
+	vm_map_free(map);
 
 	ke_acquire_dispatcher_lock();
 	ke_curthread()->state = kThreadStateDone;

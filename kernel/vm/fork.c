@@ -140,6 +140,7 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 
 	/* try to force TLB clear */
 	vm_map_activate(map);
+	pmap_global_invlpg(-1);
 
 	ke_mutex_release(&map->mutex);
 

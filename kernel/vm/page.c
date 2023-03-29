@@ -154,15 +154,19 @@ vmp_page_alloc(vm_map_t *ps, bool must, enum vm_page_use use, vm_page_t **out)
 }
 
 void
-vmp_page_free(vm_map_t *ps, vm_page_t *page)
+vmp_page_free_locked(vm_map_t *map, vm_page_t *page)
 {
+	kassert(page->wirecnt == 0);
+
 	switch (page->use) {
 	case kPageUseAnonymous:
+		TAILQ_REMOVE(&vm_pagequeue_active, page, queue_entry);
 		vmstat.nanon--;
 		vmstat.nactive--;
 		break;
 
 	case kPageUseObject:
+		TAILQ_REMOVE(&vm_pagequeue_active, page, queue_entry);
 		vmstat.nobject--;
 		vmstat.nactive--;
 		break;
@@ -185,6 +189,14 @@ vmp_page_free(vm_map_t *ps, vm_page_t *page)
 
 	TAILQ_INSERT_HEAD(&free_list, page, queue_entry);
 	vmstat.nfree++;
+}
+
+void
+vmp_page_free(vm_map_t *map, vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+	vmp_page_free_locked(map, page);
+	vmp_release_pfn_lock(ipl);
 }
 
 void
