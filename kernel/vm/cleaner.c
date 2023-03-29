@@ -70,92 +70,89 @@ cleaner_loop(void *)
 
 	ke_timer_init(&timer);
 
-	while (true) {
-		ke_timer_set(&timer, NS_PER_S);
+loop:
+	ke_timer_set(&timer, NS_PER_S);
 
-		w = ke_wait(&timer, "vm_pagecleaner:timer", false, false, -1);
-		kassert(w == kKernWaitStatusOK);
+	w = ke_wait(&timer, "vm_pagecleaner:timer", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
 
-		/* aim to have cleaned all pages within 30s */
-		unsigned clean_target = MAX2(pgcleaner_stats.dirty / 30,
-		    (pgcleaner_stats.clean + pgcleaner_stats.dirty) / 60);
-		ipl_t ipl = vmp_acquire_pfn_lock();
+	/* aim to have cleaned all pages within 30s */
+	unsigned clean_target = MAX2(pgcleaner_stats.dirty / 30,
+	    (pgcleaner_stats.clean + pgcleaner_stats.dirty) / 60);
+	ipl_t ipl = vmp_acquire_pfn_lock();
 
 #if 0
-		kdprintf("Pagecleaner is awake!\n"
-			 "Clean: %u Dirty: %u\n"
-			 "Aim to clean: %u\n",
-		    pgcleaner_stats.clean, pgcleaner_stats.dirty, clean_target);
+	kdprintf("Pagecleaner is awake!\n"
+		 "Clean: %u Dirty: %u\n"
+		 "Aim to clean: %u\n",
+	    pgcleaner_stats.clean, pgcleaner_stats.dirty, clean_target);
 #endif
 
-		for (unsigned i = 0; i < clean_target; i++) {
-			struct vmp_objpage *opage;
-			int r;
-			bool dirty;
+	for (unsigned i = 0; i < clean_target; i++) {
+		struct vmp_objpage *opage;
+		int r;
+		bool dirty;
 
-			if (TAILQ_EMPTY(&dirty_queue)) {
-				kdprintf("Dirty queue empty!\n");
-				break;
-			}
-
-			opage = TAILQ_LAST(&dirty_queue,
-			    vmp_objpage_dirty_queue);
-
-			if (opage->page->wirecnt > 0) {
-				kdprintf("Page is wired\n") goto replace;
-			}
-
-			TAILQ_REMOVE(&dirty_queue, opage, dirtyqueue_entry);
-
-			r = page_trylock_owner(opage->page);
-			if (!r) {
-				kdprintf("Failed to lock owner!\n");
-			replace:
-				TAILQ_INSERT_TAIL(&dirty_queue, opage,
-				    dirtyqueue_entry);
-				continue;
-			}
-
-			dirty = pmap_pageable_undirty(opage->page);
-			if (!dirty) {
-				pgcleaner_stats.dirty--;
-				pgcleaner_stats.clean++;
-				TAILQ_INSERT_TAIL(&clean_queue, opage,
-				    dirtyqueue_entry);
-				page_unlock_owner(opage->page);
-				continue;
-			} else {
-				kdprintf("Page %lu is dirty\n",
-				    (uintptr_t)opage->page->pfn);
-
-				vnode_t *vnode;
-				vm_mdl_t *mdl;
-				vm_page_t *page = opage->page;
-
-				kassert(
-				    page->obj->objhdr.type == kObjTypeVNode);
-
-				opage->stat = kVMPObjPageCleaning;
-				page_unlock_owner(page);
-				vmp_release_pfn_lock(ipl);
-
-				vnode = (vnode_t *)page->obj;
-				mdl = vm_mdl_alloc(1);
-
-				mdl->pages[0] = page;
-				iop_t *iop = iop_new_write(vnode->vfsp->dev,
-				    mdl, PGSIZE, opage->page_index * PGSIZE);
-				iop->stack[0].vnode = vnode;
-
-				iop_return_t res = iop_send_sync(iop);
-				kassert(res == kIOPRetCompleted);
-
-				ipl = vmp_acquire_pfn_lock();
-			}
+		if (TAILQ_EMPTY(&dirty_queue)) {
+			break;
 		}
 
-		vmp_release_pfn_lock(ipl);
+		opage = TAILQ_LAST(&dirty_queue, vmp_objpage_dirty_queue);
+
+		if (opage->page->wirecnt > 0) {
+			kdprintf("Page is wired\n") goto replace;
+		}
+
+		TAILQ_REMOVE(&dirty_queue, opage, dirtyqueue_entry);
+
+		r = page_trylock_owner(opage->page);
+		if (!r) {
+			kdprintf("Failed to lock owner!\n");
+		replace:
+			TAILQ_INSERT_TAIL(&dirty_queue, opage,
+			    dirtyqueue_entry);
+			continue;
+		}
+
+		dirty = pmap_pageable_undirty(opage->page);
+		if (!dirty) {
+			pgcleaner_stats.dirty--;
+			pgcleaner_stats.clean++;
+			TAILQ_INSERT_TAIL(&clean_queue, opage,
+			    dirtyqueue_entry);
+			page_unlock_owner(opage->page);
+			continue;
+		} else {
+			kdprintf("Page %lu is dirty\n",
+			    (uintptr_t)opage->page->pfn);
+
+			vnode_t *vnode;
+			vm_mdl_t *mdl;
+			vm_page_t *page = opage->page;
+
+			kassert(page->obj->objhdr.type == kObjTypeVNode);
+
+			opage->stat = kVMPObjPageCleaning;
+			page_unlock_owner(page);
+			vmp_release_pfn_lock(ipl);
+
+			vnode = (vnode_t *)page->obj;
+			mdl = vm_mdl_alloc(1);
+
+			mdl->pages[0] = page;
+			iop_t *iop = iop_new_write(vnode->vfsp->dev, mdl,
+			    PGSIZE, opage->page_index * PGSIZE);
+			iop->stack[0].vnode = vnode;
+
+			iop_return_t res = iop_send_sync(iop);
+			kassert(res == kIOPRetCompleted);
+
+			ipl = vmp_acquire_pfn_lock();
+		}
 	}
+
+	vmp_release_pfn_lock(ipl);
+	goto loop;
 }
 
 void
