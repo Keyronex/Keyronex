@@ -69,6 +69,10 @@ vfs_lookup(vnode_t *cwd, vnode_t **out, const char *pathname,
 	size_t len = strlen(pathname);
 	int r;
 
+#if 0
+	kdprintf("VFS_LOOOKUP %s\n", pathname);
+#endif
+
 	if (pathname[0] == '/' || cwd == NULL) {
 		vn = root_vnode;
 		if (*(pathname + 1) == '\0') {

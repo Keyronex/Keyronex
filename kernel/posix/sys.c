@@ -350,8 +350,8 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 		kfatal("Should be unreachable!\n");
 	}
 
-	sb->st_size = vattr.size;
-	sb->st_blocks = vattr.size / 512;
+	sb->st_size = vn->size;
+	sb->st_blocks = vn->size / 512;
 	sb->st_blksize = 512;
 	sb->st_atim = vattr.atim;
 	sb->st_ctim = vattr.ctim;
@@ -455,7 +455,7 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	switch (frame->rax) {
 	case kPXSysDebug:
-		// kdprintf("<DEBUG>: %s\n", (char *)ARG1);
+		kdprintf("<DEBUG>: %s\n", (char *)ARG1);
 		syscon_printstats();
 		break;
 

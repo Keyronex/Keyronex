@@ -26,6 +26,9 @@ class VirtIOFSPort : VirtIODevice {
 	/*! Fuse unique ID counter. */
 	uint64_t fuse_unique = 0;
 
+	/*! Number of requests oustanding. */
+	uint64_t n_reqs_inflight = 0;
+
 	/*! a request either on the free or inflight list. */
 	struct viofs_request {
 		/*! linkage in inflight or free reqs list */

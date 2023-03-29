@@ -311,6 +311,8 @@ FuseFS::create(vnode_t *vn,vnode_t **out, const char *name,
 	io_fuse_request *req;
 	iop_t *iop;
 
+	/* todo: should actually be fuse_entry_out + fuse_open_out apparently */
+
 	create_in.mode = 0755;
 	create_in.open_flags = 0;
 	create_in.umask = 0;
@@ -331,6 +333,9 @@ FuseFS::create(vnode_t *vn,vnode_t **out, const char *name,
 
 	kassert(req->fuse_out_header.error == 0);
 
+	return lookup(vn, out, name);
+
+#if 0
 	res = self->findOrCreateNodePair(/*mode_to_vtype(entry_out.attr.mode)*/ VREG,
 	    entry_out.attr.size, entry_out.nodeid, node->inode);
 	if (!res) {
@@ -339,6 +344,7 @@ FuseFS::create(vnode_t *vn,vnode_t **out, const char *name,
 	}
 
 	*out = res->vnode;
+#endif
 
 	return 0;
 }
@@ -537,7 +543,7 @@ FuseFS::dispatchIOP(iop_t *iop)
 iop_return_t
 FuseFS::completeIOP(iop_t *iop)
 {
-	/* .... inspect the io_fuse_request in here somewhere .... */
+	/* .... todo: inspect the io_fuse_request in here somewhere .... */
 	return kIOPRetCompleted;
 }
 

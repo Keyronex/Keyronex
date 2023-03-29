@@ -69,9 +69,10 @@ VirtIOFSPort::VirtIOFSPort(PCIDevice *provider, pci_device_info &info)
 
 	size_t n_reqs = ROUNDUP(req_vq.length, 4) / 4;
 	req_array = (viofs_request *)kmem_alloc(sizeof(viofs_request) * n_reqs);
+	memset(req_array, 0x0, sizeof(viofs_request) * n_reqs);
 
 	for (size_t i = 0; i < n_reqs; i++) {
-		free_reqs.insert_tail(&req_array[i]);
+		free_reqs.insert_head(&req_array[i]);
 	}
 
 	attach(provider);
@@ -102,7 +103,10 @@ VirtIOFSPort::dispatchIOP(iop_t *iop)
 void
 VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 {
+	ipl_t ipl = ke_spinlock_acquire(&req_vq.spinlock);
 	viofs_request *vreq = free_reqs.remove_head();
+
+	ke_spinlock_release(&req_vq.spinlock, ipl);
 
 	/* number of descriptors required. Two for in-header and out-header. */
 	size_t ndescs = 2;
@@ -128,7 +132,7 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 	kassert(ndescs <= 14);
 
 	/* break this stuff off sometime soon! */
-	ipl_t ipl = ke_spinlock_acquire(&req_vq.spinlock);
+	ipl = ke_spinlock_acquire(&req_vq.spinlock);
 
 	for (uint16_t i = 0; i < ndescs; i++) {
 		descs[i] = allocateDescNumOnQueue(&req_vq);
@@ -209,11 +213,9 @@ VirtIOFSPort::enqueueFuseRequest(io_fuse_request *req)
 
 	vreq->pending = true;
 	in_flight_reqs.insert_head(vreq);
+	n_reqs_inflight++;
 
-	for (int i = 0; i < 1024; i++)
-		asm("pause");
-
-	// for (;;) ;
+	__sync_synchronize();
 
 	submitDescNumToQueue(&req_vq, descs[0]);
 	notifyQueue(&req_vq);
@@ -239,15 +241,26 @@ VirtIOFSPort::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 
 	iop_t *iop;
 	size_t ndescs = 0, bytes_out = 0;
+	size_t n_reqs = ROUNDUP(req_vq.length, 4) / 4;
 
+	for (size_t i = 0; i < n_reqs; i++) {
+		if (req_array[i].pending &&
+		    req_array[i].first_desc_id == e->id) {
+			vreq = &req_array[i];
+			n_reqs_inflight--;
+			break;
+		}
+	}
+#if 0
 	CXXSLIST_FOREACH(vreq, &in_flight_reqs, queue_entry)
 	{
 		if (vreq->first_desc_id == e->id)
 			break;
 	}
+#endif
 
 	if (!vreq || vreq->first_desc_id != e->id) {
-		// kfatal("viofs completion without a request\n");
+		kfatal("viofs completion without a request\n");
 		return;
 	}
 #if 0
@@ -279,7 +292,7 @@ VirtIOFSPort::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	kassert(ndescs == vreq->ndescs);
 
 	iop = vreq->fuse_req->iop;
-	free_reqs.insert_tail(vreq);
+	free_reqs.insert_head(vreq);
 
 	(void)bytes_out;
 
