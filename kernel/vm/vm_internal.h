@@ -24,6 +24,7 @@
 enum vmp_objpage_status {
 	kVMPObjPageDirty,
 	kVMPObjPageClean,
+	kVMPObjPageCleaning,
 };
 
 /*!

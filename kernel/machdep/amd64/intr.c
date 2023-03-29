@@ -140,12 +140,14 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		kfatal("Halting.\n");
 	}
 	ipl = splraise(ipl);
+	asm("sti");
 
 	TAILQ_FOREACH (entry, entries, queue_entry) {
 		bool r = entry->handler(frame, entry->arg);
 		(void)r;
 	}
 
+	asm("cli");
 out:
 	if (num >= 32) {
 		void lapic_eoi(void);

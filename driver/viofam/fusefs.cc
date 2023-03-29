@@ -218,6 +218,7 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 
 	node = new (kmem_general) fusefs_node;
 
+	node->have_pager_file_handle = false;
 	node->inode = fuse_ino;
 	node->vnode = new (kmem_general) vnode;
 	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
@@ -506,31 +507,54 @@ FuseFS::dispatchIOP(iop_t *iop)
 {
 	iop_frame_t *frame = iop_stack_current(iop), *next_frame;
 	io_fuse_request *req;
-	fuse_read_in *read_in;
 	fusefs_node *node = (fusefs_node *)frame->vnode->data;
 	int r;
+	int opcode;
+	union {
+		fuse_read_in *read;
+		fuse_write_in *write;
+	} in;
+	void *in_ptr;
+	size_t in_size;
+	uint64_t fh;
 
 	/*
 	 * The only IOPs for filesystems currently are pager in/out requests.
 	 */
 
-	kassert(frame->function == kIOPTypeRead);
 	next_frame = iop_stack_initialise_next(iop);
 
-	read_in = (fuse_read_in *)kmem_alloc(sizeof(fuse_read_in));
-	memset(read_in, 0x0, sizeof(fuse_read_in));
-	read_in->offset = frame->read.offset;
-	read_in->size = frame->read.bytes;
-
-	r = pagerFileHandle(node, read_in->fh);
+	r = pagerFileHandle(node, fh);
 	if (r != 0) {
 		DKDevLog(this, "Failed to get a pager I/O handle! Error %d\n",
 		    r);
 		return kIOPRetCompleted;
 	}
 
-	req = newFuseRequest(FUSE_READ, node->inode, 0, 0, 0, read_in, NULL,
-	    sizeof(fuse_read_in), NULL, frame->mdl, 0);
+	if (frame->function == kIOPTypeRead) {
+		opcode = FUSE_READ;
+		in.read = (fuse_read_in *)kmem_alloc(sizeof(fuse_read_in));
+		memset(in.read, 0x0, sizeof(fuse_read_in));
+		in.read->offset = frame->rw.offset;
+		in.read->size = frame->rw.bytes;
+		in.read->fh = fh;
+		in_ptr = in.read;
+		in_size = sizeof(fuse_read_in);
+	} else {
+		kassert(frame->function == kIOPTypeWrite);
+		opcode = FUSE_WRITE;
+		in.write = (fuse_write_in *)kmem_alloc(sizeof(fuse_write_in));
+		memset(in.write, 0x0, sizeof(fuse_write_in));
+		in.write->offset = frame->rw.offset;
+		in.write->size = frame->rw.bytes;
+		in.write->fh = fh;
+		in_ptr = in.write;
+		in_size = sizeof(fuse_write_in);
+	}
+
+	req = newFuseRequest(opcode, node->inode, 0, 0, 0, in_ptr,
+	    opcode == FUSE_READ ? NULL : frame->mdl, in_size, NULL,
+	    opcode == FUSE_READ ? frame->mdl : NULL, 0);
 	iop_frame_setup_ioctl(next_frame, kIOCTLFuseEnqueuRequest, req,
 	    sizeof(*req));
 	req->iop = iop;

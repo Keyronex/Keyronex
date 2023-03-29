@@ -267,14 +267,14 @@ VirtIODisk::tryStartPackets()
 		frame = iop_stack_current(iop);
 
 		kassert(frame->function == kIOPTypeRead);
-		kassert(frame->read.bytes <= PGSIZE ||
-		    frame->read.bytes % PGSIZE == 0);
-		kassert(frame->read.bytes < PGSIZE * 4);
-		ndescs = 2 + frame->read.bytes / 512;
+		kassert(frame->rw.bytes <= PGSIZE ||
+		    frame->rw.bytes % PGSIZE == 0);
+		kassert(frame->rw.bytes < PGSIZE * 4);
+		ndescs = 2 + frame->rw.bytes / 512;
 
 		if (ndescs <= io_queue.nfree_descs)
-			commonRequest(VIRTIO_BLK_T_IN, frame->read.bytes / 512,
-			    frame->read.offset / 512, frame->mdl, iop);
+			commonRequest(VIRTIO_BLK_T_IN, frame->rw.bytes / 512,
+			    frame->rw.offset / 512, frame->mdl, iop);
 		else
 			break;
 	}

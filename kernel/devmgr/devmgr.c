@@ -75,8 +75,22 @@ iop_new_read(device_t *dev, vm_mdl_t *mdl, size_t size, io_off_t off)
 	iop->stack[0].dev = dev;
 	iop->stack[0].function = kIOPTypeRead;
 	iop->stack[0].mdl = mdl;
-	iop->stack[0].read.bytes = size;
-	iop->stack[0].read.offset = off;
+	iop->stack[0].rw.bytes = size;
+	iop->stack[0].rw.offset = off;
+
+	return iop;
+}
+
+iop_t *
+iop_new_write(device_t *dev, vm_mdl_t *mdl, size_t size, io_off_t off)
+{
+	iop_t *iop = iop_new(dev);
+
+	iop->stack[0].dev = dev;
+	iop->stack[0].function = kIOPTypeWrite;
+	iop->stack[0].mdl = mdl;
+	iop->stack[0].rw.bytes = size;
+	iop->stack[0].rw.offset = off;
 
 	return iop;
 }

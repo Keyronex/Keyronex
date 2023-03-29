@@ -93,7 +93,7 @@ enum vm_page_status {
 	kPageStatusActive,
 	/*! The page is on the inactive LRU queue. */
 	kPageStatusInactive,
-	/*! The page is being moved to/from memory. */
+	/*! The page is being moved into/out of memory. */
 	kPageStatusBusy,
 };
 

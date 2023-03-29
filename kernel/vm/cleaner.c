@@ -3,8 +3,11 @@
  * Created on Wed Mar 29 2023.
  */
 
+#include "kdk/devmgr.h"
 #include "kdk/kernel.h"
+#include "kdk/objhdr.h"
 #include "kdk/process.h"
+#include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
@@ -78,9 +81,12 @@ cleaner_loop(void *)
 		    (pgcleaner_stats.clean + pgcleaner_stats.dirty) / 60);
 		ipl_t ipl = vmp_acquire_pfn_lock();
 
-		kdprintf(
-		    "Pagecleaner is awake!\nClean: %u Dirty: %u\nAim to clean: %u\n",
+#if 0
+		kdprintf("Pagecleaner is awake!\n"
+			 "Clean: %u Dirty: %u\n"
+			 "Aim to clean: %u\n",
 		    pgcleaner_stats.clean, pgcleaner_stats.dirty, clean_target);
+#endif
 
 		for (unsigned i = 0; i < clean_target; i++) {
 			struct vmp_objpage *opage;
@@ -121,7 +127,30 @@ cleaner_loop(void *)
 			} else {
 				kdprintf("Page %lu is dirty\n",
 				    (uintptr_t)opage->page->pfn);
-				page_unlock_owner(opage->page);
+
+				vnode_t *vnode;
+				vm_mdl_t *mdl;
+				vm_page_t *page = opage->page;
+
+				kassert(
+				    page->obj->objhdr.type == kObjTypeVNode);
+
+				opage->stat = kVMPObjPageCleaning;
+				page_unlock_owner(page);
+				vmp_release_pfn_lock(ipl);
+
+				vnode = (vnode_t *)page->obj;
+				mdl = vm_mdl_alloc(1);
+
+				mdl->pages[0] = page;
+				iop_t *iop = iop_new_write(vnode->vfsp->dev,
+				    mdl, PGSIZE, opage->page_index * PGSIZE);
+				iop->stack[0].vnode = vnode;
+
+				iop_return_t res = iop_send_sync(iop);
+				kassert(res == kIOPRetCompleted);
+
+				ipl = vmp_acquire_pfn_lock();
 			}
 		}
 

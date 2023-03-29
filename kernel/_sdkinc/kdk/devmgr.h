@@ -40,6 +40,7 @@ typedef enum iop_return {
  */
 typedef enum iop_function {
 	kIOPTypeRead,
+	kIOPTypeWrite,
 	kIOPTypeIOCtl,
 	kIOPTypeMount,
 } iop_function_t;
@@ -53,8 +54,8 @@ typedef enum iop_ioctl {
 	kIOCTLFuseEnqueuRequest
 } iop_ioctl_t;
 
-/*! For kIOPTypeRead. */
-struct iop_stack_data_read {
+/*! For kIOPTypeRead/kIOPTypeWrite. */
+struct iop_stack_data_rw {
 	/*! Number of bytes to read. */
 	size_t bytes;
 	/*! Byte offset in file at which to read. */
@@ -96,7 +97,7 @@ typedef struct iop_frame {
 	};
 	/*! Union of different types. */
 	union {
-		struct iop_stack_data_read read;
+		struct iop_stack_data_rw rw;
 		struct iop_stack_data_ioctl ioctl;
 	};
 } iop_frame_t;
@@ -215,6 +216,15 @@ iop_t *iop_new_ioctl(device_t *dev, iop_ioctl_t ioctl, vm_mdl_t *mdl,
  * @param size Size in bytes to read.
  */
 iop_t *iop_new_read(device_t *dev, vm_mdl_t *mdl, size_t size, io_off_t off);
+
+/*!
+ * @brief Allocate & set up a write IOP.
+ *
+ * @param dev Device the IOP is to be sent to.
+ * @param mdl MDL for the output buffer.
+ * @param size Size in bytes to read.
+ */
+iop_t *iop_new_write(device_t *dev, vm_mdl_t *mdl, size_t size, io_off_t off);
 
 /*! @brief Send and await completion of an IOP. */
 iop_return_t iop_send_sync(iop_t *iop);
