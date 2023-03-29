@@ -140,11 +140,18 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		kfatal("Halting.\n");
 	}
 	ipl = splraise(ipl);
-	asm("sti");
 
-	TAILQ_FOREACH (entry, entries, queue_entry) {
-		bool r = entry->handler(frame, entry->arg);
-		(void)r;
+	if (num == 14) {
+		void *arg = (void *)read_cr2();
+		/* we need cr2 *before* we go to the page fault */
+		asm("sti");
+		page_fault(frame, arg);
+	} else {
+		asm("sti");
+		TAILQ_FOREACH (entry, entries, queue_entry) {
+			bool r = entry->handler(frame, entry->arg);
+			(void)r;
+		}
 	}
 
 	asm("cli");
@@ -169,7 +176,7 @@ static bool
 page_fault(hl_intr_frame_t *frame, void *arg)
 {
 	vm_fault_return_t ret;
-	vaddr_t vaddr = read_cr2() & ~(PGSIZE - 1);
+	vaddr_t vaddr = (uintptr_t)arg & ~(PGSIZE - 1);
 	ethread_t *thr = ps_curthread();
 
 	while (true) {

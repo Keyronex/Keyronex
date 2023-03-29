@@ -499,7 +499,8 @@ vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t **out)
 
 	if (vaddr >= HHDM_BASE) {
 		if (flags & kVMFaultUser) {
-			kfatal("User fault in kernel space.\n");
+			kdprintf("User fault in kernel space.\n");
+			return kVMFaultRetFailure;
 		}
 		map = kernel_process.map;
 	}
