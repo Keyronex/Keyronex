@@ -50,6 +50,9 @@ ki_dpc_int_dispatch(void)
 				TAILQ_REMOVE(&cpu->dpc_queue, dpc, queue_entry);
 			}
 
+			if (dpc != NULL)
+				dpc->state = kDPCRunning;
+
 			ke_release_dpc_lock(hiipl);
 
 			if (dpc == NULL)
@@ -164,7 +167,9 @@ ke_dpc_enqueue(kdpc_t *dpc)
 	}
 
 	ipl_t ipl = ke_acquire_dpc_lock();
-	TAILQ_INSERT_TAIL(&hl_curcpu()->dpc_queue, dpc, queue_entry);
-	ki_raise_dpc_interrupt();
+	if (dpc->state != kDPCBound) {
+		TAILQ_INSERT_TAIL(&hl_curcpu()->dpc_queue, dpc, queue_entry);
+		ki_raise_dpc_interrupt();
+	}
 	ke_release_dpc_lock(ipl);
 }
