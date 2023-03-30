@@ -168,6 +168,7 @@ ke_dpc_enqueue(kdpc_t *dpc)
 
 	ipl_t ipl = ke_acquire_dpc_lock();
 	if (dpc->state != kDPCBound) {
+		dpc->state = kDPCBound;
 		TAILQ_INSERT_TAIL(&hl_curcpu()->dpc_queue, dpc, queue_entry);
 		ki_raise_dpc_interrupt();
 	}
