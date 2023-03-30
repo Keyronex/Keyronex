@@ -3,6 +3,7 @@
  * Created on Fri Feb 17 2023.
  */
 
+#include "abi-bits/errno.h"
 #include "kdk/amd64/vmamd64.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
@@ -84,6 +85,12 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	kwaitstatus_t w;
 	vm_map_entry_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
+
+	if (addr % PGSIZE != 0) {
+		return -EINVAL;
+	} else if (size % PGSIZE != 0) {
+		return -EINVAL;
+	}
 
 	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);

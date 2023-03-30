@@ -114,7 +114,7 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 			int r;
 
 			r = vm_map_object(map_new, vad->object, &vaddr,
-			    vad->end - vad->start - 1, vad->offset,
+			    vad->end - vad->start, vad->offset,
 			    vad->protection, vad->max_protection,
 			    vad->inheritance, true, true);
 			kassert(r == 0 && vaddr == vad->start);

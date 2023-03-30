@@ -45,6 +45,8 @@ vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 	else if (PGROUNDDOWN(offset) != offset)
 		return (void *)-EINVAL;
 
+	len = PGROUNDUP(len);
+
 	if (!(flags & MAP_ANON)) {
 		struct file *file;
 		vm_protection_t vmprot = 0;

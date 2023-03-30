@@ -433,8 +433,8 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 void
 pmap_unenter_pageable_range(vm_map_t *map, vaddr_t vaddr, vaddr_t end)
 {
-	for (; vaddr != end; vaddr += PGSIZE) {
-		pmap_unenter_pageable(map, NULL, vaddr);
+	for (vaddr_t addr = vaddr; addr != end; addr += PGSIZE) {
+		pmap_unenter_pageable(map, NULL, addr);
 	}
 }
 void
