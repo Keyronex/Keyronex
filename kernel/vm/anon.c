@@ -11,7 +11,7 @@
 #include "vm/vm_internal.h"
 
 int
-vmp_anon_release(vm_map_t *map, struct vmp_anon *anon)
+vmp_anon_release(vm_map_t *map, struct vmp_anon *anon, bool mutex_held)
 {
 	/* TODO(swap): think about how whether this may race with pagedaemon */
 	if (--anon->refcnt == 0) {
@@ -21,9 +21,15 @@ vmp_anon_release(vm_map_t *map, struct vmp_anon *anon)
 		} else {
 			kfatal("Unhandled\n");
 		}
+		if (mutex_held)
+			ke_mutex_release(&anon->mutex);
+		kmem_free(anon, sizeof(*anon));
+		return 0;
 	}
 
-	kmem_free(anon, sizeof(*anon));
+	if (mutex_held)
+		ke_mutex_release(&anon->mutex);
+
 	return 0;
 }
 
@@ -46,21 +52,19 @@ vmp_amap_free(vm_map_t *map, struct vm_amap *amap)
 		struct vmp_amap_l2 *l2 = amap->l3->entries[i];
 		vm_page_t *l2_page = vmp_paddr_to_page((paddr_t)V2P(l2));
 
-		/* copy the l1s of this l2 */
-		for (int i = 0; i < elementsof(l2->entries); i++) {
-			if (l2->entries[i] == NULL)
+		for (int i2 = 0; i2 < elementsof(l2->entries); i2++) {
+			if (l2->entries[i2] == NULL)
 				continue;
 
-			struct vmp_amap_l1 *l1 = l2->entries[i];
+			struct vmp_amap_l1 *l1 = l2->entries[i2];
 			vm_page_t *l1_page = vmp_paddr_to_page(
 			    (paddr_t)V2P(l1));
 
-			/* increment the anons' refcnts */
-			for (int i = 0; i < elementsof(l1->entries); i++) {
-				if (l1->entries[i] == NULL)
+			for (int i3 = 0; i3 < elementsof(l1->entries); i3++) {
+				if (l1->entries[i3] == NULL)
 					continue;
-				vmp_anon_release(map, l1->entries[i]);
-				l1->entries[i] = (void *)0xDEADBEEF;
+				vmp_anon_release(map, l1->entries[i3], false);
+				l1->entries[i3] = (void *)0xDEADBEEF;
 			}
 
 			vm_page_unwire(l1_page);

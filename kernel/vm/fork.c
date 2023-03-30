@@ -53,13 +53,10 @@ vmp_amap_copy(vm_map_t *map_from, vm_map_t *map_to, struct vm_amap *from_amap,
 			to_l1 = to_l2->entries[i] = VM_PAGE_DIRECT_MAP_ADDR(
 			    page);
 
-			/* todo: read-only-ify the range */
-
 			/* increment the anons' refcnts */
 			for (int i = 0; i < elementsof(from_l1->entries); i++) {
 				if (from_l1->entries[i] == NULL)
 					continue;
-
 				__atomic_add_fetch(&from_l1->entries[i]->refcnt,
 				    1, __ATOMIC_SEQ_CST);
 			}
@@ -114,9 +111,8 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 			int r;
 
 			r = vm_map_object(map_new, vad->object, &vaddr,
-			    vad->end - vad->start, vad->offset,
-			    vad->protection, vad->max_protection,
-			    vad->inheritance, true, true);
+			    vad->end - vad->start, vad->offset, vad->protection,
+			    vad->max_protection, vad->inheritance, true, true);
 			kassert(r == 0 && vaddr == vad->start);
 
 			entry_new = vmp_map_find(map_new, vad->start);

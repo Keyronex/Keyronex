@@ -126,9 +126,7 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 		vad->object = object;
 		vad->has_anonymous = false;
 	} else {
-#if 0
-		kassert(!copy);
-#endif
+		/* n.b.: the actual copy is handled outwith this subroutine! */
 		vad->object = NULL;
 		vad->has_anonymous = true;
 		vmp_amap_init(map, &vad->amap);
@@ -197,6 +195,7 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 void
 vm_map_free(vm_map_t *map)
 {
-	int r = vm_map_deallocate(map, 0x0, USER_SIZE);
+	int r = vm_map_deallocate(map, 0x0, USER_BASE + USER_SIZE);
+	kassert(RB_EMPTY(&map->entry_queue));
 	kassert(r == 0);
 }

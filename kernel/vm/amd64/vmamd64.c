@@ -403,7 +403,8 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 			LIST_FOREACH_SAFE (pve, &page->pv_list, list_entry,
 			    tmp) {
 				if (pve->map == map && pve->vaddr == virt) {
-					kassert(!found) found = true;
+					kassert(!found);
+					found = true;
 					LIST_REMOVE(pve, list_entry);
 				}
 			}

@@ -180,9 +180,7 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 
 				/* unmap any old entry */
 				pmap_unenter_pageable(map, NULL, vaddr);
-				anon->refcnt--;
-
-				ke_mutex_release(&anon->mutex);
+				vmp_anon_release(map, anon, true);
 
 				/* replace the amap entry with the new anon */
 				anon = new_anon;

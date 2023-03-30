@@ -149,6 +149,9 @@ int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);
 /*! @brief Free an amap. */
 int vmp_amap_free(vm_map_t *map, struct vm_amap *amap);
 
+/*! @brief Release a reference to an anon, optionally releasing held mutex. */
+int vmp_anon_release(vm_map_t *map, struct vmp_anon *anon, bool mutex_held);
+
 /*! @brief Dump all entries in a map. */
 void vmp_map_dump(vm_map_t *map);
 

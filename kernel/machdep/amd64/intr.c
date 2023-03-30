@@ -88,6 +88,14 @@ idt_setup(void)
 
 #define DEBUG_SCHED 0
 
+static void hang_until_told(void)
+{
+	volatile bool leave = false;
+	while (!leave)
+			;
+}
+
+
 void
 handle_int(hl_intr_frame_t *frame, uintptr_t num)
 {
@@ -137,7 +145,9 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		    "IPL not less or equal (running at %d, interrupt priority %d)\n",
 		    num, read_cr2(), splget(), ipl);
 		md_intr_frame_trace(frame);
-		kfatal("Halting.\n");
+		hang_until_told();
+		goto out;
+
 	}
 	ipl = splraise(ipl);
 
@@ -199,7 +209,6 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 
 		case kVMFaultRetFailure:
 			md_intr_frame_trace(frame);
-			volatile bool leave = false;
 
 			if (frame->cs & 0x3)
 				kdprintf(
@@ -207,8 +216,8 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 				    ps_curproc()->id);
 			kdprintf("vm_fault failed");
 
-			while (!leave)
-				;
+			hang_until_told();
+			break;
 
 		case kVMFaultRetPageShortage:
 			kfatal("path unimplemented\n");

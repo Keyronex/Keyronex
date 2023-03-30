@@ -245,7 +245,7 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	r = copyout_args(&pkg, (const char **)argp, (const char **)envp);
 	kassert(r == 0);
 
-	// vm_map_release(oldmap);
+	vm_map_free(oldmap);
 	// thread->stack = stack;
 
 	/* todo(low): separate this machine-dependent stuff */
@@ -255,12 +255,11 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	frame->cs = 0x38 | 0x3;
 	frame->ss = 0x40 | 0x3;
 	frame->rflags = 0x202;
-
 	r = 0;
 
 	if (r != 0) {
-		kfatal("Failuer!\n");
 	fail:
+		kfatal("Failuer!\n");
 		vm_map_activate(oldmap);
 		proc->eprocess->map = oldmap;
 	}
