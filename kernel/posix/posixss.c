@@ -39,6 +39,8 @@ int posix_do_openat(vnode_t *dvn, const char *path, int mode);
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
 kmutex_t px_proctree_mutex;
+static TAILQ_HEAD(, posix_proc) psx_allprocs = TAILQ_HEAD_INITIALIZER(
+    psx_allprocs);
 
 static void
 fork_init(void *unused)
@@ -73,6 +75,8 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 
 	if (parent_proc)
 		LIST_INSERT_HEAD(&parent_proc->subprocs, proc, subprocs_link);
+
+	TAILQ_INSERT_TAIL(&psx_allprocs, proc, allprocs_link);
 
 	proc->exited = false;
 	proc->wait_stat = 0;
@@ -126,7 +130,7 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 int
 psx_exit(int status)
 {
-	posix_proc_t *proc = px_curproc();
+	posix_proc_t *proc = px_curproc(), *subproc, *tmp;
 	vm_map_t *map;
 
 	kassert(proc->eprocess->id != 1);
@@ -134,6 +138,18 @@ psx_exit(int status)
 	/* todo: multithread support */
 
 	px_acquire_proctree_mutex();
+
+	LIST_FOREACH_SAFE (subproc, &proc->subprocs, subprocs_link, tmp) {
+		kdprintf("warning: Subproc %u is still around!!\n",
+		    subproc->eprocess->id);
+		/* re-parent processes logic goes here */
+	}
+
+#if 0
+	kdprintf("Proc %d (parent %d) - exits\n", proc->eprocess->id,
+	    proc->parent->eprocess->id);
+#endif
+
 	proc->wait_stat = W_EXITCODE(status, 0);
 	proc->exited = true;
 	ke_event_signal(&proc->parent->subproc_state_change);
@@ -158,11 +174,17 @@ psx_waitpid(pid_t pid, int *status, int flags)
 	kwaitstatus_t w;
 	int r = 0;
 
+#if 0
+	kdprintf("Proc %u wants to watch on %d, flags %x\n", proc->eprocess->id,
+	    pid, flags);
+#endif
+
 	kassert((flags & WNOHANG) == 0);
 	kassert((flags & WNOWAIT) == 0);
 
-	//kassert(pid == 0 || pid == -1);
+	// kassert(pid == 0 || pid == -1);
 
+dowait:
 	w = ke_wait(&proc->subproc_state_change,
 	    "psx_waitpid:subproc_state_change", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
@@ -173,13 +195,21 @@ psx_waitpid(pid_t pid, int *status, int flags)
 			*status = subproc->wait_stat;
 			r = subproc->eprocess->id;
 			LIST_REMOVE(subproc, subprocs_link);
+			TAILQ_REMOVE(&psx_allprocs, subproc, allprocs_link);
 			/* free the process stucture */
 			break;
 		}
 	}
 
-	if (r == 0)
+	if (r == 0) {
+#if 0
+		kdprintf("Proc %d: Nothing doing, go back to sleep.\n",
+		    proc->eprocess->id);
+#endif
 		ke_event_clear(&proc->subproc_state_change);
+		px_release_proctree_mutex();
+		goto dowait;
+	}
 
 	px_release_proctree_mutex();
 
@@ -191,7 +221,6 @@ psx_init(void)
 {
 	int r;
 
-#if 1
 	ke_mutex_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
@@ -205,7 +234,23 @@ psx_init(void)
 	kdprintf("Launch POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);
 	kassert(r == 0);
-#endif
 
 	return 0;
+}
+
+void dbg_dump_proc_threads(eprocess_t *eproc);
+
+void
+dbg_psx_dump_all_procs(void)
+{
+	posix_proc_t *proc;
+
+	TAILQ_FOREACH (proc, &psx_allprocs, allprocs_link) {
+		kdprintf("Proc %d:\n", proc->eprocess->id);
+		if (proc->exited) {
+			kdprintf(" Exited, status %d.\n", proc->wait_stat);
+		} else {
+			dbg_dump_proc_threads(proc->eprocess);
+		}
+	}
 }

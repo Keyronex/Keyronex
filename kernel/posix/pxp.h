@@ -29,6 +29,8 @@ typedef struct posix_proc {
 	LIST_HEAD(, posix_proc) subprocs;
 	/*! (p) parent->subprocs linkage */
 	LIST_ENTRY(posix_proc) subprocs_link;
+	/*! (p) psx_allprocs link */
+	TAILQ_ENTRY(posix_proc) allprocs_link;
 
 	/*! (p) has it exited? */
 	bool exited;

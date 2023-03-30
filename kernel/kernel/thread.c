@@ -80,18 +80,21 @@ ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name,
 	return 0;
 }
 
-int ke_process_init(kprocess_t *kproc) {
+int
+ke_process_init(kprocess_t *kproc)
+{
 	SLIST_INIT(&kproc->threads);
 	ke_spinlock_init(&kproc->lock);
 	return 0;
 }
 
 void
-dbg_dump_threads(void)
+dbg_dump_proc_threads(eprocess_t *eproc)
 {
 	kthread_t *thr;
-	SLIST_FOREACH (thr, &kernel_process.kproc.threads, kproc_threads_link) {
-		kdprintf("thread %s <%p>: ", thr->name, thr);
+	SLIST_FOREACH (thr, &eproc->kproc.threads, kproc_threads_link) {
+		kdprintf("thread %s <%p>: ",
+		    thr->name == NULL ? "unnamed" : thr->name, thr);
 		if (thr->state == kThreadStateWaiting) {
 			kdprintf("waiting (%s)", thr->wait_reason);
 		} else
@@ -101,11 +104,18 @@ dbg_dump_threads(void)
 }
 
 void
+dbg_dump_threads(void)
+{
+	dbg_dump_proc_threads(&kernel_process);
+}
+
+void
 dbg_trace_threads(void)
 {
 	kthread_t *thr;
 	SLIST_FOREACH (thr, &kernel_process.kproc.threads, kproc_threads_link) {
-		kdprintf("thread %s <%p>: \n", thr->name, thr);
+		kdprintf("thread %s <%p>: \n",
+		    thr->name == NULL ? "unnamed" : thr->name, thr);
 		md_intr_frame_trace(&thr->frame);
 	}
 }

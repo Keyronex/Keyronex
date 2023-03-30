@@ -118,7 +118,7 @@ typedef struct vm_page {
 	/*! (o+sometimes q) What is its status, if use is anonymous/object? */
 	enum vm_page_status status : 2;
 	/*! (q) Is the page dirty? */
-	bool dirty: 1;
+	bool dirty : 1;
 	/* Padding */
 	uint8_t padding : 2;
 	/*!
