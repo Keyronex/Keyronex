@@ -69,7 +69,7 @@ VirtIO9PPort::dispatchIOP(iop_t *iop)
 	iop_frame_t *frame = iop_stack_current(iop);
 
 	kassert(frame->function == kIOPTypeIOCtl);
-	kassert(frame->ioctl.type == kIOCTLFuseEnqueuRequest);
+	kassert(frame->ioctl.type == kIOCTL9PEnqueueRequest);
 
 	enqueue9PRequest((io_9p_request *)frame->kbuf);
 
@@ -84,7 +84,92 @@ VirtIO9PPort::enqueue9PRequest(io_9p_request *req)
 
 	ke_spinlock_release(&req_vq.spinlock, ipl);
 
-	kfatal("unimplemented\n");
+	/* number of descriptors required. Two for in-header and out-header. */
+	size_t ndescs = 2;
+	/* descriptors allocated for req */
+	uint16_t descs[14];
+	/* descriptor iterator */
+	size_t di = 0;
+
+	if (req->mdl_in) {
+		ndescs += req->mdl_in->npages;
+	}
+
+	if (req->mdl_out) {
+		ndescs += req->mdl_out->npages;
+	}
+
+	kassert(ndescs <= 14);
+
+	/* break this stuff off sometime soon! */
+	ipl = ke_spinlock_acquire(&req_vq.spinlock);
+
+	for (uint16_t i = 0; i < ndescs; i++) {
+		descs[i] = allocateDescNumOnQueue(&req_vq);
+	}
+
+	vreq->_9p_req = req;
+	vreq->ndescs = ndescs;
+	vreq->first_desc_id = descs[0];
+
+#if 0
+	kdprintf("vreq %p assigned desc id %d\n", vreq, descs[0]);
+#endif
+
+	/* set the next desc, if there is a next */
+#define SET_NEXT()                                                 \
+	if (di + 1 < ndescs) {                                     \
+		req_vq.desc[descs[di]].flags |= VRING_DESC_F_NEXT; \
+		req_vq.desc[descs[di]].next = descs[di + 1];       \
+	}
+
+	/*! the fuse in-header always goes in */
+	req_vq.desc[descs[di]].addr = vm_translate((vaddr_t)req->ptr_in);
+	req_vq.desc[descs[di]].len = req->ptr_in->size;
+	req_vq.desc[descs[di]].flags = 0;
+	SET_NEXT();
+	di++;
+
+	if (req->mdl_in) {
+		/* kassert(!req->mdl->offset) */
+		for (size_t i = 0; i < req->mdl_in->npages; i++) {
+			req_vq.desc[descs[di]].addr = vm_mdl_paddr(req->mdl_in,
+			    i * PGSIZE);
+			req_vq.desc[descs[di]].len = PGSIZE;
+			req_vq.desc[descs[di]].flags = 0;
+			SET_NEXT();
+			di++;
+		}
+	}
+
+	/*! the fuse_out_header */
+	req_vq.desc[descs[di]].addr = vm_translate((vaddr_t)req->ptr_out);
+	req_vq.desc[descs[di]].len = req->ptr_out->size;
+	req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
+	SET_NEXT();
+	di++;
+
+	if (req->mdl_out) {
+		/* kassert(!req->mdl->offset) */
+		for (size_t i = 0; i < req->mdl_out->npages; i++) {
+			req_vq.desc[descs[di]].addr = vm_mdl_paddr(req->mdl_out,
+			    i * PGSIZE);
+			req_vq.desc[descs[di]].len = PGSIZE;
+			req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
+			SET_NEXT();
+			di++;
+		}
+	}
+
+	in_flight_reqs.insert_head(vreq);
+	n_reqs_inflight++;
+
+	__sync_synchronize();
+
+	submitDescNumToQueue(&req_vq, descs[0]);
+	notifyQueue(&req_vq);
+
+	ke_spinlock_release(&req_vq.spinlock, ipl);
 }
 
 void

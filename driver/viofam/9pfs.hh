@@ -11,6 +11,16 @@
 #include "../mdf/mdfdev.hh"
 #include "bsdqueue/slist.hh"
 
+enum ninep_kind {
+	k9pVersion = 100,
+};
+
+struct ninep_hdr {
+	uint32_t size;
+	uint8_t kind;
+	uint16_t tag;
+} __attribute__((packed));
+
 /*!
  * A generic 9P request.
  */
@@ -20,6 +30,16 @@ struct io_9p_request {
 
 	/*! IOP with which request is associated */
 	iop_t *iop;
+
+	/*! request in pointer - points to specific in-request */
+	struct ninep_hdr *ptr_in;
+	/* input mdl, if there is other data to be given */
+	vm_mdl_t *mdl_in;
+
+	/*! request out pointer - points to specific out-request */
+	struct ninep_hdr *ptr_out;
+	/* output mdl, if there is other data to be gotten */
+	vm_mdl_t *mdl_out;
 
 	/*! data for lower level */
 	uint64_t lower_data;
@@ -80,12 +100,10 @@ class NinePFS : public Device {
 	 * only.
 	 */
 	int pagerFileHandle(ninepfs_node *node, uint64_t &handle_out);
-
-	io_9p_request *newFuseRequest(uint32_t opcode, uint64_t nodeid,
-	    uint32_t uid, uint32_t gid, uint32_t pid, void *ptr_in,
-	    vm_mdl_t *mdl_in, size_t ptr_in_size, void *ptr_out,
-	    vm_mdl_t *mdl_out, size_t ptr_out_size);
 #endif
+
+	io_9p_request *new9pRequest(ninep_hdr *hdr_in, vm_mdl_t *mdl_in,
+	    ninep_hdr *hdr_out, vm_mdl_t *mdl_out);
 
     public:
 	NinePFS(device_t *provider, vfs_t *vfs);
