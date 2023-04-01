@@ -10,6 +10,7 @@
 #include "../viofam/viodisk.hh"
 #include "../viofam/viofsprt.hh"
 #include "../viofam/vionet.hh"
+#include "../viofam/vio9pprt.hh"
 #include "pcibus.hh"
 
 enum {
@@ -67,6 +68,8 @@ PCIDevice::PCIDevice(PCIBus *provider, pci_device_info &info)
 		new (kmem_general) VirtIOFSPort(this, info);
 	} else if (info.vendorId == 0x1af4 && info.deviceId == 0x1000) {
 		new(kmem_general) VirtIONIC (this, info);
+	} else if (info.vendorId == 0x1af4 && info.deviceId == 0x1009) {
+		new(kmem_general) VirtIO9PPort(this, info);
 	}
 }
 

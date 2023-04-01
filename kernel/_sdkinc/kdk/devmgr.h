@@ -51,7 +51,12 @@ typedef enum iop_ioctl {
 	/*!
 	 * Enqueue FUSE request. iop_frame::kbuf will point to io_fuse_request.
 	 */
-	kIOCTLFuseEnqueuRequest
+	kIOCTLFuseEnqueuRequest,
+
+	/*!
+	 * Enqueue 9P request. iop_frame::kbuf points to io_9p_request.
+	 */
+	kIOCTL9PEnqueueRequest,
 } iop_ioctl_t;
 
 /*! For kIOPTypeRead/kIOPTypeWrite. */

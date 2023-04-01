@@ -8,4 +8,5 @@ subdir('ps2')
 subdir('viofam')
 subdir('volmgr')
 
-drivers += [ mdfdev, acpipc, fbcons, pcibus, viodisk, viofsprt, vionet, volmgr ]
+drivers += [ mdfdev, acpipc, fbcons, pcibus, viodisk, viofsprt, vionet, volmgr,
+	vio9pprt ]
