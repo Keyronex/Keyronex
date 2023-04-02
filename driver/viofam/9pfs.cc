@@ -22,7 +22,7 @@ struct ninepfs_node {
 
 	bool has_paging_fid;
 
-	/*! 9p Qid. ninep_qid::version is the unique identifier. */
+	/*! 9p Qid. ninep_qid::path is the unique identifier. */
 	struct ninep_qid qid;
 	/*! 9p main Fid. */
 	ninep_fid_t fid;
@@ -34,7 +34,6 @@ static int64_t
 node_cmp(struct ninepfs_node *x, struct ninepfs_node *y)
 {
 	return x->qid.path - y->qid.path;
-	return 0;
 }
 
 static uint64_t sequence_num = 0;
@@ -48,6 +47,7 @@ NinePFS::NinePFS(device_t *provider, vfs_t *vfs)
 {
 	ke_spinlock_init(&fid_lock);
 	ke_mutex_init(&nodecache_mutex);
+	RB_INIT(&node_rbt);
 
 	kmem_asprintf(&objhdr.name, "9pfs%d", sequence_num++);
 	attach(provider);
@@ -59,10 +59,6 @@ NinePFS::NinePFS(device_t *provider, vfs_t *vfs)
 	vfs->ops = &vfsops;
 	vfs->data = (uintptr_t)this;
 	vfs->dev = this;
-
-#if 0
-	root_node = findOrCreateNodePair(VDIR, 0, FUSE_ROOT_ID, FUSE_ROOT_ID);
-#endif
 }
 
 io_9p_request *
@@ -73,17 +69,19 @@ NinePFS::new9pRequest(struct ninep_buf *buf_in, vm_mdl_t *mdl_in,
 	memset(req, 0x0, sizeof(*req));
 
 	req->ptr_in = buf_in;
+	req->mdl_in = mdl_in;
 
 	if (mdl_in) {
-		req->mdl_in = mdl_in;
+		/* adjusting this is our responsibility */
 		req->ptr_in->data->size += PGSIZE * mdl_in->npages;
 	}
 
 	req->ptr_out = buf_out;
 
-	if (mdl_out) {
-		req->mdl_out = mdl_out;
-	}
+	/* adjusting the output is the port driver's responsibility */
+	req->mdl_out = mdl_out;
+
+	req->pending = true;
 
 	return req;
 }
@@ -137,6 +135,7 @@ NinePFS::doAttach()
 	iop_t *iop;
 	io_9p_request *req;
 	ninep_buf *buf_in, *buf_out;
+	int r;
 
 	/* size[4] Tattach tag[2] fid[4] afid[4] uname[s] aname[s] n_uname[4] */
 	buf_in = ninep_buf_alloc("FFS4S4d");
@@ -157,6 +156,8 @@ NinePFS::doAttach()
 	    sizeof(*req));
 	req->iop = iop;
 	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
 
 	switch (buf_out->data->kind) {
 	case k9pAttach + 1: {
@@ -165,6 +166,7 @@ NinePFS::doAttach()
 		root_node = findOrCreateNodePair(VDIR, 0, &qid, 1);
 		DKDevLog(this, "Attached, root FID type %d ver %d path %lu\n",
 		    qid.type, qid.version, qid.path);
+		r = 0;
 		break;
 	}
 
@@ -172,6 +174,9 @@ NinePFS::doAttach()
 		kfatal("9p failure\n");
 	}
 	}
+
+	ninep_buf_free(buf_in);
+	ninep_buf_free(buf_out);
 
 	return 0;
 }
@@ -189,10 +194,10 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 	kassert(w == kKernWaitStatusOK);
 
 	node = RB_FIND(ninepfs_node_rbt, &node_rbt, &key);
-	if (node) {
-		kassert(node->qid.path = qid->path &&
-			node->qid.type == qid->type &&
-			node->qid.version == qid->version);
+	if (node != NULL) {
+		kassert(node->qid.path == qid->path &&
+		    node->qid.type == qid->type &&
+		    node->qid.version == qid->version);
 		obj_direct_retain(node->vnode);
 		ke_mutex_release(&nodecache_mutex);
 		return node;
@@ -265,6 +270,8 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 	    sizeof(*req));
 	req->iop = iop;
 	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
 
 	switch (buf_out->data->kind) {
 	case k9pLopen + 1: {
@@ -279,6 +286,9 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 		kfatal("9p error\n");
 	}
 	}
+
+	ninep_buf_free(buf_in);
+	ninep_buf_free(buf_out);
 
 	return r;
 }
@@ -319,6 +329,8 @@ NinePFS::cloneNodeFID(ninepfs_node *node, ninep_fid_t &out)
 	    sizeof(*req));
 	req->iop = iop;
 	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
 
 	switch (buf_out->data->kind) {
 	case k9pWalk + 1: {
@@ -334,6 +346,9 @@ NinePFS::cloneNodeFID(ninepfs_node *node, ninep_fid_t &out)
 		kfatal("9p error\n");
 	}
 	}
+
+	ninep_buf_free(buf_in);
+	ninep_buf_free(buf_out);
 
 	return r;
 }
@@ -368,6 +383,8 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 	    sizeof(*req));
 	req->iop = iop;
 	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
 
 	switch (buf_out->data->kind) {
 	case k9pGetattr + 1: {
@@ -402,7 +419,6 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);
-	iop_free(iop);
 
 	return r;
 }
@@ -447,6 +463,7 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	req->iop = iop;
 	iop_send_sync(iop);
 	iop_free(iop);
+	delete_kmem(req);
 
 	switch (buf_out->data->kind) {
 	case k9pWalk + 1: {
@@ -469,16 +486,14 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 		ninep_buf_free(buf_in);
 		ninep_buf_free(buf_out);
 		r = -err;
-		break;
+		kassert(r != 0);
+		goto out;
 	}
 
 	default: {
 		kfatal("9p error\n");
 	}
 	}
-
-	if (r != 0)
-		return r;
 
 	/* TODO(high) !!! clunk the fid if we got an existing node.... */
 
@@ -489,7 +504,8 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 
 	*out = res->vnode;
 
-	return 0;
+out:
+	return r;
 }
 
 int

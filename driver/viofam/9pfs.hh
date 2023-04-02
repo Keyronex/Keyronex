@@ -32,6 +32,8 @@ struct io_9p_request {
 	/* output mdl, if there is other data to be gotten */
 	vm_mdl_t *mdl_out;
 
+	bool pending : 1;
+
 	/*! data for lower level */
 	uint64_t lower_data;
 };

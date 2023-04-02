@@ -204,6 +204,9 @@ VirtIO9PPort::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 		return;
 	}
 
+	kassert(vreq->_9p_req->pending);
+	vreq->_9p_req->pending = false;
+
 	while (true) {
 		desc = &QUEUE_DESC_AT(&req_vq, descidx);
 
