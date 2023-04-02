@@ -204,6 +204,8 @@ enum lookup_flags {
 	vnode->ops->mkdir(vnode, out, name, attr)
 #define VOP_CHPOLL(VN, PH, KIND) (VN)->ops->chpoll(VN, PH, KIND)
 
+enum vtype mode_to_vtype(mode_t mode);
+
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
 

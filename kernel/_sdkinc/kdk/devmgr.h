@@ -203,6 +203,11 @@ void dev_attach(device_t *consumer, device_t *provider);
 iop_t *iop_new(device_t *dev);
 
 /*!
+ * @brief Free an IOP.
+ */
+void iop_free(iop_t *iop);
+
+/*!
  * @brief Allocate & set up an IOCtl IOP.
  *
  * @param dev Device the IOP is to be sent to.

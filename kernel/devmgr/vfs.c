@@ -3,12 +3,45 @@
  * Created on Thu Mar 02 2023.
  */
 
+#include <sys/stat.h>
+
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 
 vnode_t *root_vnode = NULL;
+
+/*! this works as long as our defs align with Linux */
+enum vtype
+mode_to_vtype(mode_t mode)
+{
+	switch (mode & S_IFMT) {
+	case S_IFDIR:
+		return VDIR;
+
+	case S_IFCHR:
+		return VCHR;
+
+	case S_IFBLK:
+		return VNON;
+
+	case S_IFREG:
+		return VREG;
+
+	case S_IFIFO:
+		return VNON;
+
+	case S_IFLNK:
+		return VLNK;
+
+	case S_IFSOCK:
+		return VNON;
+
+	default:
+		return VNON;
+	}
+}
 
 static int
 reduce(vnode_t *parent, vnode_t **vn)

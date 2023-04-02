@@ -52,37 +52,6 @@ struct fusefs_node {
 	uint64_t pager_file_handle;
 };
 
-/*! this works as long as our defs align with Linux */
-static inline vtype
-mode_to_vtype(mode_t mode)
-{
-	switch (mode & S_IFMT) {
-	case S_IFDIR:
-		return VDIR;
-
-	case S_IFCHR:
-		return VCHR;
-
-	case S_IFBLK:
-		return VNON;
-
-	case S_IFREG:
-		return VREG;
-
-	case S_IFIFO:
-		return VNON;
-
-	case S_IFLNK:
-		return VLNK;
-
-	case S_IFSOCK:
-		return VNON;
-
-	default:
-		return VNON;
-	}
-}
-
 static inline void
 fuse_attr_to_vattr(fuse_attr &fattr, vattr_t &vattr)
 {

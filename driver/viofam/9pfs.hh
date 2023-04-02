@@ -44,8 +44,10 @@ class NinePFS : public Device {
 
 	/*! Counter for request tags */
 	uint64_t ninep_unique = 1;
-	/*! Counter for FIDs. (Doesn't yet handle overflow.) */
-	uint32_t fid = 0;
+	/*! Counter for FIDs. 1 = root. (Doesn't yet handle overflow.) */
+	uint32_t fid = 1;
+	/*! Spinlock for counter. */
+	kspinlock_t fid_lock;
 
 	vfs_t *vfs;
 
@@ -78,15 +80,15 @@ class NinePFS : public Device {
 	/*! @brief IOP completion (9p port requests) */
 	iop_return_t completeIOP(iop_t *iop);
 
-#if 0
 	/*!
 	 * @brief Allocate a ninepfs_node/vnode pair and cache it.
 	 *
 	 * @returns a ninepfs_node with a reference held, or NULL
 	 */
 	ninepfs_node *findOrCreateNodePair(vtype_t type, size_t size,
-	    ino_t ninep_ino, ino_t ninep_parent_ino);
+	    struct ninep_qid *qid, int rdwrfid);
 
+#if 0
 	/*!
 	 * @brief Get or create the built-in pager file handle for a node.
 	 *
@@ -103,6 +105,10 @@ class NinePFS : public Device {
 
 	int doAttach();
 	int negotiateVersion();
+	int doGetattr(ninep_fid_t fid, vattr_t &vattr);
+
+	void allocFID(ninep_fid_t &out);
+	int cloneNodeFID(struct ninepfs_node *node, ninep_fid_t &out);
 
     public:
 	NinePFS(device_t *provider, vfs_t *vfs);

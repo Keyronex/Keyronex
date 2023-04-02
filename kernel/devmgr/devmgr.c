@@ -55,6 +55,12 @@ iop_new(device_t *dev)
 	return iop;
 }
 
+void
+iop_free(iop_t *iop)
+{
+	kmem_free(iop, IOP_SIZE(iop->stack_count));
+}
+
 iop_t *
 iop_new_ioctl(device_t *dev, iop_ioctl_t ioctl, vm_mdl_t *mdl, size_t size)
 {
