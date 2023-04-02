@@ -6,20 +6,11 @@
 #ifndef KRX_VIOFAM_9PFS_HH
 #define KRX_VIOFAM_9PFS_HH
 
+#include "9pfs_reg.h"
 #include "kdk/vfs.h"
 
 #include "../mdf/mdfdev.hh"
 #include "bsdqueue/slist.hh"
-
-enum ninep_kind {
-	k9pVersion = 100,
-};
-
-struct ninep_hdr {
-	uint32_t size;
-	uint8_t kind;
-	uint16_t tag;
-} __attribute__((packed));
 
 /*!
  * A generic 9P request.
@@ -31,13 +22,13 @@ struct io_9p_request {
 	/*! IOP with which request is associated */
 	iop_t *iop;
 
-	/*! request in pointer - points to specific in-request */
-	struct ninep_hdr *ptr_in;
+	/*! request in buffer  */
+	struct ninep_buf *ptr_in;
 	/* input mdl, if there is other data to be given */
 	vm_mdl_t *mdl_in;
 
-	/*! request out pointer - points to specific out-request */
-	struct ninep_hdr *ptr_out;
+	/*! request out buffer*/
+	struct ninep_buf *ptr_out;
 	/* output mdl, if there is other data to be gotten */
 	vm_mdl_t *mdl_out;
 
@@ -51,11 +42,16 @@ class NinePFS : public Device {
 	static struct vfsops vfsops;
 	static struct vnops vnops;
 
+	/*! Counter for request tags */
 	uint64_t ninep_unique = 1;
-	vfs_t *vfs;
-	kmutex_t nodecache_mutex;
+	/*! Counter for FIDs. (Doesn't yet handle overflow.) */
+	uint32_t fid = 0;
 
-	/*! Indexed by ninep I-node number. Locked by vnode_lock. */
+	vfs_t *vfs;
+
+	/*! Locks the node cache. */
+	kmutex_t nodecache_mutex;
+	/*! Indexed by 9p Qid path number. Locked by nodecache_mutex. */
 	ninepfs_node_rbt node_rbt;
 
 	ninepfs_node *root_node;
@@ -102,8 +98,11 @@ class NinePFS : public Device {
 	int pagerFileHandle(ninepfs_node *node, uint64_t &handle_out);
 #endif
 
-	io_9p_request *new9pRequest(ninep_hdr *hdr_in, vm_mdl_t *mdl_in,
-	    ninep_hdr *hdr_out, vm_mdl_t *mdl_out);
+	io_9p_request *new9pRequest(struct ninep_buf *buf_in, vm_mdl_t *mdl_in,
+	    struct ninep_buf *buf_out, vm_mdl_t *mdl_out);
+
+	int doAttach();
+	int negotiateVersion();
 
     public:
 	NinePFS(device_t *provider, vfs_t *vfs);

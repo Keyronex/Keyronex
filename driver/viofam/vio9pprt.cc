@@ -124,8 +124,8 @@ VirtIO9PPort::enqueue9PRequest(io_9p_request *req)
 	}
 
 	/*! the fuse in-header always goes in */
-	req_vq.desc[descs[di]].addr = vm_translate((vaddr_t)req->ptr_in);
-	req_vq.desc[descs[di]].len = req->ptr_in->size;
+	req_vq.desc[descs[di]].addr = vm_translate((vaddr_t)req->ptr_in->data);
+	req_vq.desc[descs[di]].len = req->ptr_in->data->size;
 	req_vq.desc[descs[di]].flags = 0;
 	SET_NEXT();
 	di++;
@@ -143,8 +143,8 @@ VirtIO9PPort::enqueue9PRequest(io_9p_request *req)
 	}
 
 	/*! the fuse_out_header */
-	req_vq.desc[descs[di]].addr = vm_translate((vaddr_t)req->ptr_out);
-	req_vq.desc[descs[di]].len = req->ptr_out->size;
+	req_vq.desc[descs[di]].addr = vm_translate((vaddr_t)req->ptr_out->data);
+	req_vq.desc[descs[di]].len = req->ptr_out->bufsize;
 	req_vq.desc[descs[di]].flags = VRING_DESC_F_WRITE;
 	SET_NEXT();
 	di++;
