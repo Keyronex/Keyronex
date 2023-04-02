@@ -250,11 +250,22 @@ iop_return_t iop_continue(iop_t *iop, iop_return_t res);
 /*!
  * @brief Return a pointer to the current frame of an IOP.
  */
-inline iop_frame_t *
+static inline iop_frame_t *
 iop_stack_current(iop_t *iop)
 {
 	return &iop->stack[iop->stack_current];
 }
+
+/*!
+ * @brief Return a pointer to the previous (lower) frame of an IOP.
+ */
+static inline iop_frame_t *
+iop_stack_previous(iop_t *iop)
+{
+	kassert(iop->stack_count > iop->stack_current + 1);
+	return &iop->stack[iop->stack_current + 1];
+}
+
 
 /*!
  * @brief Initialise the next frame in an IOP to target the next lower device.

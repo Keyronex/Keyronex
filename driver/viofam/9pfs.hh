@@ -88,17 +88,13 @@ class NinePFS : public Device {
 	ninepfs_node *findOrCreateNodePair(vtype_t type, size_t size,
 	    struct ninep_qid *qid, int rdwrfid);
 
-#if 0
 	/*!
-	 * @brief Get or create the built-in pager file handle for a node.
+	 * @brief Get or create the built-in pager FID for a node.
 	 *
-	 * FUSE I/O apparently needs to always go through a file handle. This
-	 * function gets a file handle for a node, or creates one if there isn't
-	 * one yet. This is a special handle which is for use by the FUSE ops
-	 * only.
+	 * This function gets an I/O Fid or a node, or creates one if there isn't
+	 * one yet. This is a special handle which is for use by the 9p ops only.
 	 */
-	int pagerFileHandle(ninepfs_node *node, uint64_t &handle_out);
-#endif
+	int pagerFid(ninepfs_node *node, ninep_fid_t &handle_out);
 
 	io_9p_request *new9pRequest(struct ninep_buf *buf_in, vm_mdl_t *mdl_in,
 	    struct ninep_buf *buf_out, vm_mdl_t *mdl_out);

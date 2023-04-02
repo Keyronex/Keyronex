@@ -6,6 +6,7 @@
 #include <sys/errno.h>
 
 #include "9pfs_reg.h"
+#include "abi-bits/fcntl.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
@@ -19,10 +20,14 @@ struct ninepfs_node {
 	/*! Corresponding vnode. */
 	vnode_t *vnode;
 
+	bool has_paging_fid;
+
 	/*! 9p Qid. ninep_qid::version is the unique identifier. */
 	struct ninep_qid qid;
-	/*! 9p Fid for read/write. */
+	/*! 9p main Fid. */
 	ninep_fid_t fid;
+	/*! 9p Fid for pager I/O */
+	ninep_fid_t paging_fid;
 };
 
 static int64_t
@@ -223,6 +228,60 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 	return node;
 }
 
+int
+NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
+{
+	if (node->has_paging_fid) {
+		handle_out = node->paging_fid;
+		return 0;
+	}
+
+	if (node->vnode->type != VREG)
+		return -EBADF;
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+	ninep_fid_t new_fid;
+	int r;
+
+	r = cloneNodeFID(node, new_fid);
+	kassert(r == 0);
+
+	/* size[4] Tlopen tag[2] fid[4] flags[4] */
+	buf_in = ninep_buf_alloc("Fd");
+	/* size[4] Rlopen tag[2] qid[13] iounit[4] */
+	buf_out = ninep_buf_alloc("Qd");
+
+	buf_in->data->tag = ninep_unique++;
+	buf_in->data->kind = k9pLopen;
+	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_addu32(buf_in, O_RDWR);
+	ninep_buf_close(buf_in);
+
+	req = new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(provider, kIOCTL9PEnqueueRequest, (vm_mdl_t *)req,
+	    sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+
+	switch (buf_out->data->kind) {
+	case k9pLopen + 1: {
+		r = 0;
+		node->has_paging_fid = true;
+		node->paging_fid = new_fid;
+		handle_out = new_fid;
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	return r;
+}
+
 void
 NinePFS::allocFID(ninep_fid_t &out)
 {
@@ -399,17 +458,19 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 		ninep_buf_free(buf_in);
 		ninep_buf_free(buf_out);
 
-		kdprintf("Doing getattr.\n");
 		r = self->doGetattr(newfid, vattr);
-		kdprintf("Done the getattr.\n");
 		break;
 	}
 
 	default: {
+		ninep_buf_free(buf_in);
+		ninep_buf_free(buf_out);
 		kfatal("9p error\n");
-		goto err;
 	}
 	}
+
+	if (r != 0)
+		return r;
 
 	res = self->findOrCreateNodePair(mode_to_vtype(vattr.mode), vattr.size,
 	    &qid, newfid);
@@ -419,12 +480,12 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	*out = res->vnode;
 
 	return 0;
+}
 
-err:
-	ninep_buf_free(buf_in);
-	ninep_buf_free(buf_out);
-
-	return r;
+int
+NinePFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+{
+	return pgcache_read(vn, buf, nbyte, off);
 }
 
 int
@@ -439,13 +500,75 @@ NinePFS::root(vfs_t *vfs, vnode_t **vout)
 iop_return_t
 NinePFS::dispatchIOP(iop_t *iop)
 {
-	kfatal("Unimplemented");
+	iop_frame_t *frame = iop_stack_current(iop), *next_frame;
+	io_9p_request *req;
+	ninepfs_node *node = (ninepfs_node *)frame->vnode->data;
+	ninep_fid_t fid;
+	ninep_buf *buf_in, *buf_out;
+	bool iswrite = false;
+	int r;
+
+	iswrite = frame->function == kIOPTypeWrite;
+	if (!iswrite)
+		kassert(frame->function == kIOPTypeRead);
+
+	/*
+	 * The only IOPs for filesystems currently are pager in/out requests.
+	 */
+
+	next_frame = iop_stack_initialise_next(iop);
+
+	r = pagerFid(node, fid);
+	if (r != 0) {
+		DKDevLog(this, "Failed to get a pager Fid! Error %d\n", r);
+		return kIOPRetCompleted;
+	}
+
+	/* size[4] Tread tag[2] fid[4] offset[8] count[4] */
+	buf_in = ninep_buf_alloc("Fld");
+	/* size[4] Rread tag[2] count[4] data[count] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = ninep_unique++;
+	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_addu64(buf_in, frame->rw.offset);
+	ninep_buf_addu32(buf_in, frame->rw.bytes);
+	ninep_buf_close(buf_in);
+
+	if (iswrite) {
+		buf_in->data->kind = k9pWrite;
+	} else {
+		buf_in->data->kind = k9pRead;
+	}
+
+	req = new9pRequest(buf_in, iswrite ? frame->mdl : NULL, buf_out,
+	    iswrite ? NULL : frame->mdl);
+	iop_frame_setup_ioctl(next_frame, kIOCTL9PEnqueueRequest, req,
+	    sizeof(*req));
+	req->iop = iop;
+
+	return kIOPRetContinue;
 }
 
 iop_return_t
 NinePFS::completeIOP(iop_t *iop)
 {
-	kfatal("Unimplemented");
+	iop_frame_t *frame = iop_stack_previous(iop);
+	io_9p_request *req;
+
+	kassert(frame->function == kIOPTypeIOCtl &&
+	    frame->ioctl.type == kIOCTL9PEnqueueRequest);
+	req = (io_9p_request *)frame->mdl;
+
+	switch (req->ptr_out->data->kind) {
+	case k9pRead + 1:
+	case k9pWrite + 1:
+		kdprintf("9pfs: Read/write success!\n");
+		return kIOPRetCompleted;
+
+	default:
+		kfatal("9p error\n");
+	}
 }
 
 struct vfsops NinePFS::vfsops = {
@@ -454,4 +577,5 @@ struct vfsops NinePFS::vfsops = {
 
 struct vnops NinePFS::vnops = {
 	.lookup = lookup,
+	.read = read,
 };
