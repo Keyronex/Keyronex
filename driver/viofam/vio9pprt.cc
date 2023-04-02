@@ -152,6 +152,7 @@ VirtIO9PPort::enqueue9PRequest(io_9p_request *req)
 	if (req->mdl_out) {
 		/* kassert(!req->mdl->offset) */
 		for (size_t i = 0; i < req->mdl_out->npages; i++) {
+
 			req_vq.desc[descs[di]].addr = vm_mdl_paddr(req->mdl_out,
 			    i * PGSIZE);
 			req_vq.desc[descs[di]].len = PGSIZE;

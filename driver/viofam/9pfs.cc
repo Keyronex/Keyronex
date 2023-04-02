@@ -4,6 +4,7 @@
  */
 
 #include <sys/errno.h>
+#include <sys/stat.h>
 
 #include "9pfs_reg.h"
 #include "abi-bits/fcntl.h"
@@ -68,19 +69,16 @@ NinePFS::new9pRequest(struct ninep_buf *buf_in, vm_mdl_t *mdl_in,
 	io_9p_request *req = new (kmem_general) io_9p_request;
 	memset(req, 0x0, sizeof(*req));
 
+	/*
+	 * we explicitly don't adjust the in message to include the length of
+	 * the mdl components (used for read/write, and readdir?)
+	 * Qemu at least doesn't like it (writes utter junk to the file). Not
+	 */
+
 	req->ptr_in = buf_in;
 	req->mdl_in = mdl_in;
-
-	if (mdl_in) {
-		/* adjusting this is our responsibility */
-		req->ptr_in->data->size += PGSIZE * mdl_in->npages;
-	}
-
 	req->ptr_out = buf_out;
-
-	/* adjusting the output is the port driver's responsibility */
 	req->mdl_out = mdl_out;
-
 	req->pending = true;
 
 	return req;
@@ -195,9 +193,9 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 
 	node = RB_FIND(ninepfs_node_rbt, &node_rbt, &key);
 	if (node != NULL) {
-		kassert(node->qid.path == qid->path &&
-		    node->qid.type == qid->type &&
-		    node->qid.version == qid->version);
+		/* don't check version, it's just mtime... */
+		kassert(
+		    node->qid.path == qid->path && node->qid.type == qid->type);
 		obj_direct_retain(node->vnode);
 		ke_mutex_release(&nodecache_mutex);
 		return node;
@@ -282,6 +280,12 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 		break;
 	}
 
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		kdprintf("Failed to clone node id: %d\n", err);
+	}
+
 	default: {
 		kfatal("9p error\n");
 	}
@@ -340,6 +344,12 @@ NinePFS::cloneNodeFID(ninepfs_node *node, ninep_fid_t &out)
 		out = newfid;
 		r = 0;
 		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		kdprintf("Failed to clone node id: %d\n", err);
 	}
 
 	default: {
@@ -420,6 +430,83 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);
 
+	return r;
+}
+
+int
+NinePFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data), *res;
+	ninep_fid_t newfid;
+	struct ninep_qid qid;
+	vattr_t vattr_out;
+	int r = 0;
+
+	r = self->cloneNodeFID(node, newfid);
+	kassert(r == 0);
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+
+	/* size[4] Tlcreate tag[2] fid[4] name[s] flags[4] mode[4] gid[4] */
+	buf_in = ninep_buf_alloc("FS64ddd");
+	/* size[4] Rlcreate tag[2] qid[13] iounit[4] */
+	buf_out = ninep_buf_alloc("Qd");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pLcreate;
+	ninep_buf_addfid(buf_in, newfid);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_addu32(buf_in, O_CREAT); /* flags */
+	ninep_buf_addu32(buf_in, 0755 | S_IFREG);
+	ninep_buf_addu32(buf_in, 0); /* gid */
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+
+	switch (buf_out->data->kind) {
+	case k9pLcreate + 1: {
+		ninep_buf_getqid(buf_out, &qid);
+
+		ninep_buf_free(buf_in);
+		ninep_buf_free(buf_out);
+
+		r = self->doGetattr(newfid, vattr_out);
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		ninep_buf_free(buf_in);
+		ninep_buf_free(buf_out);
+		r = -err;
+		kassert(r != 0);
+		kdprintf("Create failed: %d\n", r);
+		goto out;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	res = self->findOrCreateNodePair(mode_to_vtype(vattr_out.mode),
+	    vattr_out.size, &qid, newfid);
+	if (!res)
+		return -ENOENT;
+
+	*out = res->vnode;
+
+out:
 	return r;
 }
 
@@ -523,6 +610,66 @@ NinePFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 }
 
 int
+NinePFS::write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+{
+	return pgcache_write(vn, buf, nbyte, off);
+}
+
+int
+NinePFS::readlink(vnode_t *vn, char *out)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data);
+	int r = 0;
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+
+	/* size[4] Treadlink tag[2] fid[4] */
+	buf_in = ninep_buf_alloc("F");
+	/* size[4] Rreadlink tag[2] target[s] */
+	buf_out = ninep_buf_alloc("S80");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pReadlink;
+	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+
+	switch (buf_out->data->kind) {
+	case k9pReadlink + 1: {
+		char *str;
+		ninep_buf_getstr(buf_out, &str);
+		strcpy(out, str);
+		kmem_strfree(str);
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	return r;
+}
+
+int
 NinePFS::root(vfs_t *vfs, vnode_t **vout)
 {
 	NinePFS *self = (NinePFS *)(vfs->data);
@@ -597,9 +744,15 @@ NinePFS::completeIOP(iop_t *iop)
 	switch (req->ptr_out->data->kind) {
 	case k9pRead + 1:
 	case k9pWrite + 1:
+		uint32_t count;
+
+		ninep_buf_getu32(req->ptr_out, &count);
+		// kassert(count == iop_stack_current(iop)->rw.bytes);
+
 		ninep_buf_free(req->ptr_in);
 		ninep_buf_free(req->ptr_out);
 		delete_kmem(req);
+
 		return kIOPRetCompleted;
 
 	case k9pLerror + 1: {
@@ -617,7 +770,10 @@ struct vfsops NinePFS::vfsops = {
 };
 
 struct vnops NinePFS::vnops = {
+	.create = create,
 	.getattr = getattr,
 	.lookup = lookup,
 	.read = read,
+	.readlink = readlink,
+	.write = write
 };
