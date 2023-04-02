@@ -45,7 +45,7 @@ class NinePFS : public Device {
 	/*! Counter for request tags */
 	uint64_t ninep_unique = 1;
 	/*! Counter for FIDs. 1 = root. (Doesn't yet handle overflow.) */
-	uint32_t fid = 1;
+	uint32_t fid_counter = 1;
 	/*! Spinlock for counter. */
 	kspinlock_t fid_lock;
 
@@ -91,8 +91,9 @@ class NinePFS : public Device {
 	/*!
 	 * @brief Get or create the built-in pager FID for a node.
 	 *
-	 * This function gets an I/O Fid or a node, or creates one if there isn't
-	 * one yet. This is a special handle which is for use by the 9p ops only.
+	 * This function gets an I/O Fid or a node, or creates one if there
+	 * isn't one yet. This is a special handle which is for use by the 9p
+	 * ops only.
 	 */
 	int pagerFid(ninepfs_node *node, ninep_fid_t &handle_out);
 

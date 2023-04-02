@@ -48,6 +48,16 @@ explicit stack is attached, and these descend the device tree through an
 iterative, continuation-based mechanism that maintains state in the explicit
 stack of the IOP, minimising kernel stack use.
 
+Platform Support
+----------------
+
+Keyronex runs only on amd64 for now. Drivers are mostly for virtual hardware.
+These include:
+ - Disk controllers: VirtIO-Disk
+ - Disk/other: VirtIO-FS and VirtIO-9p
+ - NICs: VirtIO-NIC
+ - Filesystems: TmpFS, FUSE, 9p (9p2000.L only for now).
+
 Third-party components
 ----------------------
 

@@ -34,10 +34,24 @@ operator new(size_t size, kmem_general_t)
 }
 
 inline void
-operator delete(void *p, unsigned long something)
+operator delete(void *p, unsigned long size)
 {
 	kfatal("operator delete called\n");
 }
+
+template <class T>
+inline constexpr void
+delete_kmem(T *p)
+{
+	p->~T();
+	kmem_free(p, sizeof(T));
+}
+
+/*inline void
+operator delete(void *p, unsigned long something)
+{
+	kfatal("operator delete called\n");
+}*/
 
 class Device : public device_t {
 	static iop_return_t dispatchIOP(device_t *dev, iop_t *iop);

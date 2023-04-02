@@ -145,7 +145,7 @@ NinePFS::doAttach()
 
 	buf_in->data->tag = ninep_unique++;
 	buf_in->data->kind = k9pAttach;
-	ninep_buf_addfid(buf_in, fid++);
+	ninep_buf_addfid(buf_in, fid_counter++);
 	ninep_buf_addfid(buf_in, 0);
 	ninep_buf_addstr(buf_in, "root");
 	ninep_buf_addstr(buf_in, "root");
@@ -207,6 +207,7 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 
 	node->qid = *qid;
 	node->fid = rdwrfid;
+	node->has_paging_fid = false;
 	node->vnode = new (kmem_general) vnode;
 	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
 	node->vnode->data = (uintptr_t)node;
@@ -255,7 +256,7 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 
 	buf_in->data->tag = ninep_unique++;
 	buf_in->data->kind = k9pLopen;
-	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_addfid(buf_in, new_fid);
 	ninep_buf_addu32(buf_in, O_RDWR);
 	ninep_buf_close(buf_in);
 
@@ -286,7 +287,7 @@ void
 NinePFS::allocFID(ninep_fid_t &out)
 {
 	ipl_t ipl = ke_spinlock_acquire(&fid_lock);
-	out = fid++;
+	out = fid_counter++;
 	ke_spinlock_release(&fid_lock, ipl);
 }
 
@@ -417,8 +418,8 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	int r = 0;
 
 #if DEBUG_9PFS == 1
-	kdprintf("fusefs_lookup(vnode: %p, ino: %lu, \"%s\");\n", node->vnode,
-	    node->inode, pathname);
+	kdprintf("ninepfs_lookup(vnode: %p, fid: %u, \"%s\");\n", node->vnode,
+	    node->fid, pathname);
 #endif
 
 	self->allocFID(newfid);
@@ -462,15 +463,24 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 		break;
 	}
 
-	default: {
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
 		ninep_buf_free(buf_in);
 		ninep_buf_free(buf_out);
+		r = -err;
+		break;
+	}
+
+	default: {
 		kfatal("9p error\n");
 	}
 	}
 
 	if (r != 0)
 		return r;
+
+	/* TODO(high) !!! clunk the fid if we got an existing node.... */
 
 	res = self->findOrCreateNodePair(mode_to_vtype(vattr.mode), vattr.size,
 	    &qid, newfid);
@@ -480,6 +490,14 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	*out = res->vnode;
 
 	return 0;
+}
+
+int
+NinePFS::getattr(vnode_t *vn, vattr_t *out)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data);
+	return self->doGetattr(node->fid, *out);
 }
 
 int
@@ -503,7 +521,7 @@ NinePFS::dispatchIOP(iop_t *iop)
 	iop_frame_t *frame = iop_stack_current(iop), *next_frame;
 	io_9p_request *req;
 	ninepfs_node *node = (ninepfs_node *)frame->vnode->data;
-	ninep_fid_t fid;
+	ninep_fid_t myfid;
 	ninep_buf *buf_in, *buf_out;
 	bool iswrite = false;
 	int r;
@@ -518,7 +536,7 @@ NinePFS::dispatchIOP(iop_t *iop)
 
 	next_frame = iop_stack_initialise_next(iop);
 
-	r = pagerFid(node, fid);
+	r = pagerFid(node, myfid);
 	if (r != 0) {
 		DKDevLog(this, "Failed to get a pager Fid! Error %d\n", r);
 		return kIOPRetCompleted;
@@ -530,7 +548,7 @@ NinePFS::dispatchIOP(iop_t *iop)
 	buf_out = ninep_buf_alloc("d");
 
 	buf_in->data->tag = ninep_unique++;
-	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_addfid(buf_in, myfid);
 	ninep_buf_addu64(buf_in, frame->rw.offset);
 	ninep_buf_addu32(buf_in, frame->rw.bytes);
 	ninep_buf_close(buf_in);
@@ -563,9 +581,16 @@ NinePFS::completeIOP(iop_t *iop)
 	switch (req->ptr_out->data->kind) {
 	case k9pRead + 1:
 	case k9pWrite + 1:
-		kdprintf("9pfs: Read/write success!\n");
+		ninep_buf_free(req->ptr_in);
+		ninep_buf_free(req->ptr_out);
+		delete_kmem(req);
 		return kIOPRetCompleted;
 
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(req->ptr_out, &err);
+		DKDevLog(this, "Pager I/O got error code %d\n", err);
+	}
 	default:
 		kfatal("9p error\n");
 	}
@@ -576,6 +601,7 @@ struct vfsops NinePFS::vfsops = {
 };
 
 struct vnops NinePFS::vnops = {
+	.getattr = getattr,
 	.lookup = lookup,
 	.read = read,
 };
