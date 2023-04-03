@@ -377,7 +377,7 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 	paddr_t paddr;
 	pte_t *pte;
 	ipl_t ipl;
-	struct pv_entry *pve = NULL;
+	struct pv_entry *found_pve = NULL;
 
 	ipl = vmp_acquire_pfn_lock();
 	ke_spinlock_acquire_nospl(&map->md.lock);
@@ -398,13 +398,12 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 		page = vmp_paddr_to_page(paddr);
 		if (page) {
 			struct pv_entry *pve, *tmp;
-			bool found = false;
 
 			LIST_FOREACH_SAFE (pve, &page->pv_list, list_entry,
 			    tmp) {
 				if (pve->map == map && pve->vaddr == virt) {
-					kassert(!found);
-					found = true;
+					kassert(found_pve == NULL);
+					found_pve = pve;
 					LIST_REMOVE(pve, list_entry);
 				}
 			}
@@ -413,7 +412,7 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 				page->dirty = true;
 
 			/* should always be a PV entry for pageable mappings */
-			kassert(found);
+			kassert(found_pve != NULL);
 		}
 
 		if (out)
@@ -425,8 +424,8 @@ pmap_unenter_pageable(vm_map_t *map, krx_out vm_page_t **out, vaddr_t virt)
 	ke_spinlock_release_nospl(&map->md.lock);
 	vmp_release_pfn_lock(ipl);
 
-	if (pve)
-		kmem_free(pve, sizeof(*pve));
+	if (found_pve)
+		kmem_free(found_pve, sizeof(*found_pve));
 
 	return 0;
 }
