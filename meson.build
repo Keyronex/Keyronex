@@ -13,6 +13,7 @@ if (arch == 'x86_64')
 		'-ffreestanding',
 		'-fno-stack-protector',
 		'-fno-stack-check',
+		'-fno-strict-aliasing',
 		'-fno-pie',
 		'-fno-pic',
 		'-m64',

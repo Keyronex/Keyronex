@@ -426,6 +426,7 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.mtim.tv_nsec);
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.ctim.tv_sec);
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.ctim.tv_nsec);
+	vattr.type = mode_to_vtype(vattr.mode);
 
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);

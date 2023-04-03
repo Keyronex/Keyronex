@@ -539,7 +539,7 @@ name##_RB_INSERT_COLOR(struct name *head,				\
 	 * when a value has been assigned to 'child' in the previous    \
 	 * one.								\
 	 */								\
-	struct type *child, *child_up, *gpar;				\
+	struct type *child = NULL, *child_up, *gpar;			\
 	uintptr_t elmdir, sibdir;					\
 									\
 	do {								\

@@ -423,6 +423,11 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		 * active queue.
 		 */
 
+		ke_wait(&obj->mutex, "fault_vnode:relock after pagein", false,
+		    false, -1);
+
+		/* TODO! check if this page was unlinked from us here. */
+
 		page->status = kPageStatusWired;
 		vm_page_unwire(page);
 
@@ -431,12 +436,20 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		 * after having unlocked for I/O.
 		 */
 
-		/* TODO! check if this page was unlinked from us here. */
 		vmp_objpage_created(objpage);
+
+		ke_mutex_release(&obj->mutex);
 
 		return kVMFaultRetRetry;
 	} else if (objpage->page->status == kPageStatusBusy) {
-		kfatal("Unlock everything & wait for busy page!\n");
+#if 1
+		ke_mutex_release(&obj->mutex);
+		ke_mutex_release(&map->mutex);
+		return kVMFaultRetRetry;
+#else
+		kfatal("Unlock everything & wait for busy page %p in %p!\n",
+		     objpage->page, ke_curthread());
+#endif
 	} else {
 		vm_page_t *page = objpage->page;
 
