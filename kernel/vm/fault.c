@@ -452,6 +452,8 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		/* remove any existing entry */
 		pmap_unenter_pageable(map, NULL, vaddr);
 
+		map_readonly |= !(flags & kVMFaultWrite);
+
 		pmap_enter_pageable(map, page, vaddr,
 		    map_readonly ? (kVMRead | kVMExecute) : kVMAll);
 		if (!map_readonly)
