@@ -23,14 +23,14 @@ struct ninepfs_node {
 	/*! Corresponding vnode. */
 	vnode_t *vnode;
 
-	bool has_paging_fid;
+	bool has_generic_fid;
 
 	/*! 9p Qid. ninep_qid::path is the unique identifier. */
 	struct ninep_qid qid;
 	/*! 9p main Fid. */
 	ninep_fid_t fid;
-	/*! 9p Fid for pager I/O */
-	ninep_fid_t paging_fid;
+	/*! 9p Fid for pager I/O or readdir() */
+	ninep_fid_t generic_fid;
 };
 
 static int64_t
@@ -212,7 +212,7 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 
 	node->qid = *qid;
 	node->fid = rdwrfid;
-	node->has_paging_fid = false;
+	node->has_generic_fid = false;
 	node->vnode = new (kmem_general) vnode;
 	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
 	node->vnode->data = (uintptr_t)node;
@@ -235,10 +235,10 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 }
 
 int
-NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
+NinePFS::genericFid(ninepfs_node *node, ninep_fid_t &handle_out)
 {
-	if (node->has_paging_fid) {
-		handle_out = node->paging_fid;
+	if (node->has_generic_fid) {
+		handle_out = node->generic_fid;
 		return 0;
 	}
 
@@ -277,8 +277,8 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 	switch (buf_out->data->kind) {
 	case k9pLopen + 1: {
 		r = 0;
-		node->has_paging_fid = true;
-		node->paging_fid = new_fid;
+		node->has_generic_fid = true;
+		node->generic_fid = new_fid;
 		handle_out = new_fid;
 		break;
 	}
@@ -688,7 +688,7 @@ NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
 
 	kassert(buf_size <= 2048);
 
-	r = self->pagerFid(node, dirfid);
+	r = self->genericFid(node, dirfid);
 	if (r != 0) {
 		DKDevLog(self, "Failed to get a pager Fid! Error %ld\n", r);
 		kfatal("Unhandled\n");
@@ -822,7 +822,7 @@ NinePFS::dispatchIOP(iop_t *iop)
 
 	next_frame = iop_stack_initialise_next(iop);
 
-	r = pagerFid(node, myfid);
+	r = genericFid(node, myfid);
 	if (r != 0) {
 		DKDevLog(this, "Failed to get a pager Fid! Error %d\n", r);
 		return kIOPRetCompleted;

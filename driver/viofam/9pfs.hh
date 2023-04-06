@@ -97,7 +97,7 @@ class NinePFS : public Device {
 	 * isn't one yet. This is a special handle which is for use by the 9p
 	 * ops only.
 	 */
-	int pagerFid(ninepfs_node *node, ninep_fid_t &handle_out);
+	int genericFid(ninepfs_node *node, ninep_fid_t &handle_out);
 
 	io_9p_request *new9pRequest(struct ninep_buf *buf_in, vm_mdl_t *mdl_in,
 	    struct ninep_buf *buf_out, vm_mdl_t *mdl_out);
