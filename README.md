@@ -5,6 +5,10 @@ emulators. Some preliminary work towards Amiga 68k and Virt68k ports has also
 been done. It is purely a hobbyist system and makes no pretences to be anything
 else.
 
+A technical description of some parts (only the VMM for now) of Keyronex is
+available on the
+[Read The Docs](https://keyronex.readthedocs.io/en/latest/index.html) website.
+
 It doesn't do anything useful or interesting yet.
 
 ### Architecture
