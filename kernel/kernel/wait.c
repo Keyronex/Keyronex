@@ -216,6 +216,8 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	kdprintf("ke_wait_multi: thread %p going to sleep on %s\n", thread,
 	    reason);
 #endif
+
+	/* ki_reschedule() will release the dispatcher lock at needful time */
 	ki_reschedule();
 
 	splx(ipl);

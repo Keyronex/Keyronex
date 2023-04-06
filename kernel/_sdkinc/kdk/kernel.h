@@ -253,7 +253,7 @@ typedef struct kcpu {
 	/*! (~) Unique identifier. */
 	uint32_t num;
 
-	/*! (d) DPC queue */
+	/*! (D) DPC queue */
 	TAILQ_HEAD(, kdpc) dpc_queue;
 	/*! (d) Scheduler entry reason */
 	enum kreschedule_reason reschedule_reason;
