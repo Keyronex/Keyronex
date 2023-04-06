@@ -5,6 +5,8 @@
 
 #include <sys/poll.h>
 
+#include <dirent.h>
+
 #include "abi-bits/errno.h"
 #include "abi-bits/fcntl.h"
 #include "abi-bits/seek-whence.h"
@@ -218,6 +220,35 @@ sys_readlink(const char *path, char *buf, size_t bufsize)
 #endif
 }
 
+uintptr_t
+sys_readdir(int fd, void *buf, size_t bufsize)
+{
+	struct file *file = ps_getfile(ps_curproc(), fd);
+	size_t bytes_read = 0;
+	int r;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_READDIR(fd: %d, bufsize: %lu off: %lu)\n", fd, bufsize,
+	    file->offset);
+#endif
+
+	if (file == NULL)
+		return -EBADF;
+	else if (file->vn->type != VDIR)
+		return -ENOTDIR;
+	else if (bufsize < DIRENT_RECLEN(NAME_MAX))
+		return -EINVAL;
+
+	r = VOP_READDIR(file->vn, buf, bufsize, &bytes_read, file->offset);
+	if (r < 0) {
+		return r;
+	}
+
+	file->offset = r;
+
+	return bytes_read;
+}
+
 int
 sys_write(int fd, void *buf, size_t nbyte)
 {
@@ -286,6 +317,13 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	vnode_t *vn;
 	vattr_t vattr;
 	char *pathcpy = NULL;
+
+#if DEBUG_SYSCALLS == 1
+	char *mypath = strdup(path);
+	kdprintf("SYS_STAT(kind: %d, fd: %d, path: %s, flags: %d)\n", kind, fd,
+	    mypath, flags);
+	kmem_strfree(mypath);
+#endif
 
 	if (kind == kPXStatKindAt) {
 		struct file *file = ps_getfile(ps_curproc(), fd);
@@ -362,6 +400,7 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 out:
 	if (pathcpy != NULL)
 		kmem_strfree(pathcpy);
+
 	return r;
 }
 
@@ -481,6 +520,10 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysReadLink:
 		RET = sys_readlink((const char *)ARG1, (char *)ARG2, ARG3);
+		break;
+
+	case kPXSysReadDir:
+		RET = sys_readdir(ARG1, (void *)ARG2, ARG3);
 		break;
 
 	case kPXSysWrite:

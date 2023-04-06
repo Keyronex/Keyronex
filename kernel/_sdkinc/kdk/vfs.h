@@ -191,9 +191,14 @@ enum lookup_flags {
 	kLookupNoFollow = 1 << 3,
 };
 
+#define DIRENT_RECLEN(NAMELEN) \
+	ROUNDUP(offsetof(struct dirent, d_name[0]) + 1 + NAMELEN, 8)
+
 #define VOP_OPEN(PVN, mode) (*PVN)->ops->open(PVN, mode)
 #define VOP_READ(vnode, buf, nbyte, off) \
 	vnode->ops->read(vnode, buf, nbyte, off)
+#define VOP_READDIR(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO) \
+	(VN)->ops->readdir(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO)
 #define VOP_WRITE(vnode, buf, nbyte, off) \
 	vnode->ops->write(vnode, buf, nbyte, off)
 #define VOP_CREAT(vnode, out, name, attr) \
