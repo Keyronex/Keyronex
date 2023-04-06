@@ -26,6 +26,7 @@ enum ninep_kind {
 	k9pLcreate = 14,
 	k9pReadlink = 22,
 	k9pGetattr = 24,
+	k9pReaddir = 40,
 
 	k9pVersion = 100,
 	k9pAuth = 102,
@@ -93,11 +94,11 @@ typedef uint32_t ninep_fid_t;
 
 #define k9pVersion2000L "9P2000.L"
 
-/*! Allocate a 9p input buffer. */
+/*! @brief Allocate a 9p buffer for a format string. */
 struct ninep_buf *ninep_buf_alloc(const char *fmt);
-/*! Allocate a 9p output buffer. */
-struct ninep_buf *ninep_buf_allocout(const char *fmt);
-/*! Deallocate a 9p buffer. */
+/*! @brief Allocate a 9p buffer for a given byte size.*/
+struct ninep_buf *ninep_buf_alloc_bytes(size_t size);
+/*! @brief Free a 9p buffer. */
 void ninep_buf_free(struct ninep_buf *buf);
 
 #define ninep_buf_addfid(BUF, NUM) ninep_buf_addu32(BUF, NUM)
@@ -108,6 +109,7 @@ void ninep_buf_addstr(struct ninep_buf *buf, const char *str);
 void ninep_buf_close(struct ninep_buf *buf);
 
 #define ninep_buf_getfid(BUF, PNUM) ninep_buf_getu32(BUF, PNUM)
+int ninep_buf_getu8(struct ninep_buf *buf, uint8_t *num);
 int ninep_buf_getu16(struct ninep_buf *buf, uint16_t *num);
 int ninep_buf_getu32(struct ninep_buf *buf, uint32_t *num);
 int ninep_buf_getu64(struct ninep_buf *buf, uint64_t *num);

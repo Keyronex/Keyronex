@@ -6,6 +6,8 @@
 #include <sys/errno.h>
 #include <sys/stat.h>
 
+#include <dirent.h>
+
 #include "9pfs_reg.h"
 #include "abi-bits/fcntl.h"
 #include "kdk/devmgr.h"
@@ -176,7 +178,7 @@ NinePFS::doAttach()
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);
 
-	return 0;
+	return r;
 }
 
 ninepfs_node *
@@ -240,7 +242,7 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 		return 0;
 	}
 
-	if (node->vnode->type != VREG)
+	if (node->vnode->type != VREG && node->vnode->type != VDIR)
 		return -EBADF;
 
 	iop_t *iop;
@@ -260,7 +262,8 @@ NinePFS::pagerFid(ninepfs_node *node, ninep_fid_t &handle_out)
 	buf_in->data->tag = ninep_unique++;
 	buf_in->data->kind = k9pLopen;
 	ninep_buf_addfid(buf_in, new_fid);
-	ninep_buf_addu32(buf_in, O_RDWR);
+	ninep_buf_addu32(buf_in,
+	    node->vnode->type == VDIR ? O_DIRECTORY : O_RDWR);
 	ninep_buf_close(buf_in);
 
 	req = new9pRequest(buf_in, NULL, buf_out, NULL);
@@ -670,6 +673,125 @@ NinePFS::readlink(vnode_t *vn, char *out)
 	return r;
 }
 
+off_t
+NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
+    off_t seqno)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data);
+	off_t r = 0;
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_fid_t dirfid;
+	ninep_buf *buf_in, *buf_out;
+
+	kassert(buf_size <= 2048);
+
+	r = self->pagerFid(node, dirfid);
+	if (r != 0) {
+		DKDevLog(self, "Failed to get a pager Fid! Error %ld\n", r);
+		kfatal("Unhandled\n");
+	}
+
+	/* size[4] Treaddir tag[2] fid[4] offset[8] count[4] */
+	buf_in = ninep_buf_alloc("Fld");
+	/* size[4] Rreaddir tag[2] count[4] data[count] */
+	buf_out = ninep_buf_alloc_bytes(buf_size);
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pReaddir;
+	ninep_buf_addfid(buf_in, dirfid);
+	ninep_buf_addu64(buf_in, seqno);
+	ninep_buf_addu32(buf_in, buf_size);
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pReaddir + 1:
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		goto out;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	uint32_t bytes_from_9p;
+	size_t bytes_copied_out;
+	off_t last_offset;
+
+	bytes_copied_out = 0;
+	last_offset = seqno;
+
+	r = ninep_buf_getu32(buf_out, &bytes_from_9p);
+	kassert(r == 0);
+
+	/*
+	 * we don't rangecheck our output buffer because the 9p dirent format is
+	 * larger, so it will always fit. It might be prudent to assert this
+	 * just in case.
+	 */
+
+	while (bytes_from_9p) {
+		ninep_qid qid;
+		uint64_t offset;
+		uint8_t type;
+		char *name;
+		struct dirent *out_buf = (struct dirent *)buf;
+
+		r = ninep_buf_getqid(buf_out, &qid);
+		if (r != 0) {
+			break;
+		}
+
+		r = ninep_buf_getu64(buf_out, &offset);
+		kassert(r == 0);
+
+		r = ninep_buf_getu8(buf_out, &type);
+		kassert(r == 0);
+
+		/* TODO: eliminate double copy */
+
+		r = ninep_buf_getstr(buf_out, &name);
+		kassert(r == 0);
+
+		out_buf->d_off = offset;
+		out_buf->d_ino = qid.path;
+		out_buf->d_type = type;
+		strcpy(out_buf->d_name, name);
+		out_buf->d_reclen = DIRENT_RECLEN(strlen(name));
+
+		kmem_strfree(name);
+		last_offset = offset;
+		*(char **)&buf += out_buf->d_reclen;
+		bytes_copied_out += out_buf->d_reclen;
+	}
+
+	ninep_buf_free(buf_out);
+
+	r = last_offset;
+	*bytes_read = bytes_copied_out;
+
+out:
+	return r;
+}
+
 int
 NinePFS::root(vfs_t *vfs, vnode_t **vout)
 {
@@ -770,11 +892,10 @@ struct vfsops NinePFS::vfsops = {
 	.root = root,
 };
 
-struct vnops NinePFS::vnops = {
-	.create = create,
+struct vnops NinePFS::vnops = { .create = create,
 	.getattr = getattr,
 	.lookup = lookup,
 	.read = read,
+	.readdir = readdir,
 	.readlink = readlink,
-	.write = write
-};
+	.write = write };

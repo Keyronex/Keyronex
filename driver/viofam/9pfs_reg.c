@@ -9,10 +9,22 @@
 #include "kdk/libkern.h"
 
 struct ninep_buf *
-ninep_buf_alloc(const char *fmt)
+ninep_buf_alloc_bytes(size_t size)
 {
 	struct ninep_buf *buf;
-	size_t size = sizeof(struct ninep_hdr);
+
+	buf = kmem_alloc(sizeof(*buf));
+	buf->bufsize = size + sizeof(struct ninep_hdr);
+	buf->data = kmem_alloc(buf->bufsize);
+	buf->offset = 0;
+
+	return buf;
+}
+
+struct ninep_buf *
+ninep_buf_alloc(const char *fmt)
+{
+	size_t size = 0;
 
 	while (*fmt != '\0') {
 		switch (*fmt++) {
@@ -52,15 +64,7 @@ ninep_buf_alloc(const char *fmt)
 		}
 	}
 
-	struct ninep_version_hdr *fanny = NULL;
-	(void)fanny;
-
-	buf = kmem_alloc(sizeof(*buf));
-	buf->bufsize = size;
-	buf->data = kmem_alloc(size);
-	buf->offset = 0;
-
-	return buf;
+	return ninep_buf_alloc_bytes(size);
 }
 
 void
@@ -125,6 +129,14 @@ ninep_buf_close(struct ninep_buf *buf)
 }
 
 int
+ninep_buf_getu8(struct ninep_buf *buf, uint8_t *num_out)
+{
+	*num_out = *((uint8_t *)&buf->data->data[buf->offset]);
+	buf->offset += sizeof(uint8_t);
+	return 0;
+}
+
+int
 ninep_buf_getu16(struct ninep_buf *buf, uint16_t *num_out)
 {
 	*num_out = *((uint16_t *)&buf->data->data[buf->offset]);
@@ -161,6 +173,7 @@ ninep_buf_getstr(struct ninep_buf *buf, char **str_out)
 
 	str = kmem_alloc(slen + 1);
 	memcpy(str, &buf->data->data[buf->offset], slen);
+	buf->offset += slen;
 
 	str[slen] = '\0';
 	*str_out = str;
@@ -171,6 +184,10 @@ ninep_buf_getstr(struct ninep_buf *buf, char **str_out)
 int
 ninep_buf_getqid(struct ninep_buf *buf, struct ninep_qid *qid_out)
 {
+	if (buf->offset + sizeof(struct ninep_hdr) + sizeof(struct ninep_qid) >=
+	    buf->data->size + 1)
+		return -1;
+
 	if (qid_out == NULL) {
 		buf->offset += sizeof(struct ninep_qid);
 		return 0;
