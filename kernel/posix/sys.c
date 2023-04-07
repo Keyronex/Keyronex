@@ -523,7 +523,7 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	/* file syscalls */
 	case kPXSysIOCtl:
-		RET = sys_ioctl(ARG1, ARG2, (void*)ARG3);
+		RET = sys_ioctl(ARG1, ARG2, (void *)ARG3);
 		break;
 
 	case kPXSysOpen:

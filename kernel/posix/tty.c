@@ -254,19 +254,32 @@ static int
 tty_ioctl(vnode_t *vn, unsigned long command, void *data)
 {
 	struct tty *tty = (struct tty *)vn->rdevice;
-	ipl_t ipl = ke_spinlock_acquire(&tty->lock);
+	ipl_t ipl;
 	int r = 0;
 
 	switch (command) {
-	case TCGETS:
-		*(struct termios *)data = tty->termios;
+	case TCGETS: {
+		struct termios tmp;
+
+		ipl = ke_spinlock_acquire(&tty->lock);
+		tmp = tty->termios;
+
+		ke_spinlock_release(&tty->lock, ipl);
+
+		*(struct termios *)data = tmp;
 		break;
+	}
 
 	case TCSETS:
 	case TCSETSF:
 	case TCSETSW: {
+		struct termios tmp = *(struct termios *)data;
+
+		ipl = ke_spinlock_acquire(&tty->lock);
+		tty->termios = tmp;
+		ke_spinlock_release(&tty->lock, ipl);
+
 		/* todo: adjust event if canonicity changed */
-		tty->termios = *(struct termios *)data;
 		break;
 
 	case TIOCGWINSZ: {
@@ -294,8 +307,6 @@ tty_ioctl(vnode_t *vn, unsigned long command, void *data)
 		kfatal("Unhandled ioctl.\n");
 	}
 	}
-
-	ke_spinlock_release(&tty->lock, ipl);
 
 	return r;
 }

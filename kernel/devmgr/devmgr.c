@@ -125,6 +125,8 @@ start:
 	 * initial send of the IOP */
 	if (res != -1) {
 		r = res;
+		kassert(iop->stack_current != 1 &&
+		    iop->stack_current < iop->stack_count);
 		frame = iop_stack_current(iop);
 		if (iop->direction == kIOPDown)
 			goto continuation_down;
