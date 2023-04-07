@@ -17,6 +17,7 @@ enum posix_syscall {
 	kPXSysDebug,
 	kPXSysMmap,
 
+	kPXSysIOCtl,
 	kPXSysOpen,
 	kPXSysClose,
 	kPXSysRead,
@@ -42,5 +43,10 @@ enum posix_stat_kind {
 	kPXStatKindAt,
 	kPXStatKindCWD,
 };
+
+#define TCGETS		0x5401
+#define TCSETS		0x5402
+#define TCSETSW		0x5403
+#define TCSETSF		0x5404
 
 #endif /* KRX_POSIX_POSIXSS_H */

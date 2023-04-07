@@ -29,6 +29,12 @@ devfs_setup_vnode(vnode_t *vn, struct device *rdevice, struct vnops *devvnops)
 }
 
 static int
+devfs_ioctl(vnode_t *vn, unsigned long command, void *arg)
+{
+	return vn->rdeviceops->ioctl(vn, command, arg);
+}
+
+static int
 devfs_read(vnode_t *vn, void *buf, size_t size, off_t off)
 {
 	return vn->rdeviceops->read(vn, buf, size, off);
@@ -289,6 +295,7 @@ struct vnops tmpfs_vnops = {
 };
 
 struct vnops tmpfs_spec_vnops = {
+	.ioctl = devfs_ioctl,
 	.getattr = tmp_getattr,
 	.read = devfs_read,
 	.write = devfs_write,

@@ -82,6 +82,22 @@ vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 }
 
 int
+sys_ioctl(int fd, unsigned long command, void *data)
+{
+	struct file *file = ps_getfile(ps_curproc(), fd);
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_IOCTL(fd: %d, command: 0x%lx\n", fd, command);
+#endif
+
+	if (file == NULL)
+		return -EBADF;
+
+	kassert(file->vn->ops->ioctl != NULL);
+	return VOP_IOCTL(file->vn, command, data);
+}
+
+int
 posix_do_openat(vnode_t *dvn, const char *path, int mode)
 {
 	eprocess_t *eproc = ps_curproc();
@@ -506,6 +522,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 
 	/* file syscalls */
+	case kPXSysIOCtl:
+		RET = sys_ioctl(ARG1, ARG2, (void*)ARG3);
+		break;
+
 	case kPXSysOpen:
 		RET = sys_open((const char *)ARG1, ARG2);
 		break;

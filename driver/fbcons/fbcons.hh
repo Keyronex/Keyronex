@@ -15,6 +15,7 @@ class FBConsole : public Device {
 
     static void puts(const char *buf, size_t len);
     static void printstats();
+    static void getsize(struct winsize *ws);
 
     public:
 	FBConsole(Device*provider);

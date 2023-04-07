@@ -3,10 +3,14 @@
  * Created on Sat Mar 25 2023.
  */
 
+#include <sys/errno.h>
+#include <termios.h>
+
 #include "kdk/kernel.h"
-#include "kdk/vfs.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/posixss.h"
+#include "kdk/vfs.h"
 #include "posix/tty.h"
 
 #define ISSET(FIELD, VAL) ((FIELD)&VAL)
@@ -246,7 +250,58 @@ tty_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 	return r;
 }
 
+static int
+tty_ioctl(vnode_t *vn, unsigned long command, void *data)
+{
+	struct tty *tty = (struct tty *)vn->rdevice;
+	ipl_t ipl = ke_spinlock_acquire(&tty->lock);
+	int r = 0;
+
+	switch (command) {
+	case TCGETS:
+		*(struct termios *)data = tty->termios;
+		break;
+
+	case TCSETS:
+	case TCSETSF:
+	case TCSETSW: {
+		/* todo: adjust event if canonicity changed */
+		tty->termios = *(struct termios *)data;
+		break;
+
+	case TIOCGWINSZ: {
+		struct winsize *ws = data;
+
+		/* todo don't hardcode syscon */
+		syscon_getsize(ws);
+
+		break;
+	}
+
+	case TIOCSWINSZ: {
+		/* todo, do we allow it?*/
+
+		/* epsilon*/
+		break;
+	}
+
+	case TIOCGPGRP:
+	case TIOCSPGRP:
+		r = -ENOSYS;
+		break;
+
+	default:
+		kfatal("Unhandled ioctl.\n");
+	}
+	}
+
+	ke_spinlock_release(&tty->lock, ipl);
+
+	return r;
+}
+
 struct vnops tty_vnops = {
+	.ioctl = tty_ioctl,
 	.read = tty_read,
 	.write = tty_write,
 	.chpoll = tty_chpoll,

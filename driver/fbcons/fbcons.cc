@@ -3,10 +3,10 @@
  * Created on Thu Mar 23 2023.
  */
 
+#include <termios.h>
+
 #include "../../vendor/limine-terminal/backends/framebuffer.h"
 #include "kdk/kmem.h"
-#include "kdk/libkern.h"
-#include "kdk/machdep.h"
 #include "kdk/vm.h"
 
 #include "fbcons.hh"
@@ -113,6 +113,15 @@ FBConsole::printstats()
 	    vmstat.nanon, syscon->objhdr.name);
 }
 
+void
+FBConsole::getsize(struct winsize *ws)
+{
+	ws->ws_col = syscon->term->cols;
+	ws->ws_row = syscon->term->rows;
+	ws->ws_xpixel = syscon->fb->width - 8 * 2;
+	ws->ws_ypixel = syscon->fb->height - 93 - 36;
+}
+
 FBConsole::FBConsole(Device *provider)
 {
 	struct fbterm_context *gterm;
@@ -159,6 +168,7 @@ FBConsole::FBConsole(Device *provider)
 		syscon = this;
 		syscon_puts = puts;
 		syscon_printstats = printstats;
+		syscon_getsize = getsize;
 	}
 
 	kmem_asprintf(&objhdr.name, "fbcons%u", num);

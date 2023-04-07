@@ -697,7 +697,7 @@ NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
 	/* size[4] Treaddir tag[2] fid[4] offset[8] count[4] */
 	buf_in = ninep_buf_alloc("Fld");
 	/* size[4] Rreaddir tag[2] count[4] data[count] */
-	buf_out = ninep_buf_alloc_bytes(buf_size);
+	buf_out = ninep_buf_alloc_bytes(buf_size + 4);
 
 	buf_in->data->tag = self->ninep_unique++;
 	buf_in->data->kind = k9pReaddir;

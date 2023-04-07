@@ -12,6 +12,8 @@
 #include "kernel/ke_internal.h"
 #include "vm/vm_internal.h"
 
+struct winsize;
+
 enum { kPortCOM1 = 0x3f8 };
 
 /* apic.c */
@@ -80,7 +82,7 @@ const unsigned logosize = logow * logoh * 4;
 extern const char logosmall[6512];
 void (*syscon_puts)(const char *buf, size_t len) = NULL;
 void (*syscon_printstats)(void) = NULL;
-
+void (*syscon_getsize)(struct winsize *winsize) = NULL;
 
 static void
 done(void)

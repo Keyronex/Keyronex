@@ -509,10 +509,14 @@ kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
 /*! Platform-specific debug putc(). */
 void hl_dputc(int ch, void *ctx);
 
+struct winsize;
+
 /*! System console puts - initially NULL. */
 extern void (*syscon_puts)(const char *buf, size_t len);
 /*! System console print stats - initially NULL - invoked every second. */
 extern void (*syscon_printstats)(void);
+/*! System console get dimensions. */
+extern void (*syscon_getsize)(struct winsize *winsize);
 /*! System console input string  */
 void syscon_instr(const char *str);
 /*! System console input char  */
