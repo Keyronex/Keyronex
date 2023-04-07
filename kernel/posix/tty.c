@@ -4,6 +4,7 @@
  */
 
 #include <sys/errno.h>
+
 #include <termios.h>
 
 #include "kdk/kernel.h"
@@ -118,7 +119,7 @@ tty_input(struct tty *tty, int c)
 		}
 	}
 
-	/* newline */
+	/* newline translation */
 	if (c == '\r') {
 		if (ISSET(tty->termios.c_iflag, IGNCR))
 			goto out;
@@ -165,40 +166,25 @@ tty_read(vnode_t *vn, void *buf, size_t nbyte, io_off_t off)
 
 	(void)off;
 
-#if 0
-	kdprintf("READ %zu bytes from TTY, canon? %d", nbyte, tty_iscanon(tty));
-#endif
-
 in:
 	ipl = ke_spinlock_acquire(&tty->lock);
 
 	if ((tty_iscanon(tty) && tty->nlines == 0) || (tty->buflen == 0)) {
 		ke_spinlock_release(&tty->lock, ipl);
-#if 0
-		kdprintf("Go to sleep on read evobj (signal state is %d)\n",
-		    tty->read_evobj.hdr.signalled);
-#endif
 		ke_wait(&tty->read_evobj, "tty_read:read_event", false, false,
 		    -1);
-#if 0
-		kdprintf("WOKE! NLines %zu, Buflen %zu\n", tty->nlines,
-		    tty->buflen);
-#endif
 		goto in;
 	}
 
 	while (nread < nbyte) {
 		int c = dequeue(tty);
 		((char *)buf)[nread++] = c;
-		if (c == '\n' || c == tty->termios.c_cc[VEOL]) {
+		if (tty_iscanon(tty) && c == tty->termios.c_cc[VEOL]) {
 			break;
 		}
 	}
 
 	ke_spinlock_release(&tty->lock, ipl);
-#if 0
-	kdprintf("Returning %zu bytes\n", nread);
-#endif
 
 	return nread;
 }
@@ -263,7 +249,6 @@ tty_ioctl(vnode_t *vn, unsigned long command, void *data)
 
 		ipl = ke_spinlock_acquire(&tty->lock);
 		tmp = tty->termios;
-
 		ke_spinlock_release(&tty->lock, ipl);
 
 		*(struct termios *)data = tmp;

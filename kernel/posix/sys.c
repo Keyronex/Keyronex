@@ -455,7 +455,7 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 	nanosecs_t nanosecs;
 	if (!timeout)
 		nanosecs = -1;
-	else if (timeout->tv_nsec <= 100000 && timeout->tv_nsec == 0)
+	else if (timeout->tv_nsec <= 1000 && timeout->tv_nsec == 0)
 		nanosecs = 0;
 	else
 		nanosecs = (nanosecs_t)timeout->tv_sec * NS_PER_S +

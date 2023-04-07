@@ -3,6 +3,7 @@
  * Created on Wed Mar 29 2023.
  */
 
+#include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/objhdr.h"
@@ -139,9 +140,19 @@ loop:
 			vnode = (vnode_t *)page->obj;
 			mdl = vm_mdl_alloc(1);
 
+
+			/* should handling of this move into the vnode op? */
+			size_t actual_size;
+
+			if (opage->page_index * PGSIZE + PGSIZE > vnode->size)
+				actual_size = vnode->size -
+				    opage->page_index * PGSIZE;
+			else
+				actual_size = PGSIZE;
+
 			mdl->pages[0] = page;
 			iop_t *iop = iop_new_write(vnode->vfsp->dev, mdl,
-			    PGSIZE, opage->page_index * PGSIZE);
+			    actual_size, opage->page_index * PGSIZE);
 			iop->stack[0].vnode = vnode;
 
 			iop_return_t res = iop_send_sync(iop);

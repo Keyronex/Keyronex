@@ -35,7 +35,7 @@ struct tty {
 #define TTYDEF_OFLAG (OPOST | ONLCR)
 #define TTYDEF_LFLAG (ECHO | ICANON | ISIG | IEXTEN | ECHOE | ECHOKE | ECHOCTL)
 #define TTYDEF_CFLAG (CREAD | CS8 | HUPCL)
-#define TTYDEF_SPEED (B9600)
+#define TTYDEF_SPEED (B38400)
 
 void tty_input(struct tty *tty, int c);
 

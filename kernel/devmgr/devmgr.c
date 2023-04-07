@@ -125,7 +125,7 @@ start:
 	 * initial send of the IOP */
 	if (res != -1) {
 		r = res;
-		kassert(iop->stack_current != 1 &&
+		kassert(iop->stack_current != -1 &&
 		    iop->stack_current < iop->stack_count);
 		frame = iop_stack_current(iop);
 		if (iop->direction == kIOPDown)
@@ -138,7 +138,8 @@ cont:
 	if (iop->direction == kIOPDown) {
 		/* travelling down the stack. */
 		iop->stack_current++;
-		kassert(iop->stack_current < iop->stack_count);
+		kassert(iop->stack_current < iop->stack_count &&
+		    iop->stack_current > -1);
 		frame = iop_stack_current(iop);
 
 		if (!SLIST_EMPTY(&frame->associated_iops)) {
@@ -199,10 +200,8 @@ cont:
 	} else {
 		/* travelling back up the stack. */
 		iop->stack_current--;
+		kassert(iop->stack_current > -2);
 		frame = iop_stack_current(iop);
-
-		/*! associated IOPs should all be gone */
-		kassert(SLIST_EMPTY(&frame->associated_iops));
 
 		if (iop->stack_current == -1) {
 			/*! if the last frame we completed was the zeroth entry
@@ -254,6 +253,9 @@ cont:
 				return kIOPRetCompleted;
 			}
 		}
+
+		/*! associated IOPs should all be gone */
+		kassert(SLIST_EMPTY(&frame->associated_iops));
 
 		kassert(frame->dev->complete != NULL);
 		r = frame->dev->complete(frame->dev, iop);
