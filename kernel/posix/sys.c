@@ -565,7 +565,7 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	switch (frame->rax) {
 	case kPXSysDebug:
-		kdprintf("<DEBUG>: %s\n", (char *)ARG1);
+		// kdprintf("<DEBUG>: %s\n", (char *)ARG1);
 		syscon_printstats();
 		break;
 

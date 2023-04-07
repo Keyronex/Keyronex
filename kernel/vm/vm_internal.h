@@ -159,6 +159,12 @@ void vmp_map_dump(vm_map_t *map);
 int vmp_page_alloc_locked(vm_map_t *ps, bool must, enum vm_page_use use,
     vm_page_t **out);
 
+/*! @brief Initialise pagedaemon. */
+void vm_pdaemon_init(void);
+
+/*! @brief Pagedaemon thread loop. */
+void vm_pagedaemon(void);
+
 /*! @brief Comparator function for map entry rb-tree. */
 int vmp_map_entry_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
 /*! @brief Comparator function for page ref rb-tree. */

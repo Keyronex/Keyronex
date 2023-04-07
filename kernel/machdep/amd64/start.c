@@ -171,6 +171,8 @@ mem_init()
 		done();
 	}
 
+	vm_pdaemon_init();
+
 	struct limine_memmap_entry **entries = memmap_request.response->entries;
 
 	for (int i = 0; i < memmap_request.response->entry_count; i++) {

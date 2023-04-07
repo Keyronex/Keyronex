@@ -25,6 +25,8 @@ ethread_t init_thread;
 void acpipc_autoconf(void *rsdp);
 /* vm/cleaner.c */
 int vm_cleaner_init(void);
+/* vm/pdaemon.c */
+void vm_pagedaemon(void);
 /* posix/posixss.c */
 int psx_init(void);
 
@@ -52,8 +54,7 @@ init_thread_start(void *rsdp)
 	psx_init();
 
 	/* become some sort of worker thread? */
-	for (;;)
-		asm("pause");
+	vm_pagedaemon();
 }
 
 void
