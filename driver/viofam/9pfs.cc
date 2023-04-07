@@ -410,11 +410,12 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 	}
 	}
 
+	struct ninep_qid qid;
 	uint64_t valid;
 
 	ninep_buf_getu64(buf_out, &valid);
 	kassert(valid == k9pGetattrBasic);
-	ninep_buf_getqid(buf_out, NULL);
+	ninep_buf_getqid(buf_out, &qid);
 	ninep_buf_getu32(buf_out, &vattr.mode);
 	ninep_buf_getu32(buf_out, NULL); /* uid */
 	ninep_buf_getu32(buf_out, NULL); /* gid */
@@ -429,7 +430,9 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.mtim.tv_nsec);
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.ctim.tv_sec);
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.ctim.tv_nsec);
+
 	vattr.type = mode_to_vtype(vattr.mode);
+	vattr.ino = qid.path;
 
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);
@@ -673,6 +676,65 @@ NinePFS::readlink(vnode_t *vn, char *out)
 	return r;
 }
 
+int
+NinePFS::remove(vnode_t *vn, const char *name)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data);
+	ninep_fid_t dirfid;
+	int r;
+
+	r = self->genericFid(node, dirfid);
+	if (r != 0) {
+		DKDevLog(self, "Failed to get a pager Fid! Error %d\n", r);
+		kfatal("Unhandled\n");
+	}
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+
+	/* size[4] Tunlinkat tag[2] dirfd[4] name[s] flags[4] */
+	buf_in = ninep_buf_alloc("FS64d");
+	/* size[4] Runlinkat tag[2] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pUnlinkAt;
+	ninep_buf_addfid(buf_in, dirfid);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_addu32(buf_in, 0);
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+
+	switch (buf_out->data->kind) {
+	case k9pUnlinkAt + 1:
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		kfatal("Unlinkat failed with %d\n", r);
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	return r;
+}
+
 off_t
 NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
     off_t seqno)
@@ -898,4 +960,5 @@ struct vnops NinePFS::vnops = { .create = create,
 	.read = read,
 	.readdir = readdir,
 	.readlink = readlink,
+	.remove = remove,
 	.write = write };

@@ -27,6 +27,7 @@ enum ninep_kind {
 	k9pReadlink = 22,
 	k9pGetattr = 24,
 	k9pReaddir = 40,
+	k9pUnlinkAt = 76,
 
 	k9pVersion = 100,
 	k9pAuth = 102,
