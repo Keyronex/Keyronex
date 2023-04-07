@@ -412,10 +412,63 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	sb->st_atim = vattr.atim;
 	sb->st_ctim = vattr.ctim;
 	sb->st_mtim = vattr.mtim;
+	sb->st_ino = vattr.ino;
 
 out:
 	if (pathcpy != NULL)
 		kmem_strfree(pathcpy);
+
+	return r;
+}
+
+int
+sys_unlinkat(int fd, const char *path, int flags)
+{
+	int r;
+	vnode_t *vn = NULL, *dvn_with_file = NULL;
+	char *pathcpy;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_UNLINKAT(fd: %d, name: %d, flags: %d)", fd, name, flags);
+#endif
+
+	if (fd == AT_FDCWD) {
+		vn = root_vnode;
+	} else {
+		struct file *file = ps_getfile(ps_curproc(), fd);
+
+		if (file == NULL) {
+			r = -EBADF;
+			goto out;
+		}
+
+		vn = file->vn;
+	}
+
+	pathcpy = strdup(path);
+
+	r = vfs_lookup(vn, &dvn_with_file, pathcpy, kLookup2ndLast, NULL);
+	if (r != 0)
+		goto out;
+
+	if (flags & AT_REMOVEDIR) {
+		kdprintf("warning: AT_REMOVEDIR not implemented yet\n");
+		r = -ENOTDIR;
+		goto out;
+	} else {
+		char *lastname = pathcpy + strlen(pathcpy);
+		while (*(lastname - 1) != '/' && (lastname != pathcpy))
+			lastname--;
+		kassert(dvn_with_file != NULL);
+		kassert(dvn_with_file->ops->remove != NULL);
+		r = VOP_REMOVE(dvn_with_file, lastname);
+	}
+
+out:
+	if (dvn_with_file)
+		obj_direct_release(dvn_with_file);
+	if (vn)
+		obj_direct_release(vn);
 
 	return r;
 }
@@ -512,7 +565,7 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	switch (frame->rax) {
 	case kPXSysDebug:
-		kdprintf("<DEBUG>: %s\n", (char *)ARG1);
+		// kdprintf("<DEBUG>: %s\n", (char *)ARG1);
 		syscon_printstats();
 		break;
 
@@ -557,6 +610,10 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysStat:
 		RET = sys_stat(ARG1, ARG2, (const char *)ARG3, ARG4,
 		    (struct stat *)ARG5);
+		break;
+
+	case kPXSysUnlinkAt:
+		RET = sys_unlinkat(ARG1, (const char *)ARG2, ARG3);
 		break;
 
 	case kPXSysPPoll:

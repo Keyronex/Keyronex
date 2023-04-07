@@ -40,6 +40,8 @@ typedef struct vattr {
 	size_t size;
 	/* access, modification, creation times */
 	struct timespec atim, mtim, ctim;
+	/* unique identifier */
+	ino_t ino;
 	/*! legacy device represented by file */
 	dev_t rdev;
 	/*! new-style device represented by file */
@@ -158,6 +160,8 @@ struct vnops {
 	 */
 	int (*readlink)(vnode_t *dvn, char *out);
 
+	/*! @brief Remove a file from a directory. */
+	int (*remove)(vnode_t *dvn, const char *name);
 	/*! @brief Write (via page cache) to a vnode. */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
@@ -192,6 +196,7 @@ enum lookup_flags {
 	kLookupFollowSymlinks = 1 << 1,
 	kLookupMustDir = 1 << 2,
 	kLookupNoFollow = 1 << 3,
+	kLookup2ndLast = 1 << 4,
 };
 
 #define DIRENT_RECLEN(NAMELEN) \
@@ -207,6 +212,8 @@ enum lookup_flags {
 	vnode->ops->write(vnode, buf, nbyte, off)
 #define VOP_CREAT(vnode, out, name, attr) \
 	vnode->ops->create(vnode, out, name, attr)
+#define VOP_REMOVE(VN, NAME) \
+	(VN)->ops->remove(VN, NAME)
 #define VOP_GETATTR(VN, OUT) (VN)->ops->getattr(VN, OUT)
 #define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
 #define VOP_MKDIR(vnode, out, name, attr) \

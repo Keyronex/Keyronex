@@ -28,6 +28,7 @@ enum posix_syscall {
 	kPXSysIsATTY,
 	kPXSysReadDir,
 	kPXSysStat,
+	kPXSysUnlinkAt,
 
 	kPXSysSetFSBase,
 	kPXSysExecVE,

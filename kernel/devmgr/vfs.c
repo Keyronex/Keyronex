@@ -141,6 +141,8 @@ loop:
 	}
 
 	if (*next == '\0') {
+		if (flags & kLookup2ndLast)
+			goto out;
 		/* end of path */
 		last = true;
 	} else
@@ -192,9 +194,21 @@ out:
 		}
 	}
 
-	if (prevvn)
-		obj_direct_release(prevvn);
+	if (flags & kLookup2ndLast) {
+		if (prevvn == NULL)
+			*out = vn;
+		else if (vn != NULL) {
+			*out = prevvn;
+			obj_direct_release(vn);
+		} else {
+			kfatal("Unreached\n");
+		}
+		return 0;
+	} else {
+		if (prevvn)
+			obj_direct_release(prevvn);
 
-	*out = vn;
-	return 0;
+		*out = vn;
+		return 0;
+	}
 }
