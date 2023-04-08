@@ -3,7 +3,7 @@
 	url = https://github.com/limine-bootloader/limine.git
 	branch = v4.x-branch-binary
 [submodule "subprojects/mlibc"]
-	path = subprojects/mlibc
+	path = mlibc
 	url = ../mlibc
 [submodule "vendor/lwip"]
 	path = vendor/lwip
