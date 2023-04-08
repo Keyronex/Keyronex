@@ -8,11 +8,12 @@
 
 #include <sys/socket.h>
 
+#include <abi-bits/in.h>
 #include <stdint.h>
 
-#include "abi-bits/in.h"
 #include "executive/epoll.h"
 #include "kdk/vfs.h"
+#include "lwip/inet.h"
 
 enum chpoll_kind;
 
@@ -53,7 +54,8 @@ struct socknode {
  * Socket node operations. They are all entered unlocked for the time being.
  */
 struct socknodeops {
-	int (*create)(krx_out vnode_t **out_vn, int domain, int type, int protocol);
+	int (*create)(krx_out vnode_t **out_vn, int domain, int type,
+	    int protocol);
 	int (*accept)(vnode_t *vn, krx_out struct sockaddr *addr,
 	    krx_inout socklen_t *addrlen);
 	int (*bind)(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen);

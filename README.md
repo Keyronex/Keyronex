@@ -11,6 +11,8 @@ available on the
 
 It doesn't do anything useful or interesting yet.
 
+![Keyronex running GCC](docs/gcc.png)
+
 ### Architecture
 
 Keyronex combines influences from the Unix tradition (particularly Mach, NetBSD,
