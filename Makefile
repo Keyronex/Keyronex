@@ -1,3 +1,3 @@
-SUBDIR += kernel
+SUBDIR += mlibc kernel
 
 .include <bsd.subdir.mk>
