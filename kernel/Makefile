@@ -2,6 +2,7 @@ SUB=..
 
 PKGNAME=kernel
 PKG_SRCDIR=./
+PKG_PREFIX=/
 
 do-fetch:
 

@@ -154,7 +154,7 @@ later in the section on fault handling.
 
 The has_anonymous flag is set if the entry refers to either process-private
 anonymous memory or a copy-on-write mapping of a `vm_object_t`. If the flag is
-set, the entry also has a `vmp_amap`` associated with it. 
+set, the entry also has a `vmp_amap`` associated with it.
 
 Page management
 ---------------

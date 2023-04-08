@@ -18,7 +18,7 @@ kernel = executable(
 	],
 	include_directories: [ kernel_include_directories,
 		limine_include_directories,
-		'.' 
+		'.'
 	],
 	install: true,
 	install_dir: '/boot'

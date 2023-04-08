@@ -1,7 +1,7 @@
 VFS
 ===
 
-The kernel VFS is mostly modeled after SunOS VFS. 
+The kernel VFS is mostly modeled after SunOS VFS.
 
 Two public objects are associated with it:
  - the File object - resembles a Unix kernel file descriptor.

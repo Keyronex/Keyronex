@@ -1,13 +1,7 @@
-KP_TOP=${.CURDIR}/${SUB}
-KP_WORKDIR?=/tmp/keybld
-KP_SRCDIR?=${KP_WORKDIR}/source
-KP_SYSROOT?=${KP_WORKDIR}/sysroot
-KP_STAGEDIR?=${KP_WORKDIR}/staging
-KP_PKGOUTDIR?=${KP_WORKDIR}/packages
-
 PKG_SRCDIR?=${KP_SRCDIR}/${PKGNAME}
 PKG_WORKDIR=${KP_WORKDIR}/${PKGNAME}
-PKG_STAGEDIR=${KP_STAGEDIR}/${PKGNAME}
+#PKG_STAGEDIR=${KP_STAGEDIR}/${PKGNAME}
+PKG_STAGEDIR=${KP_SYSROOT}
 PKG_PKGOUT=${KP_PKGOUTDIR}/${PKGNAME}.tar.gz
 
 fetch: do-fetch
@@ -24,4 +18,6 @@ do-package:
 
 package: do-package
 
-all: configure build stage package 
+all: configure build stage package
+
+.include "krx.kp.mk"

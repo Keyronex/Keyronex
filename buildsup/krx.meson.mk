@@ -1,6 +1,8 @@
 do-configure:
-	meson setup --cross-file=${KP_TOP}/buildsup/keyronex-amd64.ini \
-		--prefix=/ \
+	mkdir -p ${PKG_WORKDIR}
+	${KP_TOP}/buildsup/mkcrossfile.sh ${KP_SYSROOT} > ${PKG_WORKDIR}/cross-file.ini
+	meson setup --cross-file=${PKG_WORKDIR}/cross-file.ini \
+		--prefix=${PKG_PREFIX} \
 		${PKG_WORKDIR} \
 		${PKG_SRCDIR}
 
