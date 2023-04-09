@@ -12,7 +12,12 @@ _PKG_PATCHDONE=${PKG_WORKDIR}/.patch-done
 _PKG_CONFDONE=${PKG_WORKDIR}/.conf-done
 _PKG_BUILDDONE=${PKG_WORKDIR}/.build-done
 _PKG_STAGEDONE=${PKG_WORKDIR}/.stage-done
+_PKG_POSTSTAGEDONE=${PKG_WORKDIR}/.post-stage-done
 _PKG_PACKAGEDONE=${PKG_WORKDIR}/.package-done
+
+.if !target(do-post-stage)
+do-post-stage:
+.endif
 
 ${_PKG_FETCHDONE}:
 	@mkdir -p ${PKG_WORKDIR}
@@ -62,7 +67,12 @@ ${_PKG_STAGEDONE}: ${_PKG_BUILDDONE}
 	@${MAKE} ${MAKEFLAGS} do-stage
 	touch $@
 
-${_PKG_PACKAGEDONE} : ${_PKG_STAGEDONE}
+${_PKG_POSTSTAGEDONE}: ${_PKG_STAGEDONE}
+	@echo "==> Post-staging ${PKGNAME}"
+	@${MAKE} ${MAKEFLAGS} do-post-stage
+	touch $@
+
+${_PKG_PACKAGEDONE}: ${_PKG_POSTSTAGEDONE}
 	#mkdir -p ${KP_PKGOUTDIR}
 	#tar -cf ${PKG_PKGOUT} -C ${PKG_STAGEDIR} ./
 

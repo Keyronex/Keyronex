@@ -1,0 +1,8 @@
+SUB=..
+DISTFILES="https://ftp.gnu.org/gnu/ncurses/ncurses-6.4.tar.gz"
+
+CONFSUBS="ncurses-6.4/config.sub"
+CONFIGURE_SCRIPT="ncurses-6.4/configure"
+CONFIGURE_ARGS+=--with-shared --with-termlib --with-ticlib \
+  --enable-pc-files --with-pkg-config-libdir=/usr/lib/pkgconfig \
+  --with-manpage-format=normal

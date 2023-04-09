@@ -1,0 +1,14 @@
+--- ncurses-6.4/configure	2022-11-05 21:13:26.000000000 +0000
++++ ncurses-6.4/configure	2023-04-07 11:05:02.961459454 +0100
+@@ -6510,6 +6510,11 @@
+ 		LINK_PROGS="$SHELL ${rel_builddir}/mk_prog.sh"
+ 		LINK_TESTS="$SHELL ${rel_builddir}/mk_prog.sh"
+ 		;;
++
++	(keyronex*)
++		CC_SHARED_OPTS='-fPIC'
++		MK_SHARED_LIB='${CC} -shared -o $@'
++		;;
+ 	(mingw*)
+ 		cf_cv_shlib_version=mingw
+ 		cf_cv_shlib_version_infix=mingw

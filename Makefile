@@ -1,4 +1,4 @@
-SUBDIR += basefiles mlibc kernel coreutils bash
+SUBDIR += basefiles mlibc kernel coreutils bash ncurses nano
 
 #KERNEL_EXE=${KP_STAGEDIR}/kernel/boot/keyronex
 KERNEL_EXE=${KP_SYSROOT}/boot/keyronex

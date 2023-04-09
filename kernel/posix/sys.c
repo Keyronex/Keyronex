@@ -28,6 +28,10 @@
 #include "kdk/vm.h"
 #include "posix/pxp.h"
 
+#if 0
+#define DEBUG_SYSCALLS 1
+#endif
+
 void *
 vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 {
@@ -118,8 +122,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int mode)
 	}
 
 #if DEBUG_SYSCALLS == 1
-	kprintf("PID %d sys_open(%s,%d) to FD %d\n", proc->kproc->pid, path,
-	    mode, fd);
+	kdprintf("sys_open(%s,%d) to FD %d\n", path, mode, fd);
 #endif
 
 	if (fd == -1)
@@ -135,7 +138,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int mode)
 
 	if (r < 0) {
 #if DEBUG_SYSCALLS == 1
-		kprintf("lookup returned %d\n", r);
+		kdprintf("lookup returned %d\n", r);
 #endif
 		goto out;
 	}
@@ -144,7 +147,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int mode)
 		r = VOP_OPEN(&vn, mode);
 		if (r < 0) {
 #if DEBUG_SYSCALLS == 1
-			kprintf("open returned %d\n", r);
+			kdprintf("open returned %d\n", r);
 #endif
 			goto out;
 		}
@@ -298,7 +301,7 @@ sys_seek(int fd, off_t offset, int whence)
 	struct file *file = ps_getfile(ps_curproc(), fd);
 
 #if DEBUG_SYSCALLS == 1
-	kprintf("SYS_SEEK(offset: %ld)\n", offset);
+	kdprintf("SYS_SEEK(offset: %ld)\n", offset);
 #endif
 
 	if (file == NULL)
@@ -429,7 +432,7 @@ sys_unlinkat(int fd, const char *path, int flags)
 	char *pathcpy;
 
 #if DEBUG_SYSCALLS == 1
-	kdprintf("SYS_UNLINKAT(fd: %d, name: %d, flags: %d)", fd, name, flags);
+	kdprintf("SYS_UNLINKAT(fd: %d, name: %s, flags: %d)", fd, path, flags);
 #endif
 
 	if (fd == AT_FDCWD) {
@@ -480,7 +483,7 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 	int r;
 	struct epoll *epoll;
 
-	kassert(nfds > 0 && nfds < 25);
+	kassert(nfds >= 0 && nfds < 25);
 
 	epoll = epoll_new();
 
@@ -503,7 +506,8 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 	}
 
 	struct epoll_event *revents = NULL;
-	revents = kmem_alloc(sizeof(struct epoll_event) * nfds);
+	if (nfds > 0)
+		revents = kmem_alloc(sizeof(struct epoll_event) * nfds);
 
 	nanosecs_t nanosecs;
 	if (!timeout)

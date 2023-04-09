@@ -1,6 +1,13 @@
-KP_ENV_FLAGS=SYSROOT=${KP_SYSROOT} CFLAGS="--sysroot=${KP_SYSROOT}" \
-  CPPFLAGS="--sysroot=${KP_SYSROOT}" \
-  LDFLAGS="--sysroot=${KP_SYSROOT}"
+KP_ENV_FLAGS=SYSROOT=${KP_SYSROOT} \
+  CC="x86_64-keyronex-gcc --sysroot=${KP_SYSROOT}" \
+  CXX="x86_64-keyronex-g++ --sysroot=${KP_SYSROOT}"
+  LD="x86_64-keyronex-ld --sysroot=${KP_SYSROOT}"
+
+# changed to alter CC because at least ncurses doesn't respect CFLAGS
+
+#CFLAGS="--sysroot=${KP_SYSROOT}" \
+#  CPPFLAGS="--sysroot=${KP_SYSROOT}" \
+#  LDFLAGS="--sysroot=${KP_SYSROOT}"
 
 .if !target(do-configure)
 do-configure:
