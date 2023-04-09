@@ -29,7 +29,7 @@ Several logically distinct components run in kernel mode. These include:
   filesystem switch, and the device manager.
 - The drivers: run hardware and virtual devices and carry out I/O on behalf of
   the device manager.
-- The portable applications subsytem: provides those parts of the emulation of 
+- The portable applications subsytem: provides those parts of the emulation of
   the POSIX API in terms of Keyronex native APIs  which cannot be emulated in
   userland.
 

@@ -1,0 +1,7 @@
+export TERM=linux
+alias ls='ls --color=auto'
+blue="\e[0;34m"
+mag='\e[0;35m'
+reset='\e[0m'
+PS1="[${mag}\u@\h${reset} ${blue}\W${reset}]\$ "
+export PATH="/usr/bin"

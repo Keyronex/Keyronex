@@ -1,0 +1,12 @@
+diff -ruN coreutils-9.2/lib/freadseek.c patched-coreutils-9.2/lib/freadseek.c
+--- coreutils-9.2/lib/freadseek.c	2023-03-13 18:12:12.000000000 +0000
++++ coreutils-9.2/lib/freadseek.c	2023-04-09 13:49:52.067738256 +0100
+@@ -66,7 +66,8 @@
+   fp->rp += increment;
+ #elif defined SLOW_BUT_NO_HACKS     /* users can define this */
+ #else
+- #error "Please port gnulib freadseek.c to your platform! Look at the definition of getc, getc_unlocked on your system, then report this to bug-gnulib."
++  fp->__offset += increment;
++/* #error "Please port gnulib freadseek.c to your platform! Look at the definition of getc, getc_unlocked on your system, then report this to bug-gnulib." */
+ #endif
+ }
