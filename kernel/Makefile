@@ -4,18 +4,4 @@ PKGNAME=kernel
 PKG_SRCDIR=./
 PKG_PREFIX=/
 
-do-fetch:
-
-do-configure:
-	meson setup --cross-file=${KP_TOP}/buildsup/keyronex-amd64.ini \
-		--prefix=/ \
-		${PKG_WORKDIR} \
-		${PKG_SRCDIR}
-
-do-build:
-	ninja -C ${PKG_WORKDIR}
-
-do-stage:
-	DESTDIR=${PKG_STAGEDIR} ninja -C ${PKG_WORKDIR} install
-
-.include "../buildsup/krx.pkg.mk"
+.include "../buildsup/krx.meson.mk"

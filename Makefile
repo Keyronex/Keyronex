@@ -1,10 +1,14 @@
-SUBDIR += mlibc kernel
+SUBDIR += basefiles mlibc kernel coreutils bash
 
 #KERNEL_EXE=${KP_STAGEDIR}/kernel/boot/keyronex
 KERNEL_EXE=${KP_SYSROOT}/boot/keyronex
 LIMINE=vendor/limine-binary
 ISO_DIR=${KP_WORKDIR}/isoroot
 ISO=${KP_WORKDIR}/barebones.iso
+
+rebuild-kernel:
+	rm -f ${KP_WORKDIR}/kernel/.build-done
+	${MAKE} ${MAKEFLAGS}
 
 iso:
 	@mkdir -p ${ISO_DIR}

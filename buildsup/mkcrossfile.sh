@@ -12,6 +12,8 @@ cpu_family = 'x86_64'
 endian = 'little'
 cpu = 'i686'
 
-[properties]
+[built-in options]
 c_args = '--sysroot=$1'
+cpp_args = '--sysroot=$1'
+objc_args = '--sysroot=$1'
 EOF
