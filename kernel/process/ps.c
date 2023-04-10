@@ -63,9 +63,13 @@ ps_process_create(krx_out eprocess_t **process_out, eprocess_t *parent)
 	r = ke_process_init(&eproc->kproc);
 	kassert(r == 0);
 
-	ke_wait(&parent->fd_mutex, "ps_process_create:parent->fd_mutex", false, false, -1);
+	ke_wait(&parent->fd_mutex, "ps_process_create:parent->fd_mutex", false,
+	    false, -1);
 	for (int i = 0; i < elementsof(parent->files); i++) {
-		eproc->files[i] = parent->files[i];
+		if (parent->files[i] != NULL)
+			eproc->files[i] = obj_direct_retain(parent->files[i]);
+		else
+			eproc->files[i] = NULL;
 	}
 	ke_mutex_release(&parent->fd_mutex);
 

@@ -64,3 +64,10 @@ ex_init(void *arg)
 	    init_thread_start, arg);
 	ki_thread_start(&init_thread.kthread);
 }
+
+void
+file_free(struct file *file)
+{
+	if (file->vn->ops->close)
+		file->vn->ops->close(file->vn);
+}

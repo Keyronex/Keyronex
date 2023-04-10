@@ -14,6 +14,11 @@
 
 #include "kdk/kernel.h"
 #include "kdk/object.h"
+#include "kdk/objhdr.h"
+
+struct file;
+
+void file_free(struct file *file);
 
 void
 obj_initialise_header(object_header_t *hdr, object_type_t type)
@@ -51,7 +56,19 @@ obj_release(object_header_t *hdr)
 
 	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
 	    1) {
-		// kassert(hdr->reference_count == 0);
+		if (hdr->type == kObjTypeVNode)
+			/* todo: refcounting on vnodes broken */
+			return;
+
+		kassert(hdr->reference_count == 0);
+
+		switch(hdr->type) {
+			case kObjTypeFile:
+				file_free((struct file*)hdr);
+				break;
+
+			default:
+		}
 #ifdef DEBUG_OBJ
 		kdprintf("objmgr: <%p> (type %d) is to be freed\n", hdr,
 		    hdr->type);

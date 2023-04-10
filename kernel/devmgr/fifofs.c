@@ -32,7 +32,7 @@ struct fifonode {
 	uint8_t *data;
 	/* (~) */
 	size_t size;
-	/* (p) to check, (m+p) to set) */
+	/* (m or p to check, m+p to set) */
 	size_t count;
 
 	/* (m) */
@@ -109,6 +109,7 @@ sys_pipe(int *out, int flags)
 	pnode->size = PGSIZE;
 	pnode->count = 0;
 	pnode->read_head = pnode->write_head = 0;
+	pnode->nreaders = pnode->nwriters = 1;
 
 	ke_spinlock_init(&pnode->polllist_lock);
 	LIST_INIT(&pnode->polllist.pollhead_list);
@@ -210,13 +211,12 @@ fifofs_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 wait:
 	ke_wait(&pnode->mtx, "fifofs_read:mtx", false, false, -1);
 
-	if (pnode->nwriters == 0) {
-		ke_mutex_release(&pnode->mtx);
-		return 0;
-	}
-
 	if (pnode->count == 0) {
 		ke_mutex_release(&pnode->mtx);
+
+		if (pnode->nwriters == 0)
+			return 0;
+
 		ke_wait(&pnode->readable, "fifofs_read:readable", false, false,
 		    -1);
 		goto wait;
