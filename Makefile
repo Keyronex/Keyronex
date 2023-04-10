@@ -7,6 +7,7 @@ ISO_DIR=${KP_WORKDIR}/isoroot
 ISO=${KP_WORKDIR}/barebones.iso
 
 rebuild-kernel:
+	rm -f ${KP_WORKDIR}/mlibc/.build-done
 	rm -f ${KP_WORKDIR}/kernel/.build-done
 	${MAKE} ${MAKEFLAGS}
 

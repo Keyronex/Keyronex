@@ -31,7 +31,7 @@ enum chpoll_kind {
 	kChPollChange
 };
 
-typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK } vtype_t;
+typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK, VFIFO } vtype_t;
 
 typedef struct vattr {
 	vtype_t type;
@@ -167,7 +167,9 @@ struct vnops {
 	/*! @brief Write (via page cache) to a vnode. */
 	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
-	/*! @brief Change poll state. Entered unlocked. */
+	/*! @brief Close an open file. */
+	int (*close)(vnode_t *vn);
+	/*! @brief Change poll state. */
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
 };
 
@@ -214,8 +216,7 @@ enum lookup_flags {
 	vnode->ops->write(vnode, buf, nbyte, off)
 #define VOP_CREAT(vnode, out, name, attr) \
 	vnode->ops->create(vnode, out, name, attr)
-#define VOP_REMOVE(VN, NAME) \
-	(VN)->ops->remove(VN, NAME)
+#define VOP_REMOVE(VN, NAME) (VN)->ops->remove(VN, NAME)
 #define VOP_GETATTR(VN, OUT) (VN)->ops->getattr(VN, OUT)
 #define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
 #define VOP_MKDIR(vnode, out, name, attr) \

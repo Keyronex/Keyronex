@@ -29,6 +29,11 @@
 #include "kdk/vm.h"
 #include "posix/pxp.h"
 
+/* devmgr/fifofs.c */
+int sys_pipe(int *out, int flags);
+/* executive/?.c */
+int sys_dup3(int oldfd, int newfd, int flags);
+
 #if 0
 #define DEBUG_SYSCALLS 1
 #endif
@@ -181,6 +186,18 @@ sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 }
 
 int
+do_close(eprocess_t *eproc, int fd)
+{
+	if (eproc->files[fd] == NULL) {
+		return -EBADF;
+	} else {
+		obj_direct_release(eproc->files[fd]);
+		eproc->files[fd] = NULL;
+		return 0;
+	}
+}
+
+int
 sys_close(int fd)
 {
 	eprocess_t *eproc = ps_curproc();
@@ -194,15 +211,39 @@ sys_close(int fd)
 	    -1);
 	kassert(w == kKernWaitStatusOK);
 
-	if (eproc->files[fd] == NULL) {
-		r = -EBADF;
-	} else {
-		obj_direct_release(eproc->files[fd]);
-		eproc->files[fd] = NULL;
-	}
+	r = do_close(eproc, fd);
 
 	ke_mutex_release(&eproc->fd_mutex);
 
+	return r;
+}
+
+int
+sys_dup3(int oldfd, int newfd, int flags)
+{
+	eprocess_t *eproc = ps_curproc();
+	int r = newfd;
+
+	ke_wait(&eproc->fd_mutex, "dup3:eproc->fd_mutex", false, false, -1);
+
+	if (newfd > 63) {
+		r = -EBADF;
+		goto out;
+	}
+
+	if (eproc->files[oldfd] == NULL) {
+		r = -EBADF;
+		goto out;
+	}
+
+	if (eproc->files[newfd] != NULL) {
+		do_close(eproc, newfd);
+	}
+
+	eproc->files[newfd] = obj_direct_retain(eproc->files[oldfd]);
+
+out:
+	ke_mutex_release(&eproc->fd_mutex);
 	return r;
 }
 
@@ -412,6 +453,10 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 
 	case VSOCK:
 		sb->st_mode |= S_IFSOCK;
+		break;
+
+	case VFIFO:
+		sb->st_mode |= S_IFIFO;
 		break;
 
 	case VNON:
@@ -644,6 +689,14 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysGetCWD:
 		strcpy((char *)ARG1, "/");
+		break;
+
+	case kPXSysPipe:
+		RET = sys_pipe((int *)ARG1, ARG2);
+		break;
+
+	case kPXSysDup3:
+		RET = sys_dup3(ARG1, ARG2, ARG2);
 		break;
 
 	/* process & misc misc */

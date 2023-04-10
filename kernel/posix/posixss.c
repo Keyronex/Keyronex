@@ -156,6 +156,13 @@ psx_exit(int status)
 	ke_event_signal(&proc->parent->subproc_state_change);
 	px_release_proctree_mutex();
 
+
+	ke_wait(&proc->eprocess->fd_mutex, "psx_exit:eproc->fd_mutex", false, false, -1);
+	for (int i = 0; i < elementsof(proc->eprocess->files); i++) {
+		if (proc->eprocess->files[i] != NULL)
+			obj_direct_release(proc->eprocess->files[i]);
+	}
+
 	map = proc->eprocess->map;
 	proc->eprocess->map = kernel_process.map;
 	vm_map_activate(kernel_process.map);
