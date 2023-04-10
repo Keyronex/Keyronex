@@ -239,7 +239,7 @@ psx_init(void)
 	r = pxp_make_syscon_tty();
 	kassert(r == 0);
 
-	kdprintf("Launch POSIX init...\n");
+	kprintf("Launching POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);
 	kassert(r == 0);
 

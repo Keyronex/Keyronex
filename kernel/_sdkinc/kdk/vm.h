@@ -67,6 +67,8 @@ struct vm_stat {
 	size_t nvmm;
 	size_t ndev;
 
+	size_t ntotal;
+
 	size_t nanon;
 	size_t nobject;
 };

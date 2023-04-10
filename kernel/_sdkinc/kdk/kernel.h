@@ -283,14 +283,20 @@ typedef struct kcpu {
 /*! @brief Get tick count on a given CPU. */
 int64_t ke_get_ticks(kcpu_t *cpu);
 
-/*! @brief Debug printf. */
-#define kdprintf(...)                                                        \
+/*! @brief Common printf. */
+#define do_printf(PUTC, ...)                                                 \
 	{                                                                    \
 		/* kdprintf is usable everywhere, so need SPL high */        \
 		ipl_t ipl = ke_spinlock_acquire_at(&dprintf_lock, kIPLHigh); \
-		npf_pprintf(hl_dputc, NULL, __VA_ARGS__);                    \
+		npf_pprintf(PUTC, NULL, __VA_ARGS__);                        \
 		ke_spinlock_release(&dprintf_lock, ipl);                     \
 	}
+
+/*! @brief Debug printf. (Goes only to serial port by default.) */
+#define kdprintf(...) do_printf(hl_dputc, __VA_ARGS__);
+
+/*! @brief Kernel printf. (Goes to serial & syscon by default.) */
+#define kprintf(...) do_printf(hl_computc, __VA_ARGS__);
 
 /*! @brief Kernel vpprintf(). */
 #define kvppprintf(...)                                                      \
@@ -509,8 +515,14 @@ kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
 /*! Platform-specific debug putc(). */
 void hl_dputc(int ch, void *ctx);
 
+/*! Platform-specific syscon+debug putc(). */
+void hl_computc(int ch, void *ctx);
+
 /*! Platform-specific syscon putc(). */
 void hl_scputc(int ch, void *ctx);
+
+/*! @brief Replay kmsgbuf to syscon. */
+void hl_replaykmsgbuf(void);
 
 struct winsize;
 

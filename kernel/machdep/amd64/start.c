@@ -10,6 +10,7 @@
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
 #include "kernel/ke_internal.h"
+#include "process/psp.h"
 #include "vm/vm_internal.h"
 
 struct winsize;
@@ -134,6 +135,12 @@ serial_init()
 	outb(kPortCOM1 + 4, 0x0B);
 }
 
+/*! doesn't strictly belong here */
+struct kmsgbuf {
+	char buf[4096];
+	size_t read, write;
+} kmsgbuf;
+
 /* put character to limine terminal + COM1 */
 void
 hl_dputc(int ch, void *ctx)
@@ -142,15 +149,21 @@ hl_dputc(int ch, void *ctx)
 	while (!(inb(kPortCOM1 + 5) & 0x20))
 		;
 	outb(kPortCOM1, ch);
+}
 
-	/* put to syscon/limine terminal */
-	if (!syscon_puts) {
-		struct limine_terminal *terminal =
-		    terminal_request.response->terminals[0];
-		terminal_request.response->write(terminal, (char *)&ch, 1);
-	} else {
-		syscon_puts((char *)&ch, 1);
-	}
+void
+hl_computc(int ch, void *ctx)
+{
+	/* put on kmsgbuf */
+	kmsgbuf.buf[kmsgbuf.write++] = ch;
+	if (kmsgbuf.write >= 4096)
+		kmsgbuf.write = 0;
+	if (kmsgbuf.read == kmsgbuf.write && ++kmsgbuf.read == kmsgbuf.write)
+		kmsgbuf.read = 0;
+
+	hl_dputc(ch, ctx);
+
+	hl_scputc(ch, ctx);
 }
 
 void
@@ -163,6 +176,14 @@ hl_scputc(int ch, void *ctx)
 		terminal_request.response->write(terminal, (char *)&ch, 1);
 	} else {
 		syscon_puts((char *)&ch, 1);
+	}
+}
+
+void
+hl_replaykmsgbuf(void)
+{
+	for (size_t i = kmsgbuf.read; i != kmsgbuf.write; i++) {
+		hl_scputc(kmsgbuf.buf[i % sizeof(kmsgbuf.buf)], NULL);
 	}
 }
 
@@ -194,6 +215,9 @@ mem_init()
 
 		vmp_region_add(entries[i]->base, entries[i]->length);
 	}
+
+	kprintf("Available memory: %luMiB\n",
+	    vmstat.ntotal * PGSIZE / 1024 / 1024);
 }
 
 /* can't rely on mutexes until scheduling is up (and in any case not in idle
@@ -269,7 +293,7 @@ smp_init()
 
 	all_cpus = kmem_alloc(sizeof(kcpu_t *) * smpr->cpu_count);
 
-	kdprintf("%lu cpus\n", smpr->cpu_count);
+	kprintf("%lu cpus\n", smpr->cpu_count);
 	ncpus = smpr->cpu_count;
 
 	for (size_t i = 0; i < smpr->cpu_count; i++) {
@@ -318,7 +342,7 @@ _start(void)
 
 	draw_logo();
 
-	kdprintf("Keyronex (TM) Kernel Version 1.0-alpha\n");
+	kprintf("Keyronex Version 0.7-alpha: " __TIME__ " "__DATE__ "\n");
 
 	idt_setup();
 	mem_init();
@@ -326,73 +350,9 @@ _start(void)
 	vmp_kernel_init();
 	kmem_init();
 
-	char *shizzle;
-	kmem_asprintf(&shizzle, "Hello, %s %s!\n", "KMem", "World");
-
-	kdprintf("We got this: %s\n", shizzle);
-	kmem_strfree(shizzle);
-
 	smp_init();
-
-	void psp_init_0(void);
-
 	psp_init_0();
-
 	ex_init(rsdp_request.response->address);
-
-#if 0
-	ipl_t ipl = splget();
-	kdprintf("Current IPL: %d\n", ipl);
-
-	test_cow();
-#endif
-
-#if 0
-	*(char*)0x0 = 'g';
-
-	ethread_t testthr;
-	testthr.kthread.cpu = all_cpus[1];
-	testthr.kthread.process = &kernel_process;
-	testthr.kthread.state = kThreadStateRunnable;
-	testthr.kthread.saved_ipl = kIPL0;
-	testthr.kthread.frame.cs = 0x28;
-	testthr.kthread.frame.ss = 0x30;
-	testthr.kthread.frame.rflags = 0x202;
-	testthr.kthread.frame.rip = (uintptr_t)start_fun;
-	testthr.kthread.frame.rdi = (uintptr_t)'a';
-	testthr.kthread.frame.rbp = 0;
-	testthr.kthread.kstack = vm_kalloc(4, 0) + 4 * PGSIZE;
-	/*
-	 * subtract 8 since there is no `call` prior to executing the function
-	 * so its push %rbp will misalign the stack
-	 */
-	testthr.kthread.frame.rsp = (uintptr_t)testthr.kthread.kstack - 8;
-
-	ethread_t testthr2;
-	testthr2.kthread.cpu = all_cpus[1];
-	testthr2.kthread.process = &kernel_process;
-	testthr2.kthread.state = kThreadStateRunnable;
-	testthr2.kthread.saved_ipl = kIPL0;
-	testthr2.kthread.frame.cs = 0x28;
-	testthr2.kthread.frame.ss = 0x30;
-	testthr2.kthread.frame.rflags = 0x202;
-	testthr2.kthread.frame.rip = (uintptr_t)start_fun;
-	testthr2.kthread.frame.rdi = (uintptr_t)'b';
-	testthr2.kthread.frame.rbp = 0;
-	testthr2.kthread.kstack = vm_kalloc(4, 0) + 4 * PGSIZE;
-	/*
-	 * subtract 8 since there is no `call` prior to executing the function
-	 * so its push %rbp will misalign the stack
-	 */
-	testthr2.kthread.frame.rsp = (uintptr_t)testthr2.kthread.kstack - 8;
-
-	spldpc();
-	ki_thread_start(&testthr.kthread);
-	ki_thread_start(&testthr2.kthread);
-
-	kdprintf("Both threads now ready 2 go.\n");
-	splx(kIPL0);
-#endif
 
 	// We're done, just hang...
 	done();

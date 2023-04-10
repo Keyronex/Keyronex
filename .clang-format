@@ -135,7 +135,7 @@ IncludeCategories:
   - Regex: '^<machdep/'
     Priority: 4
     SortPriority: 40
-  - Regex: '^<(x86|amd64|i386|xen)/'
+  - Regex: '^<(x86|amd64|i386|xen|asm)/'
     Priority: 5
     SortPriority: 50
   - Regex: '^<dev/'

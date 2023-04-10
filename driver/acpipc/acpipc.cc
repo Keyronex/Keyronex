@@ -565,14 +565,14 @@ printTree(device_t *dev, char *prefix, enum nodeKind kind)
 		newPrefix = prefix;
 	}
 	if (kind == kLastChild) {
-		kdprintf("%s%s", prefix, rcorner);
+		kprintf("%s%s", prefix, rcorner);
 		kmem_asprintf(&newPrefix, "%s%s", prefix, "  ");
 	} else if (kind == kChild) {
-		kdprintf("%s%s", prefix, branch);
+		kprintf("%s%s", prefix, branch);
 		kmem_asprintf(&newPrefix, "%s%s ", prefix, vline);
 	}
 
-	kdprintf("%s (class %s)\n", dev->objhdr.name, "???");
+	kprintf("%s (class %s)\n", dev->objhdr.name, "???");
 
 	TAILQ_FOREACH (child, &dev->consumers, consumers_link) {
 		printTree(child, newPrefix,
@@ -589,7 +589,7 @@ static char indent[255] = { 0 };
 extern "C" void
 acpipc_autoconf(void *rsdp)
 {
-	kdprintf("Probing hardware devices...\n");
+	kprintf("Probing hardware devices...\n");
 	AcpiPC::probeWithRSDP((rsdp_desc_t *)rsdp);
 
 	printTree(acpipc, indent, kRoot);

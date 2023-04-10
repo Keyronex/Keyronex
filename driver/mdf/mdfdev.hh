@@ -17,10 +17,10 @@
 #define kAnsiReset "\e[0m"
 
 #define DKPrint(...) kprintf(__VA_ARGS__)
-#define DKLog(SUB, ...)                                       \
-	({                                                    \
-		kdprintf(kAnsiYellow "%s: " kAnsiReset, SUB); \
-		kdprintf(__VA_ARGS__);                        \
+#define DKLog(SUB, ...)                                      \
+	({                                                   \
+		kprintf(kAnsiYellow "%s: " kAnsiReset, SUB); \
+		kprintf(__VA_ARGS__);                        \
 	})
 #define DKDevLog(DEV, ...) DKLog((DEV->objhdr.name), __VA_ARGS__)
 

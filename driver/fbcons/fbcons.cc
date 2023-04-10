@@ -169,6 +169,7 @@ FBConsole::FBConsole(Device *provider)
 		syscon_puts = puts;
 		syscon_printstats = printstats;
 		syscon_getsize = getsize;
+		hl_replaykmsgbuf();
 	}
 
 	kmem_asprintf(&objhdr.name, "fbcons%u", num);

@@ -77,6 +77,7 @@ vmp_region_add(paddr_t base, size_t length)
 
 	vmstat.nvmm += used / PGSIZE;
 	vmstat.nfree += bm->npages - (used / PGSIZE);
+	vmstat.ntotal += bm->npages;
 
 	TAILQ_INSERT_TAIL(&pregion_queue, bm, queue_entry);
 }
