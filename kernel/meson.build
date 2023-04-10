@@ -95,6 +95,7 @@ kernel_sources += files(
 	'process/ps.c',
 )
 
+subdir('_sdkinc')
 subdir('devmgr')
 subdir('executive')
 subdir('kernel')

@@ -5,7 +5,9 @@
 
 #include <sys/poll.h>
 
+#include <abi-bits/utsname.h>
 #include <dirent.h>
+#include <keyronex/syscall.h>
 
 #include "abi-bits/errno.h"
 #include "abi-bits/fcntl.h"
@@ -22,7 +24,6 @@
 #include "kdk/machdep.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
-#include "kdk/posixss.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
@@ -166,9 +167,17 @@ out:
 }
 
 int
-sys_open(const char *path, int mode)
+sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 {
-	return posix_do_openat(root_vnode, path, mode);
+	vnode_t *dvn;
+
+	if (dirfd == AT_FDCWD) {
+		dvn = root_vnode;
+	} else {
+		kfatal("Unimplemented\n");
+	}
+
+	return posix_do_openat(dvn, path, mode);
 }
 
 int
@@ -578,13 +587,17 @@ posix_syscall(hl_intr_frame_t *frame)
 		    ARG6);
 		break;
 
+	case kPXSysMunmap:
+		RET = 0;
+		break;
+
 	/* file syscalls */
 	case kPXSysIOCtl:
 		RET = sys_ioctl(ARG1, ARG2, (void *)ARG3);
 		break;
 
-	case kPXSysOpen:
-		RET = sys_open((const char *)ARG1, ARG2);
+	case kPXSysOpenAt:
+		RET = sys_openat(ARG1, (const char *)ARG2, ARG3, ARG4);
 		break;
 
 	case kPXSysClose:
@@ -625,6 +638,14 @@ posix_syscall(hl_intr_frame_t *frame)
 		    (const struct timespec *)ARG3, (const sigset_t *)ARG4);
 		break;
 
+	case kPXSysIsATTY:
+		RET = 0;
+		break;
+
+	case kPXSysGetCWD:
+		strcpy((char *)ARG1, "/");
+		break;
+
 	/* process & misc misc */
 	case kPXSysFork:
 		RET = sys_fork(frame);
@@ -656,6 +677,16 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysGetPPID:
 		RET = px_curproc()->parent->eprocess->id;
 		break;
+
+	case kPXSysUTSName: {
+		struct utsname *buf = (void *)ARG1;
+		strcpy(buf->sysname, "Keyronex");
+		strcpy(buf->nodename, "keyronex");
+		strcpy(buf->release, "v0.7");
+		strcpy(buf->version, __DATE__ " " __TIME__);
+		strcpy(buf->machine, "amd64");
+		break;
+	}
 
 	default:
 		kfatal("Unknown syscall %lu\n", frame->rax);

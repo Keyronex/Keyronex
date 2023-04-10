@@ -1,0 +1,5 @@
+#ifndef KRX_LINUX_IF_ETHER_H
+#define KRX_LINUX_IF_ETHER_H
+
+
+#endif /* KRX_LINUX_IF_ETHER_H */

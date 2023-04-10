@@ -10,7 +10,6 @@
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/posixss.h"
 #include "kdk/vfs.h"
 #include "posix/tty.h"
 
@@ -236,6 +235,11 @@ tty_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 
 	return r;
 }
+
+#define TCGETS          0x5401
+#define TCSETS          0x5402
+#define TCSETSW         0x5403
+#define TCSETSF         0x5404
 
 static int
 tty_ioctl(vnode_t *vn, unsigned long command, void *data)

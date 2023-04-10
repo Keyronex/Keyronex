@@ -22,12 +22,13 @@
  *
  */
 
+#include <keyronex/syscall.h>
+
 #include "abi-bits/fcntl.h"
 #include "abi-bits/wait.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
-#include "kdk/posixss.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kernel/ke_internal.h"
