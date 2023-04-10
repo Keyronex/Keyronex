@@ -87,6 +87,8 @@ typedef struct vnode {
 	struct vfs *vfsmountedhere;
 	/*! (fs-dependent) fs private data */
 	uintptr_t data;
+	/*! (fs-dependent) fs private data 2 */
+	uintptr_t data2;
 
 	/*! (~) device */
 	struct device *rdevice;
