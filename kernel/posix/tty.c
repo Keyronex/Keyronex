@@ -202,7 +202,7 @@ tty_write(struct vnode *vn, void *buf, size_t nbyte, io_off_t off)
 	ipl = ke_spinlock_acquire(&dprintf_lock);
 	for (unsigned i = 0; i < nbyte; i++) {
 		int c = ((char *)mybuf)[i];
-		hl_dputc(c, NULL);
+		hl_scputc(c, NULL);
 	}
 	ke_spinlock_release(&dprintf_lock, ipl);
 

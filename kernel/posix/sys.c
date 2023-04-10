@@ -108,7 +108,7 @@ sys_ioctl(int fd, unsigned long command, void *data)
 }
 
 int
-posix_do_openat(vnode_t *dvn, const char *path, int mode)
+posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 {
 	eprocess_t *eproc = ps_curproc();
 	vnode_t *vn;
@@ -135,7 +135,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int mode)
 		return -ENFILE;
 
 	r = vfs_lookup(dvn, &vn, path, 0, NULL);
-	if (r < 0 && mode & O_CREAT) {
+	if (r < 0 && flags & O_CREAT) {
 		vattr_t attr;
 		attr.mode = S_IFREG | 0755;
 		attr.type = VREG;
@@ -182,7 +182,7 @@ sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 		kfatal("Unimplemented\n");
 	}
 
-	return posix_do_openat(dvn, path, mode);
+	return posix_do_openat(dvn, path, flags, mode);
 }
 
 int

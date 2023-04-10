@@ -509,6 +509,9 @@ kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
 /*! Platform-specific debug putc(). */
 void hl_dputc(int ch, void *ctx);
 
+/*! Platform-specific syscon putc(). */
+void hl_scputc(int ch, void *ctx);
+
 struct winsize;
 
 /*! System console puts - initially NULL. */

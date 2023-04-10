@@ -153,6 +153,19 @@ hl_dputc(int ch, void *ctx)
 	}
 }
 
+void
+hl_scputc(int ch, void *ctx)
+{
+	/* put to syscon/limine terminal */
+	if (!syscon_puts) {
+		struct limine_terminal *terminal =
+		    terminal_request.response->terminals[0];
+		terminal_request.response->write(terminal, (char *)&ch, 1);
+	} else {
+		syscon_puts((char *)&ch, 1);
+	}
+}
+
 static void
 mem_init()
 {
