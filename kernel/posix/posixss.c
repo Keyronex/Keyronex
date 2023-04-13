@@ -22,10 +22,13 @@
  *
  */
 
+#include <sys/errno.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+
+#include <abi-bits/fcntl.h>
 #include <keyronex/syscall.h>
 
-#include "abi-bits/fcntl.h"
-#include "abi-bits/wait.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
@@ -39,7 +42,7 @@ int posix_do_openat(vnode_t *dvn, const char *path, int mode);
 
 posix_proc_t posix_proc0;
 static posix_proc_t *posix_proc1;
-kmutex_t px_proctree_mutex;
+kspinlock_t px_proctree_mutex;
 static TAILQ_HEAD(, posix_proc) psx_allprocs = TAILQ_HEAD_INITIALIZER(
     psx_allprocs);
 
@@ -92,6 +95,7 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 	eprocess_t *eproc;
 	ethread_t *ethread;
 	posix_proc_t *newproc;
+	ipl_t ipl;
 	int r;
 
 	r = ps_process_create(&eproc, ps_curproc());
@@ -117,9 +121,9 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 	}
 
 	newproc = kmem_alloc(sizeof(*newproc));
-	px_acquire_proctree_mutex();
+	ipl = px_acquire_proctree_mutex();
 	proc_init_common(newproc, proc, eproc);
-	px_release_proctree_mutex();
+	px_release_proctree_mutex(ipl);
 
 	*out = newproc;
 
@@ -133,12 +137,13 @@ psx_exit(int status)
 {
 	posix_proc_t *proc = px_curproc(), *subproc, *tmp;
 	vm_map_t *map;
+	ipl_t ipl;
 
 	kassert(proc->eprocess->id != 1);
 
 	/* todo: multithread support */
 
-	px_acquire_proctree_mutex();
+	ipl = px_acquire_proctree_mutex();
 
 	LIST_FOREACH_SAFE (subproc, &proc->subprocs, subprocs_link, tmp) {
 		kdprintf("warning: Subproc %u is still around!!\n",
@@ -154,10 +159,10 @@ psx_exit(int status)
 	proc->wait_stat = W_EXITCODE(status, 0);
 	proc->exited = true;
 	ke_event_signal(&proc->parent->subproc_state_change);
-	px_release_proctree_mutex();
+	px_release_proctree_mutex(ipl);
 
-
-	ke_wait(&proc->eprocess->fd_mutex, "psx_exit:eproc->fd_mutex", false, false, -1);
+	ke_wait(&proc->eprocess->fd_mutex, "psx_exit:eproc->fd_mutex", false,
+	    false, -1);
 	for (int i = 0; i < elementsof(proc->eprocess->files); i++) {
 		if (proc->eprocess->files[i] != NULL)
 			obj_direct_release(proc->eprocess->files[i]);
@@ -180,6 +185,7 @@ psx_waitpid(pid_t pid, int *status, int flags)
 {
 	posix_proc_t *subproc, *proc = px_curproc();
 	kwaitstatus_t w;
+	ipl_t ipl;
 	int r = 0;
 
 #if 0
@@ -197,7 +203,7 @@ dowait:
 	    "psx_waitpid:subproc_state_change", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
-	px_acquire_proctree_mutex();
+	ipl = px_acquire_proctree_mutex();
 	LIST_FOREACH (subproc, &proc->subprocs, subprocs_link) {
 		if (subproc->exited) {
 			*status = subproc->wait_stat;
@@ -215,13 +221,25 @@ dowait:
 		    proc->eprocess->id);
 #endif
 		ke_event_clear(&proc->subproc_state_change);
-		px_release_proctree_mutex();
+		px_release_proctree_mutex(ipl);
 		goto dowait;
 	}
 
-	px_release_proctree_mutex();
+	px_release_proctree_mutex(ipl);
 
 	return r;
+}
+
+int
+psx_sigaction()
+{
+	return -ENOSYS;
+}
+
+int
+psx_sigmask()
+{
+	return -ENOSYS;
 }
 
 int
@@ -229,7 +247,7 @@ psx_init(void)
 {
 	int r;
 
-	ke_mutex_init(&px_proctree_mutex);
+	ke_spinlock_init(&px_proctree_mutex);
 
 	proc_init_common(&posix_proc0, NULL, &kernel_process);
 

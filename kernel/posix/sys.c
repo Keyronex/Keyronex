@@ -731,6 +731,14 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = px_curproc()->parent->eprocess->id;
 		break;
 
+	case kPXSysSigMask:
+		RET = psx_sigmask();
+		break;
+
+	case kPXSysSigAction:
+		RET = psx_sigaction();
+		break;
+
 	case kPXSysUTSName: {
 		struct utsname *buf = (void *)ARG1;
 		strcpy(buf->sysname, "Keyronex");
@@ -740,6 +748,14 @@ posix_syscall(hl_intr_frame_t *frame)
 		strcpy(buf->machine, "amd64");
 		break;
 	}
+
+	case kPXSysSigEntry:
+		px_curproc()->sigentry = ARG1;
+		break;
+
+	case kPXSysSigReturn:
+		kfatal("Sigreturn\n");
+		break;
 
 	default:
 		kfatal("Unknown syscall %lu\n", frame->rax);

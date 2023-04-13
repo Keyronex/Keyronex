@@ -342,7 +342,7 @@ _start(void)
 
 	draw_logo();
 
-	kprintf("Keyronex Version 0.7-alpha: " __TIME__ " "__DATE__ "\n");
+	kprintf("Keyronex Version 0.7-alpha: " __TIMESTAMP__ "\n");
 
 	idt_setup();
 	mem_init();

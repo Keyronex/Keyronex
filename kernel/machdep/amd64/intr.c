@@ -119,7 +119,7 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 
 		ke_spinlock_release_nospl(&dispatcher_lock);
 		splx(next->saved_ipl);
-		return;
+		goto ast;
 	} else if (num == kIntNumIPIInvlPG) {
 		void pmap_global_invlpg_cb(void);
 		pmap_global_invlpg_cb();
@@ -170,6 +170,9 @@ out:
 		void lapic_eoi(void);
 		lapic_eoi();
 	}
+
+ast:
+	/* invoke usermode AST if indicated */
 
 	splx(ipl);
 }
