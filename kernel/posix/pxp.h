@@ -134,6 +134,13 @@ int psx_sigaction(int signal, const struct sigaction *__restrict action,
 int psx_sigmask(int how, const sigset_t *__restrict set,
     sigset_t *__restrict retrieve);
 
+/*!
+ * @brief Signal a process group.
+ *
+ * @pre proctree_lock held
+ */
+void psx_signal_pgroup(struct posix_pgroup *pg, int sig);
+
 extern kspinlock_t px_proctree_mutex;
 
 #endif /* KRX_POSIX_PASP_H */

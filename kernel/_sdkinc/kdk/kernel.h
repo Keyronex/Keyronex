@@ -50,6 +50,8 @@ typedef enum kwaitstatus {
 	kKernWaitStatusTimedOut,
 	/*! invalid argument */
 	kKernWaitStatusInvalidArgument,
+	/*! thread signalled */
+	kKernWaitStatusSignalled,
 	/*! internal status - wait is currently underway */
 	kKernWaitStatusWaiting,
 } kwaitstatus_t;
@@ -511,6 +513,9 @@ kwaitstatus_t ke_wait(void *object, const char *reason, bool isuserwait,
 kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
     const char *reason, bool isWaitall, bool isUserwait, bool isAlertable,
     nanosecs_t timeout, krx_nullable krx_out kwaitblock_t *waitblocks);
+
+/*! @brief Cancel a waiting thread which has been signalled. */
+void ke_cancel_wait(kthread_t *thread);
 
 /*! Platform-specific debug putc(). */
 void hl_dputc(int ch, void *ctx);

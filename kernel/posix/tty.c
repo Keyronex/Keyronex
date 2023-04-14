@@ -94,11 +94,14 @@ dequeue(struct tty *tty)
 
 	if (c == '\n' || c == tty->termios.c_cc[VEOL]) {
 		tty->nlines--;
-		if (tty->nlines == 0)
+		if (tty->nlines == 0 && tty_iscanon(tty))
 			ke_event_clear(&tty->read_evobj);
 	}
 
 	tty->buflen--;
+	if (tty->buflen == 0)
+		ke_event_clear(&tty->read_evobj);
+
 	return c;
 }
 
@@ -106,11 +109,12 @@ void
 tty_input(struct tty *tty, int c)
 {
 	ipl_t ipl = ke_spinlock_acquire(&tty->lock);
+	int sig = -1;
 
 	/* signals */
 	if (tty_isisig(tty)) {
 		if (c == tty->termios.c_cc[VINTR]) {
-			kdprintf("VINTR on tty %p\n", tty);
+			sig = SIGINT;
 			goto out;
 		} else if (c == tty->termios.c_cc[VQUIT]) {
 			kdprintf("VQUIT on tty %p\n", tty);
@@ -157,6 +161,16 @@ tty_input(struct tty *tty, int c)
 
 out:
 	ke_spinlock_release(&tty->lock, ipl);
+
+	if (sig != -1) {
+		struct posix_pgroup *pg;
+		posix_proc_t *proc;
+
+		ipl = px_acquire_proctree_mutex();
+		pg = tty->pg;
+		psx_signal_pgroup(pg, sig);
+		px_release_proctree_mutex(ipl);
+	}
 }
 
 int
@@ -165,6 +179,7 @@ tty_read(vnode_t *vn, void *buf, size_t nbyte, io_off_t off)
 	struct tty *tty = (struct tty *)vn->rdevice;
 	ipl_t ipl;
 	size_t nread = 0;
+	kwaitstatus_t w;
 
 	(void)off;
 
@@ -173,8 +188,11 @@ in:
 
 	if ((tty_iscanon(tty) && tty->nlines == 0) || (tty->buflen == 0)) {
 		ke_spinlock_release(&tty->lock, ipl);
-		ke_wait(&tty->read_evobj, "tty_read:read_event", false, false,
-		    -1);
+		w = ke_wait(&tty->read_evobj, "tty_read:read_event", false,
+		    false, -1);
+		if (w == kKernWaitStatusSignalled)
+			return -EINTR;
+		kassert(w == kKernWaitStatusOK);
 		goto in;
 	}
 

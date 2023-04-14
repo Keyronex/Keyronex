@@ -7,8 +7,8 @@
 #define KRX_POSIX_TTY_H
 
 #include "abi-bits/termios.h"
-#include "kdk/devmgr.h"
 #include "executive/epoll.h"
+#include "kdk/devmgr.h"
 #include "posix/pxp.h"
 
 /*!
@@ -31,7 +31,7 @@ struct tty {
 	io_off_t writehead;	/*!< (l) input buffer write head */
 	size_t nlines; /*!< (l) number lines available to read in buf */
 
-	struct posix_pgroup * pg; /*!< (l) pgroup controlled */
+	struct posix_pgroup *pg; /*!< (l) pgroup controlled */
 };
 
 #define TTYDEF_IFLAG (BRKINT | ICRNL | IMAXBEL | IXON | IXANY)

@@ -3,6 +3,7 @@
  * Created on Wed Jan 17 2023.
  */
 
+#include "kdk/kernel.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "kernel/ke_internal.h"
@@ -227,4 +228,18 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 #endif
 
 	return thread->wait_result;
+}
+
+void
+ke_cancel_wait(kthread_t *thread)
+{
+	kassert(thread->state == kThreadStateWaiting &&
+	    thread->wait_result == kKernWaitStatusWaiting);
+
+	for (unsigned i = 0; i < thread->nwaits; i++) {
+		TAILQ_REMOVE(&thread->waitblocks[i].object->waitblock_queue,
+		    &thread->waitblocks[i], queue_entry);
+	}
+
+	waiter_wake(thread, kKernWaitStatusSignalled);
 }

@@ -293,7 +293,7 @@ psx_setpgid(pid_t pid, pid_t pgid)
 	}
 
 	if (pgid == 0 || pgid == pid) {
-		if(proc->pgroup->pgid == proc->eprocess->id) {
+		if (proc->pgroup->pgid == proc->eprocess->id) {
 			/* already in its own group */
 			r = pid;
 			goto out;
@@ -562,6 +562,55 @@ psx_init(void)
 	kassert(r == 0);
 
 	return 0;
+}
+
+void
+psx_signal_proc(posix_proc_t *proc, int sig)
+{
+	kthread_t *kthread = NULL, *chosen;
+	ethread_t *ethread;
+	posix_thread_t *thread;
+	ipl_t ipl;
+
+	ipl = ke_acquire_dispatcher_lock();
+
+	/* look for a running process, or a waiting process */
+	SLIST_FOREACH (kthread, &proc->eprocess->kproc.threads,
+	    kproc_threads_link) {
+		if (chosen == NULL) {
+			chosen = kthread;
+		} else if (kthread->state == kThreadStateRunning) {
+			chosen = kthread;
+			break;
+		} else if (kthread->state == kThreadStateWaiting) {
+			/*! !!! todo: only if it's an INTERRUPTIBLE wait! */
+			chosen = kthread;
+		}
+	}
+
+	kassert(chosen != NULL);
+	ethread = (ethread_t *)chosen;
+	thread = ethread->pas_thread;
+	kassert(thread != NULL);
+
+	/* if it is waiting interruptibly, cancel its wait */
+	if (chosen->state == kThreadStateWaiting) {
+		ke_cancel_wait(chosen);
+	} else {
+		kfatal("not implemented yet\n");
+	}
+
+	ke_release_dispatcher_lock(ipl);
+}
+
+void
+psx_signal_pgroup(struct posix_pgroup *pg, int sig)
+{
+	posix_proc_t *proc;
+
+	LIST_FOREACH (proc, &pg->members, pgroup_members_link) {
+		psx_signal_proc(proc, sig);
+	}
 }
 
 void dbg_dump_proc_threads(eprocess_t *eproc);
