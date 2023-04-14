@@ -96,7 +96,7 @@ sys_ioctl(int fd, unsigned long command, void *data)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
 
-#if DEBUG_SYSCALLS == 1
+#if DEBUG_SYSCALLS == 0
 	kdprintf("SYS_IOCTL(fd: %d, command: 0x%lx\n", fd, command);
 #endif
 
@@ -215,6 +215,33 @@ sys_close(int fd)
 
 	ke_mutex_release(&eproc->fd_mutex);
 
+	return r;
+}
+
+int
+sys_dup(int oldfd)
+{
+	eprocess_t *eproc = ps_curproc();
+	int r = -EMFILE;
+
+	ke_wait(&eproc->fd_mutex, "dup:eproc->fd_mutex", false, false, -1);
+
+	if (eproc->files[oldfd] == NULL) {
+		r = -EBADF;
+		goto out;
+	}
+
+	for (int i = 0; i < elementsof(eproc->files); i++) {
+		if (eproc->files[i] == NULL)
+			r = i;
+	}
+
+	if (r >= 0) {
+		eproc->files[r] = obj_direct_retain(eproc->files[oldfd]);
+	}
+
+out:
+	ke_mutex_release(&eproc->fd_mutex);
 	return r;
 }
 
@@ -695,6 +722,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_pipe((int *)ARG1, ARG2);
 		break;
 
+	case kPXSysDup:
+		RET = sys_dup(ARG1);
+		break;
+
 	case kPXSysDup3:
 		RET = sys_dup3(ARG1, ARG2, ARG2);
 		break;
@@ -731,12 +762,22 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = px_curproc()->parent->eprocess->id;
 		break;
 
+	case kPXSysSetPGID:
+		RET = psx_setpgid(ARG1, ARG2);
+		break;
+
+	case kPXSysGetPGID:
+		RET = psx_getpgid(ARG1);
+		break;
+
 	case kPXSysSigMask:
-		RET = psx_sigmask();
+		RET = psx_sigmask(ARG1, (const sigset_t *)ARG2,
+		    (sigset_t *)ARG3);
 		break;
 
 	case kPXSysSigAction:
-		RET = psx_sigaction();
+		RET = psx_sigaction(ARG1, (const struct sigaction *)ARG2,
+		    (struct sigaction *)ARG3);
 		break;
 
 	case kPXSysUTSName: {

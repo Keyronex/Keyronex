@@ -11,7 +11,7 @@
 int devfs_create(struct device *dev, const char *name, struct vnops *devvnops);
 
 extern struct vnops tty_vnops;
-static struct tty sctty;
+struct tty sctty;
 
 int
 pxp_make_syscon_tty(void)

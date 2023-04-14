@@ -9,6 +9,7 @@
 #include "abi-bits/termios.h"
 #include "kdk/devmgr.h"
 #include "executive/epoll.h"
+#include "posix/pxp.h"
 
 /*!
  * A teletype.
@@ -29,6 +30,8 @@ struct tty {
 	io_off_t readhead;	/*!< (l) input buffer read head */
 	io_off_t writehead;	/*!< (l) input buffer write head */
 	size_t nlines; /*!< (l) number lines available to read in buf */
+
+	struct posix_pgroup * pg; /*!< (l) pgroup controlled */
 };
 
 #define TTYDEF_IFLAG (BRKINT | ICRNL | IMAXBEL | IXON | IXANY)

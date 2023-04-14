@@ -22,7 +22,7 @@
 struct posix_session {
 	/* (~) Session ID */
 	pid_t sid;
-	/* (p) Number of members. */
+	/* (p) Number of member pgroups. */
 	unsigned nmembers;
 	/* (p) Session leader. */
 	struct posix_proc *leader;
@@ -32,8 +32,9 @@ struct posix_session {
  * Process group.
  */
 struct posix_pgroup {
+	RB_ENTRY(posix_pgroup) rb_entry;
 	pid_t pgid;
-	struct session *session;
+	struct posix_session *session;
 	LIST_HEAD(, posix_proc) members;
 };
 
@@ -54,6 +55,10 @@ typedef struct posix_proc {
 	LIST_ENTRY(posix_proc) subprocs_link;
 	/*! (p) psx_allprocs link */
 	TAILQ_ENTRY(posix_proc) allprocs_link;
+	/*! (p) process group */
+	struct posix_pgroup *pgroup;
+	/*! (p) pgroup::members linkage */
+	LIST_ENTRY(posix_proc) pgroup_members_link;
 
 	/*! (p) has it exited? */
 	bool exited;
@@ -66,22 +71,22 @@ typedef struct posix_proc {
 	vaddr_t sigentry;
 } posix_proc_t;
 
-struct px_sigaction {
-	union {
-		void (*handler)(int);
-		void (*sigaction)(int, siginfo_t *, void *);
-	} handler;
-	int sa_flags;
-};
-
 /*!
  * posix subsystem counterpart of ethread_t
+ *
+ * NOTE: Do sighandlers/sigflags need to be locked? For now they are behind
+ * proctree_mtx.
  *
  * (~) = invariant after initialisation
  * (p) = proctree_mtx
  */
 typedef struct posix_thread {
-	struct px_sigaction sigactions[SIGRTMAX];
+	union posix_sighandler {
+		void (*handler)(int);
+		void (*sigaction)(int, siginfo_t *, void *);
+	} sighandlers[SIGRTMAX];
+	int sigflags[SIGRTMAX];
+	sigset_t sigsigmask[SIGRTMAX];
 	sigset_t sigmask;
 } posix_thread_t;
 
@@ -105,11 +110,29 @@ px_curproc(void)
 	return psx_proc;
 }
 
+static inline posix_thread_t *
+px_curthread(void)
+{
+	posix_thread_t *psx_thread =
+	    (posix_thread_t *)ps_curthread()->pas_thread;
+	kassert(psx_thread != NULL);
+	return psx_thread;
+}
+
+struct posix_pgroup *psx_lookup_pgid(pid_t pgid);
+
 int sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
     const char *u_envp[], hl_intr_frame_t *frame);
 int psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out);
 int psx_exit(int status);
+pid_t psx_getpgid(pid_t pid);
+pid_t psx_setpgid(pid_t pid, pid_t pgid);
+pid_t psx_setsid(void);
 pid_t psx_waitpid(pid_t pid, int *status, int flags);
+int psx_sigaction(int signal, const struct sigaction *__restrict action,
+    struct sigaction *__restrict oldAction);
+int psx_sigmask(int how, const sigset_t *__restrict set,
+    sigset_t *__restrict retrieve);
 
 extern kspinlock_t px_proctree_mutex;
 

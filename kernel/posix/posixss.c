@@ -31,20 +31,39 @@
 
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kernel/ke_internal.h"
 #include "posix/pxp.h"
+#include "posix/tty.h"
 
+#define DECLARE_SIMPLE_COMPARATOR(TYPE, MEMBER) \
+	intptr_t TYPE##_cmp(struct TYPE *x, struct TYPE *y)
+
+#define DEFINE_SIMPLE_COMPARATOR(TYPE, MEMBER)  \
+	DECLARE_SIMPLE_COMPARATOR(TYPE, MEMBER) \
+	{                                       \
+		return x->MEMBER - y->MEMBER;   \
+	}
+
+DECLARE_SIMPLE_COMPARATOR(posix_pgroup, pgid);
 int pxp_make_syscon_tty(void);
 int posix_do_openat(vnode_t *dvn, const char *path, int mode);
 
 posix_proc_t posix_proc0;
+static posix_thread_t posix_thread0;
+static struct posix_pgroup posix_pgroup0;
+static struct posix_session posix_session0;
 static posix_proc_t *posix_proc1;
 kspinlock_t px_proctree_mutex;
 static TAILQ_HEAD(, posix_proc) psx_allprocs = TAILQ_HEAD_INITIALIZER(
     psx_allprocs);
+static RB_HEAD(posix_pgroup_rb, posix_pgroup) pgroup_rb;
+
+RB_GENERATE(posix_pgroup_rb, posix_pgroup, rb_entry, posix_pgroup_cmp);
+DEFINE_SIMPLE_COMPARATOR(posix_pgroup, pgid);
 
 static void
 fork_init(void *unused)
@@ -63,22 +82,37 @@ fork_init(void *unused)
 	r = posix_do_openat(dev_vnode, "console", O_RDWR);
 	kassert(r == 2);
 
+	r = psx_setsid();
+	kassert(r == 1);
+
+	/* todo move */
+	extern struct tty sctty;
+	sctty.pg = px_curproc()->pgroup;
+
 	r = syscall3(kPXSysExecVE, (uintptr_t) "/usr/bin/bash", (uintptr_t)argv,
 	    (uintptr_t)envp, &err);
 
 	kfatal("failed to exec init: r %d, err %lu\n", r, err);
 }
 
+/*! @pre proctree_lock held */
 static void
 proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
-    eprocess_t *eproc)
+    posix_thread_t *thread, posix_thread_t *parent_thread, eprocess_t *eproc,
+    ethread_t *ethread)
 {
 	proc->eprocess = eproc;
 	proc->parent = parent_proc;
 	LIST_INIT(&proc->subprocs);
 
-	if (parent_proc)
+	if (parent_proc) {
 		LIST_INSERT_HEAD(&parent_proc->subprocs, proc, subprocs_link);
+		LIST_INSERT_HEAD(&parent_proc->pgroup->members, proc,
+		    pgroup_members_link);
+		proc->pgroup = parent_proc->pgroup;
+	} else {
+		kassert(proc == &posix_proc0);
+	}
 
 	TAILQ_INSERT_TAIL(&psx_allprocs, proc, allprocs_link);
 
@@ -86,7 +120,35 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 	proc->wait_stat = 0;
 	ke_event_init(&proc->subproc_state_change, false);
 
+	if (parent_thread) {
+		memcpy(thread->sigflags, parent_thread->sigflags,
+		    sizeof(thread->sigflags));
+		memcpy(thread->sighandlers, parent_thread->sighandlers,
+		    sizeof(thread->sighandlers));
+		thread->sigmask = parent_thread->sigmask;
+		memcpy(thread->sigsigmask, parent_thread->sigsigmask,
+		    sizeof(thread->sigsigmask));
+	} else {
+		thread->sigmask = 0;
+
+		for (size_t i = 0; i < SIGRTMAX; i++) {
+			thread->sigflags[i] = 0;
+			thread->sighandlers[i].handler = SIG_DFL;
+			thread->sigsigmask[i] = 1 << i;
+		}
+	}
+
 	eproc->pas_proc = proc;
+	ethread->pas_thread = thread;
+}
+
+/*! @pre proctree_lock locked */
+struct posix_pgroup *
+psx_lookup_pgid(pid_t pgid)
+{
+	struct posix_pgroup key;
+	key.pgid = pgid;
+	return RB_FIND(posix_pgroup_rb, &pgroup_rb, &key);
 }
 
 int
@@ -95,6 +157,7 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 	eprocess_t *eproc;
 	ethread_t *ethread;
 	posix_proc_t *newproc;
+	posix_thread_t *newthread;
 	ipl_t ipl;
 	int r;
 
@@ -120,9 +183,11 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 		kmd_thread_init(&ethread->kthread, fork_init, NULL);
 	}
 
+	newthread = kmem_alloc(sizeof(posix_thread_t));
 	newproc = kmem_alloc(sizeof(*newproc));
 	ipl = px_acquire_proctree_mutex();
-	proc_init_common(newproc, proc, eproc);
+	proc_init_common(newproc, proc, newthread, px_curthread(), eproc,
+	    ethread);
 	px_release_proctree_mutex(ipl);
 
 	*out = newproc;
@@ -181,6 +246,147 @@ psx_exit(int status)
 }
 
 pid_t
+psx_getpgid(pid_t pid)
+{
+	kassert(pid == 0);
+
+	return px_curproc()->pgroup->pgid;
+}
+
+pid_t
+psx_setpgid(pid_t pid, pid_t pgid)
+{
+	ipl_t ipl;
+	posix_proc_t *proc = NULL;
+	struct posix_pgroup *pg, *oldpg;
+	pid_t r;
+
+	if (pid < 0 || pgid < 0)
+		return -EINVAL;
+
+	ipl = px_acquire_proctree_mutex();
+
+	if (pid == 0) {
+		proc = px_curproc();
+		pid = proc->eprocess->id;
+	} else if (pid == px_curproc()->eprocess->id) {
+		proc = px_curproc();
+	} else {
+		posix_proc_t *child;
+
+		LIST_FOREACH (child, &px_curproc()->subprocs, subprocs_link) {
+			if (child->eprocess->id == pid) {
+				proc = child;
+				break;
+			}
+		}
+		if (!proc) {
+			r = -ESRCH;
+			goto out;
+		} else if (proc->pgroup->session !=
+		    px_curproc()->pgroup->session) {
+			r = -EPERM;
+			goto out;
+		}
+
+		/* todo: EACCES if child exec()'d */
+	}
+
+	if (pgid == 0 || pgid == pid) {
+		if(proc->pgroup->pgid == proc->eprocess->id) {
+			/* already in its own group */
+			r = pid;
+			goto out;
+		}
+
+		pg = kmem_alloc(sizeof(*pg));
+		pg->pgid = pid;
+		pg->session = proc->pgroup->session;
+		pg->session->nmembers++;
+		LIST_INIT(&pg->members);
+		pgid = pid;
+
+		RB_INSERT(posix_pgroup_rb, &pgroup_rb, pg);
+	} else {
+		pg = psx_lookup_pgid(pgid);
+		if (!pg) {
+			r = -ESRCH;
+			goto out;
+		}
+	}
+
+	oldpg = proc->pgroup;
+	(void)oldpg;
+	proc->pgroup = pg;
+
+	kassert(proc);
+	kassert(pg);
+
+	kdprintf("Doing it...\n");
+
+	LIST_REMOVE(proc, pgroup_members_link);
+
+	LIST_INSERT_HEAD(&pg->members, proc, pgroup_members_link);
+
+	r = pg->pgid;
+
+out:
+	px_release_proctree_mutex(ipl);
+
+	return r;
+}
+
+pid_t
+psx_getsid(void)
+{
+	return px_curproc()->pgroup->session->sid;
+}
+
+pid_t
+psx_setsid(void)
+{
+	ipl_t ipl;
+	posix_proc_t *proc = px_curproc();
+	pid_t r;
+
+	ipl = px_acquire_proctree_mutex();
+
+	if (proc->pgroup->session->leader != proc) {
+		struct posix_session *sess, *oldsess;
+		struct posix_pgroup *pg, *oldpg;
+
+		oldpg = proc->pgroup;
+		oldsess = oldpg->session;
+
+		(void)oldsess;
+		(void)oldpg;
+
+		sess = kmem_alloc(sizeof(*sess));
+		sess->leader = proc;
+		sess->nmembers = 1;
+		sess->sid = proc->eprocess->id;
+
+		pg = kmem_alloc(sizeof(*pg));
+		pg->pgid = sess->sid;
+		pg->session = sess;
+
+		proc->pgroup = pg;
+
+		LIST_REMOVE(proc, pgroup_members_link);
+		LIST_INSERT_HEAD(&pg->members, proc, pgroup_members_link);
+
+		RB_INSERT(posix_pgroup_rb, &pgroup_rb, pg);
+
+		r = sess->sid;
+	} else
+		r = -EPERM;
+
+	px_release_proctree_mutex(ipl);
+
+	return r;
+}
+
+pid_t
 psx_waitpid(pid_t pid, int *status, int flags)
 {
 	posix_proc_t *subproc, *proc = px_curproc();
@@ -230,16 +436,97 @@ dowait:
 	return r;
 }
 
-int
-psx_sigaction()
+static int
+psx_domask(int how, const sigset_t *__restrict set,
+    sigset_t *__restrict retrieve)
 {
-	return -ENOSYS;
+	int r = 0;
+
+	if (retrieve != NULL)
+		*retrieve = px_curthread()->sigmask;
+
+	if (set == NULL)
+		return 0;
+
+	switch (how) {
+	case SIG_BLOCK:
+		px_curthread()->sigmask &= *set;
+		break;
+
+	case SIG_UNBLOCK:
+		px_curthread()->sigmask &= ~*set;
+		break;
+
+	case SIG_SETMASK:
+		px_curthread()->sigmask = *set;
+		break;
+
+	default:
+		r = -EINVAL;
+	}
+
+	return r;
 }
 
 int
-psx_sigmask()
+psx_sigaction(int signal, const struct sigaction *__restrict action,
+    struct sigaction *__restrict oldAction)
 {
-	return -ENOSYS;
+	ipl_t ipl;
+	struct sigaction old, new;
+	union posix_sighandler *phandler;
+	sigset_t *pmask;
+	int *pflags;
+
+	if (action != NULL)
+		new = *action;
+
+	ipl = px_acquire_proctree_mutex();
+
+	phandler = &px_curthread()->sighandlers[signal];
+	pflags = &px_curthread()->sigflags[signal];
+	pmask = &px_curthread()->sigsigmask[signal];
+
+	old.sa_flags = *pflags;
+	old.sa_handler = phandler->handler;
+	old.sa_mask = *pmask;
+
+	if (action != NULL) {
+		if (new.sa_flags & SA_SIGINFO)
+			phandler->sigaction = new.sa_sigaction;
+		else
+			phandler->handler = new.sa_handler;
+		*pflags = new.sa_flags;
+		*pmask = new.sa_mask;
+	}
+
+	px_release_proctree_mutex(ipl);
+
+	if (oldAction != NULL)
+		*oldAction = old;
+
+	return 0;
+}
+
+int
+psx_sigmask(int how, const sigset_t *__restrict set,
+    sigset_t *__restrict retrieve)
+{
+	ipl_t ipl;
+	sigset_t old, new;
+	int r = 0;
+
+	if (set != NULL)
+		new = *set;
+
+	ipl = px_acquire_proctree_mutex();
+	r = psx_domask(how, set != NULL ? &new : NULL, &old);
+	px_release_proctree_mutex(ipl);
+
+	if (retrieve != NULL)
+		*retrieve = old;
+
+	return r;
 }
 
 int
@@ -249,10 +536,23 @@ psx_init(void)
 
 	ke_spinlock_init(&px_proctree_mutex);
 
-	proc_init_common(&posix_proc0, NULL, &kernel_process);
+	proc_init_common(&posix_proc0, NULL, &posix_thread0, NULL,
+	    &kernel_process, ps_curthread());
 
 	r = vfs_mountdev1();
 	kassert(r == 0);
+
+	posix_pgroup0.pgid = 0;
+	posix_pgroup0.session = &posix_session0;
+	RB_INSERT(posix_pgroup_rb, &pgroup_rb, &posix_pgroup0);
+
+	posix_session0.leader = &posix_proc0;
+	posix_session0.nmembers = 1;
+	posix_session0.sid = 0;
+
+	LIST_INSERT_HEAD(&posix_pgroup0.members, &posix_proc0,
+	    pgroup_members_link);
+	posix_proc0.pgroup = &posix_pgroup0;
 
 	r = pxp_make_syscon_tty();
 	kassert(r == 0);

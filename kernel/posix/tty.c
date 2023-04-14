@@ -11,9 +11,10 @@
 
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
-#include "kdk/vfs.h"
 #include "kdk/libkern.h"
+#include "kdk/vfs.h"
 #include "posix/tty.h"
+#include "pxp.h"
 
 #define ISSET(FIELD, VAL) ((FIELD)&VAL)
 
@@ -286,9 +287,27 @@ tty_ioctl(vnode_t *vn, unsigned long command, void *data)
 	}
 
 	case TIOCGPGRP:
-	case TIOCSPGRP:
-		r = -ENOSYS;
+		/* todo lock*/
+		// if (!tty_controls_proc(tty, px_curproc()))
+		//	return -ENOTTY;
+		*(int *)data = tty->pg != NULL ? tty->pg->pgid : -1;
 		break;
+
+	case TIOCSPGRP: {
+		struct posix_pgroup *pgrp;
+
+		// if (!tty_controls_proc(tty, px_curproc()))
+		//	return -ENOTTY;
+
+		pgrp = psx_lookup_pgid(*(int *)data);
+
+		if (pgrp != NULL)
+			tty->pg = pgrp;
+		else
+			r = -ESRCH;
+
+		break;
+	}
 
 	default:
 		kfatal("Unhandled ioctl.\n");

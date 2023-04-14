@@ -20,6 +20,9 @@ typedef struct ethread {
 
 	/*! Is it currently handling a page fault? */
 	bool in_pagefault;
+
+	/*! Portable Applications Subsystem thread */
+	void *pas_thread;
 } ethread_t;
 
 /*!
