@@ -566,7 +566,7 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 
 	kassert(nfds >= 0 && nfds < 25);
 
-	epoll = epoll_new();
+	epoll = epoll_do_new();
 
 	for (size_t i = 0; i < nfds; i++) {
 		struct epoll_event ev;
@@ -612,6 +612,37 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 	}
 
 	return r;
+}
+
+int
+sys_epoll_create(int flags)
+{
+	int r;
+	int fd;
+
+	r = ps_allocfiles(1, &fd);
+	if (r != 0) {
+		return r;
+	}
+
+	/* todo: factor with simiar logic in devmgr/fifofs.c */
+	ps_curproc()->files[fd] = kmem_alloc(sizeof(struct file));
+	obj_initialise_header(&ps_curproc()->files[fd]->objhdr, kObjTypeFile);
+	ps_curproc()->files[fd]->offset = 0;
+	ps_curproc()->files[fd]->vn = epoll_new();
+
+	return fd;
+}
+
+int sys_epoll_ctl(int epfd, int mode, int fd, struct epoll_event *ev)
+{
+	struct epoll *epoll;
+
+	epoll = epoll_from_vnode(ps_getfile(ps_curproc(), epfd)->vn);
+	if (!epoll)
+		return -EBADF;
+
+	return epoll_do_ctl(epoll, mode, fd, ev);
 }
 
 uintptr_t
@@ -730,6 +761,14 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_dup3(ARG1, ARG2, ARG2);
 		break;
 
+	case kPXSysEPollCreate:
+		RET = sys_epoll_create(ARG1);
+		break;
+
+	case kPXSysEPollCtl:
+		RET = sys_epoll_ctl(ARG1, ARG2, ARG3, ARG4);
+		break;
+
 	/* process & misc misc */
 	case kPXSysFork:
 		RET = sys_fork(frame);
@@ -773,6 +812,10 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysSigMask:
 		RET = psx_sigmask(ARG1, (const sigset_t *)ARG2,
 		    (sigset_t *)ARG3);
+		break;
+
+	case kPXSysSigSend:
+		RET = psx_sigsend(ARG1, ARG2);
 		break;
 
 	case kPXSysSigAction:

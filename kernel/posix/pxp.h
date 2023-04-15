@@ -157,6 +157,7 @@ int psx_sigaction(int signal, const struct sigaction *__restrict action,
     struct sigaction *__restrict oldAction);
 int psx_sigmask(int how, const sigset_t *__restrict set,
     sigset_t *__restrict retrieve);
+int psx_sigsend(pid_t pid, int sig);
 
 /*!
  * @brief Signal a process group.

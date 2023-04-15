@@ -46,40 +46,6 @@ struct fifonode {
 	size_t nreaders, nwriters;
 };
 
-int
-ps_allocfiles(size_t n, int *out)
-{
-	eprocess_t *eproc = ps_curproc();
-	int fds[4], nalloced = 0;
-	int r = 0;
-
-	kassert(n < 4);
-
-	ke_wait(&eproc->fd_mutex, "ps_allocfile:eproc->fd_mutex", false, false,
-	    -1);
-	for (int i = 0; i < elementsof(eproc->files); i++) {
-		if (eproc->files[i] == NULL) {
-			fds[nalloced++] = i;
-			if (nalloced == n)
-				break;
-		}
-	}
-
-	if (nalloced != n) {
-		kdprintf("failed to allocate enough FDs\n");
-		r = -EBADF;
-	} else {
-		for (int i = 0; i < nalloced; i++) {
-			eproc->files[fds[i]] = (void *)0xDEADBEEF;
-			out[i] = fds[i];
-		}
-	}
-
-	ke_mutex_release(&eproc->fd_mutex);
-
-	return r;
-}
-
 static void
 vnode_init(vnode_t *vn, vtype_t type, vfs_t *vfs, struct vnops *ops)
 {
@@ -179,8 +145,14 @@ fifofs_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 	int r = 0;
 
 	if (kind == kChPollAdd) {
-		if (pnode->read_head != pnode->write_head) {
-			ph->revents = EPOLLIN | EPOLLOUT;
+		ph->revents = 0;
+
+		if ((pnode->count > 0) && ph->event.events & EPOLLIN) {
+			ph->revents |= EPOLLIN;
+			r = 1;
+		} else if (pnode->count < pnode->size &&
+		    ph->event.events & EPOLLOUT) {
+			ph->revents |= EPOLLOUT;
 			r = 1;
 		}
 

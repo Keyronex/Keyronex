@@ -245,7 +245,7 @@ test_tcpserver(void)
 	struct epoll *epoll;
 	struct epoll_event listen_ev, rev;
 
-	epoll = epoll_new();
+	epoll = epoll_do_new();
 	kassert(epoll != NULL);
 
 	listen_ev.events = EPOLLIN | EPOLLERR;

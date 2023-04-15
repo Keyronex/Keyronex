@@ -3,6 +3,8 @@
  * Created on Tue Feb 14 2023.
  */
 
+#include <sys/errno.h>
+
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -110,4 +112,38 @@ ps_getfile(eprocess_t *proc, size_t index)
 	ke_mutex_release(&proc->fd_mutex);
 
 	return file;
+}
+
+int
+ps_allocfiles(size_t n, int *out)
+{
+	eprocess_t *eproc = ps_curproc();
+	int fds[4], nalloced = 0;
+	int r = 0;
+
+	kassert(n < 4);
+
+	ke_wait(&eproc->fd_mutex, "ps_allocfile:eproc->fd_mutex", false, false,
+	    -1);
+	for (int i = 0; i < elementsof(eproc->files); i++) {
+		if (eproc->files[i] == NULL) {
+			fds[nalloced++] = i;
+			if (nalloced == n)
+				break;
+		}
+	}
+
+	if (nalloced != n) {
+		kdprintf("failed to allocate enough FDs\n");
+		r = -EMFILE;
+	} else {
+		for (int i = 0; i < nalloced; i++) {
+			eproc->files[fds[i]] = (void *)0xDEADBEEF;
+			out[i] = fds[i];
+		}
+	}
+
+	ke_mutex_release(&eproc->fd_mutex);
+
+	return r;
 }

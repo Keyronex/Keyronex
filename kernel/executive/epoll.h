@@ -15,6 +15,7 @@
 #include "kdk/kernel.h"
 
 struct vnode;
+struct epoll;
 
 /*!
  * Entry in a pollable object's poll-list, representing a current poll on the
@@ -75,7 +76,7 @@ struct polllist {
 	LIST_HEAD(, pollhead) pollhead_list;
 };
 
-struct epoll *epoll_new(void);
+struct epoll *epoll_do_new(void);
 int epoll_do_add(struct epoll *epoll, struct file *file, struct vnode *vnode,
     struct epoll_event *event);
 int epoll_do_ctl(struct epoll *epoll, int op, int fd,
@@ -83,6 +84,8 @@ int epoll_do_ctl(struct epoll *epoll, int op, int fd,
 void epoll_do_destroy(struct epoll *epoll);
 int epoll_do_wait(struct epoll *epoll, struct epoll_event *events, int nevents,
     nanosecs_t nanosecs);
+struct vnode *epoll_new(void);
+struct epoll *epoll_from_vnode(struct vnode *);
 
 /*! @brief Initialise a polllist. */
 void pollist_init(struct polllist *pl);
