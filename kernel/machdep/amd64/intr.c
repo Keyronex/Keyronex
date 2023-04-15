@@ -12,6 +12,7 @@
 #include "kdk/machdep.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "posix/pxp.h"
 
 typedef struct {
 	uint16_t isr_low;
@@ -88,13 +89,13 @@ idt_setup(void)
 
 #define DEBUG_SCHED 0
 
-static void hang_until_told(void)
+static void
+hang_until_told(void)
 {
 	volatile bool leave = false;
 	while (!leave)
-			;
+		;
 }
-
 
 void
 handle_int(hl_intr_frame_t *frame, uintptr_t num)
@@ -147,7 +148,6 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		md_intr_frame_trace(frame);
 		hang_until_told();
 		goto out;
-
 	}
 	ipl = splraise(ipl);
 
@@ -173,6 +173,8 @@ out:
 
 ast:
 	/* invoke usermode AST if indicated */
+	if (frame->cs & 0x3)
+		pxp_ast(frame);
 
 	splx(ipl);
 }

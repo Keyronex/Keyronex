@@ -114,6 +114,8 @@ tty_input(struct tty *tty, int c)
 	/* signals */
 	if (tty_isisig(tty)) {
 		if (c == tty->termios.c_cc[VINTR]) {
+			hl_scputc('^', NULL);
+			hl_scputc('C', NULL);
 			sig = SIGINT;
 			goto out;
 		} else if (c == tty->termios.c_cc[VQUIT]) {
@@ -138,9 +140,9 @@ tty_input(struct tty *tty, int c)
 		/* erase ^h/^? */
 		if (c == tty->termios.c_cc[VERASE]) {
 			unenqueue(tty);
-			hl_dputc('\b', NULL);
-			hl_dputc(' ', NULL);
-			hl_dputc('\b', NULL);
+			hl_scputc('\b', NULL);
+			hl_scputc(' ', NULL);
+			hl_scputc('\b', NULL);
 			goto out;
 		}
 
@@ -153,7 +155,7 @@ tty_input(struct tty *tty, int c)
 	}
 
 	if (tty->termios.c_lflag & ECHO /* and is the code printable? */) {
-		hl_dputc(c, NULL);
+		hl_scputc(c, NULL);
 		// tty->putch(tty->data, c);
 	}
 
@@ -164,7 +166,6 @@ out:
 
 	if (sig != -1) {
 		struct posix_pgroup *pg;
-		posix_proc_t *proc;
 
 		ipl = px_acquire_proctree_mutex();
 		pg = tty->pg;

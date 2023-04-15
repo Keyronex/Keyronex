@@ -96,7 +96,7 @@ sys_ioctl(int fd, unsigned long command, void *data)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
 
-#if DEBUG_SYSCALLS == 0
+#if DEBUG_SYSCALLS == 1
 	kdprintf("SYS_IOCTL(fd: %d, command: 0x%lx\n", fd, command);
 #endif
 

@@ -138,6 +138,8 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 		}
 	}
 
+	TAILQ_INIT(&thread->sigqueue);
+
 	eproc->pas_proc = proc;
 	ethread->pas_thread = thread;
 }
@@ -564,40 +566,49 @@ psx_init(void)
 	return 0;
 }
 
+/*! the proctree_mtx is currently locked */
 void
 psx_signal_proc(posix_proc_t *proc, int sig)
 {
-	kthread_t *kthread = NULL, *chosen;
-	ethread_t *ethread;
+	kthread_t *kthread, *chosen = NULL;
 	posix_thread_t *thread;
 	ipl_t ipl;
 
 	ipl = ke_acquire_dispatcher_lock();
 
-	/* look for a running process, or a waiting process */
 	SLIST_FOREACH (kthread, &proc->eprocess->kproc.threads,
 	    kproc_threads_link) {
-		if (chosen == NULL) {
-			chosen = kthread;
-		} else if (kthread->state == kThreadStateRunning) {
+		thread = px_kthread_to_thread(kthread);
+		if (thread->sigmask & sig) {
+			continue;
+		} else {
 			chosen = kthread;
 			break;
-		} else if (kthread->state == kThreadStateWaiting) {
-			/*! !!! todo: only if it's an INTERRUPTIBLE wait! */
-			chosen = kthread;
 		}
 	}
 
-	kassert(chosen != NULL);
-	ethread = (ethread_t *)chosen;
-	thread = ethread->pas_thread;
-	kassert(thread != NULL);
+	if (chosen) {
+		thread = px_kthread_to_thread(chosen);
 
-	/* if it is waiting interruptibly, cancel its wait */
-	if (chosen->state == kThreadStateWaiting) {
-		ke_cancel_wait(chosen);
-	} else {
-		kfatal("not implemented yet\n");
+		if (thread->sighandlers[sig].handler == SIG_IGN) {
+			kdprintf("signal %d ignored\n", sig);
+		} else {
+			ksiginfo_t *si = kmem_alloc(sizeof(*si));
+
+			si->siginfo.si_signo = sig;
+			TAILQ_INSERT_TAIL(&thread->sigqueue, si, tailq_entry);
+
+			/* if it is waiting interruptibly, cancel its wait */
+			if (chosen->state == kThreadStateWaiting) {
+				ke_cancel_wait(chosen);
+			} else {
+				/*
+				 * do an IPI if non-local, otherwise proceed
+				 * it will be caught as expected
+				 */
+				kfatal("not implemented yet\n");
+			}
+		}
 	}
 
 	ke_release_dispatcher_lock(ipl);
@@ -611,6 +622,63 @@ psx_signal_pgroup(struct posix_pgroup *pg, int sig)
 	LIST_FOREACH (proc, &pg->members, pgroup_members_link) {
 		psx_signal_proc(proc, sig);
 	}
+}
+
+void
+pxp_ast(hl_intr_frame_t *frame)
+{
+	posix_thread_t *thread = px_curthread();
+
+	/*
+	 * note: all interrupts are disabled in this context, and as this is the
+	 * currently-running thread, we are free to inspect the sigactions of it
+	 * as they are
+	 */
+
+	if (TAILQ_EMPTY(&thread->sigqueue))
+		return;
+
+	ksiginfo_t *ksi = TAILQ_FIRST(&thread->sigqueue);
+	TAILQ_REMOVE(&thread->sigqueue, ksi, tailq_entry);
+
+	/* todo: this is platform-specific stuff! move accordingly */
+	char *stack = (char *)frame->rsp;
+	ucontext_t *uctx;
+
+	/* clear redzone */
+	stack += 128;
+	/* make space for our uctx */
+	stack += sizeof(ucontext_t);
+	uctx = (ucontext_t *)stack;
+
+	uctx->uc_sigmask = thread->sigmask;
+	uctx->uc_mcontext.gregs[REG_R8] = frame->r8;
+	uctx->uc_mcontext.gregs[REG_R9] = frame->r9;
+	uctx->uc_mcontext.gregs[REG_R10] = frame->r10;
+	uctx->uc_mcontext.gregs[REG_R11] = frame->r11;
+	uctx->uc_mcontext.gregs[REG_R12] = frame->r12;
+	uctx->uc_mcontext.gregs[REG_R13] = frame->r13;
+	uctx->uc_mcontext.gregs[REG_R14] = frame->r14;
+	uctx->uc_mcontext.gregs[REG_R15] = frame->r15;
+
+	uctx->uc_mcontext.gregs[REG_RDI] = frame->rdi;
+	uctx->uc_mcontext.gregs[REG_RSI] = frame->rsi;
+	uctx->uc_mcontext.gregs[REG_RBP] = frame->rbp;
+	uctx->uc_mcontext.gregs[REG_RBX] = frame->rbx;
+	uctx->uc_mcontext.gregs[REG_RDX] = frame->rdx;
+	uctx->uc_mcontext.gregs[REG_RAX] = frame->rax;
+	uctx->uc_mcontext.gregs[REG_RCX] = frame->rcx;
+	uctx->uc_mcontext.gregs[REG_RSP] = frame->rsp;
+	uctx->uc_mcontext.gregs[REG_RIP] = frame->rip;
+	uctx->uc_mcontext.gregs[REG_EFL] = frame->rflags;
+
+	frame->rip = px_curproc()->sigentry;
+	frame->rdi = ksi->siginfo.si_signo;
+	frame->rsi = 0;
+	frame->rdx =
+	    (uintptr_t)thread->sighandlers[ksi->siginfo.si_signo].handler;
+	frame->rcx = thread->sigflags[ksi->siginfo.si_signo] & SA_SIGINFO;
+	frame->r8 = (uintptr_t)uctx;
 }
 
 void dbg_dump_proc_threads(eprocess_t *eproc);
