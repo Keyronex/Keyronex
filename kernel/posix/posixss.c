@@ -51,6 +51,8 @@
 DECLARE_SIMPLE_COMPARATOR(posix_pgroup, pgid);
 int pxp_make_syscon_tty(void);
 int posix_do_openat(vnode_t *dvn, const char *path, int mode);
+static void pgroup_add(struct posix_pgroup *pg, posix_proc_t *proc);
+static void pgroup_remove(struct posix_pgroup *pg, posix_proc_t *proc);
 
 posix_proc_t posix_proc0;
 static posix_thread_t posix_thread0;
@@ -88,6 +90,7 @@ fork_init(void *unused)
 	/* todo move */
 	extern struct tty sctty;
 	sctty.pg = px_curproc()->pgroup;
+	posix_session0.tty = &sctty;
 
 	r = syscall3(kPXSysExecVE, (uintptr_t) "/usr/bin/bash", (uintptr_t)argv,
 	    (uintptr_t)envp, &err);
@@ -107,9 +110,7 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 
 	if (parent_proc) {
 		LIST_INSERT_HEAD(&parent_proc->subprocs, proc, subprocs_link);
-		LIST_INSERT_HEAD(&parent_proc->pgroup->members, proc,
-		    pgroup_members_link);
-		proc->pgroup = parent_proc->pgroup;
+		pgroup_add(parent_proc->pgroup, proc);
 	} else {
 		kassert(proc == &posix_proc0);
 	}
@@ -225,6 +226,7 @@ psx_exit(int status)
 
 	proc->wait_stat = W_EXITCODE(status, 0);
 	proc->exited = true;
+	pgroup_remove(proc->pgroup, proc);
 	ke_event_signal(&proc->parent->subproc_state_change);
 	px_release_proctree_mutex(ipl);
 
@@ -255,12 +257,58 @@ psx_getpgid(pid_t pid)
 	return px_curproc()->pgroup->pgid;
 }
 
+static struct posix_pgroup *
+pgroup_new(struct posix_session *session, posix_proc_t *proc)
+{
+	struct posix_pgroup *pg = kmem_alloc(sizeof(*pg));
+	pg->pgid = proc->eprocess->id;
+	pg->session = proc->pgroup->session;
+	pg->session->nmembers++;
+	LIST_INIT(&pg->members);
+	RB_INSERT(posix_pgroup_rb, &pgroup_rb, pg);
+	return pg;
+}
+
+static void
+pgroup_add(struct posix_pgroup *pg, posix_proc_t *proc)
+{
+	LIST_INSERT_HEAD(&pg->members, proc, pgroup_members_link);
+	proc->pgroup = pg;
+}
+
+static void
+pgroup_remove(struct posix_pgroup *pg, posix_proc_t *proc)
+{
+	LIST_REMOVE(proc, pgroup_members_link);
+	if (LIST_EMPTY(&pg->members)) {
+		/* dissociate if it's the FG pgroup of session TTY */
+		if (pg->session->tty->pg == pg)
+			pg->session->tty->pg = NULL;
+		pg->session->nmembers--;
+		if (pg->session->nmembers == 0) {
+			kprintf("Session %d should be freed\n",
+			    pg->session->sid);
+		}
+		kmem_free(pg, sizeof(*pg));
+	}
+	proc->pgroup = NULL;
+
+	/*
+	 * todo: orphaned process groups handling:
+	 * "An orphaned process group is a process group that has no process
+	 * whose parent is in a different process group, yet is in the same
+	 * session."
+	 * These get sent SIGHUP then SIGCONT and do not receive SIGTTIN/SIGTTOU
+	 * signals. They can no longer read/write to the terminal.
+	 */
+}
+
 pid_t
 psx_setpgid(pid_t pid, pid_t pgid)
 {
 	ipl_t ipl;
 	posix_proc_t *proc = NULL;
-	struct posix_pgroup *pg, *oldpg;
+	struct posix_pgroup *pg;
 	pid_t r;
 
 	if (pid < 0 || pgid < 0)
@@ -268,11 +316,9 @@ psx_setpgid(pid_t pid, pid_t pgid)
 
 	ipl = px_acquire_proctree_mutex();
 
-	if (pid == 0) {
+	if (pid == 0 || pid == px_curproc()->eprocess->id) {
 		proc = px_curproc();
 		pid = proc->eprocess->id;
-	} else if (pid == px_curproc()->eprocess->id) {
-		proc = px_curproc();
 	} else {
 		posix_proc_t *child;
 
@@ -294,43 +340,40 @@ psx_setpgid(pid_t pid, pid_t pgid)
 		/* todo: EACCES if child exec()'d */
 	}
 
+	if (proc->pgroup->session->leader == proc) {
+		/* process is session leader */
+		r = -EPERM;
+		goto out;
+	}
+
 	if (pgid == 0 || pgid == pid) {
+		pgid = pid;
+
 		if (proc->pgroup->pgid == proc->eprocess->id) {
 			/* already in its own group */
 			r = pid;
 			goto out;
 		}
 
-		pg = kmem_alloc(sizeof(*pg));
-		pg->pgid = pid;
-		pg->session = proc->pgroup->session;
-		pg->session->nmembers++;
-		LIST_INIT(&pg->members);
-		pgid = pid;
-
-		RB_INSERT(posix_pgroup_rb, &pgroup_rb, pg);
+		pg = pgroup_new(proc->pgroup->session, proc);
 	} else {
 		pg = psx_lookup_pgid(pgid);
+
 		if (!pg) {
 			r = -ESRCH;
 			goto out;
 		}
+		if (proc->pgroup == pg) {
+			/* already in the group, do nothing */
+			r = pg->pgid;
+			goto out;
+		}
 	}
 
-	oldpg = proc->pgroup;
-	(void)oldpg;
-	proc->pgroup = pg;
+	pgroup_remove(proc->pgroup, proc);
+	pgroup_add(pg, proc);
 
-	kassert(proc);
-	kassert(pg);
-
-	kdprintf("Doing it...\n");
-
-	LIST_REMOVE(proc, pgroup_members_link);
-
-	LIST_INSERT_HEAD(&pg->members, proc, pgroup_members_link);
-
-	r = pg->pgid;
+	r = pgid;
 
 out:
 	px_release_proctree_mutex(ipl);
@@ -354,30 +397,18 @@ psx_setsid(void)
 	ipl = px_acquire_proctree_mutex();
 
 	if (proc->pgroup->session->leader != proc) {
-		struct posix_session *sess, *oldsess;
-		struct posix_pgroup *pg, *oldpg;
-
-		oldpg = proc->pgroup;
-		oldsess = oldpg->session;
-
-		(void)oldsess;
-		(void)oldpg;
+		struct posix_session *sess;
+		struct posix_pgroup *pg;
 
 		sess = kmem_alloc(sizeof(*sess));
 		sess->leader = proc;
 		sess->nmembers = 1;
 		sess->sid = proc->eprocess->id;
 
-		pg = kmem_alloc(sizeof(*pg));
-		pg->pgid = sess->sid;
-		pg->session = sess;
+		pg = pgroup_new(sess, proc);
 
-		proc->pgroup = pg;
-
-		LIST_REMOVE(proc, pgroup_members_link);
-		LIST_INSERT_HEAD(&pg->members, proc, pgroup_members_link);
-
-		RB_INSERT(posix_pgroup_rb, &pgroup_rb, pg);
+		pgroup_remove(proc->pgroup, proc);
+		pgroup_add(pg, proc);
 
 		r = sess->sid;
 	} else
@@ -403,8 +434,6 @@ psx_waitpid(pid_t pid, int *status, int flags)
 
 	kassert((flags & WNOHANG) == 0);
 	kassert((flags & WNOWAIT) == 0);
-
-	// kassert(pid == 0 || pid == -1);
 
 dowait:
 	w = ke_wait(&proc->subproc_state_change,

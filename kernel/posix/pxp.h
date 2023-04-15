@@ -21,6 +21,8 @@
 struct posix_session {
 	/* (~) Session ID */
 	pid_t sid;
+	/* (p) Controlling terminal. */
+	struct tty *tty;
 	/* (p) Number of member pgroups. */
 	unsigned nmembers;
 	/* (p) Session leader. */
