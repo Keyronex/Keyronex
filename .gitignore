@@ -12,3 +12,6 @@ subprojects/cxxshim*
 subprojects/frigg*
 test.c
 ports/
+bundled/
+*.xbstrap
+build/

@@ -12,5 +12,5 @@
 	path = vendor/limine-terminal
 	url = ../../NetaScale/keyronex-limine-terminal
 [submodule "objfw/src"]
-	path = objfw/src
+	path = objfw
 	url = ../ObjFW

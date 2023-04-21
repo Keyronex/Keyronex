@@ -1,9 +1,0 @@
-KP_TOP=${.CURDIR}/${SUB}
-KP_WORKDIR?=/tmp/keybld
-KP_SRCDIR?=${KP_WORKDIR}/source
-KP_SYSROOT?=${KP_WORKDIR}/sysroot
-KP_STAGEDIR?=${KP_WORKDIR}/staging
-KP_PKGOUTDIR?=${KP_WORKDIR}/packages
-KP_DISTFILEDIR?=${KP_WORKDIR}/distfiles
-
-PKG_PREFIX?=/usr

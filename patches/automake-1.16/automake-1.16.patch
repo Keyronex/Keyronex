@@ -1,0 +1,12 @@
+diff -ruN automake-1.16-orig/lib/config.sub automake-1.16/lib/config.sub
+--- automake-1.16-orig/lib/config.sub	2023-04-16 17:12:01.374431100 +0100
++++ automake-1.16/lib/config.sub	2023-04-16 17:12:27.516995614 +0100
+@@ -1368,7 +1368,7 @@
+ 	      | -hpux* | -unos* | -osf* | -luna* | -dgux* | -auroraux* | -solaris* \
+ 	      | -sym* | -kopensolaris* | -plan9* \
+ 	      | -amigaos* | -amigados* | -msdos* | -newsos* | -unicos* | -aof* \
+-	      | -aos* | -aros* | -cloudabi* | -sortix* \
++	      | -aos* | -aros* | -cloudabi* | -sortix* | -keyronex* \
+ 	      | -nindy* | -vxsim* | -vxworks* | -ebmon* | -hms* | -mvs* \
+ 	      | -clix* | -riscos* | -uniplus* | -iris* | -rtu* | -xenix* \
+ 	      | -hiux* | -knetbsd* | -mirbsd* | -netbsd* \
