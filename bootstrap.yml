@@ -6,7 +6,6 @@
 
 sources:
   - name: 'mlibc'
-    subdir: 'mlibc/src'
 
   - name: pkgconf
     subdir: 'ports'
@@ -276,6 +275,8 @@ packages:
   - name: mlibc-headers
     from_source: 'mlibc'
     implict_package: true
+    tools_required:
+      - 'crossfile'
     configure:
       - args:
         - 'meson'
@@ -315,7 +316,7 @@ packages:
         - '-Dmlibc_no_headers=true'
         - '-Dbuildtype=debug'
         - '-Dlinux_kernel_headers=@SOURCE_ROOT@/kernel/_sdkinc'
-        - '@THIS_SOURCE_DIR@/..'
+        - '@THIS_SOURCE_DIR@'
     build:
       - args: ['ninja']
       - args: ['ninja', 'install']
@@ -525,6 +526,9 @@ packages:
         - '--sysconfdir=/etc'
         - '--localstatedir=/var'
         - '--without-tls'
+        workdir: '@THIS_SOURCE_DIR@'
     build:
-      - args: ['make', '-j@PARALLELISM@', '-C@THIS_SOURCE_DIR@']
-      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', '-C@THIS_SOURCE_DIR@', 'install']
+      - args: ['make', '-j@PARALLELISM@', '-f@THIS_SOURCE_DIR@/Makefile']
+        workdir: '@THIS_SOURCE_DIR@'
+      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', '-C@THIS_SOURCE_DIR@', 'install' ]
+        workdir: '@THIS_SOURCE_DIR@'

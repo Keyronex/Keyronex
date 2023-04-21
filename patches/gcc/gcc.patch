@@ -751,3 +751,14 @@ diff -Naur gcc-12.2.0-original/libtool.m4 gcc-12.2.0/libtool.m4
  solaris*)
    lt_cv_deplibs_check_method=pass_all
    ;;
+diff -Naur gcc-12.2.0-original/libtool.m4 gcc-12.2.0/libtool.m4
+--- gcc-12.2.0-original/gcc/tsystem.h	2023-04-21 23:11:26.591404502 +0100
++++ gcc-12.2.0/gcc/tsystem.h	2023-04-21 23:11:55.951058884 +0100
+@@ -43,6 +43,8 @@
+ /* GCC supplies these headers.  */
+ #include <stddef.h>
+ #include <float.h>
++/* need to fix abort redefinition */
++#include <stdlib.h>
+ 
+ #ifdef inhibit_libc

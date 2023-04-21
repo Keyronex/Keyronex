@@ -5,15 +5,15 @@ LIMINE=vendor/limine-binary
 ISO_DIR=build/isoroot
 ISO=build/barebones.iso
 
+all: build/
+	(cd build && xbstrap install -c --all)
+
 build/:
 	mkdir -p build/
 	(cd build/ && xbstrap init ..)
 
-all: build/
-	(cd build && xbstrap install --all)
-
 rebuild-kernel: build/
-	(cd build && xbstrap install --rebuild mlibc keyronex-kernel)
+	(cd build && xbstrap install --rebuild mlibc-headers mlibc keyronex-kernel)
 
 iso:
 	@mkdir -p ${ISO_DIR}
