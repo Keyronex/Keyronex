@@ -1,0 +1,15 @@
+diff -Naur a/src/fcstat.c b/src/fcstat.c
+index 4f69eae..8a621dd 100644
+--- a/src/fcstat.c
++++ b/src/fcstat.c
+@@ -386,7 +386,7 @@ FcFStatFs (int fd, FcStatFS *statb)
+ #  endif
+ #  if defined(HAVE_STRUCT_STATFS_F_FSTYPENAME)
+ 	p = buf.f_fstypename;
+-#  elif defined(__linux__) || defined (__EMSCRIPTEN__)
++#  elif defined(__linux__) || defined(__keyronex__) || defined (__EMSCRIPTEN__)
+ 	switch (buf.f_type)
+ 	{
+ 	case 0x6969: /* nfs */
+-- 
+2.25.1

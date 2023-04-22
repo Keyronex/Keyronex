@@ -342,3 +342,351 @@ packages:
       - args: ['make', 'install-strip']
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libX11
+    source:
+      subdir: 'ports'
+      url: 'http://www.x.org/archive/individual/lib/libX11-1.8.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libX11-1.8'
+      version: '1.8'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libxcb
+      - xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-ipv6'
+        - '--disable-malloc0returnsnull'
+        - '--with-keysymdefdir=@SYSROOT_DIR@/usr/include/X11'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libxkbfile
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/libxkbfile-1.1.0.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libxkbfile-1.1.0'
+      version: '1.1.0'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libfontenc
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/libfontenc-1.1.4.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libfontenc-1.1.4'
+      version: '1.1.4'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xorg-font-util
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - xorg-font-util
+      - zlib
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXfont2
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/libXfont2-2.0.5.tar.gz'
+      format: 'tar.gz'
+      extract_path:  'libXfont2-2.0.5'
+      version: '2.0.5'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-xtrans
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - freetype
+      - libfontenc
+      - fontconfig
+      - zlib
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-devel-docs'
+        - '--disable-selective-werror'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: pixman
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/pixman-0.42.2.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'pixman-0.42.2'
+      version: '0.42.2'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - libpng
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--with-sysroot=@SYSROOT_DIR@' # Set libtool's lt_sysroot.
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libepoxy
+    source:
+      subdir: 'ports'
+      url: 'https://download.gnome.org/sources/libepoxy/1.5/libepoxy-1.5.10.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libepoxy-1.5.10'
+      version: '1.5.10'
+    tools_required:
+      - host-pkgconf
+      - host-gcc
+      - virtual: pkgconfig-for-target
+        triple: "@OPTION:x86_64-keyronex"
+    pkgs_required:
+      - mlibc
+      - xorgproto
+      - libX11
+    configure:
+      - args:
+          - 'meson'
+          - '--cross-file'
+          - '@BUILD_ROOT@/crossfile.ini'
+          - '--prefix=/usr'
+          - '-Degl=no'
+          - '-Dtests=false'
+          - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+#
+# guest tools
+#
+  - name: xorg-font-util
+    from_source: xorg-font-util
+    tools_required:
+      - host-gcc
+      - host-pkgconf
+      - host-libtool
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xorg-server
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/releases/individual/xserver/xorg-server-1.20.14.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'xorg-server-1.20.14'
+      version: '1.20.14'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xorg-font-util
+        - host-xtrans
+      regenerate:
+        - args: ['./autogen.sh']
+          environ:
+            NOCONFIGURE: 'yes'
+    tools_required:
+      - host-gcc
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libepoxy
+      - libxkbfile
+      - libXfont2
+      - pixman
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--with-xkb-output=/var/lib/xkb'
+        - '--with-fontrootdir=/usr/share/fonts/X11'
+        - '--enable-xorg'
+        - '--enable-xv'
+        - '--enable-xvfb'
+        - '--disable-xephyr'
+        - '--disable-xwayland'
+        - '--disable-xnest'
+        - '--disable-dmx'
+        - '--disable-suid-wrapper'
+        - '--disable-pciaccess'
+        - '--disable-dpms'
+        - '--disable-screensaver'
+        - '--disable-xres'
+        - '--disable-xinerama'
+        - '--disable-xvmc'
+        - '--disable-systemd-logind'
+        - '--disable-secure-rpc'
+        - '--disable-config-udev'
+        - '--disable-dri'
+        - '--disable-dri2'
+        - '--disable-dri3'
+        - '--disable-vbe'
+        - '--disable-int10-module'
+        - '--disable-vgahw'
+        - '--disable-libdrm'
+        - '--disable-glamor'
+        - '--disable-glx'
+        environ:
+          CFLAGS: '-Wno-error=array-bounds -pipe'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
