@@ -212,6 +212,8 @@ enum lookup_flags {
 	vnode->ops->read(vnode, buf, nbyte, off)
 #define VOP_READDIR(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO) \
 	(VN)->ops->readdir(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO)
+#define VOP_READLINK(PVN, PBUF) \
+	(PVN)->ops->readlink(PVN, PBUF)
 #define VOP_WRITE(vnode, buf, nbyte, off) \
 	vnode->ops->write(vnode, buf, nbyte, off)
 #define VOP_CREAT(vnode, out, name, attr) \

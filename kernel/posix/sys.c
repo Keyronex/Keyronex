@@ -3,6 +3,7 @@
  * Created on Thu Mar 23 2023.
  */
 
+#include <sys/ioctl.h>
 #include <sys/poll.h>
 
 #include <abi-bits/utsname.h>
@@ -96,14 +97,23 @@ sys_ioctl(int fd, unsigned long command, void *data)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
 
-#if DEBUG_SYSCALLS == 1
+#if DEBUG_SYSCALLS == 0
 	kdprintf("SYS_IOCTL(fd: %d, command: 0x%lx\n", fd, command);
 #endif
 
 	if (file == NULL)
 		return -EBADF;
 
-	kassert(file->vn->ops->ioctl != NULL);
+	if (command == FIOCLEX) {
+		/* TODO: CLOEXEC */
+		return 0;
+	}
+
+	if (file->vn->ops->ioctl == NULL) {
+		kdprintf("no ioctl on this file\n");
+		return -ENOSYS;
+	}
+
 	return VOP_IOCTL(file->vn, command, data);
 }
 
@@ -304,15 +314,29 @@ sys_readlink(const char *path, char *buf, size_t bufsize)
 {
 #if 0
 	int r;
-	char *mypath = strdup(path);
+	char *mypath = strdup(path), *link =NULL;
 	vnode_t *vn;
 
+	r = vfs_lookup(root_vnode, &vn, mypath, kLookupNoFollow, NULL);
+	if (r != 0)
+		goto out;
 
-	//r = vfs_lookup(root_vnode, &vn, mypath, kLookupNoFollow, NULL);
+	link =  kmem_alloc(256);
+	r = VOP_READLINK(vn, link);
+	if (r != 0)
+		goto out;
+
+	strcpy(buf, link);
+
+out:
+	kmem_strfree(mypath);
+	if (link != NULL)
+	kmem_free(link, 256);
 
 	return r;
 #else
-	kfatal("readlink(%s): unimplemented\n", path);
+	kdprintf("readlink(%s): unimplemented\n", path);
+	return -ENOSYS;
 #endif
 }
 
@@ -634,7 +658,8 @@ sys_epoll_create(int flags)
 	return fd;
 }
 
-int sys_epoll_ctl(int epfd, int mode, int fd, struct epoll_event *ev)
+int
+sys_epoll_ctl(int epfd, int mode, int fd, struct epoll_event *ev)
 {
 	struct epoll *epoll;
 

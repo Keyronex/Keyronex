@@ -215,10 +215,14 @@ int
 tty_write(struct vnode *vn, void *buf, size_t nbyte, io_off_t off)
 {
 	ipl_t ipl;
+	char *mybuf = NULL;
+
+	if (nbyte == 0)
+		return 0;
 
 	(void)off;
 
-	char *mybuf = kmem_alloc(nbyte);
+	mybuf = kmem_alloc(nbyte);
 	memcpy(mybuf, buf, nbyte);
 
 	ipl = ke_spinlock_acquire(&dprintf_lock);
@@ -228,7 +232,8 @@ tty_write(struct vnode *vn, void *buf, size_t nbyte, io_off_t off)
 	}
 	ke_spinlock_release(&dprintf_lock, ipl);
 
-	kmem_free(mybuf, nbyte);
+	if (mybuf != NULL)
+		kmem_free(mybuf, nbyte);
 
 	return nbyte;
 }
