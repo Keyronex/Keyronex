@@ -284,6 +284,53 @@ out:
 	return r;
 }
 
+char *
+lsb_basename(const char *filename)
+{
+	char *p = strrchr(filename, '/');
+	return p ? p + 1 : (char *)filename;
+}
+
+int
+sys_link(const char *oldpath, const char *newpath)
+{
+	int r;
+	vnode_t *oldvn = NULL, *dvn_for_new = NULL, *newvn = NULL;
+	char *pathcpy, *newpathcpy;
+	const char *newname;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_LINK(old: %s, new: %s)", oldpath, newpath);
+#endif
+
+	pathcpy = strdup(oldpath);
+	newpathcpy = strdup(newpath);
+	newname = lsb_basename(newpathcpy);
+
+	r = vfs_lookup(oldvn, &oldvn, pathcpy, 0, NULL);
+	if (r != 0)
+		goto out;
+
+	r = vfs_lookup(oldvn, &dvn_for_new, newpathcpy, kLookup2ndLast, NULL);
+	if (r != 0)
+		goto out;
+
+	r = VOP_LINK(dvn_for_new, oldvn, newname);
+	if (r != 0)
+		goto out;
+
+out:
+	kmem_strfree(pathcpy);
+	kmem_strfree(newpathcpy);
+
+	if (dvn_for_new)
+		obj_direct_release(dvn_for_new);
+	if (oldvn)
+		obj_direct_release(oldvn);
+
+	return r;
+}
+
 int
 sys_read(int fd, void *buf, size_t nbyte)
 {
@@ -786,6 +833,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_dup3(ARG1, ARG2, ARG2);
 		break;
 
+	case kPXSysLink:
+		RET = sys_link((const char *)ARG1, (const char *)ARG2);
+		break;
+
 	case kPXSysEPollCreate:
 		RET = sys_epoll_create(ARG1);
 		break;
@@ -856,6 +907,30 @@ posix_syscall(hl_intr_frame_t *frame)
 		strcpy(buf->version, __DATE__ " " __TIME__);
 		strcpy(buf->machine, "amd64");
 		break;
+	}
+
+	case kPXSysSleep: {
+		uint64_t ns = ARG1;
+		kevent_t none;
+		kwaitstatus_t w;
+
+		kassert(ns > 0);
+
+		ke_event_init(&none, false);
+
+		w = ke_wait(&none, "sys_sleep", true, true, ns);
+		switch (w) {
+		case kKernWaitStatusTimedOut:
+			RET = 0;
+			break;
+
+		case kKernWaitStatusSignalled:
+			RET = -EINTR;
+			break;
+
+		default:
+			kfatal("Unexpected sleep return %d\n", w);
+		}
 	}
 
 	case kPXSysSigEntry:

@@ -203,3 +203,17 @@ strlen(const char *str)
 		continue;
 	return (s - str);
 }
+
+char *
+strrchr(const char *str, int c)
+{
+	char *p = NULL;
+
+	while (++str) {
+		if (*str == (char) c)
+			p = (char *)str;
+		else if (*str == '\0')
+			return p;
+	}
+	kfatal("strrchr");
+}

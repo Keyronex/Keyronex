@@ -129,6 +129,9 @@ struct vnops {
 	/*! @brief I/O control */
 	int (*ioctl)(vnode_t *vn, unsigned long command, void *data);
 
+	/*! @brief Create a hardlink. */
+	int (*link)(vnode_t *dvn, vnode_t *vn, const char *name);
+
 	/**
 	 * Lookup the vnode corresponding to the given file name in the given
 	 * direct vnode.
@@ -207,6 +210,7 @@ enum lookup_flags {
 	ROUNDUP(offsetof(struct dirent, d_name[0]) + 1 + NAMELEN, 8)
 
 #define VOP_IOCTL(VN, CMD, DATA) (VN)->ops->ioctl(VN, CMD, DATA)
+#define VOP_LINK(DVN, VN, NAME) (VN)->ops->link(DVN, VN, NAME)
 #define VOP_OPEN(VN, mode) (*VN)->ops->open(VN, mode)
 #define VOP_READ(vnode, buf, nbyte, off) \
 	vnode->ops->read(vnode, buf, nbyte, off)

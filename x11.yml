@@ -638,6 +638,8 @@ packages:
     tools_required:
       - host-gcc
       - host-pkgconf
+      - host-xorg-font-util
+      - host-xtrans
     pkgs_required:
       - mlibc
       - xorg-util-macros
@@ -684,7 +686,7 @@ packages:
         - '--disable-glamor'
         - '--disable-glx'
         environ:
-          CFLAGS: '-Wno-error=array-bounds -pipe'
+          CFLAGS: '-Wno-error=array-bounds -pipe -ggdb'
     build:
       - args: ['make', '-j@PARALLELISM@']
       - args: ['make', 'install']

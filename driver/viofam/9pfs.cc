@@ -611,6 +611,63 @@ NinePFS::getattr(vnode_t *vn, vattr_t *out)
 }
 
 int
+NinePFS::link(vnode_t *dvn, vnode_t *vn, const char *name)
+{
+	NinePFS *self = (NinePFS *)dvn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)dvn->data);
+	ninepfs_node *oldnode = ((ninepfs_node *)vn->data);
+	int r = 0;
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+
+	kassert(dvn->vfsp->data == vn->vfsp->data);
+
+	/* size[4] Tlink tag[2] dfid[4] fid[4] name[s] */
+	buf_in = ninep_buf_alloc("FFS64");
+	/* size[4] Rlink tag[2] */
+	buf_out = ninep_buf_alloc("S64");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pLink;
+	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_addfid(buf_in, oldnode->fid);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+
+	switch (buf_out->data->kind) {
+	case k9pLink + 1:
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	ninep_buf_free(buf_in);
+	ninep_buf_free(buf_out);
+
+	return r;
+}
+
+int
 NinePFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
 	return pgcache_read(vn, buf, nbyte, off);
@@ -672,6 +729,9 @@ NinePFS::readlink(vnode_t *vn, char *out)
 		kfatal("9p error\n");
 	}
 	}
+
+	ninep_buf_free(buf_in);
+	ninep_buf_free(buf_out);
 
 	return r;
 }
@@ -956,6 +1016,7 @@ struct vfsops NinePFS::vfsops = {
 
 struct vnops NinePFS::vnops = { .create = create,
 	.getattr = getattr,
+	.link = link,
 	.lookup = lookup,
 	.read = read,
 	.readdir = readdir,

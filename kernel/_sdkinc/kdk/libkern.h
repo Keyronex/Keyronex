@@ -38,6 +38,7 @@ char *strdup(const char *src);
 char *strcpy(char *restrict dst, const char *restrict src);
 char *strncpy(char *restrict dst, const char *restrict src, size_t n);
 size_t strlen(const char *str);
+char *strrchr(const char *str, int c);
 
 #ifdef __cplusplus
 #define restrict __restrict
