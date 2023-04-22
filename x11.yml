@@ -1,0 +1,344 @@
+################################################################################
+#
+# Sources
+#
+################################################################################
+sources:
+  - name: xtrans
+    subdir: 'ports'
+    url: 'https://www.x.org/archive/individual/lib/xtrans-1.4.0.tar.gz'
+    format: 'tar.gz'
+    extract_path: 'xtrans-1.4.0'
+    version: '1.4.0'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-xorg-macros
+    regenerate:
+      - args: ['libtoolize', '-cfvi']
+      - args: ['autoreconf', '-fvi']
+
+  - name: xorg-util-macros
+    subdir: 'ports'
+    url: 'https://www.x.org/archive/individual/util/util-macros-1.19.3.tar.gz'
+    format: 'tar.gz'
+    extract_path: 'util-macros-1.19.3'
+    version: '1.19.3'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+    regenerate:
+      - args: ['libtoolize', '-cfvi']
+      - args: ['autoreconf', '-fvi']
+
+  - name: xorg-font-util
+    subdir: 'ports'
+    url: 'https://www.x.org/archive/individual/font/font-util-1.3.3.tar.xz'
+    format: 'tar.xz'
+    extract_path: 'font-util-1.3.3'
+    version: '1.3.3'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-xorg-macros
+    regenerate:
+      - args: ['libtoolize', '-cfvi']
+      - args: ['autoreconf', '-fvi']
+
+################################################################################
+#
+# Tools
+#
+################################################################################
+tools:
+  - name: host-xorg-macros
+    exports_aclocal: true
+    from_source: xorg-util-macros
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install-strip']
+
+  - name: host-xtrans
+    exports_aclocal: true
+    from_source: xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install-strip']
+
+  - name: host-xorg-font-util
+    exports_aclocal: true
+    from_source: xorg-font-util
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install-strip']
+
+################################################################################
+#
+# Packages
+#
+################################################################################
+packages:
+  - name: xorg-util-macros
+    from_source: xorg-util-macros
+    tools_required:
+      - host-gcc
+      - host-xorg-macros
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xorgproto
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/proto/xorgproto-2022.1.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xorgproto-2022.1'
+      version: '2022.1'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xcb-proto
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/proto/xcb-proto-1.15.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xcb-proto-1.15'
+      version: '1.15'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libXau
+      - libXdmcp
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+#
+# Xorg core libraries
+#
+  - name: xtrans
+    from_source: xtrans
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libxcb
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXdmcp
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/libXdmcp-1.1.3.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXdmcp-1.1.3'
+      version: '1.1.3'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libXau
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXau
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/libXau-1.0.9.tar.gz'
+      extract_path: 'libXau-1.0.9'
+      format: 'tar.gz'
+      version: '1.0.9'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libxcb
+    source:
+      subdir: 'ports'
+      url: 'https://www.x.org/archive/individual/lib/libxcb-1.15.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libxcb-1.15'
+      version: '1.15'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libXau
+      - libXdmcp
+      - xcb-proto
+    configure:
+      - args: ['sed', '-i', "s/pthread-stubs//", '@THIS_SOURCE_DIR@/configure']
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--without-doxygen'
+        - '--with-sysroot=@SYSROOT_DIR@'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install-strip']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
