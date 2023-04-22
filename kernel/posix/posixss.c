@@ -49,6 +49,7 @@
 	}
 
 DECLARE_SIMPLE_COMPARATOR(posix_pgroup, pgid);
+void psx_signal_proc(posix_proc_t *proc, int sig);
 int pxp_make_syscon_tty(void);
 int posix_do_openat(vnode_t *dvn, const char *path, int mode);
 static void pgroup_add(struct posix_pgroup *pg, posix_proc_t *proc);
@@ -561,6 +562,15 @@ psx_sigmask(int how, const sigset_t *__restrict set,
 }
 
 int
+psx_sigsend(pid_t pid, int sig)
+{
+	kassert(pid == px_curproc()->eprocess->id);
+	psx_exit(128 + sig);
+	// psx_signal_proc(px_curproc(), sig);
+	return 0;
+}
+
+int
 psx_init(void)
 {
 	int r;
@@ -619,6 +629,8 @@ psx_signal_proc(posix_proc_t *proc, int sig)
 	if (chosen) {
 		thread = px_kthread_to_thread(chosen);
 
+		/* todo: factor this into a separate function */
+
 		if (thread->sighandlers[sig].handler == SIG_IGN) {
 			kdprintf("signal %d ignored\n", sig);
 		} else {
@@ -630,12 +642,13 @@ psx_signal_proc(posix_proc_t *proc, int sig)
 			/* if it is waiting interruptibly, cancel its wait */
 			if (chosen->state == kThreadStateWaiting) {
 				ke_cancel_wait(chosen);
-			} else {
-				/*
-				 * do an IPI if non-local, otherwise proceed
-				 * it will be caught as expected
-				 */
-				kfatal("not implemented yet\n");
+			} else if (chosen->state == kThreadStateRunning) {
+				if (thread != px_curthread()) {
+					/*
+					 * do an IPI if non-local, otherwise
+					 * proceed it will be caught as expected
+					 */
+				}
 			}
 		}
 	}
@@ -643,6 +656,7 @@ psx_signal_proc(posix_proc_t *proc, int sig)
 	ke_release_dispatcher_lock(ipl);
 }
 
+/*! @pre proctree_mtx locked */
 void
 psx_signal_pgroup(struct posix_pgroup *pg, int sig)
 {

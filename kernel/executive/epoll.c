@@ -14,6 +14,7 @@
 #include <sys/select.h>
 
 #include "epoll.h"
+#include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -39,6 +40,8 @@ struct epoll {
 	/*! event to signal when a watch completes */
 	kevent_t ev;
 };
+
+static struct vnops epoll_vnops;
 
 /* borrowed from mlibc */
 void
@@ -66,7 +69,7 @@ __FD_ZERO(fd_set *set)
 }
 
 struct epoll *
-epoll_new(void)
+epoll_do_new(void)
 {
 	struct epoll *epoll = kmem_alloc(sizeof(*epoll));
 	epoll->waiting = false;
@@ -257,3 +260,22 @@ pollhead_raise(struct pollhead *ph, int events)
 	}
 	return 0;
 }
+
+vnode_t *
+epoll_new(void)
+{
+	struct epoll *epoll = epoll_do_new();
+	return devfs_create_unnamed(epoll, &epoll_vnops);
+}
+
+struct epoll *
+epoll_from_vnode(vnode_t *vn)
+{
+	if (vn->rdeviceops != &epoll_vnops) {
+		kfatal("Funny rdeviceops\n");
+		return NULL;
+	}
+	return (struct epoll *)vn->rdevice;
+}
+
+static struct vnops epoll_vnops = {};

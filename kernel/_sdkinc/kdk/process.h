@@ -53,7 +53,7 @@ typedef struct eprocess {
 	/*! (~) File table mutex */
 	kmutex_t fd_mutex;
 	/*! (fd) File table. */
-	struct file * files[64];
+	struct file *files[64];
 } eprocess_t;
 
 /*! Eternal handle to the kernel process. Only useable by  */
@@ -91,6 +91,11 @@ int ps_thread_create(krx_out ethread_t **thread_out, eprocess_t *eproc);
  * @brief Get the file at a particular index in a process' table.
  */
 struct file *ps_getfile(eprocess_t *proc, size_t index);
+
+/*!
+ * @brief Allocate file descriptors in current process.
+ */
+int ps_allocfiles(size_t n, int *out);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

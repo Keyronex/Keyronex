@@ -1,15 +1,19 @@
-SUBDIR += basefiles mlibc kernel coreutils bash ncurses nano
-
-#KERNEL_EXE=${KP_STAGEDIR}/kernel/boot/keyronex
-KERNEL_EXE=${KP_SYSROOT}/boot/keyronex
+KRX_BUILDDIR=build
+KRX_SYSROOT=build/system-root
+KERNEL_EXE=${KRX_SYSROOT}/boot/keyronex
 LIMINE=vendor/limine-binary
-ISO_DIR=${KP_WORKDIR}/isoroot
-ISO=${KP_WORKDIR}/barebones.iso
+ISO_DIR=build/isoroot
+ISO=build/barebones.iso
 
-rebuild-kernel:
-	rm -f ${KP_WORKDIR}/mlibc/.build-done
-	rm -f ${KP_WORKDIR}/kernel/.build-done
-	${MAKE} ${MAKEFLAGS}
+all: build/
+	(cd build && xbstrap install -c --all)
+
+build/:
+	mkdir -p build/
+	(cd build/ && xbstrap init ..)
+
+rebuild-kernel: build/
+	(cd build && xbstrap install --rebuild mlibc-headers mlibc keyronex-kernel)
 
 iso:
 	@mkdir -p ${ISO_DIR}
@@ -27,16 +31,12 @@ iso:
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
 		${ISO_DIR} -o ${ISO}
 
-	@${KP_WORKDIR}/kernel/limine-deploy ${ISO}
+	@build/pkg-builds/keyronex-kernel/limine-deploy ${ISO}
 
 	@echo "==> Build is done."
 	@echo "    Run Keyronex like this:"
-	@echo "    tools/amd64_run.sh -9 -k -r ${KP_SYSROOT} -i ${ISO}"
+	@echo "    tools/amd64_run.sh -9 -k -r ${KRX_SYSROOT} -i ${ISO}"
 	@echo "    (or use the 'run' Makefile target)"
 
 run:
-	@tools/amd64_run.sh -9 -k -r ${KP_SYSROOT} -i ${ISO}
-
-
-.include "buildsup/krx.kp.mk"
-.include <bsd.subdir.mk>
+	@tools/amd64_run.sh -9 -k -r ${KRX_SYSROOT} -i ${ISO}

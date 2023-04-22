@@ -20,11 +20,20 @@ extern struct vnops tmpfs_vnops;
 extern struct vnops tmpfs_spec_vnops;
 extern struct vfsops tmpfs_vfsops;
 
-static int
+int
 devfs_setup_vnode(vnode_t *vn, struct device *rdevice, struct vnops *devvnops)
 {
+	vn->ops = &tmpfs_spec_vnops;
 	vn->rdevice = rdevice;
 	vn->rdeviceops = devvnops;
+	return 0;
+}
+
+static int
+devfs_close(vnode_t *vn)
+{
+	if (vn->rdeviceops->close != NULL)
+		return vn->rdeviceops->close(vn);
 	return 0;
 }
 
@@ -295,6 +304,7 @@ struct vnops tmpfs_vnops = {
 };
 
 struct vnops tmpfs_spec_vnops = {
+	.close = devfs_close,
 	.ioctl = devfs_ioctl,
 	.getattr = tmp_getattr,
 	.read = devfs_read,

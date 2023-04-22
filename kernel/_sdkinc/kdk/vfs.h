@@ -225,6 +225,12 @@ enum lookup_flags {
 
 enum vtype mode_to_vtype(mode_t mode);
 
+/*! @brief Create a new unnamed device vnode. */
+vnode_t *devfs_create_unnamed(void *rdevice, struct vnops *devvnops);
+/*! @brief Setup a vnode with devfs vnode ops. */
+int devfs_setup_vnode(vnode_t *vn, struct device *rdevice,
+    struct vnops *devvnops);
+
 /*! Initialises the master DevFS. */
 int vfs_mountdev1(void);
 
