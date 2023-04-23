@@ -104,7 +104,7 @@ sys_ioctl(int fd, unsigned long command, void *data)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
 
-#if DEBUG_SYSCALLS == 0
+#if DEBUG_SYSCALLS == 1
 	kdprintf("SYS_IOCTL(fd: %d, command: 0x%lx\n", fd, command);
 #endif
 
@@ -677,6 +677,7 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 		nanosecs = (nanosecs_t)timeout->tv_sec * NS_PER_S +
 		    (nanosecs_t)timeout->tv_nsec;
 
+
 	r = epoll_do_wait(epoll, revents, nfds, nanosecs);
 	kassert(r >= 0);
 	epoll_do_destroy(epoll);
@@ -747,15 +748,25 @@ sys_socket(int domain, int type, int protocol)
 	vnode_t *vn;
 	int fd;
 	int r;
+	int flags;
 
 	r = ps_allocfiles(1, &fd);
 	if (r != 0) {
 		return r;
 	}
 
+	flags = type & (SOCK_CLOEXEC | SOCK_NONBLOCK);
+	type &= ~flags;
+
+	if (flags & SOCK_NONBLOCK) {
+		kfatal("nonblock not supported yet!\n");
+	}
+
 	r = sock_create(domain, type, protocol, &vn);
-	if (r != 0)
+	if (r != 0) {
+		ps_curproc()->files[fd] = NULL;
 		return r;
+	}
 
 	/* todo: factor with simiar logic above & in  devmgr/fifofs.c */
 	ps_curproc()->files[fd] = kmem_alloc(sizeof(struct file));
@@ -764,6 +775,38 @@ sys_socket(int domain, int type, int protocol)
 	ps_curproc()->files[fd]->vn = vn;
 
 	return fd;
+}
+
+int
+sys_accept(int fd, struct sockaddr *addr, socklen_t *addrlen, int flags)
+{
+	vnode_t *vn, *newvn;
+	int newfd;
+	int r;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	r = ps_allocfiles(1, &newfd);
+	if (r != 0) {
+		return r;
+	}
+
+	r = sock_accept(vn, addr, addrlen, &newvn);
+	if (r != 0) {
+		ps_curproc()->files[newfd] = NULL;
+		return r;
+	}
+
+	/* todo: factor with simiar logic above & in  devmgr/fifofs.fc */
+	ps_curproc()->files[newfd] = kmem_alloc(sizeof(struct file));
+	obj_initialise_header(&ps_curproc()->files[newfd]->objhdr,
+	    kObjTypeFile);
+	ps_curproc()->files[newfd]->offset = 0;
+	ps_curproc()->files[newfd]->vn = newvn;
+
+	return newfd;
 }
 
 int
@@ -779,6 +822,18 @@ sys_bind(int fd, const struct sockaddr *addr, socklen_t addrlen)
 }
 
 int
+sys_connect(int fd, const struct sockaddr *addr, socklen_t addrlen)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_connect(vn, addr, addrlen);
+}
+
+int
 sys_listen(int fd, uint8_t backlog)
 {
 	vnode_t *vn;
@@ -788,6 +843,18 @@ sys_listen(int fd, uint8_t backlog)
 		return -EBADF;
 
 	return sock_listen(vn, backlog);
+}
+
+int
+sys_recvmsg(int fd, struct msghdr *msg, int flags)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_recvmsg(vn, msg, flags);
 }
 
 int
@@ -959,12 +1026,25 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_socket(ARG1, ARG2, ARG3);
 		break;
 
+	case kPXSysAccept:
+		RET = sys_accept(ARG1, (struct sockaddr *)ARG2,
+		    (socklen_t *)ARG3, ARG4);
+		break;
+
 	case kPXSysBind:
 		RET = sys_bind(ARG1, (void *)ARG2, ARG3);
 		break;
 
+	case kPXSysConnect:
+		RET = sys_connect(ARG1, (void *)ARG2, ARG3);
+		break;
+
 	case kPXSysListen:
 		RET = sys_listen(ARG1, ARG2);
+		break;
+
+	case kPXSysRecvMsg:
+		RET = sys_recvmsg(ARG1, (struct msghdr *)ARG2, ARG3);
 		break;
 
 	case kPXSysUTSName: {

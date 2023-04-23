@@ -182,6 +182,7 @@ copyin_strv(const char *user_strv[], char ***out)
 	return 0;
 }
 
+#if 0
 static void
 strv_free(char **strv)
 {
@@ -199,6 +200,7 @@ strv_free(char **strv)
 
 	kmem_free(strv, sizeof(*strv) * cnt);
 }
+#endif
 
 int
 sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],

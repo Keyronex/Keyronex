@@ -46,6 +46,8 @@ struct socknode {
 	/*! () Poll list. */
 	struct polllist polllist;
 
+	/*! (l) Event indicating current readability. */
+	kevent_t read_evobj;
 	/*! (l to set) Event to wait on for accept() */
 	kevent_t accept_evobj;
 	/*! (l) Queue of sockets awaiting accept() */
@@ -55,7 +57,8 @@ struct socknode {
 };
 
 /*!
- * Socket node operations. They are all entered unlocked for the time being.
+ * Socket node operations. Most are entered unlocked.
+ * Those annoteted "unlocks" are entered with spinlock held and exit unlocked.
  */
 struct socknodeops {
 	int (*create)(krx_out vnode_t **out_vn, int domain, int type,
@@ -67,14 +70,20 @@ struct socknodeops {
 	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
 	    socklen_t addr_len);
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
+	int (*recv)(vnode_t *vn, void *buf, size_t nbyte,
+	    ipl_t ipl); /* (unlocks) */
+	int (*send)(vnode_t *vn, void *buf, size_t nbyte);
 };
 
-int sock_create(int domain, int type, int protocol, vnode_t **out);
-int sock_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen);
-int sock_listen(vnode_t *vn, uint8_t backlog);
-int sock_pair(int domain, int type, int protocol, vnode_t *out[2]);
 int sock_accept(vnode_t *vn, krx_out struct sockaddr *addr,
     krx_inout socklen_t *addrlen, krx_out vnode_t **out);
+int sock_create(int domain, int type, int protocol, vnode_t **out);
+int sock_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen);
+int sock_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen);
+int sock_listen(vnode_t *vn, uint8_t backlog);
+int sock_pair(int domain, int type, int protocol, vnode_t *out[2]);
+int sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags);
+int sock_sendmsg(vnode_t *vn, struct msghdr *msg, int flags);
 
 /* internal functions */
 /*! @brief Unack an IP/port from a sockaddr. */

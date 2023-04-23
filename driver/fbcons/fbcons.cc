@@ -3,6 +3,7 @@
  * Created on Thu Mar 23 2023.
  */
 
+#include <linux/fb.h>
 #include <termios.h>
 
 #include "../../vendor/limine-terminal/backends/framebuffer.h"
@@ -78,6 +79,8 @@ plot_char_abs(struct fbterm_context *gterm, struct fbterm_char *c, size_t x,
 void
 FBConsole::puts(const char *buf, size_t len)
 {
+	if (syscon->inhibited)
+		return;
 	term_write(syscon->term, buf, len);
 }
 
@@ -89,6 +92,9 @@ FBConsole::printstats()
 		struct fbterm_context *gterm;
 		unsigned x, y;
 	};
+
+	if (syscon->inhibited)
+		return;
 
 	auto putc = [](int ch, void *ctx) {
 		pctx *pctx = (struct pctx *)ctx;
@@ -120,6 +126,45 @@ FBConsole::getsize(struct winsize *ws)
 	ws->ws_row = syscon->term->rows;
 	ws->ws_xpixel = syscon->fb->width - 8 * 2;
 	ws->ws_ypixel = syscon->fb->height - 93 - 36;
+}
+
+void
+FBConsole::getfbinfo(struct fb_var_screeninfo *var,
+    struct fb_fix_screeninfo *fix)
+{
+	fix->smem_start = (uintptr_t)V2P(syscon->fb->address);
+	fix->smem_len = syscon->fb->pitch * syscon->fb->height;
+	fix->smem_len = syscon->fb->pitch * syscon->fb->height;
+	fix->mmio_len = syscon->fb->pitch * syscon->fb->height;
+	fix->line_length = syscon->fb->pitch;
+	fix->type = FB_TYPE_PACKED_PIXELS;
+	fix->visual = FB_VISUAL_TRUECOLOR;
+
+	var->xres = syscon->fb->width;
+	var->yres = syscon->fb->height;
+	var->xres_virtual = syscon->fb->width;
+	var->yres_virtual = syscon->fb->height;
+	var->bits_per_pixel = syscon->fb->bpp;
+	var->red = (struct fb_bitfield) { .offset = syscon->fb->red_mask_shift,
+		.length = syscon->fb->red_mask_size };
+	var->green = (struct fb_bitfield) {
+		.offset = syscon->fb->green_mask_shift,
+		.length = syscon->fb->green_mask_size
+	};
+	var->blue = (struct fb_bitfield) {
+		.offset = syscon->fb->blue_mask_shift,
+		.length = syscon->fb->blue_mask_size
+	};
+	var->activate = FB_ACTIVATE_NOW;
+	var->vmode = FB_VMODE_NONINTERLACED;
+	var->width = -1;
+	var->height = -1;
+}
+
+void
+FBConsole::inhibit()
+{
+	syscon->inhibited = true;
 }
 
 FBConsole::FBConsole(Device *provider)
@@ -169,6 +214,8 @@ FBConsole::FBConsole(Device *provider)
 		syscon_puts = puts;
 		syscon_printstats = printstats;
 		syscon_getsize = getsize;
+		syscon_getfbinfo = getfbinfo;
+		syscon_inhibit = inhibit;
 		hl_replaykmsgbuf();
 	}
 
