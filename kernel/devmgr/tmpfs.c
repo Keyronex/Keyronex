@@ -62,6 +62,16 @@ devfs_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 }
 
 static int
+devfs_mmap(vnode_t *vn, vm_map_t *map, krx_inout vaddr_t *vaddrp, size_t size,
+    voff_t offset, vm_protection_t initial_protection,
+    vm_protection_t max_protection, enum vm_inheritance inheritance, bool exact,
+    bool copy)
+{
+	return vn->rdeviceops->mmap(vn, map, vaddrp, size, offset,
+	    initial_protection, max_protection, inheritance, exact, copy);
+}
+
+static int
 tmpfs_root(vfs_t *vfs, vnode_t **out)
 {
 	*out = (vnode_t *)vfs->data;
@@ -310,6 +320,7 @@ struct vnops tmpfs_spec_vnops = {
 	.read = devfs_read,
 	.write = devfs_write,
 	.chpoll = devfs_chpoll,
+	.mmap = devfs_mmap,
 #if 0
 	.open = spec_open,
 	.read = spec_read,

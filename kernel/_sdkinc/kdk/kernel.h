@@ -530,13 +530,20 @@ void hl_scputc(int ch, void *ctx);
 void hl_replaykmsgbuf(void);
 
 struct winsize;
+struct fb_var_screeninfo;
+struct fb_fix_screeninfo;
 
 /*! System console puts - initially NULL. */
 extern void (*syscon_puts)(const char *buf, size_t len);
 /*! System console print stats - initially NULL - invoked every second. */
 extern void (*syscon_printstats)(void);
+/*! Syscon get framebuffer info.*/
+extern void (*syscon_getfbinfo)(struct fb_var_screeninfo *var,
+    struct fb_fix_screeninfo *fix);
 /*! System console get dimensions. */
 extern void (*syscon_getsize)(struct winsize *winsize);
+/*! System console inhibit output. */
+extern void (*syscon_inhibit)(void);;
 /*! System console input string  */
 void syscon_instr(const char *str);
 /*! System console input char  */

@@ -4,10 +4,11 @@
  */
 
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <abi-bits/stat.h>
 
-#include "abi-bits/errno.h"
-#include "abi-bits/socket.h"
 #include "kdk/kmem.h"
+#include "kdk/vfs.h"
 #include "keysock/sockfs.h"
 
 /*
@@ -50,7 +51,7 @@ struct sock_unix {
 	struct sock_unix *remote;
 };
 
-static struct socknodeops unix_soops;
+#define VNTOUNP(VN) ((struct sock_unix *)(VN)->data)
 
 static int
 sock_unix_common_alloc(krx_out vnode_t **vnode)
@@ -81,12 +82,64 @@ sock_unix_create(krx_out vnode_t **out_vn, int domain, int type, int protocol)
 
 	switch (type) {
 	case SOCK_STREAM:
-	case SOCK_DGRAM:
 		break;
 
+	case SOCK_DGRAM:
 	default:
 		return EPROTOTYPE;
 	}
 
-	sock = kmem_alloc(sizeof(*sock));
+	r = sock_unix_common_alloc(&vn);
+	if (r != 0)
+		return r;
+
+	sock = VNTOUNP(vn);
+	sock->socknode.domain = domain;
+	sock->socknode.type = type;
+	sock->socknode.protocol = protocol;
+
+	*out_vn = vn;
+
+	return 0;
 }
+
+int
+sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
+{
+	struct sockaddr_un *sun;
+	int r;
+	vnode_t *filevn;
+	struct sock_unix *sock = VNTOUNP(vn);
+	struct vattr attr = {0};
+
+	if (addr->sa_family != AF_UNIX)
+		return -EINVAL;
+
+	sun = (struct sockaddr_un *)addr;
+	attr.type = VSOCK;
+	attr.mode = S_IFSOCK | 0777;
+
+	/*
+	 * minor niggle: there is a period between lookup and the setting of the
+	 * socket in which the socket vnode lacks its associated socket, which
+	 * is inappropriate.
+	 */
+
+	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, kLookupCreate, &attr);
+	if (r != 0)
+		return r;
+
+	filevn->sock = sock;
+
+	return 0;
+}
+
+int sock_unix_listen(vnode_t *vn, uint8_t backlog) {
+	return 0;
+}
+
+struct socknodeops unix_soops = {
+	.create = sock_unix_create,
+	.bind = sock_unix_bind,
+	.listen = sock_unix_listen,
+};

@@ -580,9 +580,6 @@ psx_init(void)
 	proc_init_common(&posix_proc0, NULL, &posix_thread0, NULL,
 	    &kernel_process, ps_curthread());
 
-	r = vfs_mountdev1();
-	kassert(r == 0);
-
 	posix_pgroup0.pgid = 0;
 	posix_pgroup0.session = &posix_session0;
 	RB_INSERT(posix_pgroup_rb, &pgroup_rb, &posix_pgroup0);

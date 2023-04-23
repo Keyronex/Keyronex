@@ -36,7 +36,7 @@ mode_to_vtype(mode_t mode)
 		return VLNK;
 
 	case S_IFSOCK:
-		return VNON;
+		return VSOCK;
 
 	default:
 		return VNON;

@@ -90,10 +90,16 @@ typedef struct vnode {
 	/*! (fs-dependent) fs private data 2 */
 	uintptr_t data2;
 
-	/*! (~) device */
-	struct device *rdevice;
-	/*! (~) device ops */
-	struct vnops *rdeviceops;
+	union {
+		struct {
+			/*! (~) device */
+			struct device *rdevice;
+			/*! (~) device ops */
+			struct vnops *rdeviceops;
+		};
+
+		struct sock_unix *sock;
+	};
 } vnode_t;
 
 /*!
@@ -174,6 +180,11 @@ struct vnops {
 	int (*close)(vnode_t *vn);
 	/*! @brief Change poll state. */
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
+	/*! @brief Memory map (see vm_map_object) */
+	int (*mmap)(vnode_t *vn, vm_map_t *map, krx_inout vaddr_t *vaddrp,
+	    size_t size, voff_t offset, vm_protection_t initial_protection,
+	    vm_protection_t max_protection, enum vm_inheritance inheritance,
+	    bool exact, bool copy);
 };
 
 struct vfsops {
@@ -216,8 +227,7 @@ enum lookup_flags {
 	vnode->ops->read(vnode, buf, nbyte, off)
 #define VOP_READDIR(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO) \
 	(VN)->ops->readdir(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO)
-#define VOP_READLINK(PVN, PBUF) \
-	(PVN)->ops->readlink(PVN, PBUF)
+#define VOP_READLINK(PVN, PBUF) (PVN)->ops->readlink(PVN, PBUF)
 #define VOP_WRITE(vnode, buf, nbyte, off) \
 	vnode->ops->write(vnode, buf, nbyte, off)
 #define VOP_CREAT(vnode, out, name, attr) \

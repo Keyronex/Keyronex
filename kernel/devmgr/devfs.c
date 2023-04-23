@@ -10,10 +10,11 @@ int
 devfs_create(struct device *dev, const char *name, struct vnops *devvnops)
 {
 	vnode_t *vn;
-	struct vattr vattr;
+	struct vattr vattr = {0};
 
 	vattr.size = 0;
 	vattr.type = VCHR;
+	vattr.mode = 0755;
 	vattr.rdevice = dev;
 	vattr.rdevops = devvnops;
 

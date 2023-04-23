@@ -29,12 +29,16 @@ enum chpoll_kind;
  *
  * (l) => #lock
  * (p) => #polllist->lock
+ * (~) => invariant from creation
  */
 struct socknode {
 	/*! (per-socket) Associated vnode; weak unless socket on accept queue */
 	vnode_t *vnode;
 	/*! (~) Socket operations vector. */
 	struct socknodeops *sockops;
+	int domain;   /* (~) */
+	int type;     /* (~) */
+	int protocol; /* (~) */
 
 	/*! Lock. */
 	kspinlock_t lock;
@@ -65,6 +69,10 @@ struct socknodeops {
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
 };
 
+int sock_create(int domain, int type, int protocol, vnode_t **out);
+int sock_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen);
+int sock_listen(vnode_t *vn, uint8_t backlog);
+int sock_pair(int domain, int type, int protocol, vnode_t *out[2]);
 int sock_accept(vnode_t *vn, krx_out struct sockaddr *addr,
     krx_inout socklen_t *addrlen, krx_out vnode_t **out);
 
@@ -81,6 +89,7 @@ int sock_init(struct socknode *sock, struct socknodeops *ops);
 /*! @brief Raise an event with a socket. */
 int sock_event_raise(struct socknode *sock, int events);
 
+extern struct socknodeops unix_soops;
 extern struct vnops sock_vnops;
 
 #endif /* KRX_KEYSOCK_SOCKFS_H */

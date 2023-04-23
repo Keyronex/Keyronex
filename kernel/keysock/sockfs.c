@@ -9,6 +9,53 @@
 
 #define VNTOSON(VN) ((struct socknode *)(VN)->data)
 
+static struct socknodeops *
+sock_ops(struct socknode *sonode)
+{
+	switch (sonode->domain) {
+	case PF_LOCAL:
+		return &unix_soops;
+
+	default:
+		kfatal("No sonodeops for domain %d\n", sonode->domain);
+	}
+}
+
+int
+sock_create(int domain, int type, int protocol, vnode_t **out)
+{
+	switch (domain) {
+	case PF_LOCAL:
+		kprintf("Create a Unix socket, type %d proto %d\n", type,
+		    protocol);
+		return unix_soops.create(out, domain, type, protocol);
+
+	default:
+		kdprintf("Unsupported domain %d\n", domain);
+		return -EAFNOSUPPORT;
+	}
+}
+
+int
+sock_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
+{
+	struct socknode *sonode;
+	kassert(vn->ops = &sock_vnops);
+	sonode = VNTOSON(vn);
+	return sock_ops(sonode)->bind(vn, addr, addrlen);
+}
+
+int
+sock_listen(vnode_t *vn, uint8_t backlog)
+{
+	struct socknode *sonode;
+	kassert(vn->ops = &sock_vnops);
+	sonode = VNTOSON(vn);
+	return sock_ops(sonode)->listen(vn, backlog);
+}
+
+/* review the below! these were made ages ago */
+
 int
 sock_accept(vnode_t *vn, struct sockaddr *addr, socklen_t *addrlen,
     krx_out vnode_t **out)

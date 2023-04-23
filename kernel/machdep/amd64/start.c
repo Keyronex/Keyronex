@@ -84,6 +84,9 @@ extern const char logosmall[6512];
 void (*syscon_puts)(const char *buf, size_t len) = NULL;
 void (*syscon_printstats)(void) = NULL;
 void (*syscon_getsize)(struct winsize *winsize) = NULL;
+void (*syscon_getfbinfo)(struct fb_var_screeninfo *var,
+    struct fb_fix_screeninfo *fix) = NULL;
+void (*syscon_inhibit)(void) = NULL;
 
 static void
 done(void)

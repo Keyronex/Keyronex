@@ -106,7 +106,7 @@ class NinePFS : public Device {
 
 	int doAttach();
 	int negotiateVersion();
-	int doGetattr(ninep_fid_t fid, vattr_t &vattr);
+	int doGetattr(vtype_t realtype, ninep_fid_t fid, vattr_t &vattr);
 
 	void allocFID(ninep_fid_t &out);
 	int cloneNodeFID(struct ninepfs_node *node, ninep_fid_t &out);

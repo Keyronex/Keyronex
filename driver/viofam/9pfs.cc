@@ -203,6 +203,7 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 		return node;
 	}
 
+	/* This is just a lookup; we can't do any more. */
 	if (type == VNON) {
 		ke_mutex_release(&nodecache_mutex);
 		return NULL;
@@ -366,8 +367,16 @@ NinePFS::cloneNodeFID(ninepfs_node *node, ninep_fid_t &out)
 	return r;
 }
 
+/*
+ * The realtype parameter lets the type of a regular file be overriden to a
+ * socket (in the future, also a device, etc.)
+ *
+ * This permits sockets etc to be implemented. I couldn't see how to create a
+ * socket with Lcreate. `mode` does not seem to affect the creation of the file
+ * nor is it reflected in future Getattrs.
+ */
 int
-NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
+NinePFS::doGetattr(vtype_t realtype, ninep_fid_t fid, vattr_t &vattr)
 {
 	iop_t *iop;
 	io_9p_request *req;
@@ -431,8 +440,15 @@ NinePFS::doGetattr(ninep_fid_t fid, vattr_t &vattr)
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.ctim.tv_sec);
 	ninep_buf_getu64(buf_out, (uint64_t *)&vattr.ctim.tv_nsec);
 
-	vattr.type = mode_to_vtype(vattr.mode);
 	vattr.ino = qid.path;
+	vattr.type = mode_to_vtype(vattr.mode);
+
+	if (realtype == VSOCK ) {
+		kassert(vattr.type == VREG);
+		vattr.type = VSOCK;
+		vattr.mode &= ~S_IFREG;
+		vattr.mode |= S_IFSOCK;
+	}
 
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);
@@ -448,7 +464,31 @@ NinePFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
 	ninep_fid_t newfid;
 	struct ninep_qid qid;
 	vattr_t vattr_out;
+	int nineplmode = 0;
 	int r = 0;
+
+	/*
+	 * note:
+	 * "lcreate creates a regular file name in directory fid and prepares it
+	 * for I/O."
+	 *
+	 * There doesn't appear to be a special mode for creating sockets, dirs,
+	 * etc; accordingly we need to handle these.
+	 */
+
+	switch (attr->type) {
+	case VREG:
+		nineplmode = 0755 | S_IFREG;
+		break;
+
+	case VSOCK: {
+		nineplmode = 0755 | S_IFSOCK;
+		break;
+	}
+
+	default:
+		kfatal("Unexpected vattr type %d\n", attr->type);
+	}
 
 	r = self->cloneNodeFID(node, newfid);
 	kassert(r == 0);
@@ -467,7 +507,7 @@ NinePFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
 	ninep_buf_addfid(buf_in, newfid);
 	ninep_buf_addstr(buf_in, name);
 	ninep_buf_addu32(buf_in, O_CREAT); /* flags */
-	ninep_buf_addu32(buf_in, 0755 | S_IFREG);
+	ninep_buf_addu32(buf_in, nineplmode);
 	ninep_buf_addu32(buf_in, 0); /* gid */
 	ninep_buf_close(buf_in);
 
@@ -486,7 +526,7 @@ NinePFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
 		ninep_buf_free(buf_in);
 		ninep_buf_free(buf_out);
 
-		r = self->doGetattr(newfid, vattr_out);
+		r = self->doGetattr(attr->type, newfid, vattr_out);
 		break;
 	}
 
@@ -570,7 +610,7 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 		ninep_buf_free(buf_in);
 		ninep_buf_free(buf_out);
 
-		r = self->doGetattr(newfid, vattr);
+		r = self->doGetattr(VNON, newfid, vattr);
 		break;
 	}
 
@@ -607,7 +647,7 @@ NinePFS::getattr(vnode_t *vn, vattr_t *out)
 {
 	NinePFS *self = (NinePFS *)vn->vfsp->data;
 	ninepfs_node *node = ((ninepfs_node *)vn->data);
-	return self->doGetattr(node->fid, *out);
+	return self->doGetattr(vn->type, node->fid, *out);
 }
 
 int
@@ -783,7 +823,6 @@ NinePFS::remove(vnode_t *vn, const char *name)
 		ninep_buf_getu32(buf_out, &err);
 		r = -err;
 		kassert(r != 0);
-		kfatal("Unlinkat failed with %d\n", r);
 		break;
 	}
 

@@ -3,18 +3,18 @@
  * Created on Thu Mar 23 2023.
  */
 
+#include <sys/dir.h>
+#include <sys/errno.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/poll.h>
+#include <sys/stat.h>
+#include <sys/utsname.h>
 
-#include <abi-bits/utsname.h>
-#include <dirent.h>
+#include <fcntl.h>
 #include <keyronex/syscall.h>
 
-#include "abi-bits/errno.h"
-#include "abi-bits/fcntl.h"
-#include "abi-bits/seek-whence.h"
-#include "abi-bits/stat.h"
-#include "abi-bits/vm-flags.h"
 #include "amd64.h"
 #include "executive/epoll.h"
 #include "kdk/amd64/mdamd64.h"
@@ -22,12 +22,12 @@
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/machdep.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
+#include "keysock/sockfs.h"
 #include "posix/pxp.h"
 
 /* devmgr/fifofs.c */
@@ -76,10 +76,17 @@ vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 
 		/* TODO(low): introduce a vnode mmap operation (for devices) */
 
-		r = vm_map_object(proc->map, &file->vn->vmobj, &at_addr, len,
-		    offset, vmprot, kVMAll,
-		    private ? kVMInheritCopy : kVMInheritShared,
-		    flags & MAP_FIXED, private);
+		if (file->vn->ops->mmap != NULL) {
+			r = file->vn->ops->mmap(file->vn, proc->map, &at_addr,
+			    len, offset, vmprot, kVMAll,
+			    private ? kVMInheritCopy : kVMInheritShared,
+			    flags & MAP_FIXED, private);
+		} else {
+			r = vm_map_object(proc->map, &file->vn->vmobj, &at_addr,
+			    len, offset, vmprot, kVMAll,
+			    private ? kVMInheritCopy : kVMInheritShared,
+			    flags & MAP_FIXED, private);
+		}
 	} else {
 		r = vm_map_allocate(proc->map, &at_addr, len,
 		    flags & MAP_FIXED);
@@ -295,7 +302,7 @@ int
 sys_link(const char *oldpath, const char *newpath)
 {
 	int r;
-	vnode_t *oldvn = NULL, *dvn_for_new = NULL, *newvn = NULL;
+	vnode_t *oldvn = NULL, *dvn_for_new = NULL;
 	char *pathcpy, *newpathcpy;
 	const char *newname;
 
@@ -530,7 +537,7 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	}
 
 	memset(sb, 0x0, sizeof(*sb));
-	sb->st_mode = vattr.mode;
+	sb->st_mode = vattr.mode & ~S_IFMT;
 
 	switch (vattr.type) {
 	case VREG:
@@ -664,7 +671,7 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 	nanosecs_t nanosecs;
 	if (!timeout)
 		nanosecs = -1;
-	else if (timeout->tv_nsec <= 1000 && timeout->tv_nsec == 0)
+	else if (timeout->tv_nsec <= 1000 && timeout->tv_sec == 0)
 		nanosecs = 0;
 	else
 		nanosecs = (nanosecs_t)timeout->tv_sec * NS_PER_S +
@@ -732,6 +739,55 @@ sys_fork(hl_intr_frame_t *frame)
 	} else {
 		return child->eprocess->id;
 	}
+}
+
+int
+sys_socket(int domain, int type, int protocol)
+{
+	vnode_t *vn;
+	int fd;
+	int r;
+
+	r = ps_allocfiles(1, &fd);
+	if (r != 0) {
+		return r;
+	}
+
+	r = sock_create(domain, type, protocol, &vn);
+	if (r != 0)
+		return r;
+
+	/* todo: factor with simiar logic above & in  devmgr/fifofs.c */
+	ps_curproc()->files[fd] = kmem_alloc(sizeof(struct file));
+	obj_initialise_header(&ps_curproc()->files[fd]->objhdr, kObjTypeFile);
+	ps_curproc()->files[fd]->offset = 0;
+	ps_curproc()->files[fd]->vn = vn;
+
+	return fd;
+}
+
+int
+sys_bind(int fd, const struct sockaddr *addr, socklen_t addrlen)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_bind(vn, addr, addrlen);
+}
+
+int
+sys_listen(int fd, uint8_t backlog)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_listen(vn, backlog);
 }
 
 int
@@ -842,7 +898,7 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 
 	case kPXSysEPollCtl:
-		RET = sys_epoll_ctl(ARG1, ARG2, ARG3, ARG4);
+		RET = sys_epoll_ctl(ARG1, ARG2, ARG3, (void *)ARG4);
 		break;
 
 	/* process & misc misc */
@@ -897,6 +953,18 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysSigAction:
 		RET = psx_sigaction(ARG1, (const struct sigaction *)ARG2,
 		    (struct sigaction *)ARG3);
+		break;
+
+	case kPXSysSocket:
+		RET = sys_socket(ARG1, ARG2, ARG3);
+		break;
+
+	case kPXSysBind:
+		RET = sys_bind(ARG1, (void *)ARG2, ARG3);
+		break;
+
+	case kPXSysListen:
+		RET = sys_listen(ARG1, ARG2);
 		break;
 
 	case kPXSysUTSName: {

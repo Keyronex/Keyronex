@@ -211,10 +211,6 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 
 	/* TODO: check for other threads, terminate them all */
 
-#if DEBUG_SYSCALLS == 1
-	kprintf("SYS_EXEC(%s)\n", u_path);
-#endif
-
 	kassert(oldmap != kernel_process.map);
 	pkg.map = rtldpkg.map = kmem_alloc(sizeof(*pkg.map));
 	vm_map_init(pkg.map);
@@ -225,6 +221,10 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	kassert(r == 0);
 	r = copyin_strv(u_envp, &envp);
 	kassert(r == 0);
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_EXEC(%s)\n", path);
+#endif
 
 	proc->eprocess->map = pkg.map;
 	vm_map_activate(pkg.map);

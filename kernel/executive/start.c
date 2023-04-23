@@ -39,8 +39,10 @@ tcpip_running(void *unused)
 void
 init_thread_start(void *rsdp)
 {
-	/*! first we maun setup the device tmpfs */
-	// setup device tmpfs
+	int r;
+
+	r = vfs_mountdev1();
+	kassert(r == 0);
 
 	vm_cleaner_init();
 	tcpip_init(tcpip_running, NULL);
@@ -50,6 +52,17 @@ init_thread_start(void *rsdp)
 	int test_tcpserver(void);
 	test_tcpserver();
 #endif
+
+	kassert(root_vnode != 0);
+	vnode_t *dev_shadowed;
+
+	r = vfs_lookup(root_vnode, &dev_shadowed, "dev", 0, NULL);
+	kassert(r == 0);
+
+	dev_shadowed->vfsmountedhere = &dev_vfs;
+
+	int fbdev_init(void);
+	fbdev_init();
 
 	psx_init();
 
