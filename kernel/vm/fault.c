@@ -448,7 +448,7 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		return kVMFaultRetRetry;
 #else
 		kfatal("Unlock everything & wait for busy page %p in %p!\n",
-		     objpage->page, ke_curthread());
+		    objpage->page, ke_curthread());
 #endif
 	} else {
 		vm_page_t *page = objpage->page;
@@ -502,6 +502,17 @@ fault_object(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry, voff_t offset,
 	return r;
 }
 
+static vm_fault_return_t
+fault_phys(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry, voff_t offset,
+    vm_fault_flags_t flags, vm_page_t **out)
+{
+	pmap_enter(map, entry->paddr + offset, vaddr, kVMAll);
+	if (out) {
+		kfatal("Can't take an out-parameter to a phys fault.\n");
+	}
+	return 0;
+}
+
 vm_fault_return_t
 vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t **out)
 {
@@ -538,7 +549,9 @@ vm_fault(vm_map_t *map, vaddr_t vaddr, vm_fault_flags_t flags, vm_page_t **out)
 
 	offset = vaddr - entry->start;
 
-	if (entry->has_anonymous) {
+	if (entry->is_phys) {
+		r = fault_phys(map, vaddr, entry, offset, flags, out);
+	} else if (entry->has_anonymous) {
 		r = fault_anonymous(map, vaddr, entry, &entry->amap, NULL,
 		    entry->object, offset, flags, out);
 	} else {

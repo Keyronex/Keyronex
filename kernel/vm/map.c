@@ -99,6 +99,7 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	    exact ? kVMemExact : 0, &addr);
 	if (r < 0) {
 		kdprintf("vm_map_object failed at vmem_xalloc with %d\n", r);
+		for (;;) asm("pause");
 	}
 
 	if (object != NULL)
@@ -110,6 +111,7 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	vad->offset = offset;
 	vad->inheritance = inheritance;
 	vad->protection = initial_protection;
+	vad->is_phys = false;
 
 	if (object != NULL && copy) {
 		vad->has_anonymous = true;
@@ -134,6 +136,55 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 
 #if 0
 	kdprintf("%p: Mapping object at 0x%lx\n", map, vad->start);
+#endif
+
+	RB_INSERT(vm_map_entry_rbtree, &map->entry_queue, vad);
+
+	ke_mutex_release(&map->mutex);
+
+	*vaddrp = addr;
+
+	return 0;
+}
+
+int
+vm_map_phys(vm_map_t *map, paddr_t paddr, krx_inout vaddr_t *vaddrp,
+    size_t size, vm_protection_t initial_protection,
+    vm_protection_t max_protection, enum vm_inheritance inheritance, bool exact)
+{
+	int r;
+	kwaitstatus_t w;
+	vm_map_entry_t *vad;
+	vmem_addr_t addr = exact ? *vaddrp : 0;
+
+	if (addr % PGSIZE != 0) {
+		return -EINVAL;
+	} else if (size % PGSIZE != 0) {
+		return -EINVAL;
+	}
+
+	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+
+	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0,
+	    exact ? kVMemExact : 0, &addr);
+	if (r < 0) {
+		kdprintf("vm_map_phys failed at vmem_xalloc with %d\n", r);
+	}
+
+	vad = kmem_alloc(sizeof(vm_map_entry_t));
+	vad->start = (vaddr_t)addr;
+	vad->end = addr + size;
+	vad->paddr = paddr;
+	vad->inheritance = inheritance;
+	vad->protection = initial_protection;
+	vad->object = NULL;
+	vad->has_anonymous = false;
+	vad->is_phys = true;
+
+#if 0
+	kdprintf("%p: Mapping physical 0x%lx at 0x%lx\n", map, paddr,
+	    vad->start);
 #endif
 
 	RB_INSERT(vm_map_entry_rbtree, &map->entry_queue, vad);

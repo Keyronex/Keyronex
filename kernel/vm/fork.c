@@ -92,18 +92,27 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 	RB_FOREACH (vad, vm_map_entry_rbtree, &map->entry_queue) {
 		switch (vad->inheritance) {
 		case kVMInheritShared: {
-			vm_map_entry_t *entry_new = kmem_alloc(
-			    sizeof(*entry_new));
-			vaddr_t vaddr = vad->start;
-			int r;
+			if (vad->is_phys) {
+				vaddr_t vaddr = vad->start;
+				int r;
+				r = vm_map_phys(map_new, vad->paddr, &vaddr,
+				    vad->end - vad->start, vad->protection,
+				    vad->max_protection, vad->inheritance,
+				    true);
+				kassert(r == 0);
+			} else {
+				vaddr_t vaddr = vad->start;
+				int r;
 
-			kassert(!vad->has_anonymous);
+				kassert(!vad->has_anonymous);
 
-			r = vm_map_object(map_new, vad->object, &vaddr,
-			    vad->end - vad->start - 1, vad->offset,
-			    vad->protection, vad->max_protection,
-			    vad->inheritance, true, false);
-			kassert(r == 0 && vaddr == vad->start);
+				r = vm_map_object(map_new, vad->object, &vaddr,
+				    vad->end - vad->start - 1, vad->offset,
+				    vad->protection, vad->max_protection,
+				    vad->inheritance, true, false);
+				kassert(r == 0 && vaddr == vad->start);
+			}
+			break;
 		}
 		case kVMInheritCopy: {
 			vm_map_entry_t *entry_new;
@@ -125,6 +134,7 @@ vm_map_fork(vm_map_t *map, vm_map_t **map_out)
 				    &entry_new->amap);
 				kassert(r == 0);
 			}
+			break;
 		}
 		case kVMInheritStack:
 			/* epsilon; handle it explicitly elsewhere */

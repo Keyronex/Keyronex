@@ -172,8 +172,11 @@ typedef struct vm_map_entry {
 
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
-	/*! Offset into VM object. */
-	voff_t offset;
+	/*! Offset into VM object. (If a phys mapping, the phys address.) */
+	union {
+		voff_t offset;
+		paddr_t paddr;
+	};
 
 	/*! VM object, if any. */
 	struct vm_object *object;
@@ -181,6 +184,8 @@ typedef struct vm_map_entry {
 	struct vm_amap amap;
 	/*! Whether it has anonymous layer. */
 	bool has_anonymous;
+	/*! Whether it is a physical mapping. */
+	bool is_phys;
 
 	/*! Inheritance attributes for fork. */
 	enum vm_inheritance inheritance;
@@ -340,6 +345,14 @@ int vm_map_object(vm_map_t *ps, vm_object_t *object, krx_inout vaddr_t *vaddrp,
     size_t size, voff_t offset, vm_protection_t initial_protection,
     vm_protection_t max_protection, enum vm_inheritance inheritance, bool exact,
     bool copy);
+
+/*!
+ * @brief Map physical memory into a map.
+ */
+int vm_map_phys(vm_map_t *ps, paddr_t paddr, krx_inout vaddr_t *vaddrp,
+    size_t size, vm_protection_t initial_protection,
+    vm_protection_t max_protection, enum vm_inheritance inheritance,
+    bool exact);
 
 /*!
  * @brief Forks a virtual address space map.
