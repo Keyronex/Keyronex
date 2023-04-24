@@ -677,7 +677,6 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 		nanosecs = (nanosecs_t)timeout->tv_sec * NS_PER_S +
 		    (nanosecs_t)timeout->tv_nsec;
 
-
 	r = epoll_do_wait(epoll, revents, nfds, nanosecs);
 	kassert(r >= 0);
 	epoll_do_destroy(epoll);
@@ -1080,6 +1079,15 @@ posix_syscall(hl_intr_frame_t *frame)
 			kfatal("Unexpected sleep return %d\n", w);
 		}
 	}
+
+	case kPXSysFutexWait:
+		RET = sys_futex_wait((int *)ARG1, ARG2,
+		    (const struct timespec *)ARG3);
+		break;
+
+	case kPXSysFutexWake:
+		RET = sys_futex_wake((int *)ARG1);
+		break;
 
 	case kPXSysSigEntry:
 		px_curproc()->sigentry = ARG1;

@@ -11,6 +11,8 @@
 #include "./vm.h"
 #include "kdk/objhdr.h"
 
+struct timespec;
+
 /*!
  * An executive thread.
  */
@@ -96,6 +98,40 @@ struct file *ps_getfile(eprocess_t *proc, size_t index);
  * @brief Allocate file descriptors in current process.
  */
 int ps_allocfiles(size_t n, int *out);
+
+/*!
+ * @brief Wait on a futex value at the specified user-space address.
+ *
+ * This function waits on a futex value located at the user-space address
+ * pointed to by `u_pointer`, blocking until another process signals that
+ * the value has changed or until a timeout specified in `u_time` has elapsed.
+ * The function returns zero if another thread notified that the futex value was
+ * modified.Otherwise, it returns a negative error code indicating the reason
+ * for the failure.
+ *
+ * @param u_pointer The user-space address of the futex value to wait on.
+ * @param expected  The expected value of the futex. The function checks this
+ *                  value immediately before going to sleep on the futex.
+ * @param u_time    A pointer to a timespec structure that specifies the
+ *                  maximum amount of time to wait. If NULL, the function will
+ *                  wait indefinitely.
+ *
+ * @retval 0        if the futex value was changed successfully.
+ * @retval -EAGAIN  if the value of the futex at the time of waiting on it does
+ *                  not match the expected value
+ * @retval -ETIMEDOUT if the wait timed out.
+ * @retval -EINTR   if the wait was interrupted by a signal.
+ */
+int sys_futex_wait(int *u_pointer, int expected, const struct timespec *u_time);
+
+/*!
+ * @brief Wake up one thread waiting on a futex.
+ *
+ * @param u_pointer The user-space pointer to the futex.
+ *
+ * @return 0 on success or if there are no threads waiting on the futex.
+ */
+int sys_futex_wake(int *u_pointer);
 
 extern eprocess_t kernel_process;
 extern ethread_t kernel_bsp_thread;

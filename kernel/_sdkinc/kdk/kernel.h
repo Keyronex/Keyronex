@@ -498,6 +498,14 @@ void ke_semaphore_init(ksemaphore_t *sem, unsigned count);
 void ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment);
 
 /*!
+ * Release a kernel semaphore, adding 1 to the count only if count was 0.
+ *
+ * \p semaphore Pointer to a kernel semaphore.
+ * \p adjustment Value to add to the semaphore count.
+ */
+void ke_semaphore_release_maxone(ksemaphore_t *sem);
+
+/*!
  * @brief Initialise a kernel timer.
  */
 void ke_timer_init(ktimer_t *timer);
@@ -543,7 +551,8 @@ extern void (*syscon_getfbinfo)(struct fb_var_screeninfo *var,
 /*! System console get dimensions. */
 extern void (*syscon_getsize)(struct winsize *winsize);
 /*! System console inhibit output. */
-extern void (*syscon_inhibit)(void);;
+extern void (*syscon_inhibit)(void);
+;
 /*! System console input string  */
 void syscon_instr(const char *str);
 /*! System console input char  */

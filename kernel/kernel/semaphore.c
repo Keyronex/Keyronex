@@ -36,3 +36,19 @@ ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 
 	ke_release_dispatcher_lock(ipl);
 }
+
+void
+ke_semaphore_release_maxone(ksemaphore_t *sem)
+{
+	ipl_t ipl = ke_acquire_dispatcher_lock();
+
+	if (sem->hdr.signalled == 0) {
+		kwaitblock_t *block = TAILQ_FIRST(&sem->hdr.waitblock_queue);
+		sem->hdr.signalled = 1;
+		if (block != NULL)
+			ki_waiter_maybe_wakeup(block->thread, &sem->hdr);
+	} else
+		kassert(sem->hdr.signalled == 0);
+
+	ke_release_dispatcher_lock(ipl);
+}
