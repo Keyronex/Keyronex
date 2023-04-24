@@ -202,6 +202,37 @@ psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out)
 }
 
 int
+psx_fork_thread(hl_intr_frame_t *frame, void *entry, void *stack)
+{
+	ethread_t *ethread;
+	posix_thread_t *newthread;
+	int r;
+
+	r = ps_thread_create(&ethread, ps_curproc());
+	if (r != 0)
+		return r;
+
+	kmd_thread_init(&ethread->kthread, entry, NULL);
+	/* todo: portability! */
+	memset(&ethread->kthread.frame, 0x0, sizeof(ethread->kthread.frame));
+	ethread->kthread.frame.rip = (uint64_t)entry;
+	ethread->kthread.frame.rsp = (uint64_t)stack;
+	ethread->kthread.frame.cs = 0x38 | 0x3;
+	ethread->kthread.frame.ss = 0x40 | 0x3;
+	ethread->kthread.frame.rflags = 0x202;
+
+	newthread = kmem_alloc(sizeof(posix_thread_t));
+	/* todo: tid! */
+	newthread->tid = px_curthread()->tid + 1;
+	memcpy(newthread, px_curthread(), sizeof(posix_thread_t));
+	ethread->pas_thread = newthread;
+
+	ki_thread_start(&ethread->kthread);
+
+	return 0;
+}
+
+int
 psx_exit(int status)
 {
 	posix_proc_t *proc = px_curproc(), *subproc, *tmp;

@@ -63,7 +63,21 @@ fbdev_mmap(vnode_t *vn, vm_map_t *map, krx_inout vaddr_t *vaddrp, size_t size,
 	    initial_protection, max_protection, inheritance, exact);
 }
 
+static int
+fbdev_read(vnode_t *vn, void *buf, size_t nbyte, off_t offset)
+{
+	kfatal("unimplemented\n");
+}
+
+static int
+fbdev_write(vnode_t *vn, void *buf, size_t nbyte, off_t offset)
+{
+	kfatal("unimplemented\n");
+}
+
 static struct vnops fbdev_vnops = {
 	.ioctl = fbdev_ioctl,
 	.mmap = fbdev_mmap,
+	.read = fbdev_read,
+	.write = fbdev_write,
 };

@@ -1007,6 +1007,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = psx_getpgid(ARG1);
 		break;
 
+	case kPXSysGetTID:
+		RET = px_curthread()->tid;
+		break;
+
 	case kPXSysSigMask:
 		RET = psx_sigmask(ARG1, (const sigset_t *)ARG2,
 		    (sigset_t *)ARG3);
@@ -1079,6 +1083,10 @@ posix_syscall(hl_intr_frame_t *frame)
 			kfatal("Unexpected sleep return %d\n", w);
 		}
 	}
+
+	case kPXSysForkThread:
+		RET = psx_fork_thread(frame, (void*)ARG1, (void*)ARG2);
+		break;
 
 	case kPXSysFutexWait:
 		RET = sys_futex_wait((int *)ARG1, ARG2,

@@ -94,6 +94,8 @@ typedef struct posix_proc {
  * (p) = proctree_mtx
  */
 typedef struct posix_thread {
+	pid_t tid;
+
 	union posix_sighandler {
 		void (*handler)(int);
 		void (*sigaction)(int, siginfo_t *, void *);
@@ -148,6 +150,7 @@ struct posix_pgroup *psx_lookup_pgid(pid_t pgid);
 int sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
     const char *u_envp[], hl_intr_frame_t *frame);
 int psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out);
+pid_t psx_fork_thread(hl_intr_frame_t *frame, void *entry, void *stack);
 int psx_exit(int status);
 pid_t psx_getpgid(pid_t pid);
 pid_t psx_setpgid(pid_t pid, pid_t pgid);
