@@ -12,6 +12,7 @@
 
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "keysock/sockfs.h"
 
@@ -204,6 +205,15 @@ sock_unix_listen(vnode_t *vn, uint8_t backlog)
 	return 0;
 }
 
+#if DEBUG_UDS == 1
+static kspinlock_t sockdbg_lock;
+
+int isprint(int c)
+{
+	return (unsigned)c - 0x20 < 0x5f;
+}
+#endif
+
 int
 sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
 {
@@ -224,15 +234,12 @@ sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
 	pkt->offset += nread;
 	kassert(pkt->offset <= pkt->size);
 
-	kdprintf("Reading %zu, Didn't read %d bytes\n", nread,
-	    pkt->size - pkt->offset);
-
 	if (pkt->offset == pkt->size) {
 		STAILQ_REMOVE_HEAD(&sock->rx_queue, stailq_entry);
 		if (STAILQ_EMPTY(&sock->rx_queue))
 			ke_event_clear(&sock->socknode.read_evobj);
 		else
-			kdprintf("There is more data remaining.\n");
+			kdprintf(" !!! There is more data remaining.\n");
 	}
 
 	ke_spinlock_release(&sock->socknode.lock, ipl);
@@ -243,6 +250,23 @@ sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
 	 * we increment refcnt on the packet so it won't go away on us while
 	 * we are working with it.
 	 */
+
+#if DEBUG_UDS == 1
+	ipl = ke_spinlock_acquire(&sockdbg_lock);
+	kdprintf("<%d> Received %zu on a socket; pkt %p, data %p, offs %zu\n", ps_curproc()->id, nread, pkt, pkt->data, pkt_offset);
+	for (int i = 0; i < nread; i++) {
+		uint8_t chr = (pkt->data + pkt_offset)[i];
+		if (!isprint(chr)) {
+			kdprintf("\\%o", chr);
+		}
+		else {
+			kdprintf("%c", chr);
+		}
+	}
+	kdprintf("\n");
+	ke_spinlock_release(&sockdbg_lock, ipl);
+#endif
+
 	memcpy(buf, pkt->data + pkt_offset, nread);
 
 	return nread;
@@ -266,14 +290,29 @@ sock_unix_send(vnode_t *vn, void *buf, size_t nbyte)
 	pkt->size = nbyte;
 	pkt->offset = 0;
 	pkt->data = kmem_alloc(nbyte);
-
 	memcpy(pkt->data, buf, nbyte);
 
 	ipl = ke_spinlock_acquire(&remote->socknode.lock);
 	STAILQ_INSERT_TAIL(&remote->rx_queue, pkt, stailq_entry);
 	ke_event_signal(&remote->socknode.read_evobj);
 	sock_event_raise(&remote->socknode, EPOLLIN);
-	kdprintf("Sent %d on a socket\n", nbyte);
+
+#if DEBUG_UDS == 1
+	ke_spinlock_acquire(&sockdbg_lock);
+	kdprintf("<%d> Sent %zu on a socket; pkt %p; data %p\n", ps_curproc()->id, nbyte, pkt, pkt->data);
+	for (int i = 0; i < nbyte; i++) {
+		uint8_t chr = ((uint8_t*)buf)[i];
+		if (!isprint(chr)) {
+			kdprintf("\\%o", chr);
+		}
+		else {
+			kdprintf("%c", chr);
+		}
+	}
+	kdprintf("\n\n");
+	ke_spinlock_release_nospl(&sockdbg_lock);
+#endif
+
 	ke_spinlock_release(&remote->socknode.lock, ipl);
 
 	return nbyte;

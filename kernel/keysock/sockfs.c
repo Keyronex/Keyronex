@@ -94,8 +94,11 @@ sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	kassert(msg->msg_iovlen > 0);
 
 again:
+	/* modified for NONBLOCK - todo set/getsockopt and O_NONBLOCK */
 	w = ke_wait(&sock->read_evobj,
-		    "sock_read:sock->read_evobj", false, false, -1);
+		    "sock_read:sock->read_evobj", false, false, 0);
+	if (w == kKernWaitStatusTimedOut)
+		return -EAGAIN;
 	kassert(w == kKernWaitStatusOK);
 
 	ipl = ke_spinlock_acquire(&sock->lock);
