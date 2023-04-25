@@ -36,6 +36,13 @@ struct socknode {
 	vnode_t *vnode;
 	/*! (~) Socket operations vector. */
 	struct socknodeops *sockops;
+	/*! (p) State */
+	enum sockstate {
+		kSockInitialised,
+		kSockListening,
+		kSockConnected,
+		kSockMax,
+	} state;
 	int domain;   /* (~) */
 	int type;     /* (~) */
 	int protocol; /* (~) */
@@ -98,6 +105,7 @@ int sock_init(struct socknode *sock, struct socknodeops *ops);
 /*! @brief Raise an event with a socket. */
 int sock_event_raise(struct socknode *sock, int events);
 
+extern const char *sockstate_str[];
 extern struct socknodeops unix_soops;
 extern struct vnops sock_vnops;
 

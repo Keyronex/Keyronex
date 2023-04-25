@@ -186,6 +186,7 @@ sock_unix_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 
 	peer = VNTOUNP(peervn);
 	peer->remote = sock;
+	peer->socknode.state = kSockConnected;
 	sock->remote = peer;
 
 	/* todo: consider factoring this */
@@ -196,19 +197,27 @@ sock_unix_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 	sock_event_raise(&listener->socknode, EPOLLIN);
 	ke_spinlock_release(&listener->socknode.lock, ipl);
 
+#if DEBUG_UDS == 1
+	kdprintf("[%p] Conneted to Unix listener %p.\n", peer, listener);
+#endif
+
 	return 0;
 }
 
 int
 sock_unix_listen(vnode_t *vn, uint8_t backlog)
 {
+#if DEBUG_UDS == 1
+	kdprintf("[%p] Listening.\n", VNTOUNP(vn));
+#endif
 	return 0;
 }
 
 #if DEBUG_UDS == 1
 static kspinlock_t sockdbg_lock;
 
-int isprint(int c)
+int
+isprint(int c)
 {
 	return (unsigned)c - 0x20 < 0x5f;
 }
@@ -253,13 +262,13 @@ sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
 
 #if DEBUG_UDS == 1
 	ipl = ke_spinlock_acquire(&sockdbg_lock);
-	kdprintf("<%d> Received %zu on a socket; pkt %p, data %p, offs %zu\n", ps_curproc()->id, nread, pkt, pkt->data, pkt_offset);
+	kdprintf("<%d> Received %zu on a socket; pkt %p, data %p, offs %zu\n",
+	    ps_curproc()->id, nread, pkt, pkt->data, pkt_offset);
 	for (int i = 0; i < nread; i++) {
 		uint8_t chr = (pkt->data + pkt_offset)[i];
 		if (!isprint(chr)) {
 			kdprintf("\\%o", chr);
-		}
-		else {
+		} else {
 			kdprintf("%c", chr);
 		}
 	}
@@ -299,13 +308,13 @@ sock_unix_send(vnode_t *vn, void *buf, size_t nbyte)
 
 #if DEBUG_UDS == 1
 	ke_spinlock_acquire(&sockdbg_lock);
-	kdprintf("<%d> Sent %zu on a socket; pkt %p; data %p\n", ps_curproc()->id, nbyte, pkt, pkt->data);
+	kdprintf("<%d> Sent %zu on a socket; pkt %p; data %p\n",
+	    ps_curproc()->id, nbyte, pkt, pkt->data);
 	for (int i = 0; i < nbyte; i++) {
-		uint8_t chr = ((uint8_t*)buf)[i];
+		uint8_t chr = ((uint8_t *)buf)[i];
 		if (!isprint(chr)) {
 			kdprintf("\\%o", chr);
-		}
-		else {
+		} else {
 			kdprintf("%c", chr);
 		}
 	}
