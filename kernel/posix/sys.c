@@ -354,7 +354,9 @@ sys_read(int fd, void *buf, size_t nbyte)
 
 	r = VOP_READ(file->vn, buf, nbyte, file->offset);
 	if (r < 0) {
+#if DEBUG_SYSCALL_ERRORS == 1
 		kdprintf("VOP_READ got %d\n", r);
+#endif
 		return r;
 	}
 

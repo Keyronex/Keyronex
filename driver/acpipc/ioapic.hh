@@ -37,7 +37,7 @@ class IOApic : public Device {
 	 * @returns 0 if handler installed successfully
 	 */
 	static int handleGSI(uint32_t gsi, intr_handler_t handler, void *arg,
-	    bool lopol, bool edge, ipl_t ipl, struct intr_entry *entry);
+	    bool lopol, bool edge, ipl_t ipl, struct intr_entry *entry, bool shareable = true);
 };
 
 #endif /* KRX_ACPIPC_IOAPIC_HH */

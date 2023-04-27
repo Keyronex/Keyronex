@@ -9,6 +9,8 @@ A technical description of some parts (only the VMM for now) of Keyronex is
 available on the
 [Read The Docs](https://keyronex.readthedocs.io/en/latest/index.html) website.
 
+Keyronex features ports of software including the GNU Coreutils, BASH shell,
+Binutils, and GCC. Xorg and some basic X11 apps such as Twm and Xeyes also run.
 It doesn't do anything useful or interesting yet.
 
 ![Keyronex running GCC](docs/gcc.png)

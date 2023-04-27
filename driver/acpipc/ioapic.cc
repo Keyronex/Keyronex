@@ -93,10 +93,13 @@ IOApic::IOApic(AcpiPC *provider, uint32_t id, paddr_t address,
 
 int
 IOApic::handleGSI(uint32_t gsi, intr_handler_t handler, void *arg, bool lopol,
-    bool edge, ipl_t ipl, struct intr_entry *entry)
+    bool edge, ipl_t ipl, struct intr_entry *entry, bool shareable)
 {
 	IOApic *ioapic;
 	bool found = false;
+
+	if (edge)
+		shareable = false;
 
 	CXXLIST_FOREACH(ioapic, &ioapic_list, )
 	{
@@ -109,7 +112,7 @@ IOApic::handleGSI(uint32_t gsi, intr_handler_t handler, void *arg, bool lopol,
 			kassert(ioapic->redirections[intr] == 0 && "shared");
 
 			r = md_intr_alloc("gsi", ipl, handler, arg,
-			    edge ? false : true, &vec, entry);
+			    shareable, &vec, entry);
 			if (r != 0) {
 				kdprintf(
 				    "ioapic: failed to register interrupt for GSI %d: "
