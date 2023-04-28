@@ -48,7 +48,7 @@ ke_semaphore_release_maxone(ksemaphore_t *sem)
 		if (block != NULL)
 			ki_waiter_maybe_wakeup(block->thread, &sem->hdr);
 	} else
-		kassert(sem->hdr.signalled == 0);
+		kassert(sem->hdr.signalled == 1);
 
 	ke_release_dispatcher_lock(ipl);
 }

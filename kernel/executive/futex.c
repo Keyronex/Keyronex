@@ -83,6 +83,15 @@ futex_release(futex_t *futex)
 	}
 }
 
+static void *
+to_hhdm(vm_page_t *page, void *ptr)
+{
+	char *base = (char *)VM_PAGE_PADDR(page);
+	kassert((uintptr_t)base % PGSIZE == 0);
+	base += ((uintptr_t)ptr) % PGSIZE;
+	return P2V(base);
+}
+
 int
 sys_futex_wait(int *u_pointer, int expected, const struct timespec *u_time)
 {
@@ -101,8 +110,7 @@ sys_futex_wait(int *u_pointer, int expected, const struct timespec *u_time)
 	fret = vm_fault(ps_curproc()->map, PGROUNDDOWN(u_pointer), 0, &page);
 	kassert(fret == kVMFaultRetOK);
 
-	pointer = (int *)((char *)P2V(VM_PAGE_PADDR(page))) +
-	    ((uintptr_t)u_pointer - PGROUNDDOWN(u_pointer));
+	pointer = to_hhdm(page, u_pointer);
 
 	ipl = ke_spinlock_acquire(&futex_lock);
 	if (*pointer != expected) {
@@ -154,8 +162,7 @@ sys_futex_wake(int *u_pointer)
 	fret = vm_fault(ps_curproc()->map, PGROUNDDOWN(u_pointer), 0, &page);
 	kassert(fret == kVMFaultRetOK);
 
-	pointer = (int *)((char *)P2V(VM_PAGE_PADDR(page))) +
-	    ((uintptr_t)u_pointer - PGROUNDDOWN(u_pointer));
+	pointer = to_hhdm(page, u_pointer);
 
 	ipl = ke_spinlock_acquire(&futex_lock);
 	futex = futex_find(page, (paddr_t)pointer, true);
