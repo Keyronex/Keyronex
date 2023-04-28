@@ -120,6 +120,7 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 
 	proc->exited = false;
 	proc->wait_stat = 0;
+	proc->tid_counter = 2;
 	ke_event_init(&proc->subproc_state_change, false);
 
 	if (parent_thread) {
@@ -132,6 +133,7 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 		    sizeof(thread->sigsigmask));
 	} else {
 		thread->sigmask = 0;
+		thread->tid = 1;
 
 		for (size_t i = 0; i < SIGRTMAX; i++) {
 			thread->sigflags[i] = 0;
@@ -222,14 +224,13 @@ psx_fork_thread(hl_intr_frame_t *frame, void *entry, void *stack)
 	ethread->kthread.frame.rflags = 0x202;
 
 	newthread = kmem_alloc(sizeof(posix_thread_t));
-	/* todo: tid! */
-	newthread->tid = px_curthread()->tid + 1;
 	memcpy(newthread, px_curthread(), sizeof(posix_thread_t));
+	newthread->tid = px_curproc()->tid_counter++;
 	ethread->pas_thread = newthread;
 
 	ki_thread_start(&ethread->kthread);
 
-	return 0;
+	return newthread->tid;
 }
 
 int
@@ -241,9 +242,9 @@ psx_exit(int status)
 
 	kassert(proc->eprocess->id != 1);
 
-	/* todo: multithread support */
-
 	ipl = px_acquire_proctree_mutex();
+
+	/* todo: multithread support */
 
 	LIST_FOREACH_SAFE (subproc, &proc->subprocs, subprocs_link, tmp) {
 		kdprintf("warning: Subproc %u is still around!!\n",

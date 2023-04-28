@@ -71,6 +71,9 @@ typedef struct posix_proc {
 	/*! (p) pgroup::members linkage */
 	LIST_ENTRY(posix_proc) pgroup_members_link;
 
+	/*! (p) TID counter */
+	pid_t tid_counter;
+
 	/*! (p) has it exited? */
 	bool exited;
 	/*! (p) wait status of an exiting/waited process */

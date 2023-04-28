@@ -1084,6 +1084,8 @@ posix_syscall(hl_intr_frame_t *frame)
 		default:
 			kfatal("Unexpected sleep return %d\n", w);
 		}
+
+		break;
 	}
 
 	case kPXSysForkThread:
