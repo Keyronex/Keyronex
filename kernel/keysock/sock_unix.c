@@ -247,8 +247,11 @@ sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
 		STAILQ_REMOVE_HEAD(&sock->rx_queue, stailq_entry);
 		if (STAILQ_EMPTY(&sock->rx_queue))
 			ke_event_clear(&sock->socknode.read_evobj);
+			/* todo(low?): this is technically improper */
+#if 0
 		else
 			kdprintf(" !!! There is more data remaining.\n");
+#endif
 	}
 
 	ke_spinlock_release(&sock->socknode.lock, ipl);

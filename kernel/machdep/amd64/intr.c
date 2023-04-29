@@ -133,7 +133,8 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		kdprintf("Unhandled interrupt %lu. CR2: 0x%lx\n", num,
 		    read_cr2());
 		md_intr_frame_trace(frame);
-		kfatal("Halting.\n");
+		hang_until_told();
+		return;
 	}
 
 	TAILQ_FOREACH (entry, entries, queue_entry) {
