@@ -290,6 +290,7 @@ psx_getpgid(pid_t pid)
 	return px_curproc()->pgroup->pgid;
 }
 
+/*! @pre proctree lock held */
 static struct posix_pgroup *
 pgroup_new(struct posix_session *session, posix_proc_t *proc)
 {
@@ -302,6 +303,7 @@ pgroup_new(struct posix_session *session, posix_proc_t *proc)
 	return pg;
 }
 
+/*! @pre proctree lock held */
 static void
 pgroup_add(struct posix_pgroup *pg, posix_proc_t *proc)
 {
@@ -309,6 +311,7 @@ pgroup_add(struct posix_pgroup *pg, posix_proc_t *proc)
 	proc->pgroup = pg;
 }
 
+/*! @pre proctree lock held */
 static void
 pgroup_remove(struct posix_pgroup *pg, posix_proc_t *proc)
 {
@@ -322,6 +325,7 @@ pgroup_remove(struct posix_pgroup *pg, posix_proc_t *proc)
 			kprintf("Session %d should be freed\n",
 			    pg->session->sid);
 		}
+		RB_REMOVE(posix_pgroup_rb, &pgroup_rb, pg);
 		kmem_free(pg, sizeof(*pg));
 	}
 	proc->pgroup = NULL;
@@ -364,10 +368,13 @@ psx_setpgid(pid_t pid, pid_t pgid)
 		if (!proc) {
 			r = -ESRCH;
 			goto out;
-		} else if (proc->pgroup->session !=
-		    px_curproc()->pgroup->session) {
-			r = -EPERM;
-			goto out;
+		} else {
+			kassert(proc->pgroup != NULL);
+			if (proc->pgroup->session !=
+			    px_curproc()->pgroup->session) {
+				r = -EPERM;
+				goto out;
+			}
 		}
 
 		/* todo: EACCES if child exec()'d */
@@ -677,6 +684,8 @@ psx_signal_proc(posix_proc_t *proc, int sig)
 					 * do an IPI if non-local, otherwise
 					 * proceed it will be caught as expected
 					 */
+					kfatal("Implement running thread "
+					       "signal\n");
 				}
 			}
 		}
