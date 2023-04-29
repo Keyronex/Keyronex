@@ -100,7 +100,7 @@ hang_until_told(void)
 void
 handle_int(hl_intr_frame_t *frame, uintptr_t num)
 {
-	ipl_t ipl = kIPL0;
+	ipl_t ipl = splget();
 	struct intr_entries *entries;
 	struct intr_entry *entry;
 
@@ -119,7 +119,7 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		hl_curcpu()->hl.tss->rsp0 = next->kstack;
 
 		ke_spinlock_release_nospl(&dispatcher_lock);
-		splx(next->saved_ipl);
+		ipl = next->saved_ipl;
 		goto ast;
 	} else if (num == kIntNumIPIInvlPG) {
 		void pmap_global_invlpg_cb(void);
