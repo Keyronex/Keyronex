@@ -553,8 +553,16 @@ kmem_xfree(void *ptr, size_t size, vmem_flag_t flags)
 	if (zoneidx == -1) {
 		size_t realsize = PGROUNDUP(size);
 		return vm_kfree((uintptr_t)ptr, realsize / PGSIZE, flags);
-	} else
+	} else {
+#if KMEM_SANITY_CHECKS == 1
+		if (size < kSmallSlabMax) {
+			struct kmem_slab *slab = (struct kmem_slab *)
+			    SMALL_SLAB_HDR(PGROUNDDOWN(ptr));
+			kassert(slab->zone == kmem_alloc_zones[zoneidx]);
+		}
+#endif
 		return kmem_xzonefree(kmem_alloc_zones[zoneidx], ptr, flags);
+	}
 }
 
 void *
