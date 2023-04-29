@@ -38,7 +38,7 @@ static struct vnops mouse_vnops;
 void
 mouse_dispatch(struct mouse_packet packet)
 {
-	struct pollhead *ph;
+	struct pollhead *ph, *tmp;
 	ipl_t ipl;
 
 	ipl = ke_spinlock_acquire(&scmouse.lock);
@@ -50,7 +50,7 @@ mouse_dispatch(struct mouse_packet packet)
 	scmouse.head %= elementsof(scmouse.buf);
 	scmouse.count++;
 	ke_event_signal(&scmouse.read_evobj);
-	LIST_FOREACH (ph, &scmouse.polllist.pollhead_list, polllist_entry) {
+	LIST_FOREACH_SAFE (ph, &scmouse.polllist.pollhead_list, polllist_entry, tmp) {
 		pollhead_raise(ph, EPOLLIN);
 	}
 out:

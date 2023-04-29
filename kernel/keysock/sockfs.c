@@ -39,9 +39,9 @@ sock_ops(struct socknode *sonode)
 int
 sock_event_raise(struct socknode *sock, int events)
 {
-	struct pollhead *ph;
+	struct pollhead *ph, *tmp;
 
-	LIST_FOREACH (ph, &sock->polllist.pollhead_list, polllist_entry) {
+	LIST_FOREACH_SAFE (ph, &sock->polllist.pollhead_list, polllist_entry, tmp) {
 		pollhead_raise(ph, events);
 	}
 
@@ -206,9 +206,16 @@ sock_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 			r = 1;
 		}
 
-		if (r != 1)
+		if (r != 1) {
+			struct pollhead * aph;
+
+			LIST_FOREACH(aph, &sock->polllist.pollhead_list, polllist_entry) {
+				kassert(aph != ph);
+			}
+
 			LIST_INSERT_HEAD(&sock->polllist.pollhead_list, ph,
 			    polllist_entry);
+		}
 
 		break;
 

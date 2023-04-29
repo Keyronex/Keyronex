@@ -44,8 +44,9 @@ enqueue(struct tty *tty, int c)
 		tty->writehead = 0;
 	tty->buflen++;
 
-	struct pollhead *ph;
-	LIST_FOREACH (ph, &tty->polllist.pollhead_list, polllist_entry) {
+	struct pollhead *ph, *tmp;
+	LIST_FOREACH_SAFE (ph, &tty->polllist.pollhead_list, polllist_entry,
+	    tmp) {
 		pollhead_raise(ph, EPOLLIN);
 	}
 

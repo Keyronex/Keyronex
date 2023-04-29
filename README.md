@@ -13,7 +13,7 @@ Keyronex features ports of software including the GNU Coreutils, BASH shell,
 Binutils, and GCC. Xorg and some basic X11 apps such as Twm and Xeyes also run.
 It doesn't do anything useful or interesting yet.
 
-![Keyronex running GCC](docs/gcc.png)
+![Keyronex running Xorg with Xeyes and Twm](docs/misc/230429_xeyes.png)
 
 ### Architecture
 
