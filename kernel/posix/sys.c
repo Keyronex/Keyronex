@@ -401,7 +401,7 @@ sys_readdir(int fd, void *buf, size_t bufsize)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
 	size_t bytes_read = 0;
-	int r;
+	off_t r;
 
 #if DEBUG_SYSCALLS == 1
 	kdprintf("SYS_READDIR(fd: %d, bufsize: %lu off: %lu)\n", fd, bufsize,
