@@ -271,7 +271,7 @@ int
 FuseFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
 {
 	FuseFS *self = (FuseFS *)vn->vfsp->data;
-	fusefs_node *node = ((fusefs_node *)vn->data), *res;
+	fusefs_node *node = ((fusefs_node *)vn->data);
 
 	kassert(attr->type == VREG);
 
@@ -544,10 +544,12 @@ struct vfsops FuseFS::vfsops = {
 };
 
 struct vnops FuseFS::vnops = {
-	.create = create,
-	.getattr = getattr,
-	.lookup = lookup,
 	.read = read,
-	.readlink = readlink,
 	.write = write,
+	.getattr = getattr,
+
+	.lookup = lookup,
+	.create = create,
+
+	.readlink = readlink,
 };

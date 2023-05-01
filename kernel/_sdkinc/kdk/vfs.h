@@ -117,28 +117,39 @@ typedef struct vfs {
 } vfs_t;
 
 struct vnops {
-	/**
-	 * Create a new vnode in the given directory.
+	/*!
+	 * @brief Open a vnode.
 	 *
-	 * @param dvn directory vnode
-	 * @param out [out] resultant vnode
-	 * @param name new file name
-	 * @param attr system buffer for attributes of file to be created
-	 * (including whether file, directory, device node...)
+	 * @param vn Pointer to pointer to vnode to open. Opening may yield a
+	 * different vnode, in which case the vnode is released and the pointer
+	 * to the vnode resultant from opening is written out.
+	 * @param mode Mode to open the file with.
 	 */
-	int (*create)(vnode_t *dvn, vnode_t **out, const char *name,
-	    vattr_t *attr);
-
-	/*! @brief Get attributes. */
+	int (*open)(krx_inout vnode_t **vn, int mode);
+	/*!
+	 * @brief Close an open vnode.
+	 *
+	 * @param vn vnode to close.
+	 */
+	int (*close)(vnode_t *vn);
+	/*!
+	 * @brief Read (via page cache) from a vnode.
+	 */
+	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+	/*!
+	 * @brief Write (via page cache) to a vnode.
+	 */
+	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+	/*!
+	 * @brief I/O control
+	 */
+	int (*ioctl)(vnode_t *vn, unsigned long command, void *data);
+	/*!
+	 * @brief Get vnode attributes.
+	 */
 	int (*getattr)(vnode_t *vn, vattr_t *out);
 
-	/*! @brief I/O control */
-	int (*ioctl)(vnode_t *vn, unsigned long command, void *data);
-
-	/*! @brief Create a hardlink. */
-	int (*link)(vnode_t *dvn, vnode_t *vn, const char *name);
-
-	/**
+	/*!
 	 * Lookup the vnode corresponding to the given file name in the given
 	 * direct vnode.
 	 *
@@ -147,40 +158,83 @@ struct vnops {
 	 * @param name filename
 	 */
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
-
 	/*!
-	 * @brief Open a vnode. This may replace the vnode.
+	 * Create a new file/socket in the given directory.
+	 *
+	 * @param dvn directory vnode
+	 * @param out [out] resultant vnode
+	 * @param name new file name
+	 * @param attr system buffer for attributes of file to be created
+	 * (including whether file, directory, device node...)
 	 */
-	int (*open)(krx_inout vnode_t **vn, int mode);
-
-	/*! @brief Read (via page cache) from a vnode. */
-	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
-
+	int (*create)(vnode_t *dvn, krx_out vnode_t **out, const char *name,
+	    vattr_t *attr);
+	/*!
+	 * @brief Remove a link from a directory.
+	 */
+	int (*remove)(vnode_t *dvn, const char *name);
+	/*!
+	 * @brief Create a hardlink.
+	 *
+	 * @param dvn Directory vnode to make the link in.
+	 * @param vn vnode to establish the link to.
+	 * @param name Name of link to create in the directory.
+	 */
+	int (*link)(vnode_t *dvn, vnode_t *vn, const char *name);
+	/*!
+	 * @brief Rename a directory entry, possibly moving to a new directory.
+	 *
+	 * @brief old_dvn Directory vnode where the original entry is held.
+	 * @brief old_name Name of the entry in old_dvn
+	 * @brief new_dvn Directory vnode the entry is to be moved into.
+	 * @brief new_name Name of the entry to create in new_dvn.
+	 */
+	int (*rename)(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
+	    const char *new_name);
+	/*!
+	 * @brief Create a new directory in the given directory.
+	 *
+	 * @brief vn Directory vnode to create a directory in.
+	 * @brief out Newly created directory vnode is written out here.
+	 * @brief name Name of the new directory to create.
+	 * @brief attr Attributes of new directory to create.
+	 */
+	int (*mkdir)(vnode_t *vn, vnode_t **out, const char *name,
+	    vattr_t *attr);
+	/*!
+	 * @brief Delete the named directory from a given directory.
+	 *
+	 * @brief vn Directory vnode to remove the directory from.
+	 * @brief name Name of the directory to delete.
+	 */
+	int (*rmdir)(vnode_t *vn, const char *name);
 	/*!
 	 * @brief Read directory entries into a system buffer.
 	 *
 	 * @returns -errno for an error condition
-	 * @returns 0 for no more entries available
-	 * @returns >= 1 sequence number
+	 * @retval 0	   no more entries available
+	 * @retval other   sequence number
 	 */
 	off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte,
 	    size_t *bytesRead, off_t seqno);
 
 	/*!
+	 * @brief Create a symlink.
+	 */
+	int (*symlink)(vnode_t *vn, vnode_t **out, const char *name,
+	    vattr_t *attr, const char *target);
+	/*!
 	 * @brief Read a symlink's target.
 	 */
 	int (*readlink)(vnode_t *dvn, char *out);
 
-	/*! @brief Remove a file from a directory. */
-	int (*remove)(vnode_t *dvn, const char *name);
-	/*! @brief Write (via page cache) to a vnode. */
-	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
-
-	/*! @brief Close an open file. */
-	int (*close)(vnode_t *vn);
-	/*! @brief Change poll state. */
+	/*!
+	 * @brief Change poll state.
+	 */
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
-	/*! @brief Memory map (see vm_map_object) */
+	/*!
+	 * @brief Map vnode into memory (see vm_map_object)
+	 */
 	int (*mmap)(vnode_t *vn, vm_map_t *map, krx_inout vaddr_t *vaddrp,
 	    size_t size, voff_t offset, vm_protection_t initial_protection,
 	    vm_protection_t max_protection, enum vm_inheritance inheritance,

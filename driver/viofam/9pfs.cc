@@ -443,7 +443,7 @@ NinePFS::doGetattr(vtype_t realtype, ninep_fid_t fid, vattr_t &vattr)
 	vattr.ino = qid.path;
 	vattr.type = mode_to_vtype(vattr.mode);
 
-	if (realtype == VSOCK ) {
+	if (realtype == VSOCK) {
 		kassert(vattr.type == VREG);
 		vattr.type = VSOCK;
 		vattr.mode &= ~S_IFREG;
@@ -1053,12 +1053,17 @@ struct vfsops NinePFS::vfsops = {
 	.root = root,
 };
 
-struct vnops NinePFS::vnops = { .create = create,
-	.getattr = getattr,
-	.link = link,
-	.lookup = lookup,
+struct vnops NinePFS::vnops = {
 	.read = read,
-	.readdir = readdir,
-	.readlink = readlink,
+	.write = write,
+	.getattr = getattr,
+
+	.lookup = lookup,
+	.create = create,
 	.remove = remove,
-	.write = write };
+	.link = link,
+
+	.readdir = readdir,
+
+	.readlink = readlink
+};
