@@ -15,19 +15,19 @@ sources:
       - host-libtool
       - host-pkgconf
 
-tools:
-  - name: host-smalltalk
-    from_source: smalltalk
-    configure:
-      - args:
-        - '@THIS_SOURCE_DIR@/configure'
-        - '--prefix=@PREFIX@'
-    compile:
-      - args: ['make', '-j@PARALLELISM@']
-    install:
-      - args: ['make', 'install' ]
-      - args: |
-          cp ./gst-tool '@PREFIX@/bin'
+# tools:
+#   - name: host-smalltalk
+#     from_source: smalltalk
+#     configure:
+#       - args:
+#         - '@THIS_SOURCE_DIR@/configure'
+#         - '--prefix=@PREFIX@'
+#     compile:
+#       - args: ['make', '-j@PARALLELISM@']
+#     install:
+#       - args: ['make', 'install' ]
+#       - args: |
+#           cp ./gst-tool '@PREFIX@/bin'
 
 packages:
 
@@ -434,43 +434,43 @@ packages:
 # Programs
 #
 
-  - name: smalltalk
-    from_source: smalltalk
-    tools_required:
-      - host-gcc
-      - host-pkgconf
-      - host-smalltalk
-    pkgs_required:
-      - mlibc
-      - readline
-      - libffi
-    configure:
-      - args:
-        - '@THIS_SOURCE_DIR@/configure'
-        - '--host=x86_64-keyronex'
-        - '--build=x86_64-netbsd'
-        - '--prefix=/usr'
-        - '--enable-shared'
-        - '--with-sysroot=@SYSROOT_DIR@'
-        - '--with-readline'
-        environ:
-          PKG_CONFIG_SYSROOT_DIR: '@BUILD_ROOT@/system-root'
-          PKG_CONFIG_LIBDIR: '@BUILD_ROOT@/system-root/usr/lib/pkgconfig:@BUILD_ROOT@/system-root/usr/share/pkgconfig'
-    build:
-      - args: [
-        'make',
-        '-j@PARALLELISM@',
-        'GST=../../tool-builds/host-smalltalk/gst --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im',
-        'GST_PACKAGE=../../tool-builds/host-smalltalk/gst-tool gst-package --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im'
-      ]
-      - args: [
-        'make',
-        'install',
-        'GST=../../tool-builds/host-smalltalk/gst --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im',
-        'GST_PACKAGE=../../tool-builds/host-smalltalk/gst-tool gst-package --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im'
-      ]
-        environ:
-          DESTDIR: '@THIS_COLLECT_DIR@'
+  # - name: smalltalk
+  #   from_source: smalltalk
+  #   tools_required:
+  #     - host-gcc
+  #     - host-pkgconf
+  #     - host-smalltalk
+  #   pkgs_required:
+  #     - mlibc
+  #     - readline
+  #     - libffi
+  #   configure:
+  #     - args:
+  #       - '@THIS_SOURCE_DIR@/configure'
+  #       - '--host=x86_64-keyronex'
+  #       - '--build=x86_64-netbsd'
+  #       - '--prefix=/usr'
+  #       - '--enable-shared'
+  #       - '--with-sysroot=@SYSROOT_DIR@'
+  #       - '--with-readline'
+  #       environ:
+  #         PKG_CONFIG_SYSROOT_DIR: '@BUILD_ROOT@/system-root'
+  #         PKG_CONFIG_LIBDIR: '@BUILD_ROOT@/system-root/usr/lib/pkgconfig:@BUILD_ROOT@/system-root/usr/share/pkgconfig'
+  #   build:
+  #     - args: [
+  #       'make',
+  #       '-j@PARALLELISM@',
+  #       'GST=../../tool-builds/host-smalltalk/gst --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im',
+  #       'GST_PACKAGE=../../tool-builds/host-smalltalk/gst-tool gst-package --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im'
+  #     ]
+  #     - args: [
+  #       'make',
+  #       'install',
+  #       'GST=../../tool-builds/host-smalltalk/gst --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im',
+  #       'GST_PACKAGE=../../tool-builds/host-smalltalk/gst-tool gst-package --kernel-dir "@THIS_SOURCE_DIR@/kernel" --image gst.im'
+  #     ]
+  #       environ:
+  #         DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: python
     source:

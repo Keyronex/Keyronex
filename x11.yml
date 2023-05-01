@@ -372,7 +372,6 @@ packages:
       - xorgproto
       - libxcb
       - xtrans
-      - keyronex-kernel
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
@@ -1325,6 +1324,7 @@ packages:
       - libXi
       - libXrender
       - libXmu
+      - libXaw
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
