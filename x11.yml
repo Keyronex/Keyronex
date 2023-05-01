@@ -372,6 +372,7 @@ packages:
       - xorgproto
       - libxcb
       - xtrans
+      - keyronex-kernel
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
@@ -415,6 +416,7 @@ packages:
       - xorg-util-macros
       - xorgproto
       - libX11
+      - libxml2
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
@@ -1158,6 +1160,7 @@ packages:
       - xorg-util-macros
       - libX11
       - libxkbfile
+      - libxml2
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
@@ -1204,6 +1207,7 @@ packages:
       - libxkbfile
       - libXfont2
       - pixman
+      - openssl
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
@@ -1577,6 +1581,7 @@ packages:
       - mlibc
       - libX11
       - xorgproto
+      - libxml2
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'

@@ -482,9 +482,13 @@ packages:
       patch-path-strip: 1
       regenerate:
         # python is broken, adding automake or libtool ruins it
-        - args: [ 'autoreconf', '-fvi' ]
+        - args: [ 'autoconf' ]
       tools_required:
         - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-autoconf-archive
     tools_required:
       - host-gcc
       - host-pkgconf
@@ -508,8 +512,7 @@ packages:
       - args: ['chmod', '+x', '@THIS_BUILD_DIR@/python3.11']
       - args:
         - '@THIS_SOURCE_DIR@/configure'
-        - '--host=x86_64-keyronex'
-        - '--build=x86_64-netbsd'
+        - '--target=x86_64-keyronex'
         - '--prefix=/usr'
         - '--enable-shared'
         - '--with-sysroot=@SYSROOT_DIR@'
