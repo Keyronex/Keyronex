@@ -68,6 +68,7 @@ obj_release(object_header_t *hdr)
 				break;
 
 			default:
+				break;
 		}
 #ifdef DEBUG_OBJ
 		kdprintf("objmgr: <%p> (type %d) is to be freed\n", hdr,

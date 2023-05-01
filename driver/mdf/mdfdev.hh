@@ -34,9 +34,21 @@ operator new(size_t size, kmem_general_t)
 }
 
 inline void
+operator delete(void *p)
+{
+	kfatal("operator delete called\n");
+}
+
+inline void
 operator delete(void *p, unsigned long size)
 {
 	kfatal("operator delete called\n");
+}
+
+extern "C" inline void
+__cxa_pure_virtual()
+{
+	kfatal("__cxa_pure_virtual called\n");
 }
 
 template <class T>
