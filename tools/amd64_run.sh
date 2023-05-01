@@ -1,16 +1,19 @@
-#!/usr/bin/env ksh93
+#!/bin/sh
 
-USAGE+="[+NAME?amd64_run.sh -- run Keyronex under QEmu]"
-USAGE+="[d:dax?Enable VirtIO-FS DAX.]"
-USAGE+="[e:virtio-disk?Enable VirtIO-Disk.]"
-USAGE+="[f:virtio-fs?Enable VirtIO-FS.]"
-USAGE+="[i:iso?Path to ISO.]:?[/path/to/barebones.iso]"
-USAGE+="[k:kvm?Enable hardware accelerated virtualisation.]"
-USAGE+="[n:virtio-net?Enable VirtIO-NIC.]"
-USAGE+="[q:qemu-exe?Path to QEmu executable.]:?[/path/to/qemu]"
-USAGE+="[r:root?Path to FUSE/9p root directory.]:?[/path/to/root]"
-USAGE+="[s:smp]#[smp:=4?Set number of cores.]"
-USAGE+="[9:virtio-9p?Enable VirtIO-9P.]"
+usage() {
+	echo "Usage: $0 [-d] [-e] [-f] [-i path] [-k] [-n] [-q path] [-r path] [-s num] [-9]" 1>&2
+	echo "  -d			Enable VirtIO-FS DAX." 1>&2
+	echo "  -e			Enable VirtIO-Disk." 1>&2
+	echo "  -f			Enable VirtIO-FS." 1>&2
+	echo "  -i path		Path to ISO file." 1>&2
+	echo "  -k			Enable hardware accelerated virtualisation." 1>&2
+	echo "  -n			Enable VirtIO-NIC." 1>&2
+	echo "  -q path		Path to QEMU executable." 1>&2
+	echo "  -r path		Path to FUSE/9p root directory." 1>&2
+	echo "  -s num		Set number of cores (default is 4)." 1>&2
+	echo "  -9			Enable VirtIO-9P." 1>&2
+	exit 1
+}
 
 qemu_exe=qemu-system-x86_64
 dax=0
@@ -23,7 +26,7 @@ root=
 kvm=0
 smpnum=4
 
-while getopts "$USAGE" optchar ; do
+while getopts "defi:knq:r:s:9" optchar; do
 	case $optchar in
 	d) dax=1 ;;
 	f) virtiofs=1 ;;
@@ -34,16 +37,17 @@ while getopts "$USAGE" optchar ; do
 	r) root=$OPTARG ;;
 	s) smpnum=$OPTARG ;;
 	9) virtio9p=1 ;;
+	*) usage ;;
 esac done
 
 if [ "$iso" = "" ]; then
-	echo "ISO file must be specified with -i /path/to/barebones.iso"
-	exit 1
+	echo "ISO file path must be specified with -i" 1>&2
+	usage
 fi
 
 if [ "$root" = "" ]; then
-	echo "Root directory must be specified with -r /path/to/root"
-	exit 1
+	echo "Root directory must be specified with -r" 1>&2
+	usage
 fi
 
 qemu_args=""
@@ -52,27 +56,32 @@ virtio_fs_args="-object memory-backend-file,id=mem,size=256M,mem-path=/dev/shm,s
   -chardev socket,id=char0,path=/tmp/vhostqemu \
   -device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=myfs"
 
-(($dax)) && {
-	echo "Using DAX" ;
-	virtio_fs_args+=",cache-size=64M" ;
-}
+if [ "$dax" = "1" ]; then
+	echo "Using DAX"
+	virtio_fs_args="${virtio_fs_args},cache-size=64M"
+fi
 
-(($virtiodisk)) && qemu_args+="-drive file=hda.img,if=virtio "
+if [ "$virtiodisk" = "1" ]; then
+	qemu_args="${qemu_args} -drive file=hda.img,if=virtio"
+fi
 
-(($virtionet)) && {
-	qemu_args+="-net bridge,br=virbr0 -net nic,model=virtio "
-}
+if [ "$virtionet" = "1" ]; then
+	qemu_args="${qemu_args} -net bridge,br=virbr0 -net nic,model=virtio"
+fi
 
-(($virtio9p)) && {
-	qemu_args+="-virtfs local,path=${root},security_model=none,\
-mount_tag=root "
-}
+if [ "$virtio9p" = "1" ]; then
+	qemu_args="${qemu_args} -virtfs local,path=${root},security_model=none,mount_tag=root"
+fi
 
-(($virtiofs)) && qemu_args+="${virtio_fs_args} "
-(($kvm)) && qemu_args+="-enable-kvm "
+if [ "$virtiofs" = "1" ]; then
+	qemu_args="${qemu_args} ${virtio_fs_args}"
+fi
 
-qemu_args+="-serial stdio "
-qemu_args+="-cdrom ${iso} "
+if [ "$kvm" = "1" ]; then
+	qemu_args="${qemu_args} -enable-kvm"
+fi
+
+qemu_args="${qemu_args} -serial stdio -cdrom ${iso}"
 
 echo "Launching: ${qemu_exe} ${qemu_args} -smp $smpnum -boot d"
 echo ""

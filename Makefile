@@ -27,7 +27,7 @@ rebuild-kernel: build/
 	(cd build && xbstrap install --rebuild mlibc-headers mlibc keyronex-kernel)
 
 iso:
-	rm -rf ${ISO_DIR}
+	@rm -rf ${ISO_DIR}
 	@mkdir -p ${ISO_DIR}
 
 	@cp ${KERNEL_EXE} \

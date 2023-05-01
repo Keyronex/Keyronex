@@ -56,6 +56,31 @@ explicit stack is attached, and these descend the device tree through an
 iterative, continuation-based mechanism that maintains state in the explicit
 stack of the IOP, minimising kernel stack use.
 
+Requirements
+------------
+
+To build Keyronex and all of the userspace you will need the following dependencies:
+```
+autopoint
+gettext
+git
+gperf
+help2man
+libgmp-dev
+libmpc-dev
+libmpfr-dev
+libtool
+m4
+meson (>= 0.57.0)
+pkg-config
+python3
+python3-pip
+texinfo
+yacc
+xbstrap
+xorriso
+```
+
 Platform Support
 ----------------
 

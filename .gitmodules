@@ -4,13 +4,13 @@
 	branch = v4.x-branch-binary
 [submodule "subprojects/mlibc"]
 	path = mlibc
-	url = ../mlibc
+	url = ../../Keyronex/mlibc.git
 [submodule "vendor/lwip"]
 	path = vendor/lwip
-	url = ../lwip
+	url = ../../Keyronex/lwip.git
 [submodule "vendor/limine-terminal"]
 	path = vendor/limine-terminal
 	url = ../../NetaScale/keyronex-limine-terminal
 [submodule "objfw/src"]
 	path = objfw
-	url = ../ObjFW
+	url = ../../Keyronex/ObjFW.git
