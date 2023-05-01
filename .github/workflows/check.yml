@@ -1,0 +1,32 @@
+name: Build Keyronex kernel
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Clone submodules
+        run: git submodule update --init
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld llvm meson ninja-build
+
+      - name: Install mlibc headers
+        run: |
+          mkdir mlibc-build
+          mkdir ../mlibc-headers
+          cd mlibc-build
+          meson setup --cross-file ../tools/ci-crossfile.ini --prefix=/ -Dheaders_only=true -Dlinux_kernel_headers=$(realpath ../kernel/_sdkinc) ../mlibc
+          DESTDIR=$(realpath ../mlibc-headers) ninja install
+
+      - name: Build the Keyronex kernel
+        run: |
+          mkdir kernel-build
+          cd kernel-build
+          meson setup --cross-file ../tools/ci-crossfile.ini --prefix=/ -Dno_headers=true ../kernel
+          ninja
