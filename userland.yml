@@ -15,7 +15,35 @@ sources:
       - host-libtool
       - host-pkgconf
 
-# tools:
+  - name: python
+    url: https://www.python.org/ftp/python/3.11.3/Python-3.11.3.tar.xz
+    version: '3.11.3'
+    subdir: 'ports'
+    format: 'tar.xz'
+    extract_path: 'Python-3.11.3'
+    patch-path-strip: 1
+    regenerate:
+      # python is broken, adding automake or libtool ruins it
+      - args: [ 'autoconf' ]
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-autoconf-archive
+
+tools:
+  - name: host-python
+    from_source: python
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
 #   - name: host-smalltalk
 #     from_source: smalltalk
 #     configure:
@@ -473,25 +501,11 @@ packages:
   #         DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: python
-    source:
-      url: https://www.python.org/ftp/python/3.11.3/Python-3.11.3.tar.xz
-      version: '3.11.3'
-      subdir: 'ports'
-      format: 'tar.xz'
-      extract_path: 'Python-3.11.3'
-      patch-path-strip: 1
-      regenerate:
-        # python is broken, adding automake or libtool ruins it
-        - args: [ 'autoconf' ]
-      tools_required:
-        - host-autoconf-2.69
-        - host-automake-1.16
-        - host-libtool
-        - host-pkgconf
-        - host-autoconf-archive
+    from_source: python
     tools_required:
       - host-gcc
       - host-pkgconf
+      - host-python
     pkgs_required:
       - mlibc
       - readline
@@ -504,7 +518,8 @@ packages:
           EOL
       - args:
         - '@THIS_SOURCE_DIR@/configure'
-        - '--target=x86_64-keyronex'
+        - '--host=x86_64-keyronex'
+        - '--build=x86_64-netbsd'
         - '--prefix=/usr'
         - '--enable-shared'
         - '--with-sysroot=@SYSROOT_DIR@'
@@ -513,6 +528,7 @@ packages:
         - '--with-system-expat'
         - '--disable-ipv6'
         - '--without-ensurepip'
+        - '--with-build-python=@BUILD_ROOT@/tools/host-python/bin/python3.11'
         environ:
           CONFIG_SITE: '@THIS_BUILD_DIR@/confsite'
           PKG_CONFIG_SYSROOT_DIR: '@BUILD_ROOT@/system-root'

@@ -51,7 +51,7 @@ iso:
 	@echo "    (or use the 'run' Makefile target)"
 
 run:
-	@tools/amd64_run.sh -9 -k -r ${KRX_SYSROOT} -i ${ISO} -q /tmp/qemu-8.0.0/build/qemu-system-x86_64
+	@tools/amd64_run.sh -9 -k -r ${KRX_SYSROOT} -i ${ISO}
 
 runnosmp:
 	@tools/amd64_run.sh -9 -s 1 -r ${KRX_SYSROOT} -i ${ISO}
