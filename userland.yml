@@ -502,14 +502,6 @@ packages:
           ac_cv_file__dev_ptmx=yes
           ac_cv_file__dev_ptc=no
           EOL
-      # python's build system won't accept
-      # --with-build-python=/usr/bin/env python3
-      - args: |
-          cat > @THIS_BUILD_DIR@/python3.11 <<EOL
-          #!/bin/sh
-          env python3 "\$@"
-          EOL
-      - args: ['chmod', '+x', '@THIS_BUILD_DIR@/python3.11']
       - args:
         - '@THIS_SOURCE_DIR@/configure'
         - '--target=x86_64-keyronex'
@@ -521,7 +513,6 @@ packages:
         - '--with-system-expat'
         - '--disable-ipv6'
         - '--without-ensurepip'
-        - '--with-build-python=@THIS_BUILD_DIR@/python3.11'
         environ:
           CONFIG_SITE: '@THIS_BUILD_DIR@/confsite'
           PKG_CONFIG_SYSROOT_DIR: '@BUILD_ROOT@/system-root'

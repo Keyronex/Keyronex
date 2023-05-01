@@ -1,32 +1,7 @@
-From 6f785e20e4034b9016aa7e6cebc204f95b7808d6 Mon Sep 17 00:00:00 2001
-From: mintsuki <mintsuki@protonmail.com>
-Date: Sun, 20 Feb 2022 06:19:57 +0100
-Subject: [PATCH] Lyre specific changes
-
----
- configure.ac                             |  2 ++
- hw/xfree86/common/xf86Bus.c              |  2 ++
- hw/xfree86/common/xf86Config.c           |  2 ++
- hw/xfree86/common/xf86Configure.c        |  2 ++
- hw/xfree86/common/xf86Events.c           |  2 ++
- hw/xfree86/common/xf86Helper.c           |  2 ++
- hw/xfree86/common/xf86Init.c             |  2 ++
- hw/xfree86/fbdevhw/fbdevhw.c             | 26 +++++++++++-------------
- hw/xfree86/fbdevhw/fbdevhw.h             |  4 ++--
- hw/xfree86/os-support/shared/posix_tty.c |  3 +++
- hw/xfree86/os-support/shared/sigio.c     |  3 +++
- include/os.h                             |  1 +
- mi/mibitblt.c                            |  2 ++
- os/access.c                              |  2 +-
- os/ospoll.c                              |  2 ++
- os/utils.c                               |  4 ++--
- 16 files changed, 42 insertions(+), 19 deletions(-)
-
-diff --git a/configure.ac b/configure.ac
-index 0909cc5..f551571 100644
---- a/configure.ac
-+++ b/configure.ac
-@@ -1966,6 +1966,8 @@ if test "x$XORG" = xyes; then
+diff -ru xorg-server-1.20.14-original/configure.ac xorg-server-1.20.14/configure.ac
+--- xorg-server-1.20.14-original/configure.ac	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/configure.ac	2023-05-01 14:43:19.410305823 +0100
+@@ -1966,6 +1966,8 @@
  	if test "x$DRM" = xyes; then
  		XORG_DRIVER_MODESETTING=yes
  	fi
@@ -35,11 +10,10 @@ index 0909cc5..f551571 100644
  
  	AC_SUBST([XORG_LIBS])
  	AC_SUBST([XORG_SYS_LIBS])
-diff --git a/hw/xfree86/common/xf86Bus.c b/hw/xfree86/common/xf86Bus.c
-index a8f1073..1b1120a 100644
---- a/hw/xfree86/common/xf86Bus.c
-+++ b/hw/xfree86/common/xf86Bus.c
-@@ -536,6 +536,7 @@ xf86GetDevFromEntity(int entityIndex, int instance)
+diff -ru xorg-server-1.20.14-original/hw/xfree86/common/xf86Bus.c xorg-server-1.20.14/hw/xfree86/common/xf86Bus.c
+--- xorg-server-1.20.14-original/hw/xfree86/common/xf86Bus.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/common/xf86Bus.c	2023-05-01 14:43:19.411305845 +0100
+@@ -536,6 +536,7 @@
  void
  xf86PostProbe(void)
  {
@@ -47,7 +21,7 @@ index a8f1073..1b1120a 100644
      if (fbSlotClaimed && (
  #if (defined(__sparc__) || defined(__sparc)) && !defined(__OpenBSD__)
                               sbusSlotClaimed ||
-@@ -551,6 +552,7 @@ xf86PostProbe(void)
+@@ -551,6 +552,7 @@
          ))
          FatalError("Cannot run in framebuffer mode. Please specify busIDs "
                     "       for all framebuffer devices\n");
@@ -55,10 +29,9 @@ index a8f1073..1b1120a 100644
  }
  
  int
-diff --git a/hw/xfree86/common/xf86Config.c b/hw/xfree86/common/xf86Config.c
-index 09d27ec..83be062 100644
---- a/hw/xfree86/common/xf86Config.c
-+++ b/hw/xfree86/common/xf86Config.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/common/xf86Config.c xorg-server-1.20.14/hw/xfree86/common/xf86Config.c
+--- xorg-server-1.20.14-original/hw/xfree86/common/xf86Config.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/common/xf86Config.c	2023-05-01 14:43:19.412305866 +0100
 @@ -49,6 +49,8 @@
  #include <sys/types.h>
  #include <grp.h>
@@ -68,10 +41,9 @@ index 09d27ec..83be062 100644
  #include "xf86.h"
  #include "xf86Modes.h"
  #include "xf86Parser.h"
-diff --git a/hw/xfree86/common/xf86Configure.c b/hw/xfree86/common/xf86Configure.c
-index 44e7591..86d48d5 100644
---- a/hw/xfree86/common/xf86Configure.c
-+++ b/hw/xfree86/common/xf86Configure.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/common/xf86Configure.c xorg-server-1.20.14/hw/xfree86/common/xf86Configure.c
+--- xorg-server-1.20.14-original/hw/xfree86/common/xf86Configure.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/common/xf86Configure.c	2023-05-01 14:43:19.412305866 +0100
 @@ -27,6 +27,8 @@
  #include <xorg-config.h>
  #endif
@@ -81,10 +53,9 @@ index 44e7591..86d48d5 100644
  #include "xf86.h"
  #include "xf86Config.h"
  #include "xf86_OSlib.h"
-diff --git a/hw/xfree86/common/xf86Events.c b/hw/xfree86/common/xf86Events.c
-index 8a800bd..ec5d33d 100644
---- a/hw/xfree86/common/xf86Events.c
-+++ b/hw/xfree86/common/xf86Events.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/common/xf86Events.c xorg-server-1.20.14/hw/xfree86/common/xf86Events.c
+--- xorg-server-1.20.14-original/hw/xfree86/common/xf86Events.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/common/xf86Events.c	2023-05-01 14:43:19.413305887 +0100
 @@ -53,6 +53,8 @@
  #include <xorg-config.h>
  #endif
@@ -94,10 +65,9 @@ index 8a800bd..ec5d33d 100644
  #include <X11/X.h>
  #include <X11/Xproto.h>
  #include <X11/Xatom.h>
-diff --git a/hw/xfree86/common/xf86Helper.c b/hw/xfree86/common/xf86Helper.c
-index 42a51dd..64af1dc 100644
---- a/hw/xfree86/common/xf86Helper.c
-+++ b/hw/xfree86/common/xf86Helper.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/common/xf86Helper.c xorg-server-1.20.14/hw/xfree86/common/xf86Helper.c
+--- xorg-server-1.20.14-original/hw/xfree86/common/xf86Helper.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/common/xf86Helper.c	2023-05-01 14:43:19.413305887 +0100
 @@ -38,6 +38,8 @@
  #include <xorg-config.h>
  #endif
@@ -107,10 +77,9 @@ index 42a51dd..64af1dc 100644
  #include <X11/X.h>
  #include "os.h"
  #include "servermd.h"
-diff --git a/hw/xfree86/common/xf86Init.c b/hw/xfree86/common/xf86Init.c
-index 2ec6b2f..c1d9c24 100644
---- a/hw/xfree86/common/xf86Init.c
-+++ b/hw/xfree86/common/xf86Init.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/common/xf86Init.c xorg-server-1.20.14/hw/xfree86/common/xf86Init.c
+--- xorg-server-1.20.14-original/hw/xfree86/common/xf86Init.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/common/xf86Init.c	2023-05-01 14:43:19.413305887 +0100
 @@ -37,6 +37,8 @@
  #include <stdlib.h>
  #include <errno.h>
@@ -120,10 +89,9 @@ index 2ec6b2f..c1d9c24 100644
  #undef HAS_UTSNAME
  #if !defined(WIN32)
  #define HAS_UTSNAME 1
-diff --git a/hw/xfree86/fbdevhw/fbdevhw.c b/hw/xfree86/fbdevhw/fbdevhw.c
-index 9508951..bce130c 100644
---- a/hw/xfree86/fbdevhw/fbdevhw.c
-+++ b/hw/xfree86/fbdevhw/fbdevhw.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/fbdevhw/fbdevhw.c xorg-server-1.20.14/hw/xfree86/fbdevhw/fbdevhw.c
+--- xorg-server-1.20.14-original/hw/xfree86/fbdevhw/fbdevhw.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/fbdevhw/fbdevhw.c	2023-05-01 14:43:19.414305908 +0100
 @@ -10,12 +10,12 @@
  #include "xf86_OSproc.h"
  
@@ -139,7 +107,7 @@ index 9508951..bce130c 100644
  #include "globals.h"
  #include <X11/extensions/dpmsconst.h>
  
-@@ -259,6 +259,7 @@ fbdev2xfree_timing(struct fb_var_screeninfo *var, DisplayModePtr mode)
+@@ -259,6 +259,7 @@
  /**
   * Try to find the framebuffer device for a given PCI device
   */
@@ -147,7 +115,7 @@ index 9508951..bce130c 100644
  static int
  fbdev_open_pci(struct pci_device *pPci, char **namep)
  {
-@@ -303,6 +304,7 @@ fbdev_open_pci(struct pci_device *pPci, char **namep)
+@@ -303,6 +304,7 @@
      xf86DrvMsg(-1, X_ERROR, "Unable to find a valid framebuffer device\n");
      return -1;
  }
@@ -155,7 +123,7 @@ index 9508951..bce130c 100644
  
  static int
  fbdev_open(int scrnIndex, const char *dev, char **namep)
-@@ -330,6 +332,7 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+@@ -330,6 +332,7 @@
      }
  
      /* only touch non-PCI devices on this path */
@@ -163,7 +131,7 @@ index 9508951..bce130c 100644
      {
          char buf[PATH_MAX];
          char *sysfs_path = NULL;
-@@ -344,6 +347,7 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+@@ -344,6 +347,7 @@
          }
          free(sysfs_path);
      }
@@ -171,7 +139,7 @@ index 9508951..bce130c 100644
  
      if (namep) {
          if (-1 == ioctl(fd, FBIOGET_FSCREENINFO, (void *) (&fix))) {
-@@ -363,14 +367,11 @@ fbdev_open(int scrnIndex, const char *dev, char **namep)
+@@ -363,14 +367,11 @@
  /* -------------------------------------------------------------------- */
  
  Bool
@@ -188,7 +156,7 @@ index 9508951..bce130c 100644
  
      if (-1 == fd)
          return FALSE;
-@@ -379,7 +380,7 @@ fbdevHWProbe(struct pci_device *pPci, char *device, char **namep)
+@@ -379,7 +380,7 @@
  }
  
  Bool
@@ -197,7 +165,7 @@ index 9508951..bce130c 100644
  {
      fbdevHWPtr fPtr;
  
-@@ -387,10 +388,7 @@ fbdevHWInit(ScrnInfoPtr pScrn, struct pci_device *pPci, char *device)
+@@ -387,10 +388,7 @@
      fPtr = FBDEVHWPTR(pScrn);
  
      /* open device */
@@ -209,7 +177,7 @@ index 9508951..bce130c 100644
      if (-1 == fPtr->fd) {
          xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                     "Failed to open framebuffer device, consult warnings"
-@@ -881,7 +879,7 @@ RETRY:
+@@ -881,7 +879,7 @@
                         "FBIOBLANK: %s\n", strerror(errno));
  	    break;
          case EINTR:
@@ -218,7 +186,7 @@ index 9508951..bce130c 100644
              goto RETRY;
          default:
              fPtr->unsupported_ioctls |= (1 << FBIOBLANK_UNSUPPORTED);
-@@ -915,7 +913,7 @@ RETRY:
+@@ -915,7 +913,7 @@
                         "FBIOBLANK: %s\n", strerror(errno));
              break;
          case EINTR:
@@ -227,11 +195,10 @@ index 9508951..bce130c 100644
              goto RETRY;
          default:
              fPtr->unsupported_ioctls |= (1 << FBIOBLANK_UNSUPPORTED);
-diff --git a/hw/xfree86/fbdevhw/fbdevhw.h b/hw/xfree86/fbdevhw/fbdevhw.h
-index 4984ccf..bb3e2f8 100644
---- a/hw/xfree86/fbdevhw/fbdevhw.h
-+++ b/hw/xfree86/fbdevhw/fbdevhw.h
-@@ -16,9 +16,9 @@ extern _X_EXPORT void fbdevHWFreeRec(ScrnInfoPtr pScrn);
+diff -ru xorg-server-1.20.14-original/hw/xfree86/fbdevhw/fbdevhw.h xorg-server-1.20.14/hw/xfree86/fbdevhw/fbdevhw.h
+--- xorg-server-1.20.14-original/hw/xfree86/fbdevhw/fbdevhw.h	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/fbdevhw/fbdevhw.h	2023-05-01 14:43:19.414305908 +0100
+@@ -16,9 +16,9 @@
  
  extern _X_EXPORT int fbdevHWGetFD(ScrnInfoPtr pScrn);
  
@@ -243,10 +210,9 @@ index 4984ccf..bb3e2f8 100644
                                    char *device);
  
  extern _X_EXPORT char *fbdevHWGetName(ScrnInfoPtr pScrn);
-diff --git a/hw/xfree86/os-support/shared/posix_tty.c b/hw/xfree86/os-support/shared/posix_tty.c
-index 0cb9788..e8cac5d 100644
---- a/hw/xfree86/os-support/shared/posix_tty.c
-+++ b/hw/xfree86/os-support/shared/posix_tty.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/os-support/shared/posix_tty.c xorg-server-1.20.14/hw/xfree86/os-support/shared/posix_tty.c
+--- xorg-server-1.20.14-original/hw/xfree86/os-support/shared/posix_tty.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/os-support/shared/posix_tty.c	2023-05-01 14:43:19.414305908 +0100
 @@ -56,6 +56,9 @@
  #include <xorg-config.h>
  #endif
@@ -257,10 +223,9 @@ index 0cb9788..e8cac5d 100644
  #include <X11/X.h>
  #include <xserver_poll.h>
  #include "xf86.h"
-diff --git a/hw/xfree86/os-support/shared/sigio.c b/hw/xfree86/os-support/shared/sigio.c
-index 247bec7..216e8cd 100644
---- a/hw/xfree86/os-support/shared/sigio.c
-+++ b/hw/xfree86/os-support/shared/sigio.c
+diff -ru xorg-server-1.20.14-original/hw/xfree86/os-support/shared/sigio.c xorg-server-1.20.14/hw/xfree86/os-support/shared/sigio.c
+--- xorg-server-1.20.14-original/hw/xfree86/os-support/shared/sigio.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/hw/xfree86/os-support/shared/sigio.c	2023-05-01 14:43:19.415305929 +0100
 @@ -56,6 +56,9 @@
  #include <xorg-config.h>
  #endif
@@ -271,11 +236,10 @@ index 247bec7..216e8cd 100644
  #include <X11/X.h>
  #include <xserver_poll.h>
  #include "xf86.h"
-diff --git a/include/os.h b/include/os.h
-index 2a1c29e..2a7fc76 100644
---- a/include/os.h
-+++ b/include/os.h
-@@ -51,6 +51,7 @@ SOFTWARE.
+diff -ru xorg-server-1.20.14-original/include/os.h xorg-server-1.20.14/include/os.h
+--- xorg-server-1.20.14-original/include/os.h	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/include/os.h	2023-05-01 14:43:19.415305929 +0100
+@@ -51,6 +51,7 @@
  #include <stdarg.h>
  #include <stdint.h>
  #include <string.h>
@@ -283,11 +247,10 @@ index 2a1c29e..2a7fc76 100644
  #ifdef MONOTONIC_CLOCK
  #include <time.h>
  #endif
-diff --git a/mi/mibitblt.c b/mi/mibitblt.c
-index 43d9bd9..740c0d2 100644
---- a/mi/mibitblt.c
-+++ b/mi/mibitblt.c
-@@ -49,6 +49,8 @@ SOFTWARE.
+diff -ru xorg-server-1.20.14-original/mi/mibitblt.c xorg-server-1.20.14/mi/mibitblt.c
+--- xorg-server-1.20.14-original/mi/mibitblt.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/mi/mibitblt.c	2023-05-01 14:43:19.415305929 +0100
+@@ -49,6 +49,8 @@
  #include <dix-config.h>
  #endif
  
@@ -296,11 +259,10 @@ index 43d9bd9..740c0d2 100644
  #include <X11/X.h>
  #include <X11/Xprotostr.h>
  
-diff --git a/os/access.c b/os/access.c
-index 9724616..3c4376a 100644
---- a/os/access.c
-+++ b/os/access.c
-@@ -117,7 +117,7 @@ SOFTWARE.
+diff -ru xorg-server-1.20.14-original/os/access.c xorg-server-1.20.14/os/access.c
+--- xorg-server-1.20.14-original/os/access.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/os/access.c	2023-05-01 14:43:19.416305951 +0100
+@@ -117,7 +117,7 @@
  #endif
  #endif
  
@@ -309,10 +271,28 @@ index 9724616..3c4376a 100644
  #include <sys/utsname.h>
  #endif
  #if defined(SYSV) &&  defined(__i386__)
-diff --git a/os/ospoll.c b/os/ospoll.c
-index c68aabc..a3217dc 100644
---- a/os/ospoll.c
-+++ b/os/ospoll.c
+diff -ru xorg-server-1.20.14-original/os/osinit.c xorg-server-1.20.14/os/osinit.c
+--- xorg-server-1.20.14-original/os/osinit.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/os/osinit.c	2023-05-01 14:37:08.306508179 +0100
+@@ -206,6 +206,7 @@
+         if (!server_poll)
+             FatalError("failed to allocate poll structure");
+ 
++#if 0 /* mlibc backtrace just panics */
+ #ifdef HAVE_BACKTRACE
+         /*
+          * initialize the backtracer, since the ctor calls dlopen(), which
+@@ -217,6 +218,7 @@
+             backtrace(&array, 1);
+         } while (0);
+ #endif
++#endif
+ 
+ #ifdef RTLD_DI_SETSIGNAL
+         /* Tell runtime linker to send a signal we can catch instead of SIGKILL
+diff -ru xorg-server-1.20.14-original/os/ospoll.c xorg-server-1.20.14/os/ospoll.c
+--- xorg-server-1.20.14-original/os/ospoll.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/os/ospoll.c	2023-05-01 14:43:19.416305951 +0100
 @@ -45,11 +45,13 @@
  #define HAVE_OSPOLL     1
  #endif
@@ -327,11 +307,10 @@ index c68aabc..a3217dc 100644
  
  #if !HAVE_OSPOLL
  #include "xserver_poll.h"
-diff --git a/os/utils.c b/os/utils.c
-index 2ba1c80..63dedc6 100644
---- a/os/utils.c
-+++ b/os/utils.c
-@@ -1402,7 +1402,7 @@ System(const char *command)
+diff -ru xorg-server-1.20.14-original/os/utils.c xorg-server-1.20.14/os/utils.c
+--- xorg-server-1.20.14-original/os/utils.c	2021-12-15 19:01:24.000000000 +0000
++++ xorg-server-1.20.14/os/utils.c	2023-05-01 14:43:19.416305951 +0100
+@@ -1402,7 +1402,7 @@
          return -1;
      }
  
@@ -340,7 +319,7 @@ index 2ba1c80..63dedc6 100644
  }
  
  static struct pid {
-@@ -1632,7 +1632,7 @@ Pclose(void *iop)
+@@ -1632,7 +1632,7 @@
      }
  #endif
  
@@ -349,5 +328,3 @@ index 2ba1c80..63dedc6 100644
  }
  
  int
--- 
-2.35.1
