@@ -56,6 +56,9 @@ init_thread_start(void *rsdp)
 	kassert(root_vnode != 0);
 	vnode_t *dev_shadowed;
 
+	obj_direct_retain(root_vnode);
+	ps_curproc()->cwd = root_vnode;
+
 	r = vfs_lookup(root_vnode, &dev_shadowed, "dev", 0, NULL);
 	kassert(r == 0);
 

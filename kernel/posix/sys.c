@@ -154,7 +154,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 	r = vfs_lookup(dvn, &vn, path, 0, NULL);
 	if (r < 0 && flags & O_CREAT) {
 		vattr_t attr;
-		attr.mode = S_IFREG | 0755;
+		attr.mode = S_IFREG | mode;
 		attr.type = VREG;
 		r = vfs_lookup(dvn, &vn, path, kLookupCreate, &attr);
 	}
@@ -192,14 +192,15 @@ int
 sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 {
 	vnode_t *dvn;
+	mode_t umask = __atomic_load_n(&px_curproc()->umask, __ATOMIC_SEQ_CST);
 
 	if (dirfd == AT_FDCWD) {
-		dvn = root_vnode;
+		dvn = ps_curcwd();
 	} else {
 		kfatal("Unimplemented\n");
 	}
 
-	return posix_do_openat(dvn, path, flags, mode);
+	return posix_do_openat(dvn, path, flags, mode & ~umask);
 }
 
 int
@@ -339,6 +340,55 @@ out:
 }
 
 int
+sys_chdir(const char *path)
+{
+	eprocess_t *eproc = ps_curproc();
+	int r;
+	vnode_t *vn = NULL, *cwd;
+	kwaitstatus_t w;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_CHDIR(%s)\n", path);
+#endif
+
+	cwd = ps_curcwd();
+	r = vfs_lookup(cwd, &vn, path, 0, NULL);
+	if (r != 0)
+		return r;
+
+	if (vn->type != VDIR) {
+		obj_direct_release(vn);
+		return -ENOTDIR;
+	}
+
+	if (cwd)
+		obj_direct_release(cwd);
+
+	w = ke_wait(&eproc->fd_mutex, "sys_chdir:eproc->fd_mutex", false, false,
+	    -1);
+	kassert(w == kKernWaitStatusOK);
+	eproc->cwd = vn;
+	ke_mutex_release(&eproc->fd_mutex);
+
+	return 0;
+}
+
+mode_t
+sys_umask(mode_t mode)
+{
+	mode_t umask = __atomic_load_n(&px_curproc()->umask, __ATOMIC_ACQUIRE);
+
+	mode &= 0777;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_UMASK(%o)\n", mode);
+#endif
+
+	__atomic_store_n(&px_curproc()->umask, mode, __ATOMIC_RELEASE);
+	return umask;
+}
+
+int
 sys_read(int fd, void *buf, size_t nbyte)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
@@ -373,7 +423,7 @@ sys_readlink(const char *path, char *buf, size_t bufsize)
 	char *mypath = strdup(path), *link =NULL;
 	vnode_t *vn;
 
-	r = vfs_lookup(root_vnode, &vn, mypath, kLookupNoFollow, NULL);
+	r = vfs_lookup(ps_curcwd(), &vn, mypath, kLookupNoFollow, NULL);
 	if (r != 0)
 		goto out;
 
@@ -517,7 +567,7 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	} else if (kind == kPXStatKindCWD) {
 		pathcpy = strdup(path);
 
-		r = vfs_lookup(root_vnode, &vn, pathcpy, 0, NULL);
+		r = vfs_lookup(ps_curcwd(), &vn, pathcpy, 0, NULL);
 		if (r != 0)
 			goto out;
 	} else {
@@ -597,7 +647,7 @@ sys_unlinkat(int fd, const char *path, int flags)
 #endif
 
 	if (fd == AT_FDCWD) {
-		vn = root_vnode;
+		vn = ps_curcwd();
 	} else {
 		struct file *file = ps_getfile(ps_curproc(), fd);
 
@@ -961,6 +1011,14 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_link((const char *)ARG1, (const char *)ARG2);
 		break;
 
+	case kPXSysChDir:
+		RET = sys_chdir((const char *)ARG1);
+		break;
+
+	case kPXSysUMask:
+		RET = sys_umask((mode_t)ARG1);
+		break;
+
 	case kPXSysEPollCreate:
 		RET = sys_epoll_create(ARG1);
 		break;
@@ -1089,7 +1147,7 @@ posix_syscall(hl_intr_frame_t *frame)
 	}
 
 	case kPXSysForkThread:
-		RET = psx_fork_thread(frame, (void*)ARG1, (void*)ARG2);
+		RET = psx_fork_thread(frame, (void *)ARG1, (void *)ARG2);
 		break;
 
 	case kPXSysFutexWait:

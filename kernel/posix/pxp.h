@@ -12,6 +12,8 @@
 
 #include <sys/signal.h>
 
+#include <abi-bits/mode_t.h>
+
 #include "kdk/kernel.h"
 #include "kdk/process.h"
 
@@ -85,6 +87,9 @@ typedef struct posix_proc {
 	vaddr_t sigentry;
 	/*! (p) process queued signals */
 	ksiginfo_queue_t sigqueue;
+
+	/*! File creation mask. */
+	mode_t umask;
 } posix_proc_t;
 
 /*!
