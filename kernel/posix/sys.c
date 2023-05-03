@@ -154,7 +154,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 	r = vfs_lookup(dvn, &vn, path, 0, NULL);
 	if (r < 0 && flags & O_CREAT) {
 		vattr_t attr;
-		attr.mode = S_IFREG | 0755;
+		attr.mode = S_IFREG | mode;
 		attr.type = VREG;
 		r = vfs_lookup(dvn, &vn, path, kLookupCreate, &attr);
 	}
@@ -192,6 +192,7 @@ int
 sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 {
 	vnode_t *dvn;
+	mode_t umask = __atomic_load_n(&px_curproc()->umask, __ATOMIC_SEQ_CST);
 
 	if (dirfd == AT_FDCWD) {
 		dvn = ps_curcwd();
@@ -199,7 +200,7 @@ sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 		kfatal("Unimplemented\n");
 	}
 
-	return posix_do_openat(dvn, path, flags, mode);
+	return posix_do_openat(dvn, path, flags, mode & ~umask);
 }
 
 int
@@ -370,6 +371,21 @@ sys_chdir(const char *path)
 	ke_mutex_release(&eproc->fd_mutex);
 
 	return 0;
+}
+
+mode_t
+sys_umask(mode_t mode)
+{
+	mode_t umask = __atomic_load_n(&px_curproc()->umask, __ATOMIC_ACQUIRE);
+
+	mode &= 0777;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_UMASK(%o)\n", mode);
+#endif
+
+	__atomic_store_n(&px_curproc()->umask, mode, __ATOMIC_RELEASE);
+	return umask;
 }
 
 int
@@ -997,6 +1013,10 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysChDir:
 		RET = sys_chdir((const char *)ARG1);
+		break;
+
+	case kPXSysUMask:
+		RET = sys_umask((mode_t)ARG1);
 		break;
 
 	case kPXSysEPollCreate:

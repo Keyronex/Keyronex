@@ -110,6 +110,7 @@ proc_init_common(posix_proc_t *proc, posix_proc_t *parent_proc,
 	LIST_INIT(&proc->subprocs);
 
 	if (parent_proc) {
+		proc->umask = parent_proc->umask;
 		LIST_INSERT_HEAD(&parent_proc->subprocs, proc, subprocs_link);
 		pgroup_add(parent_proc->pgroup, proc);
 	} else {
@@ -632,6 +633,7 @@ psx_init(void)
 	LIST_INSERT_HEAD(&posix_pgroup0.members, &posix_proc0,
 	    pgroup_members_link);
 	posix_proc0.pgroup = &posix_pgroup0;
+	posix_proc0.umask = S_IWGRP | S_IWOTH;
 
 	r = pxp_make_syscon_tty();
 	kassert(r == 0);
