@@ -448,6 +448,83 @@ out:
 	return r;
 }
 
+static int
+get_fd_vn(int fd, vnode_t **out)
+{
+	if (fd == AT_FDCWD) {
+		*out = ps_curcwd();
+	} else {
+		struct file *file = ps_getfile(ps_curproc(), fd);
+
+		if (file == NULL)
+			return -EBADF;
+
+		*out = file->vn;
+	}
+
+	return 0;
+}
+
+int
+sys_renameat(int orig_dirfd, const char *orig_path, int new_dirfd,
+    const char *new_path)
+{
+	int r;
+	vnode_t *orig_dvn = NULL, *new_dvn = NULL;
+	char *orig_pathcpy, *orig_pathlast;
+	char *new_pathcpy, *new_pathlast;
+
+	orig_pathcpy = strdup(orig_path);
+	new_pathcpy = strdup(new_path);
+
+#if DEBUG_SYSCALLS == 0
+	kdprintf(
+	    "SYS_RENAMEAT(orig_fd: %d, orig_path: %s, new_fd: %d, new_path: %s)",
+	    orig_dirfd, orig_pathcpy, new_dirfd, new_pathcpy);
+#endif
+
+	r = get_fd_vn(orig_dirfd, &orig_dvn);
+	if (r != 0)
+		goto out;
+
+	r = get_fd_vn(new_dirfd, &new_dvn);
+	if (r != 0)
+		goto out;
+
+	/* todo: these are incompatible with refcounting */
+	r = vfs_lookup(orig_dvn, &orig_dvn, orig_pathcpy, kLookup2ndLast, NULL);
+	if (r != 0)
+		goto out;
+
+	r = vfs_lookup(new_dvn, &new_dvn, new_pathcpy, kLookup2ndLast, NULL);
+	if (r != 0)
+		goto out;
+
+	/* todo: break out into a function, factor with other *at code */
+	orig_pathlast = orig_pathcpy + strlen(orig_pathcpy);
+	while (*(orig_pathlast - 1) != '/' && (orig_pathlast != orig_pathcpy))
+		orig_pathlast--;
+
+	new_pathlast = new_pathcpy + strlen(new_pathcpy);
+	while (*(new_pathlast - 1) != '/' && (new_pathlast != new_pathcpy))
+		new_pathlast--;
+
+	kassert(orig_dvn->ops->rename != NULL);
+	r = VOP_RENAME(orig_dvn, orig_pathlast, new_dvn, new_pathlast);
+
+out:
+	if (new_dvn)
+		obj_direct_release(new_dvn);
+	if (orig_dvn)
+		obj_direct_release(orig_dvn);
+	if (new_pathcpy)
+		kmem_strfree(new_pathcpy);
+	if (orig_pathcpy)
+		kmem_strfree(orig_pathcpy);
+
+	return r;
+}
+
 int
 sys_read(int fd, void *buf, size_t nbyte)
 {
@@ -1081,6 +1158,11 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysMkDirAt:
 		RET = sys_mkdirat(ARG1, (const char *)ARG2, (mode_t)ARG3);
+		break;
+
+	case kPXSysRenameAt:
+		RET = sys_renameat(ARG1, (const char *)ARG2, ARG3,
+		    (const char *)ARG4);
 		break;
 
 	case kPXSysEPollCreate:

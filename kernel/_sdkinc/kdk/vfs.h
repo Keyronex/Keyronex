@@ -289,6 +289,8 @@ enum lookup_flags {
 #define VOP_REMOVE(VN, NAME) (VN)->ops->remove(VN, NAME)
 #define VOP_GETATTR(VN, OUT) (VN)->ops->getattr(VN, OUT)
 #define VOP_LOOKUP(vnode, out, path) vnode->ops->lookup(vnode, out, path)
+#define VOP_RENAME(VN, OLD_NAME, NEW_VN, NEW_NAME) \
+	(VN)->ops->rename(VN, OLD_NAME, NEW_VN, NEW_NAME)
 #define VOP_MKDIR(vnode, out, name, attr) \
 	vnode->ops->mkdir(vnode, out, name, attr)
 #define VOP_CHPOLL(VN, PH, KIND) (VN)->ops->chpoll(VN, PH, KIND)
