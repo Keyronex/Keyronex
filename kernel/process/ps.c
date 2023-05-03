@@ -67,12 +67,16 @@ ps_process_create(krx_out eprocess_t **process_out, eprocess_t *parent)
 
 	ke_wait(&parent->fd_mutex, "ps_process_create:parent->fd_mutex", false,
 	    false, -1);
+
 	for (int i = 0; i < elementsof(parent->files); i++) {
 		if (parent->files[i] != NULL)
 			eproc->files[i] = obj_direct_retain(parent->files[i]);
 		else
 			eproc->files[i] = NULL;
 	}
+
+	eproc->cwd = parent->cwd;
+
 	ke_mutex_release(&parent->fd_mutex);
 
 	*process_out = eproc;
@@ -112,6 +116,19 @@ ps_getfile(eprocess_t *proc, size_t index)
 	ke_mutex_release(&proc->fd_mutex);
 
 	return file;
+}
+
+struct vnode *
+ps_getcwd(krx_in eprocess_t *proc)
+{
+	struct vnode *cwd;
+	kwaitstatus_t w = ke_wait(&proc->fd_mutex, "ps_getcwd", false, false,
+	    -1);
+	kassert(w == kKernWaitStatusOK);
+	cwd = proc->cwd;
+	ke_mutex_release(&proc->fd_mutex);
+
+	return cwd;
 }
 
 int

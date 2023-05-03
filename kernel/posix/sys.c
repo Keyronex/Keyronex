@@ -194,7 +194,7 @@ sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 	vnode_t *dvn;
 
 	if (dirfd == AT_FDCWD) {
-		dvn = root_vnode;
+		dvn = ps_curcwd();
 	} else {
 		kfatal("Unimplemented\n");
 	}
@@ -339,6 +339,40 @@ out:
 }
 
 int
+sys_chdir(const char *path)
+{
+	eprocess_t *eproc = ps_curproc();
+	int r;
+	vnode_t *vn = NULL, *cwd;
+	kwaitstatus_t w;
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("SYS_CHDIR(%s)\n", path);
+#endif
+
+	cwd = ps_curcwd();
+	r = vfs_lookup(cwd, &vn, path, 0, NULL);
+	if (r != 0)
+		return r;
+
+	if (vn->type != VDIR) {
+		obj_direct_release(vn);
+		return -ENOTDIR;
+	}
+
+	if (cwd)
+		obj_direct_release(cwd);
+
+	w = ke_wait(&eproc->fd_mutex, "sys_chdir:eproc->fd_mutex", false, false,
+	    -1);
+	kassert(w == kKernWaitStatusOK);
+	eproc->cwd = vn;
+	ke_mutex_release(&eproc->fd_mutex);
+
+	return 0;
+}
+
+int
 sys_read(int fd, void *buf, size_t nbyte)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
@@ -373,7 +407,7 @@ sys_readlink(const char *path, char *buf, size_t bufsize)
 	char *mypath = strdup(path), *link =NULL;
 	vnode_t *vn;
 
-	r = vfs_lookup(root_vnode, &vn, mypath, kLookupNoFollow, NULL);
+	r = vfs_lookup(ps_curcwd(), &vn, mypath, kLookupNoFollow, NULL);
 	if (r != 0)
 		goto out;
 
@@ -517,7 +551,7 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	} else if (kind == kPXStatKindCWD) {
 		pathcpy = strdup(path);
 
-		r = vfs_lookup(root_vnode, &vn, pathcpy, 0, NULL);
+		r = vfs_lookup(ps_curcwd(), &vn, pathcpy, 0, NULL);
 		if (r != 0)
 			goto out;
 	} else {
@@ -597,7 +631,7 @@ sys_unlinkat(int fd, const char *path, int flags)
 #endif
 
 	if (fd == AT_FDCWD) {
-		vn = root_vnode;
+		vn = ps_curcwd();
 	} else {
 		struct file *file = ps_getfile(ps_curproc(), fd);
 
@@ -961,6 +995,10 @@ posix_syscall(hl_intr_frame_t *frame)
 		RET = sys_link((const char *)ARG1, (const char *)ARG2);
 		break;
 
+	case kPXSysChDir:
+		RET = sys_chdir((const char *)ARG1);
+		break;
+
 	case kPXSysEPollCreate:
 		RET = sys_epoll_create(ARG1);
 		break;
@@ -1089,7 +1127,7 @@ posix_syscall(hl_intr_frame_t *frame)
 	}
 
 	case kPXSysForkThread:
-		RET = psx_fork_thread(frame, (void*)ARG1, (void*)ARG2);
+		RET = psx_fork_thread(frame, (void *)ARG1, (void *)ARG2);
 		break;
 
 	case kPXSysFutexWait:

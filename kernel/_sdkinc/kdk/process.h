@@ -56,6 +56,8 @@ typedef struct eprocess {
 	kmutex_t fd_mutex;
 	/*! (fd) File table. */
 	struct file *files[64];
+	/*! (fd) Current working directory. */
+	struct vnode *cwd;
 } eprocess_t;
 
 /*! Eternal handle to the kernel process. Only useable by  */
@@ -66,6 +68,12 @@ typedef struct eprocess {
 
 /*! Get the currently-running thread. */
 #define ps_curthread() ((ethread_t *)ke_curthread())
+
+/*!
+ * Get the currently running process' working directory.
+ * This will acquire current process' fd_mutex.
+*/
+#define ps_curcwd() ps_getcwd(ps_curproc())
 
 /*!
  * Create a new thread of a kernel process.
@@ -93,6 +101,13 @@ int ps_thread_create(krx_out ethread_t **thread_out, eprocess_t *eproc);
  * @brief Get the file at a particular index in a process' table.
  */
 struct file *ps_getfile(eprocess_t *proc, size_t index);
+
+/*!
+ * @brief Retrieves the current working directory of a given process.
+ *
+ * This function acquires the fd_mutex of a given process.
+*/
+struct vnode *ps_getcwd(krx_in eprocess_t *proc);
 
 /*!
  * @brief Allocate file descriptors in current process.

@@ -270,6 +270,8 @@ psx_exit(int status)
 			obj_direct_release(proc->eprocess->files[i]);
 	}
 
+	obj_direct_release(proc->eprocess->cwd);
+
 	map = proc->eprocess->map;
 	proc->eprocess->map = kernel_process.map;
 	vm_map_activate(kernel_process.map);
