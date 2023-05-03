@@ -389,6 +389,66 @@ sys_umask(mode_t mode)
 }
 
 int
+sys_mkdirat(int dirfd, const char *path, mode_t mode)
+{
+	int r;
+	vnode_t *vn = NULL, *new_vn = NULL;
+	char *pathcpy, *lastname;
+	vattr_t attr;
+
+	pathcpy = strdup(path);
+
+#if DEBUG_SYSCALLS == 0
+	kdprintf("SYS_MKDIRAT(fd: %d, name: %s, flags: %d)", dirfd, pathcpy,
+	    mode);
+#endif
+
+	if (dirfd == AT_FDCWD) {
+		vn = ps_curcwd();
+	} else {
+		struct file *file = ps_getfile(ps_curproc(), dirfd);
+
+		if (file == NULL) {
+			r = -EBADF;
+			goto out;
+		}
+
+		vn = file->vn;
+	}
+
+	r = vfs_lookup(vn, &vn, pathcpy, kLookup2ndLast, NULL);
+	if (r != 0)
+		goto out;
+
+	lastname = pathcpy + strlen(pathcpy);
+
+	/* drop trailing slash; do we need this? */
+	if (*(lastname - 1) == '/') {
+		lastname -= 1;
+		if (lastname == pathcpy) {
+			r = -EINVAL;
+			goto out;
+		}
+	}
+
+	while (*(lastname - 1) != '/' && (lastname != pathcpy))
+		lastname--;
+
+	attr.mode = (mode & 1777) & ~PSX_GETUMASK();
+	r = VOP_MKDIR(vn, &new_vn, lastname, &attr);
+
+out:
+	if (new_vn)
+		obj_direct_release(new_vn);
+	if (vn)
+		obj_direct_release(vn);
+	if (pathcpy)
+		kmem_strfree(pathcpy);
+
+	return r;
+}
+
+int
 sys_read(int fd, void *buf, size_t nbyte)
 {
 	struct file *file = ps_getfile(ps_curproc(), fd);
@@ -1017,6 +1077,10 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysUMask:
 		RET = sys_umask((mode_t)ARG1);
+		break;
+
+	case kPXSysMkDirAt:
+		RET = sys_mkdirat(ARG1, (const char *)ARG2, (mode_t)ARG3);
 		break;
 
 	case kPXSysEPollCreate:

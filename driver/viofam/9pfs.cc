@@ -7,9 +7,9 @@
 #include <sys/stat.h>
 
 #include <dirent.h>
+#include <fcntl.h>
 
 #include "9pfs_reg.h"
-#include "abi-bits/fcntl.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
@@ -834,6 +834,67 @@ NinePFS::remove(vnode_t *vn, const char *name)
 	return r;
 }
 
+int
+NinePFS::mkdir(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data);
+	ninep_fid_t newfid;
+	int r = 0;
+
+	self->allocFID(newfid);
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+
+	/* size[4] Tmkdir tag[2] dfid[4] name[s] mode[4] gid[4] */
+	buf_in = ninep_buf_alloc("FS64dd");
+	/* size[4] Rmkdir tag[2] qid[13] */
+	buf_out = ninep_buf_alloc("Q");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pMkDir;
+	ninep_buf_addfid(buf_in, node->fid);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_addu32(buf_in, attr->mode & 01777);
+	ninep_buf_addu32(buf_in, 0); /* gid */
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+
+	switch (buf_out->data->kind) {
+	case k9pMkDir + 1: {
+		ninep_buf_free(buf_in);
+		ninep_buf_free(buf_out);
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		ninep_buf_free(buf_in);
+		ninep_buf_free(buf_out);
+		r = -err;
+		kassert(r != 0);
+		kdprintf("9pFS: Mkdir failed: %d\n", r);
+		return r;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	return lookup(vn, out, name);
+}
+
 off_t
 NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
     off_t seqno)
@@ -1063,6 +1124,7 @@ struct vnops NinePFS::vnops = {
 	.remove = remove,
 	.link = link,
 
+	.mkdir = mkdir,
 	.readdir = readdir,
 
 	.readlink = readlink

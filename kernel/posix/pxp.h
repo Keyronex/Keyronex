@@ -155,6 +155,7 @@ px_kthread_to_thread(kthread_t *thread)
 
 struct posix_pgroup *psx_lookup_pgid(pid_t pgid);
 
+#define PSX_GETUMASK() __atomic_load_n(&px_curproc()->umask, __ATOMIC_ACQUIRE)
 int sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
     const char *u_envp[], hl_intr_frame_t *frame);
 int psx_fork(hl_intr_frame_t *frame, posix_proc_t *proc, posix_proc_t **out);
