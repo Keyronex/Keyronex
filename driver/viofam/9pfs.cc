@@ -708,6 +708,69 @@ NinePFS::link(vnode_t *dvn, vnode_t *vn, const char *name)
 }
 
 int
+NinePFS::rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
+    const char *new_name)
+{
+	NinePFS *self = (NinePFS *)old_dvn->vfsp->data;
+	ninepfs_node *old_dirnode = ((ninepfs_node *)old_dvn->data);
+	ninepfs_node *new_dirnode = ((ninepfs_node *)old_dvn->data);
+	int r = 0;
+
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+
+	kassert(old_dvn->vfsp->data == new_dvn->vfsp->data);
+
+	/*
+	 * size[4] Trenameat tag[2] olddirfid[4] oldname[s] newdirfid[4]
+	 *   newname[s]
+	 */
+	buf_in = ninep_buf_alloc("FS64FS64");
+	/* size[4] Rlink tag[2] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pRenameAt;
+	ninep_buf_addfid(buf_in, old_dirnode->fid);
+	ninep_buf_addstr(buf_in, old_name);
+	ninep_buf_addfid(buf_in, new_dirnode->fid);
+	ninep_buf_addstr(buf_in, new_name);
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+
+	switch (buf_out->data->kind) {
+	case k9pRenameAt + 1:
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		kfatal("RenameAt failed with %d\n", err);
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	ninep_buf_free(buf_in);
+	ninep_buf_free(buf_out);
+
+	return r;
+}
+
+int
 NinePFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
 	return pgcache_read(vn, buf, nbyte, off);
@@ -1114,8 +1177,7 @@ struct vfsops NinePFS::vfsops = {
 	.root = root,
 };
 
-struct vnops NinePFS::vnops = {
-	.read = read,
+struct vnops NinePFS::vnops = { .read = read,
 	.write = write,
 	.getattr = getattr,
 
@@ -1123,9 +1185,9 @@ struct vnops NinePFS::vnops = {
 	.create = create,
 	.remove = remove,
 	.link = link,
+	.rename = rename,
 
 	.mkdir = mkdir,
 	.readdir = readdir,
 
-	.readlink = readlink
-};
+	.readlink = readlink };

@@ -70,6 +70,8 @@ class NinePFS : public Device {
 	static int getattr(vnode_t *vn, vattr_t *out);
 	static int getsection(vnode_t *vn, vm_object_t *out);
 	static int link(vnode_t *dvn, vnode_t *vn, const char *name);
+	static int rename(vnode_t *old_dvn, const char *old_name,
+	    vnode_t *new_dvn, const char *new_name);
 	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
 	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 	static int mkdir(vnode_t *vn, vnode_t **out, const char *name,
