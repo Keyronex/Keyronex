@@ -21,6 +21,7 @@
 		]
 	},
 	"esbonio.sphinx.confDir": "",
-	"C/C++ Include Guard.Auto Update Include Guard": false
+	"C/C++ Include Guard.Auto Update Include Guard": false,
+	"files.insertFinalNewline": true
 
 }

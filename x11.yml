@@ -196,6 +196,38 @@ packages:
 #
 # Xorg core libraries
 #
+  - name: glu
+    source:
+      subdir: 'ports'
+      url: 'ftp://ftp.freedesktop.org/pub/mesa/glu/glu-9.0.2.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'glu-9.0.2'
+      version: '9.0.2'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - mesa
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
   - name: xtrans
     from_source: xtrans
     tools_required:
@@ -1108,6 +1140,53 @@ packages:
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
+  - name: mesa
+    source:
+      subdir: 'ports'
+      url: 'https://archive.mesa3d.org/mesa-21.3.9.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'mesa-21.3.9'
+      patch-path-strip: 1
+      version: '21.3.9'
+      tools_required:
+        - host-pkgconf
+    tools_required:
+      - host-pkgconf
+      - host-gcc
+      - virtual: pkgconfig-for-target
+        triple: "x86_64-keyronex"
+      - virtual: pkgconfig-for-host
+        program_name: host-pkg-config
+    pkgs_required:
+      - mlibc
+      - zlib
+      - libXrandr
+      - libXfixes
+      - libX11
+      - libXext
+      - libxcb
+    configure:
+      - args: 'env'
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '--libdir=lib'
+        - '--buildtype=release'
+        - '-Dglx=gallium-xlib'
+        - '-Dplatforms=x11'
+        - '-Ddri-drivers='
+        - '-Dgallium-drivers=swrast'
+        - '-Dvulkan-drivers='
+        - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja', '-j@PARALLELISM@']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
 #
 # guest tools
 #
@@ -1419,6 +1498,51 @@ packages:
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
+  # need libstdc++.so installed and used by glu first
+  # - name: mesa-demos
+  #   source:
+  #     subdir: 'ports'
+  #     url: 'https://archive.mesa3d.org/demos/8.5.0/mesa-demos-8.5.0.tar.gz'
+  #     format: 'tar.gz'
+  #     extract_path: 'mesa-demos-8.5.0'
+  #     version: '8.5.0'
+  #     tools_required:
+  #       - host-autoconf-2.69
+  #       - host-automake-1.16
+  #       - host-libtool
+  #       - host-pkgconf
+  #     regenerate:
+  #       - args: ['libtoolize', '-cfvi']
+  #       - args: ['autoreconf', '-fvi']
+  #   tools_required:
+  #     - host-autoconf-2.69
+  #     - host-automake-1.16
+  #     - host-pkgconf
+  #     - host-gcc
+  #   pkgs_required:
+  #     - mlibc
+  #     - mesa
+  #     - glu
+  #   configure:
+  #     - args:
+  #       - '@THIS_SOURCE_DIR@/configure'
+  #       - '--host=x86_64-keyronex'
+  #       - '--prefix=/usr'
+  #       - '--sysconfdir=/etc'
+  #       - '--localstatedir=/var'
+  #       - '--disable-static'
+  #       - '--disable-gles1'
+  #       - '--disable-vg'
+  #       - '--disable-osmesa'
+  #       - '--disable-rbug'
+  #       - '--disable-libdrm'
+  #       - '--with-system-data-files'
+  #       - '--enable-autotools'
+  #   build:
+  #     - args: ['make', '-j@PARALLELISM@']
+  #     - args: ['make', 'install']
+  #       environ:
+  #         DESTDIR: '@THIS_COLLECT_DIR@'
 
 
 #

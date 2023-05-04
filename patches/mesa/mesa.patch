@@ -1,0 +1,116 @@
+diff -ruN mesa-21.3.9/meson.build mesa/meson.build
+--- mesa-21.3.9/meson.build	2022-06-08 19:13:35.000000000 +0100
++++ mesa/meson.build	2023-05-04 17:38:03.089846799 +0100
+@@ -176,7 +176,7 @@
+ # Only build shared_glapi if at least one OpenGL API is enabled
+ with_shared_glapi = with_shared_glapi and with_any_opengl
+ 
+-system_has_kms_drm = ['openbsd', 'netbsd', 'freebsd', 'gnu/kfreebsd', 'dragonfly', 'linux', 'sunos'].contains(host_machine.system())
++system_has_kms_drm = ['openbsd', 'netbsd', 'freebsd', 'gnu/kfreebsd', 'dragonfly', 'linux', 'sunos', 'keyronex'].contains(host_machine.system())
+ 
+ dri_drivers = get_option('dri-drivers')
+ if dri_drivers.contains('auto')
+
+diff -ruN mesa-21.3.9/src/util/debug.c mesa/src/util/debug.c
+--- mesa-21.3.9/src/util/debug.c	2022-06-08 19:13:35.000000000 +0100
++++ mesa/src/util/debug.c	2023-05-04 18:28:38.378797293 +0100
+@@ -23,6 +23,7 @@
+ 
+ #include <errno.h>
+ #include <string.h>
++#include <strings.h>
+ #include "debug.h"
+ #include "u_string.h"
+ 
+diff -ruN mesa-21.3.9/src/util/detect_os.h mesa/src/util/detect_os.h
+--- mesa-21.3.9/src/util/detect_os.h	2022-06-08 19:13:35.000000000 +0100
++++ mesa/src/util/detect_os.h	2023-05-04 18:29:34.741996110 +0100
+@@ -81,6 +81,11 @@
+ #define DETECT_OS_UNIX 1
+ #endif
+ 
++#if defined(__keyronex__)
++#define DETECT_OS_KEYRONEX 1
++#define DETECT_OS_UNIX 1
++#endif
++
+ 
+ /*
+  * Make sure DETECT_OS_* are always defined, so that they can be used with #if
+@@ -127,5 +132,8 @@
+ #ifndef DETECT_OS_WINDOWS
+ #define DETECT_OS_WINDOWS 0
+ #endif
++#ifndef DETECT_OS_KEYRONEX
++#define DETECT_OS_KEYRONEX 0
++#endif
+ 
+ #endif /* DETECT_OS_H */
+Binary files mesa-21.3.9/src/util/format/__pycache__/u_format_pack.cpython-311.pyc and mesa/src/util/format/__pycache__/u_format_pack.cpython-311.pyc differ
+Binary files mesa-21.3.9/src/util/format/__pycache__/u_format_parse.cpython-311.pyc and mesa/src/util/format/__pycache__/u_format_parse.cpython-311.pyc differ
+diff -ruN mesa-21.3.9/src/util/os_misc.c mesa/src/util/os_misc.c
+--- mesa-21.3.9/src/util/os_misc.c	2022-06-08 19:13:35.000000000 +0100
++++ mesa/src/util/os_misc.c	2023-05-04 18:30:03.211601635 +0100
+@@ -57,7 +57,7 @@
+ #  include <unistd.h>
+ #  include <log/log.h>
+ #  include <cutils/properties.h>
+-#elif DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS || DETECT_OS_HURD
++#elif DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS || DETECT_OS_HURD || DETECT_OS_KEYRONEX
+ #  include <unistd.h>
+ #elif DETECT_OS_OPENBSD || DETECT_OS_FREEBSD
+ #  include <sys/resource.h>
+@@ -223,7 +223,7 @@
+ bool
+ os_get_total_physical_memory(uint64_t *size)
+ {
+-#if DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS || DETECT_OS_HURD
++#if DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS || DETECT_OS_HURD || DETECT_OS_KEYRONEX
+    const long phys_pages = sysconf(_SC_PHYS_PAGES);
+    const long page_size = sysconf(_SC_PAGE_SIZE);
+ 
+diff -ruN mesa-21.3.9/src/util/os_time.c mesa/src/util/os_time.c
+--- mesa-21.3.9/src/util/os_time.c	2022-06-08 19:13:35.000000000 +0100
++++ mesa/src/util/os_time.c	2023-05-04 18:31:00.185806492 +0100
+@@ -53,7 +53,7 @@
+ int64_t
+ os_time_get_nano(void)
+ {
+-#if DETECT_OS_LINUX || DETECT_OS_BSD
++#if DETECT_OS_LINUX || DETECT_OS_BSD || DETECT_OS_KEYRONEX || DETECT_OS_KEYRONEX
+ 
+    struct timespec tv;
+    clock_gettime(CLOCK_MONOTONIC, &tv);
+Binary files mesa-21.3.9/src/util/perf/__pycache__/u_trace.cpython-311.pyc and mesa/src/util/perf/__pycache__/u_trace.cpython-311.pyc differ
+diff -ruN mesa-21.3.9/src/util/u_printf.h mesa/src/util/u_printf.h
+--- mesa-21.3.9/src/util/u_printf.h	2022-06-08 19:13:35.000000000 +0100
++++ mesa/src/util/u_printf.h	2023-05-04 18:32:10.177276407 +0100
+@@ -22,6 +22,8 @@
+ #ifndef U_PRINTF_H
+ #define U_PRINTF_H
+ 
++#include <stdarg.h>
++
+ #ifdef __cplusplus
+ 
+ #include <string>
+diff -ruN mesa-21.3.9/src/util/u_thread.h mesa/src/util/u_thread.h
+--- mesa-21.3.9/src/util/u_thread.h	2022-06-08 19:13:35.000000000 +0100
++++ mesa/src/util/u_thread.h	2023-05-04 18:31:33.861513727 +0100
+@@ -129,7 +129,7 @@
+ static inline void u_thread_setname( const char *name )
+ {
+ #if defined(HAVE_PTHREAD)
+-#if DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS
++#if DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS || DETECT_OS_KEYRONEX
+    int ret = pthread_setname_np(pthread_self(), name);
+    if (ret == ERANGE) {
+       char buf[16];
+@@ -242,7 +242,7 @@
+ static inline int64_t
+ util_thread_get_time_nano(thrd_t thread)
+ {
+-#if defined(HAVE_PTHREAD) && !defined(__APPLE__) && !defined(__HAIKU__)
++#if defined(HAVE_PTHREAD) && !defined(__APPLE__) && !defined(__HAIKU__) && !defined(__keyronex__)
+    struct timespec ts;
+    clockid_t cid;
