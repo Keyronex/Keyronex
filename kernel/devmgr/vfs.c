@@ -134,7 +134,7 @@ vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
 	char *pathcpy, *linkpaths[8];
 	size_t pathlen;
 	size_t nlinks = 0;
-	int r;
+	int r = 0;
 
 	TAILQ_INIT(&state.components);
 
