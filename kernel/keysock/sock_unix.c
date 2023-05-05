@@ -127,7 +127,7 @@ sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct sockaddr_un *sun;
 	int r;
-	vnode_t *filevn;
+	vnode_t *dirvn, *filevn;
 	struct sock_unix *sock = VNTOUNP(vn);
 	struct vattr attr = { 0 };
 
@@ -144,8 +144,27 @@ sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 	 * is inappropriate.
 	 */
 
-	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, kLookupCreate,
-	    &attr);
+	r = vfs_lookup(root_vnode, &dirvn, sun->sun_path, kLookup2ndLast);
+	if (r != 0)
+		return r;
+
+	const char *lastname;
+
+	lastname = sun->sun_path + strlen(sun->sun_path);
+
+	/* drop trailing slash; do we need this? */
+	if (*(lastname - 1) == '/') {
+		lastname -= 1;
+		if (lastname == sun->sun_path) {
+			r = -EINVAL;
+			kfatal("Implement\n");
+		}
+	}
+
+	while (*(lastname - 1) != '/' && (lastname != sun->sun_path))
+		lastname--;
+
+	r = VOP_CREAT(dirvn, &filevn, lastname, &attr);
 	if (r != 0)
 		return r;
 
@@ -170,7 +189,7 @@ sock_unix_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 
 	sun = (struct sockaddr_un *)addr;
 
-	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, 0, NULL);
+	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, 0);
 	if (r != 0) {
 		kfatal("Failed to connect unix sock %d\n", r);
 		return r;

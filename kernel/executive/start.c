@@ -59,7 +59,7 @@ init_thread_start(void *rsdp)
 	obj_direct_retain(root_vnode);
 	ps_curproc()->cwd = root_vnode;
 
-	r = vfs_lookup(root_vnode, &dev_shadowed, "dev", 0, NULL);
+	r = vfs_lookup(root_vnode, &dev_shadowed, "dev", 0);
 	kassert(r == 0);
 
 	dev_shadowed->vfsmountedhere = &dev_vfs;
