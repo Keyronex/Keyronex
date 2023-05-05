@@ -93,6 +93,8 @@ if not headers_only
 	kernel_sources += lwip_sources
 
 	kernel_sources += files(
+		'vendor/libkern/openbsd.c',
+
 		'libkern/libkern.c',
 
 		'object/object.c',
