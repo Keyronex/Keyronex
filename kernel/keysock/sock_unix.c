@@ -127,7 +127,8 @@ sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct sockaddr_un *sun;
 	int r;
-	vnode_t *filevn;
+	vnode_t *dirvn, *filevn;
+	const char *lastname;
 	struct sock_unix *sock = VNTOUNP(vn);
 	struct vattr attr = { 0 };
 
@@ -144,10 +145,15 @@ sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 	 * is inappropriate.
 	 */
 
-	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, kLookupCreate,
-	    &attr);
+	r = vfs_lookup_for_at(root_vnode, &dirvn, sun->sun_path, &lastname);
 	if (r != 0)
 		return r;
+
+	r = VOP_CREAT(dirvn, &filevn, lastname, &attr);
+	if (r != 0) {
+		obj_direct_release(dirvn);
+		return r;
+	}
 
 	filevn->sock = sock;
 
@@ -170,7 +176,7 @@ sock_unix_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 
 	sun = (struct sockaddr_un *)addr;
 
-	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, 0, NULL);
+	r = vfs_lookup(root_vnode, &filevn, sun->sun_path, 0);
 	if (r != 0) {
 		kfatal("Failed to connect unix sock %d\n", r);
 		return r;

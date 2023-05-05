@@ -151,12 +151,26 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 	if (fd == -1)
 		return -ENFILE;
 
-	r = vfs_lookup(dvn, &vn, path, 0, NULL);
+	r = vfs_lookup(dvn, &vn, path, 0);
 	if (r < 0 && flags & O_CREAT) {
 		vattr_t attr;
+		vnode_t *final_dirvn;
+		const char *lastpart;
+
 		attr.mode = S_IFREG | mode;
 		attr.type = VREG;
-		r = vfs_lookup(dvn, &vn, path, kLookupCreate, &attr);
+
+		r = vfs_lookup_for_at(dvn, &final_dirvn, path, &lastpart);
+		obj_direct_release(dvn);
+		if (r != 0)
+			return r;
+
+		r = VOP_CREAT(final_dirvn, &vn, lastpart, &attr);
+		obj_direct_release(&final_dirvn);
+		if (r != 0)
+			return r;
+	} else {
+		obj_direct_release(dvn);
 	}
 
 	if (r < 0) {
@@ -315,11 +329,11 @@ sys_link(const char *oldpath, const char *newpath)
 	newpathcpy = strdup(newpath);
 	newname = lsb_basename(newpathcpy);
 
-	r = vfs_lookup(oldvn, &oldvn, pathcpy, 0, NULL);
+	r = vfs_lookup(oldvn, &oldvn, pathcpy, 0);
 	if (r != 0)
 		goto out;
 
-	r = vfs_lookup(oldvn, &dvn_for_new, newpathcpy, kLookup2ndLast, NULL);
+	r = vfs_lookup(oldvn, &dvn_for_new, newpathcpy, kLookup2ndLast);
 	if (r != 0)
 		goto out;
 
@@ -352,7 +366,7 @@ sys_chdir(const char *path)
 #endif
 
 	cwd = ps_curcwd();
-	r = vfs_lookup(cwd, &vn, path, 0, NULL);
+	r = vfs_lookup(cwd, &vn, path, 0);
 	if (r != 0)
 		return r;
 
@@ -399,7 +413,7 @@ sys_mkdirat(int dirfd, const char *path, mode_t mode)
 	pathcpy = strdup(path);
 
 #if DEBUG_SYSCALLS == 0
-	kdprintf("SYS_MKDIRAT(fd: %d, name: %s, flags: %d)", dirfd, pathcpy,
+	kdprintf("SYS_MKDIRAT(fd: %d, name: %s, flags: %d)\n", dirfd, pathcpy,
 	    mode);
 #endif
 
@@ -416,7 +430,7 @@ sys_mkdirat(int dirfd, const char *path, mode_t mode)
 		vn = file->vn;
 	}
 
-	r = vfs_lookup(vn, &vn, pathcpy, kLookup2ndLast, NULL);
+	r = vfs_lookup(vn, &vn, pathcpy, kLookup2ndLast);
 	if (r != 0)
 		goto out;
 
@@ -434,7 +448,7 @@ sys_mkdirat(int dirfd, const char *path, mode_t mode)
 	while (*(lastname - 1) != '/' && (lastname != pathcpy))
 		lastname--;
 
-	attr.mode = (mode & 1777) & ~PSX_GETUMASK();
+	attr.mode = (mode & 01777) & ~PSX_GETUMASK();
 	r = VOP_MKDIR(vn, &new_vn, lastname, &attr);
 
 out:
@@ -479,7 +493,7 @@ sys_renameat(int orig_dirfd, const char *orig_path, int new_dirfd,
 
 #if DEBUG_SYSCALLS == 0
 	kdprintf(
-	    "SYS_RENAMEAT(orig_fd: %d, orig_path: %s, new_fd: %d, new_path: %s)",
+	    "SYS_RENAMEAT(orig_fd: %d, orig_path: %s, new_fd: %d, new_path: %s)\n",
 	    orig_dirfd, orig_pathcpy, new_dirfd, new_pathcpy);
 #endif
 
@@ -492,11 +506,11 @@ sys_renameat(int orig_dirfd, const char *orig_path, int new_dirfd,
 		goto out;
 
 	/* todo: these are incompatible with refcounting */
-	r = vfs_lookup(orig_dvn, &orig_dvn, orig_pathcpy, kLookup2ndLast, NULL);
+	r = vfs_lookup(orig_dvn, &orig_dvn, orig_pathcpy, kLookup2ndLast);
 	if (r != 0)
 		goto out;
 
-	r = vfs_lookup(new_dvn, &new_dvn, new_pathcpy, kLookup2ndLast, NULL);
+	r = vfs_lookup(new_dvn, &new_dvn, new_pathcpy, kLookup2ndLast);
 	if (r != 0)
 		goto out;
 
@@ -555,32 +569,35 @@ sys_read(int fd, void *buf, size_t nbyte)
 int
 sys_readlink(const char *path, char *buf, size_t bufsize)
 {
-#if 0
 	int r;
-	char *mypath = strdup(path), *link =NULL;
+	char *pathcpy = strdup(path), *link = NULL;
+	size_t linklen;
 	vnode_t *vn;
 
-	r = vfs_lookup(ps_curcwd(), &vn, mypath, kLookupNoFollow, NULL);
+	r = vfs_lookup(ps_curcwd(), &vn, pathcpy, kLookupNoFollowFinalSymlink);
 	if (r != 0)
 		goto out;
 
-	link =  kmem_alloc(256);
+	link = kmem_alloc(256);
 	r = VOP_READLINK(vn, link);
+
 	if (r != 0)
 		goto out;
 
-	strcpy(buf, link);
+	linklen = strlen(link);
+	if (linklen > bufsize + 1) {
+		r = -ENAMETOOLONG;
+	} else {
+		r = linklen + 1;
+		memcpy(buf, link, linklen + 1);
+	}
 
 out:
-	kmem_strfree(mypath);
+	kmem_strfree(pathcpy);
 	if (link != NULL)
-	kmem_free(link, 256);
+		kmem_free(link, 256);
 
 	return r;
-#else
-	kdprintf("readlink(%s): unimplemented\n", path);
-	return -ENOSYS;
-#endif
 }
 
 uintptr_t
@@ -680,6 +697,10 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	vnode_t *vn;
 	vattr_t vattr;
 	char *pathcpy = NULL;
+	int lookupflags = 0;
+
+	if (flags & AT_SYMLINK_NOFOLLOW)
+		lookupflags |= kLookupNoFollowFinalSymlink;
 
 #if DEBUG_SYSCALLS == 1
 	char *mypath = strdup(path);
@@ -698,13 +719,13 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 			goto out;
 		}
 
-		r = vfs_lookup(file->vn, &vn, pathcpy, 0, NULL);
+		r = vfs_lookup(file->vn, &vn, pathcpy, lookupflags);
 		if (r != 0)
 			goto out;
 	} else if (kind == kPXStatKindCWD) {
 		pathcpy = strdup(path);
 
-		r = vfs_lookup(ps_curcwd(), &vn, pathcpy, 0, NULL);
+		r = vfs_lookup(ps_curcwd(), &vn, pathcpy, lookupflags);
 		if (r != 0)
 			goto out;
 	} else {
@@ -798,7 +819,7 @@ sys_unlinkat(int fd, const char *path, int flags)
 
 	pathcpy = strdup(path);
 
-	r = vfs_lookup(vn, &dvn_with_file, pathcpy, kLookup2ndLast, NULL);
+	r = vfs_lookup(vn, &dvn_with_file, pathcpy, kLookup2ndLast);
 	if (r != 0)
 		goto out;
 

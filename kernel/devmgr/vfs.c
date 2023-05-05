@@ -5,6 +5,8 @@
 
 #include <sys/stat.h>
 
+#include <errno.h>
+
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
@@ -43,172 +45,233 @@ mode_to_vtype(mode_t mode)
 	}
 }
 
+struct lookup {
+	TAILQ_HEAD(namepart_tailq, namepart) components;
+};
+
+struct namepart {
+	TAILQ_ENTRY(namepart) tailq_entry;
+	char *name;
+	bool must_be_dir;
+};
+
 static int
-reduce(vnode_t *parent, vnode_t **vn)
+split_path(struct lookup *out, char *path, struct namepart *after)
 {
-	vnode_t *rvn;
+	char *last;
 
-	kassert(*vn != NULL);
-	rvn = obj_direct_retain(*vn);
-
-start:
-	while (rvn->vfsmountedhere != NULL) {
-		vnode_t *root;
-		int r;
-
-		r = rvn->vfsmountedhere->ops->root(rvn->vfsmountedhere, &root);
-		if (r < 0)
-			return r;
-
-		obj_direct_release(rvn);
-		rvn = root;
-	}
-	if (rvn->type == VLNK) {
-		char *buf = kmem_alloc(256);
-		vnode_t *target;
-		int r;
-
-		r = rvn->ops->readlink(rvn, buf);
-		if (r != 0) {
-			obj_direct_release(rvn);
-			return r;
+	char *component = strtok_r(path, "/", &last);
+	while (component != NULL) {
+		struct namepart *np = kmem_alloc(sizeof(struct namepart));
+		if (np == NULL) {
+			return -ENOMEM;
+		}
+		np->must_be_dir = false;
+		np->name = component;
+		if (np->name == NULL) {
+			kmem_free(np, sizeof(*np));
+			return -ENOMEM;
 		}
 
-		r = vfs_lookup(parent, &target, buf, 0, NULL);
-		if (r != 0) {
-			obj_direct_release(rvn);
-			return r;
+		/*
+		 * Insert the component into the appropriate location.
+		 */
+		if (after == NULL) {
+			TAILQ_INSERT_TAIL(&out->components, np, tailq_entry);
+		} else {
+			TAILQ_INSERT_AFTER(&out->components, after, np,
+			    tailq_entry);
+			after = np;
 		}
 
-		obj_direct_release(rvn);
-		rvn = target;
-
-		goto start;
+		component = strtok_r(NULL, "/", &last);
 	}
 
-	*vn = rvn;
+	if (after == NULL)
+		after = TAILQ_LAST(&out->components, namepart_tailq);
+
+	/*
+	 * Handle the case of a trailing slash.
+	 */
+	if (path[strlen(path) - 1] == '/' && after != NULL)
+		after->must_be_dir = true;
+
 	return 0;
 }
 
-int
-vfs_lookup(vnode_t *cwd, vnode_t **out, const char *pathname,
-    enum lookup_flags flags, vattr_t *attr)
-{
-	vnode_t *vn, *prevvn = NULL;
-	char path[255], *sub, *next;
-	size_t sublen;
-	bool last = false;
-	bool mustdir = flags & kLookupMustDir;
-	size_t len = strlen(pathname);
-	int r;
-
 #if 0
-	kdprintf("VFS_LOOOKUP %s\n", pathname);
+static void
+dump_state(const char *path, struct lookup *state, enum lookup_flags flags)
+{
+	struct namepart *np;
+
+	kdprintf("Lookup\n");
+	kdprintf(" Path: <%s>\n", path);
+
+	if (flags != 0) {
+		kdprintf("  Flags:");
+		if (flags & kLookupNoFollowFinalSymlink)
+			kdprintf(" no-follow");
+		if (flags & kLookup2ndLast)
+			kdprintf(" second-last");
+		kdprintf("\n");
+	}
+
+	TAILQ_FOREACH (np, &state->components, tailq_entry) {
+		kdprintf(" - <%s> %s\n", np->name,
+		    np->must_be_dir ? "(directory)" : "");
+	}
+}
 #endif
 
-	if (pathname[0] == '/' || cwd == NULL) {
-		vn = root_vnode;
-		if (*(pathname + 1) == '\0') {
-			*out = obj_direct_retain(vn);
-			return 0;
-		}
-	} else
-		vn = cwd;
+int
+vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
+    enum lookup_flags flags)
+{
+	struct lookup state;
+	vnode_t *vn;
+	struct namepart *np, *tmp;
+	char *pathcpy, *linkpaths[8];
+	size_t pathlen;
+	size_t nlinks = 0;
+	int r;
 
-	strcpy(path, pathname);
-	sub = path;
+	TAILQ_INIT(&state.components);
 
-	if (path[len - 1] == '/') {
-		size_t last = len - 1;
-		while (path[last] == '/')
-			path[last--] = '\0';
-		mustdir = true;
-		if (*path == '\0') {
-			*out = obj_direct_retain(vn);
-			return 0;
-		}
-	}
+	pathcpy = strdup(path);
+	pathlen = strlen(path) + 1;
+	split_path(&state, pathcpy, NULL);
 
-	obj_direct_retain(vn);
+	if (*path == '/')
+		vn = obj_direct_retain(root_vnode);
+	else
+		vn = obj_direct_retain(start);
 
-loop:
-	sublen = 0;
-	next = sub;
+	for (np = TAILQ_FIRST(&state.components); np != NULL;
+	     np = TAILQ_NEXT(np, tailq_entry)) {
+		vnode_t *next_vn;
 
-	while (*next != '\0' && *next != '/') {
-		next++;
-		sublen++;
-	}
+		if (TAILQ_NEXT(np, tailq_entry) == NULL &&
+		    flags & kLookup2ndLast)
+			break;
 
-	if (*next == '\0') {
-		if (flags & kLookup2ndLast)
-			goto out;
-		/* end of path */
-		last = true;
-	} else
-		*next = '\0';
-
-	if (strcmp(sub, ".") == 0 || sublen == 0)
-		goto next; /* . or trailing */
-
-	if (!last || !(flags & kLookupCreate)) {
-		vnode_t *new_vn = NULL;
-		r = vn->ops->lookup(vn, &new_vn, sub);
-		if (r == 0) {
-			r = reduce(vn, &new_vn);
-			if (r == 0) {
+		if (strcmp(np->name, ".") == 0) {
+			/* note: ought to check if is dir */
+			continue;
+		} else if (strcmp(np->name, "..") == 0) {
+#if 0
+			if (vn->flags & kVNodeRoot) {
+				next_vn = vn->vfs->vnodecovered;
 				obj_direct_release(vn);
-				vn = new_vn;
+				continue
+			}
+#endif
+		}
+
+		r = VOP_LOOKUP(vn, &next_vn, np->name);
+		if (r != 0)
+			break;
+
+		/*
+		 * note: later we'll add a kLookupNoFollowFinalMount also
+		 * for unmount()
+		 */
+		if (next_vn->vfsmountedhere != NULL) {
+			while (next_vn->vfsmountedhere != NULL) {
+				vnode_t *root;
+				int r;
+
+				r = next_vn->vfsmountedhere->ops->root(
+				    next_vn->vfsmountedhere, &root);
+				if (r < 0) {
+					obj_direct_release(next_vn);
+					goto out;
+				}
+
+				obj_direct_release(next_vn);
+				next_vn = root;
 			}
 		}
-	} else if (flags & kLookupCreate) {
-		vnode_t *new_vn;
-		r = vn->ops->create(vn, &new_vn, sub, attr);
-		if (r == 0)
-			vn = new_vn;
+
+		if (next_vn->type == VLNK &&
+		    !(TAILQ_NEXT(np, tailq_entry) == NULL &&
+			flags & kLookupNoFollowFinalSymlink)) {
+			char *buf;
+			int r;
+
+			if (nlinks + 1 > 8) {
+				obj_direct_release(next_vn);
+				r = -ELOOP;
+				goto out;
+			}
+
+			buf = linkpaths[nlinks++] = kmem_alloc(256);
+
+			r = VOP_READLINK(next_vn, buf);
+			if (r != 0) {
+				obj_direct_release(next_vn);
+				break;
+			}
+
+			split_path(&state, buf, np);
+
+			/* if link begins with /, go to root */
+			if (*buf == '/') {
+				obj_direct_release(vn);
+				vn = obj_direct_retain(root_vnode);
+			}
+
+			obj_direct_release(next_vn);
+		} else {
+			obj_direct_release(vn);
+			vn = next_vn;
+		}
 	}
-
-	if (r < 0) {
-		obj_direct_release(vn);
-		return r;
-	}
-
-next:
-	if (last)
-		goto out;
-
-	sub += sublen + 1;
-	if (prevvn)
-		obj_direct_release(prevvn);
-	prevvn = vn;
-	goto loop;
 
 out:
-	if (mustdir) {
-		kassert(prevvn != NULL);
-		r = reduce(prevvn, &vn);
-		if (r != 0) {
-			obj_direct_release(prevvn);
-			obj_direct_release(vn);
-			return r;
-		}
-	}
+	TAILQ_FOREACH_SAFE (np, &state.components, tailq_entry, tmp)
+		kmem_free(np, sizeof(*np));
 
-	if (flags & kLookup2ndLast) {
-		if (prevvn == NULL)
-			*out = vn;
-		else if (vn != NULL) {
-			*out = prevvn;
-			obj_direct_release(vn);
-		} else {
-			kfatal("Unreached\n");
-		}
-		return 0;
-	} else {
-		if (prevvn)
-			obj_direct_release(prevvn);
+	for (int i = 0; i < nlinks; i++)
+		kmem_free(linkpaths[i], 256);
 
+	kmem_free(pathcpy, pathlen);
+
+	if (r == 0)
 		*out = vn;
-		return 0;
+	else
+		obj_direct_release(vn);
+
+	return r;
+}
+
+int
+vfs_lookup_for_at(vnode_t *vn, vnode_t **dvn_out, const char *path,
+    const char **lastpart_out)
+{
+	int r;
+
+	const char *lastname;
+
+	r = vfs_lookup(vn, dvn_out, path, kLookup2ndLast);
+	if (r != 0)
+		return r;
+
+	lastname = path + strlen(path);
+
+	/* drop trailing slash; do we need this? */
+	if (*(lastname - 1) == '/') {
+		lastname -= 1;
+		if (lastname == path) {
+			r = -EINVAL;
+			kfatal("Implement\n");
+		}
 	}
+
+	while (*(lastname - 1) != '/' && (lastname != path))
+		lastname--;
+
+	*lastpart_out = lastname;
+
+	return 0;
 }

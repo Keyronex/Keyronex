@@ -264,11 +264,8 @@ struct vfsops {
 };
 
 enum lookup_flags {
-	kLookupCreate = 1 << 0,
-	kLookupFollowSymlinks = 1 << 1,
-	kLookupMustDir = 1 << 2,
-	kLookupNoFollow = 1 << 3,
-	kLookup2ndLast = 1 << 4,
+	kLookupNoFollowFinalSymlink = 1 << 1,
+	kLookup2ndLast = 1 << 2,
 };
 
 #define DIRENT_RECLEN(NAMELEN) \
@@ -309,8 +306,14 @@ int vfs_mountdev1(void);
 /*!
  * @brief Look up a pathname.
  */
-int vfs_lookup(vnode_t *cwd, vnode_t **out, const char *pathname,
-    enum lookup_flags flags, vattr_t *attr);
+int vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
+    enum lookup_flags flags);
+
+/*!
+ *  @brief Look up 2nd last part of path and get the remainder of the path.
+ */
+int vfs_lookup_for_at(vnode_t *vn, vnode_t **dvn_out, const char *path,
+    const char **lastpart_out);
 
 /*!
  * \defgroup pgcache Page Cache helpers
