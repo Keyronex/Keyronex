@@ -168,6 +168,7 @@ tools:
       - args: ['make', '-j@PARALLELISM@']
     install:
       - args: ['make', 'install']
+      - args: ['ln', '-sf', 'pkgconf', '@PREFIX@/bin/pkg-config']
 
 #
 # cross compilers
