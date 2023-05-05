@@ -235,6 +235,48 @@ packages:
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
+  - name: gettext
+    source:
+      subdir: 'ports'
+      url: 'https://ftp.gnu.org/gnu/gettext/gettext-0.21.1.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'gettext-0.21.1'
+      version: '0.21.1'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - libiconv
+      - ncurses
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--enable-nls'
+        - '--with-included-gettext'
+        - '--disable-c++'
+        - '--disable-libasprintf'
+        - '--disable-java'
+        - '--enable-shared'
+        - '--disable-static'
+        - '--enable-threads=posix'
+        - '--without-git'
+        - '--without-cvs'
+        - '--without-bzip2'
+        - '--without-xz'
+    build:
+      - args: ['make', '-C', 'gettext-runtime/intl', '-j@PARALLELISM@']
+      - args: ['make', '-C', 'gettext-runtime/intl', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
   - name: libunistring
     source:
       subdir: 'ports'
