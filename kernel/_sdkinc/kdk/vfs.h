@@ -310,6 +310,12 @@ int vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
     enum lookup_flags flags);
 
 /*!
+ *  @brief Look up 2nd last part of path and get the remainder of the path.
+ */
+int vfs_lookup_for_at(vnode_t *vn, vnode_t **dvn_out, const char *path,
+    const char **lastpart_out);
+
+/*!
  * \defgroup pgcache Page Cache helpers
  * These operations should not be used directly because they do nothing in terms
  * of locking. They are for filesystems to use from within their read/write

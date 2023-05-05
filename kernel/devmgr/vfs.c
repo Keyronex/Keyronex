@@ -234,7 +234,7 @@ out:
 
 	for (int i = 0; i < nlinks; i++)
 		kmem_free(linkpaths[i], 256);
-	
+
 	kmem_free(pathcpy, pathlen);
 
 	if (r == 0)
@@ -243,4 +243,35 @@ out:
 		obj_direct_release(vn);
 
 	return r;
+}
+
+int
+vfs_lookup_for_at(vnode_t *vn, vnode_t **dvn_out, const char *path,
+    const char **lastpart_out)
+{
+	int r;
+
+	const char *lastname;
+
+	r = vfs_lookup(vn, dvn_out, path, kLookup2ndLast);
+	if (r != 0)
+		return r;
+
+	lastname = path + strlen(path);
+
+	/* drop trailing slash; do we need this? */
+	if (*(lastname - 1) == '/') {
+		lastname -= 1;
+		if (lastname == path) {
+			r = -EINVAL;
+			kfatal("Implement\n");
+		}
+	}
+
+	while (*(lastname - 1) != '/' && (lastname != path))
+		lastname--;
+
+	*lastpart_out = lastname;
+
+	return 0;
 }

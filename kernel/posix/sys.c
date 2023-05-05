@@ -154,37 +154,23 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 	r = vfs_lookup(dvn, &vn, path, 0);
 	if (r < 0 && flags & O_CREAT) {
 		vattr_t attr;
+		vnode_t *final_dirvn;
+		const char *lastpart;
+
 		attr.mode = S_IFREG | mode;
 		attr.type = VREG;
-#if 0
-		r = vfs_lookup(dvn, &vn, path, kLookupCreate, &attr);
-#else
-		vnode_t *final_dirvn;
 
-		r = vfs_lookup(root_vnode, &final_dirvn, path, kLookup2ndLast);
+		r = vfs_lookup_for_at(dvn, &final_dirvn, path, &lastpart);
+		obj_direct_release(dvn);
 		if (r != 0)
 			return r;
 
-		const char *lastname;
-
-		lastname = path + strlen(path);
-
-		/* drop trailing slash; do we need this? */
-		if (*(lastname - 1) == '/') {
-			lastname -= 1;
-			if (lastname == path) {
-				r = -EINVAL;
-				kfatal("Implement\n");
-			}
-		}
-
-		while (*(lastname - 1) != '/' && (lastname != path))
-			lastname--;
-
-		r = VOP_CREAT(final_dirvn, &vn, lastname, &attr);
+		r = VOP_CREAT(final_dirvn, &vn, lastpart, &attr);
+		obj_direct_release(&final_dirvn);
 		if (r != 0)
 			return r;
-#endif
+	} else {
+		obj_direct_release(dvn);
 	}
 
 	if (r < 0) {
@@ -427,7 +413,7 @@ sys_mkdirat(int dirfd, const char *path, mode_t mode)
 	pathcpy = strdup(path);
 
 #if DEBUG_SYSCALLS == 0
-	kdprintf("SYS_MKDIRAT(fd: %d, name: %s, flags: %d)", dirfd, pathcpy,
+	kdprintf("SYS_MKDIRAT(fd: %d, name: %s, flags: %d)\n", dirfd, pathcpy,
 	    mode);
 #endif
 
@@ -462,7 +448,7 @@ sys_mkdirat(int dirfd, const char *path, mode_t mode)
 	while (*(lastname - 1) != '/' && (lastname != pathcpy))
 		lastname--;
 
-	attr.mode = (mode & 1777) & ~PSX_GETUMASK();
+	attr.mode = (mode & 01777) & ~PSX_GETUMASK();
 	r = VOP_MKDIR(vn, &new_vn, lastname, &attr);
 
 out:
@@ -507,7 +493,7 @@ sys_renameat(int orig_dirfd, const char *orig_path, int new_dirfd,
 
 #if DEBUG_SYSCALLS == 0
 	kdprintf(
-	    "SYS_RENAMEAT(orig_fd: %d, orig_path: %s, new_fd: %d, new_path: %s)",
+	    "SYS_RENAMEAT(orig_fd: %d, orig_path: %s, new_fd: %d, new_path: %s)\n",
 	    orig_dirfd, orig_pathcpy, new_dirfd, new_pathcpy);
 #endif
 

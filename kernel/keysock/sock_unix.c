@@ -128,6 +128,7 @@ sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 	struct sockaddr_un *sun;
 	int r;
 	vnode_t *dirvn, *filevn;
+	const char *lastname;
 	struct sock_unix *sock = VNTOUNP(vn);
 	struct vattr attr = { 0 };
 
@@ -144,29 +145,15 @@ sock_unix_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 	 * is inappropriate.
 	 */
 
-	r = vfs_lookup(root_vnode, &dirvn, sun->sun_path, kLookup2ndLast);
+	r = vfs_lookup_for_at(root_vnode, &dirvn, sun->sun_path, &lastname);
 	if (r != 0)
 		return r;
-
-	const char *lastname;
-
-	lastname = sun->sun_path + strlen(sun->sun_path);
-
-	/* drop trailing slash; do we need this? */
-	if (*(lastname - 1) == '/') {
-		lastname -= 1;
-		if (lastname == sun->sun_path) {
-			r = -EINVAL;
-			kfatal("Implement\n");
-		}
-	}
-
-	while (*(lastname - 1) != '/' && (lastname != sun->sun_path))
-		lastname--;
 
 	r = VOP_CREAT(dirvn, &filevn, lastname, &attr);
-	if (r != 0)
+	if (r != 0) {
+		obj_direct_release(dirvn);
 		return r;
+	}
 
 	filevn->sock = sock;
 
