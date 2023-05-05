@@ -19,6 +19,7 @@
 #include "executive/epoll.h"
 #include "kdk/amd64/mdamd64.h"
 #include "kdk/amd64/portio.h"
+#include "kdk/kerndefs.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -128,21 +129,11 @@ int
 posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 {
 	eprocess_t *eproc = ps_curproc();
-	vnode_t *vn;
+	vnode_t *vn = NULL;
 	int r;
-	int fd = -1;
-	kwaitstatus_t w;
+	int fd;
 
-	w = ke_wait(&eproc->fd_mutex, "sys_open:eproc->fd_mutex", false, false,
-	    -1);
-	kassert(w == kKernWaitStatusOK);
-
-	for (int i = 0; i < elementsof(eproc->files); i++) {
-		if (eproc->files[i] == NULL) {
-			fd = i;
-			break;
-		}
-	}
+	r = ps_allocfiles(1, &fd);
 
 #if DEBUG_SYSCALLS == 1
 	kdprintf("sys_open(%s,%d) to FD %d\n", path, mode, fd);
@@ -161,16 +152,13 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 		attr.type = VREG;
 
 		r = vfs_lookup_for_at(dvn, &final_dirvn, path, &lastpart);
-		obj_direct_release(dvn);
 		if (r != 0)
-			return r;
+			goto out;
 
 		r = VOP_CREAT(final_dirvn, &vn, lastpart, &attr);
 		obj_direct_release(&final_dirvn);
 		if (r != 0)
-			return r;
-	} else {
-		obj_direct_release(dvn);
+			goto out;
 	}
 
 	if (r < 0) {
@@ -198,7 +186,13 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 	r = fd;
 
 out:
-	ke_mutex_release(&eproc->fd_mutex);
+	if (r < 0) {
+		if (fd != -1)
+			eproc->files[fd] = NULL;
+		if (vn != NULL)
+			obj_direct_release(vn);
+	}
+
 	return r;
 }
 
@@ -208,6 +202,7 @@ sys_openat(int dirfd, const char *path, int flags, mode_t mode)
 	vnode_t *dvn;
 	mode_t umask = __atomic_load_n(&px_curproc()->umask, __ATOMIC_SEQ_CST);
 
+	/* note: will need refcount dealt with */
 	if (dirfd == AT_FDCWD) {
 		dvn = ps_curcwd();
 	} else {
@@ -322,7 +317,7 @@ sys_link(const char *oldpath, const char *newpath)
 	const char *newname;
 
 #if DEBUG_SYSCALLS == 1
-	kdprintf("SYS_LINK(old: %s, new: %s)", oldpath, newpath);
+	kdprintf("SYS_LINK(old: %s, new: %s)\n", oldpath, newpath);
 #endif
 
 	pathcpy = strdup(oldpath);
