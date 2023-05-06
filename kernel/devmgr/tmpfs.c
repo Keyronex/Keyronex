@@ -97,8 +97,14 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		/* root vnode is kept referenced */
 		vn->isroot = false;
 		if (node->attr.type == VREG) {
-			kfatal(
-			    "TmpFS regular nodes must always have their vnode.\n");
+			/*
+			 * please note:
+			 * a VREG vnode in tmpfs is only created once and then
+			 * it remains until no links or open handles to the file
+			 * remain
+			 */
+			vm_object_init_anonymous(&vn->vmobj, kernel_process.map,
+			    -1U);
 		} else if (node->attr.type == VCHR) {
 			devfs_setup_vnode(vn, node->attr.rdevice,
 			    node->attr.rdevops);
@@ -188,14 +194,6 @@ tmakenode(tmpnode_t *dn, const char *name, vattr_t *attr)
 	n->vn = NULL;
 
 	switch (attr->type) {
-	case VREG: {
-		// int r;
-		//  r = vm_object_new_anonymous(kernel_process.map, UINT32_MAX,
-		//       &n->reg.section);
-		// kassert(r == 0);
-		kfatal("Implement\n");
-		break;
-	}
 	case VDIR:
 		TAILQ_INIT(&n->dir.entries);
 		n->dir.parent = dn;
@@ -279,16 +277,24 @@ tmp_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
     off_t seqno)
 {
 	tmpnode_t *n = VNTOTN(dvn);
-	tmpdirent_t *tdent;
+	tmpdirent_t *tdent = NULL;
 	struct dirent *dentp = buf;
 	size_t nwritten = 0;
 	size_t i;
 
 	kassert(n->attr.type == VDIR);
 
-	tdent = TAILQ_FIRST(&n->dir.entries);
-
 	for (i = 0;; i++) {
+		if (i == 2) {
+			tdent = TAILQ_FIRST(&n->dir.entries);
+		} else if (i > 2 && tdent != NULL) {
+			tdent = TAILQ_NEXT(tdent, entries);
+		}
+
+		if (i >= 2 && tdent == NULL) {
+			goto finish;
+		}
+
 		if (i >= seqno) {
 			size_t reclen;
 			const char *name;
@@ -304,24 +310,21 @@ tmp_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
 					n :
 					n->dir.parent);
 			} else {
-				if (!tdent) {
-					i--;
+				if (tdent == NULL) {
 					goto finish;
 				}
 				name = tdent->name;
 				ino = (ino_t)tdent->node;
-				tdent = TAILQ_NEXT(tdent, entries);
 			}
 
 			reclen = DIRENT_RECLEN(strlen(name));
 
 			if ((void *)dentp + reclen > buf + nbyte - 1) {
-				i--;
 				goto finish;
 			}
 
 			dentp->d_ino = ino;
-			dentp->d_off = i++;
+			dentp->d_off = i;
 			dentp->d_reclen = reclen;
 			dentp->d_type = type;
 			strcpy(dentp->d_name, name);

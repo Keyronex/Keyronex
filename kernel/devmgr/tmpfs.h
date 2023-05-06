@@ -16,25 +16,17 @@ typedef struct tmpdirent {
 } tmpdirent_t;
 
 typedef struct tmpnode {
-	size_t refcnt;
-
-	/** Associated vnode; may be null. It shares its vmobj with this. */
-	vnode_t *vn;
-
-	vattr_t attr;
+	size_t linkcnt; /* number of links to the node */
+	vnode_t *vn;	/* associated vnode; permanent if VREG. */
+	vattr_t attr; /* file attributes */
 
 	union {
 		/* VDIR case */
 		struct {
 			TAILQ_HEAD(, tmpdirent) entries;
 			struct tmpnode *parent;
-			unsigned is_root: 1;
+			unsigned is_root : 1;
 		} dir;
-
-		/* VREG case */
-		struct {
-			vm_object_t *section;
-		} reg;
 	};
 } tmpnode_t;
 

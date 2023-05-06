@@ -387,6 +387,9 @@ int vm_map_fork(vm_map_t *map, vm_map_t **map_new);
 /*! @brief Allocate a new anonymous object and charge \p map for it.*/
 int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out);
 
+/*! @brief Initialise a new anonymous VM object and charge \p map for it.*/
+int vm_object_init_anonymous(vm_object_t *obj, vm_map_t *map, size_t size);
+
 extern kspinlock_t vmp_pfn_lock;
 
 #ifdef __cplusplus

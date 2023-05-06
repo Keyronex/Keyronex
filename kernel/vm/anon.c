@@ -88,9 +88,9 @@ conclude:
 	return 0;
 }
 
-int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
+int
+vm_object_init_anonymous(vm_object_t *obj, vm_map_t *map, size_t size)
 {
-	vm_object_t *obj = kmem_alloc(sizeof(*obj));
 	int r;
 
 	obj_initialise_header(&obj->objhdr, kObjTypeSection);
@@ -99,6 +99,16 @@ int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
 	r = vmp_amap_init(map, &obj->amap);
 	kassert(r == 0);
 
+	return r;
+}
+
+int
+vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
+{
+	vm_object_t *obj = kmem_alloc(sizeof(*obj));
+	int r;
+	r = vm_object_init_anonymous(obj, map, size);
+	kassert(r == 0);
 	*out = obj;
 	return r;
 }
