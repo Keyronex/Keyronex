@@ -29,6 +29,7 @@
 #include <abi-bits/fcntl.h>
 #include <keyronex/syscall.h>
 
+#include "devmgr/tmpfs.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -637,6 +638,21 @@ psx_init(void)
 
 	r = pxp_make_syscon_tty();
 	kassert(r == 0);
+
+#if 0
+	vnode_t *tmpvn;
+	r = vfs_lookup(root_vnode, &tmpvn, "/tmp", 0);
+	if (r != 0) {
+		kfatal("Failed to find /tmp folder for mounting over\n");
+	}
+
+	vfs_t *tmp_vfs = kmem_alloc(sizeof(*tmp_vfs));
+
+	r = tmpfs_vfsops.mount(tmp_vfs, tmpvn, NULL);
+	if (r != 0) {
+		kfatal("Failed to mount tmpfs at /tmp: %d\n", r);
+	}
+#endif
 
 	kprintf("Launching POSIX init...\n");
 	r = psx_fork(NULL, &posix_proc0, &posix_proc1);

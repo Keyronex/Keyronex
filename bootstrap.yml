@@ -394,6 +394,7 @@ packages:
       - args: [ 'cp', '-r', '@THIS_SOURCE_DIR@/etc', '@THIS_COLLECT_DIR@']
       - args: [ 'ln', '-s', 'usr/bin', '@THIS_COLLECT_DIR@/bin' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/dev' ]
+      - args: [ 'mkdir', '@THIS_COLLECT_DIR@/tmp' ]
 
 #
 # core gnu userland

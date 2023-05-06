@@ -16,6 +16,8 @@ typedef struct tmpdirent {
 } tmpdirent_t;
 
 typedef struct tmpnode {
+	size_t refcnt;
+
 	/** Associated vnode; may be null. It shares its vmobj with this. */
 	vnode_t *vn;
 
@@ -26,6 +28,7 @@ typedef struct tmpnode {
 		struct {
 			TAILQ_HEAD(, tmpdirent) entries;
 			struct tmpnode *parent;
+			unsigned is_root: 1;
 		} dir;
 
 		/* VREG case */
@@ -34,5 +37,7 @@ typedef struct tmpnode {
 		} reg;
 	};
 } tmpnode_t;
+
+extern struct vfsops tmpfs_vfsops;
 
 #endif /* KRX_DEVMGR_TMPFS_H */

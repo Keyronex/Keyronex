@@ -18,7 +18,6 @@ vnode_t *dev_vnode;
 
 extern struct vnops tmpfs_vnops;
 extern struct vnops tmpfs_spec_vnops;
-extern struct vfsops tmpfs_vfsops;
 
 int
 devfs_setup_vnode(vnode_t *vn, struct device *rdevice, struct vnops *devvnops)
@@ -95,11 +94,11 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops : &tmpfs_vnops;
 		vn->vfsp = vfs;
 		vn->vfsmountedhere = NULL;
+		/* root vnode is kept referenced */
 		vn->isroot = false;
 		if (node->attr.type == VREG) {
-			kfatal("fix\n");
-			// vn->section = node->reg.section;
-			vn->size = node->attr.size;
+			kfatal(
+			    "TmpFS regular nodes must always have their vnode.\n");
 		} else if (node->attr.type == VCHR) {
 			devfs_setup_vnode(vn, node->attr.rdevice,
 			    node->attr.rdevops);
@@ -108,6 +107,28 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		*vout = vn;
 		return 0;
 	}
+}
+
+int
+tmpfs_mount(vfs_t *vfs, vnode_t *over, void *data)
+{
+	tmpnode_t *root = kmem_alloc(sizeof(*root));
+	vnode_t *vroot;
+
+	memset(&root->attr, 0x0, sizeof(root->attr));
+	root->attr.mode = 0755;
+	root->attr.type = VDIR;
+	root->vn = NULL;
+	TAILQ_INIT(&root->dir.entries);
+
+	tmpfs_vget(vfs, &vroot, (ino_t)root);
+	vroot->isroot = true;
+	vfs->ops = &tmpfs_vfsops;
+	vfs->data = (uintptr_t)vroot;
+
+	over->vfsmountedhere = vfs;
+
+	return 0;
 }
 
 /*! Special mount procedure used for initial devfs. */
@@ -170,7 +191,7 @@ tmakenode(tmpnode_t *dn, const char *name, vattr_t *attr)
 	case VREG: {
 		// int r;
 		//  r = vm_object_new_anonymous(kernel_process.map, UINT32_MAX,
-		//      &n->reg.section);
+		//       &n->reg.section);
 		// kassert(r == 0);
 		kfatal("Implement\n");
 		break;
@@ -268,30 +289,46 @@ tmp_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
 	tdent = TAILQ_FIRST(&n->dir.entries);
 
 	for (i = 0;; i++) {
-		if (!tdent) {
-			i = INT32_MAX;
-			goto finish;
-		}
-
 		if (i >= seqno) {
-			size_t reclen = DIRENT_RECLEN(strlen(tdent->name));
+			size_t reclen;
+			const char *name;
+			ino_t ino;
+			unsigned char type = DT_UNKNOWN;
+
+			if (i == 0) {
+				name = ".";
+				ino = (ino_t)n;
+			} else if (i == 1) {
+				name = "..";
+				ino = (ino_t)(n->dir.parent == NULL ?
+					n :
+					n->dir.parent);
+			} else {
+				if (!tdent) {
+					i--;
+					goto finish;
+				}
+				name = tdent->name;
+				ino = (ino_t)tdent->node;
+				tdent = TAILQ_NEXT(tdent, entries);
+			}
+
+			reclen = DIRENT_RECLEN(strlen(name));
 
 			if ((void *)dentp + reclen > buf + nbyte - 1) {
 				i--;
 				goto finish;
 			}
 
-			dentp->d_ino = (uint64_t)tdent->node;
+			dentp->d_ino = ino;
 			dentp->d_off = i++;
 			dentp->d_reclen = reclen;
-			dentp->d_type = DT_UNKNOWN;
-			strcpy(dentp->d_name, tdent->name);
+			dentp->d_type = type;
+			strcpy(dentp->d_name, name);
 
 			nwritten += reclen;
 			dentp = (void *)dentp + reclen;
 		}
-
-		tdent = TAILQ_NEXT(tdent, entries);
 	}
 
 finish:
@@ -302,6 +339,7 @@ finish:
 struct vfsops tmpfs_vfsops = {
 	.root = tmpfs_root,
 	.vget = tmpfs_vget,
+	.mount = tmpfs_mount,
 };
 
 struct vnops tmpfs_vnops = {

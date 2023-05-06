@@ -65,8 +65,10 @@ typedef struct vnode {
 	/*! (~) */
 	vm_object_t vmobj;
 
-	/* (l) vnode is locked for paging I/O */
-	bool locked_for_paging : 1;
+	bool
+	    /* (l) vnode is locked for paging I/O */
+	    locked_for_paging : 1,
+	    isroot : 1;
 
 	/*! the vnode read/wriet lock */
 	kmutex_t lock;
@@ -81,8 +83,6 @@ typedef struct vnode {
 
 	/*! (~) mountpoint to which the vnode belongs */
 	struct vfs *vfsp;
-	/*! (~) whether this vnode is the root of its mountpoint */
-	bool isroot;
 	/*! (m) vfs mounted over this vnode */
 	struct vfs *vfsmountedhere;
 	/*! (fs-dependent) fs private data */
@@ -250,7 +250,7 @@ struct vfsops {
 	 * the filesystem is mounted as root.
 	 * @param data per-filesystem specific data
 	 */
-	int (*mount)(vfs_t *vfs, const char *path, void *data);
+	int (*mount)(vfs_t *vfs, vnode_t *over, void *data);
 
 	/*!
 	 * Get the root vnode of the filesystem.

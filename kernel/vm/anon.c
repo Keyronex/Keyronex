@@ -7,6 +7,8 @@
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/object.h"
+#include "kdk/objhdr.h"
 #include "kdk/vm.h"
 #include "vm/vm_internal.h"
 
@@ -84,4 +86,19 @@ vmp_amap_free(vm_map_t *map, struct vm_amap *amap)
 
 conclude:
 	return 0;
+}
+
+int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out)
+{
+	vm_object_t *obj = kmem_alloc(sizeof(*obj));
+	int r;
+
+	obj_initialise_header(&obj->objhdr, kObjTypeSection);
+	ke_mutex_init(&obj->mutex);
+	obj->is_anonymous = true;
+	r = vmp_amap_init(map, &obj->amap);
+	kassert(r == 0);
+
+	*out = obj;
+	return r;
 }

@@ -414,6 +414,15 @@ NinePFS::doGetattr(vtype_t realtype, ninep_fid_t fid, vattr_t &vattr)
 		break;
 	}
 
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		kdprintf("Getattr failed: %d\n", r);
+		goto out;
+	}
+
 	default: {
 		kfatal("9p error\n");
 	}
@@ -450,6 +459,7 @@ NinePFS::doGetattr(vtype_t realtype, ninep_fid_t fid, vattr_t &vattr)
 		vattr.mode |= S_IFSOCK;
 	}
 
+out:
 	ninep_buf_free(buf_in);
 	ninep_buf_free(buf_out);
 
@@ -527,6 +537,7 @@ NinePFS::create(vnode_t *vn, vnode_t **out, const char *name, vattr_t *attr)
 		ninep_buf_free(buf_out);
 
 		r = self->doGetattr(attr->type, newfid, vattr_out);
+		kassert(r == 0);
 		break;
 	}
 
@@ -1177,7 +1188,8 @@ struct vfsops NinePFS::vfsops = {
 	.root = root,
 };
 
-struct vnops NinePFS::vnops = { .read = read,
+struct vnops NinePFS::vnops = {
+	.read = read,
 	.write = write,
 	.getattr = getattr,
 
@@ -1190,4 +1202,5 @@ struct vnops NinePFS::vnops = { .read = read,
 	.mkdir = mkdir,
 	.readdir = readdir,
 
-	.readlink = readlink };
+	.readlink = readlink
+};
