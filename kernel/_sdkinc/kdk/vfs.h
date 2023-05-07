@@ -7,6 +7,7 @@
 #define KRX_KDK_VFS_H
 
 #include <sys/types.h>
+#include <sys/statfs.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -59,7 +60,7 @@ typedef struct vattr {
  *
  * (~) invariant from initialisation
  * (m) mount lock (todo)
- * (l) vnode lock
+ * (l) vnode->lock
  */
 typedef struct vnode {
 	/*! (~) */
@@ -103,9 +104,14 @@ typedef struct vnode {
 } vnode_t;
 
 /*!
- * Per-mountpoint structure.
+ * Per-mountpoint structure. most fields are stable from creation onwards, except
+ * refcnt, which is guarded by the mount_lock.
  */
 typedef struct vfs {
+	/*! (m) linkage in vfs_tailq */
+	TAILQ_ENTRY(vfs) tailq_entry;
+	/*! (m) reference count - unmountable till = 1 */
+	size_t refcnt;
 	/*! vnode over which the mount was made, if not root. */
 	vnode_t *vnodecovered;
 	/*! filesystem ops */
@@ -251,12 +257,14 @@ struct vfsops {
 	 * @param data per-filesystem specific data
 	 */
 	int (*mount)(vfs_t *vfs, vnode_t *over, void *data);
-
 	/*!
 	 * Get the root vnode of the filesystem.
 	 */
 	int (*root)(vfs_t *vfs, vnode_t **out);
-
+	/*!
+	 * Get FS info.
+	 */
+	int (*statfs)(vfs_t *vfs, struct statfs *out);
 	/*!
 	 * Get the vnode corresponding to the given inode number.
 	 */
@@ -336,6 +344,10 @@ extern vfs_t dev_vfs;
 extern vnode_t *dev_vnode;
 /*! Root vnode of the root filesystem. */
 extern vnode_t *root_vnode;
+/*! Mount spinlock. */
+extern kspinlock_t mount_lock;
+/*! All mounts list. */
+extern TAILQ_HEAD(vfs_tailq, vfs) vfs_tailq;
 
 #ifdef __cplusplus
 } /* extern "C" */

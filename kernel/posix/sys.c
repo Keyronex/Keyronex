@@ -653,9 +653,9 @@ sys_write(int fd, void *buf, size_t nbyte)
 
 	r = VOP_WRITE(file->vn, buf, nbyte, file->offset);
 	if (r < 0) {
+		kdprintf("VOP_WRITE got %d\n", r);
 		for (;;)
 			;
-		kdprintf("VOP_WRITE got %d\n", r);
 		return r;
 	}
 
@@ -797,6 +797,22 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 out:
 	if (pathcpy != NULL)
 		kmem_strfree(pathcpy);
+
+	return r;
+}
+
+int
+sys_statfs(const char *path, struct statfs *out)
+{
+	vnode_t *vn;
+	int r;
+
+	r = vfs_lookup(root_vnode, &vn, path, 0);
+	if (r != 0)
+		return r;
+
+	r = vn->vfsp->ops->statfs(vn->vfsp, out);
+	obj_direct_release(vn);
 
 	return r;
 }
@@ -1151,6 +1167,10 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysStat:
 		RET = sys_stat(ARG1, ARG2, (const char *)ARG3, ARG4,
 		    (struct stat *)ARG5);
+		break;
+
+	case kPXSysStatFS:
+		RET = sys_statfs((const char *)ARG1, (struct statfs *)ARG2);
 		break;
 
 	case kPXSysUnlinkAt:

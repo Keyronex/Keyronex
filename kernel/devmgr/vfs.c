@@ -7,12 +7,15 @@
 
 #include <errno.h>
 
+#include "kdk/kernel.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 
 vnode_t *root_vnode = NULL;
+kspinlock_t mount_lock = KSPINLOCK_INITIALISER;
+struct vfs_tailq vfs_tailq = TAILQ_HEAD_INITIALIZER(vfs_tailq);
 
 /*! this works as long as our defs align with Linux */
 enum vtype
@@ -177,12 +180,33 @@ vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
 		 * for unmount()
 		 */
 		if (next_vn->vfsmountedhere != NULL) {
+
 			while (next_vn->vfsmountedhere != NULL) {
 				vnode_t *root;
+				vfs_t *vfs;
+				ipl_t ipl;
 				int r;
+
+				ipl = ke_spinlock_acquire(&mount_lock);
+				vfs = next_vn->vfsmountedhere;
+				if (vfs)
+					vfs->refcnt++;
+				ke_spinlock_release(&mount_lock, ipl);
+
+				if (vfs == NULL)
+					break;
 
 				r = next_vn->vfsmountedhere->ops->root(
 				    next_vn->vfsmountedhere, &root);
+
+				/*
+				 * todo: create a vfs_release() function
+				 * if refcnt now drops to zero, we could proceed
+				 * with a temporarily-delayed unmounting
+				 */
+				__atomic_sub_fetch(&vfs->refcnt, 1,
+				    __ATOMIC_SEQ_CST);
+
 				if (r < 0) {
 					obj_direct_release(next_vn);
 					goto out;

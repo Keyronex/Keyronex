@@ -1094,7 +1094,80 @@ NinePFS::root(vfs_t *vfs, vnode_t **vout)
 	NinePFS *self = (NinePFS *)(vfs->data);
 	obj_direct_retain(self->root_node->vnode);
 	*vout = self->root_node->vnode;
+	TAILQ_INSERT_HEAD(&vfs_tailq, vfs, tailq_entry);
 	return 0;
+}
+
+int
+NinePFS::statfs(vfs_t *vfs, struct statfs *buf)
+{
+	NinePFS *self = (NinePFS *)(vfs->data);
+	iop_t *iop;
+	io_9p_request *req;
+	ninep_buf *buf_in, *buf_out;
+	int r = 0;
+
+	/* size[4] Tstatfs tag[2] fid[4] */
+	buf_in = ninep_buf_alloc("F");
+	/* size[4] Rstatfs tag[2] type[4] bsize[4] blocks[8] bfree[8] bavail[8]
+			       files[8] ffree[8] fsid[8] namelen[4] */
+	buf_out = ninep_buf_alloc("ddlllllld");
+
+	buf_in->data->tag = self->ninep_unique++;
+	buf_in->data->kind = k9pStatFs;
+	ninep_buf_addfid(buf_in, self->root_node->fid);
+	ninep_buf_close(buf_in);
+
+	req = self->new9pRequest(buf_in, NULL, buf_out, NULL);
+	iop = iop_new_ioctl(self->provider, kIOCTL9PEnqueueRequest,
+	    (vm_mdl_t *)req, sizeof(*req));
+	req->iop = iop;
+	iop_send_sync(iop);
+	iop_free(iop);
+	delete_kmem(req);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pStatFs + 1:
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		kassert(r != 0);
+		goto out;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	uint32_t type, bsize, namelen;
+	uint32_t fsid1, fsid2;
+
+	ninep_buf_getu32(buf_out, &type);
+	ninep_buf_getu32(buf_out, &bsize);
+	ninep_buf_getu64(buf_out, &buf->f_blocks);
+	ninep_buf_getu64(buf_out, &buf->f_bfree);
+	ninep_buf_getu64(buf_out, &buf->f_bavail);
+	ninep_buf_getu64(buf_out, &buf->f_files);
+	ninep_buf_getu64(buf_out, &buf->f_ffree);
+	ninep_buf_getu32(buf_out, &fsid1);
+	ninep_buf_getu32(buf_out, &fsid2);
+	ninep_buf_getu32(buf_out, &namelen);
+
+	buf->f_type = 0x01021997;
+	buf->f_bsize = bsize;
+	buf->f_namelen = namelen;
+	buf->f_fsid.__val[0] = fsid1;
+	buf->f_fsid.__val[1] = fsid2;;
+	buf->f_frsize = 0;
+	buf->f_flags = 0;
+
+out:
+	return r;
 }
 
 iop_return_t
@@ -1186,6 +1259,7 @@ NinePFS::completeIOP(iop_t *iop)
 
 struct vfsops NinePFS::vfsops = {
 	.root = root,
+	.statfs = statfs,
 };
 
 struct vnops NinePFS::vnops = {

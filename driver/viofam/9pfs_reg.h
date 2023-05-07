@@ -22,6 +22,7 @@ extern "C" {
 
 enum ninep_kind {
 	k9pLerror = 6,
+	k9pStatFs = 8,
 	k9pLopen = 12,
 	k9pLcreate = 14,
 	k9pReadlink = 22,

@@ -62,6 +62,7 @@ class NinePFS : public Device {
 
 	/*! VFS ops */
 	static int root(vfs_t *vfs, vnode_t **out);
+	static int statfs(vfs_t *vfs, struct statfs *buf);
 	static int vget(vfs_t *vfs, vnode_t **out, ino_t ino);
 
 	/*! VNode ops */
