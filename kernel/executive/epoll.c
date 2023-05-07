@@ -12,6 +12,7 @@
  */
 
 #include <sys/select.h>
+#include <errno.h>
 
 #include "epoll.h"
 #include "kdk/devmgr.h"
@@ -231,9 +232,11 @@ epoll_do_ctl(struct epoll *epoll, int op, int fd, struct epoll_event *event)
 	switch (op) {
 	case EPOLL_CTL_ADD: {
 		struct file *file;
+		eprocess_t *proc = ps_curproc();
 
-		file = ps_getfile(ps_curproc(), fd);
-		kassert(file != NULL);
+		file = ps_getfile(proc, fd);
+		if (file == NULL)
+			return -EBADF;
 
 		return epoll_do_add(epoll, file, file->vn, event);
 

@@ -136,7 +136,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 	r = ps_allocfiles(1, &fd);
 
 #if DEBUG_SYSCALLS == 1
-	kdprintf("sys_open(%s,%d) to FD %d\n", path, mode, fd);
+	kdprintf("%d: openat(%d,%s) to FD %d\n", eproc->id, mode, path, fd);
 #endif
 
 	if (fd == -1)
@@ -240,6 +240,10 @@ sys_close(int fd)
 
 	r = do_close(eproc, fd);
 
+#if DEBUG_SYSCALLS == 1
+	kdprintf("%d: Closed FD %d\n", eproc->id, fd);
+#endif
+
 	ke_mutex_release(&eproc->fd_mutex);
 
 	return r;
@@ -259,13 +263,18 @@ sys_dup(int oldfd)
 	}
 
 	for (int i = 0; i < elementsof(eproc->files); i++) {
-		if (eproc->files[i] == NULL)
+		if (eproc->files[i] == NULL) {
 			r = i;
+			break;
+		}
 	}
 
-	if (r >= 0) {
+	if (r >= 0)
 		eproc->files[r] = obj_direct_retain(eproc->files[oldfd]);
-	}
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("%d: dup %d into %d\n", eproc->id, oldfd, r);
+#endif
 
 out:
 	ke_mutex_release(&eproc->fd_mutex);
@@ -295,6 +304,10 @@ sys_dup3(int oldfd, int newfd, int flags)
 	}
 
 	eproc->files[newfd] = obj_direct_retain(eproc->files[oldfd]);
+
+#if DEBUG_SYSCALLS == 1
+	kdprintf("%d: dup3 %d into %d\n", eproc->id, oldfd, newfd);
+#endif
 
 out:
 	ke_mutex_release(&eproc->fd_mutex);
@@ -863,7 +876,16 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 			ev.events |= EPOLLOUT;
 
 		r = epoll_do_ctl(epoll, EPOLL_CTL_ADD, pfd->fd, &ev);
-		if (r != 0) {
+		switch (r) {
+		case 0:
+			continue;
+
+		case -EBADF:
+			pfds[i].revents = POLLNVAL;
+			epoll_do_destroy(epoll);
+			return 1;
+
+		default:
 			epoll_do_destroy(epoll);
 			return r;
 		}
