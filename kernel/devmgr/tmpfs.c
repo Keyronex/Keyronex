@@ -90,6 +90,8 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		vnode_t *vn = kmem_alloc(sizeof(*vn));
 		node->vn = vn;
 		obj_initialise_header(&vn->vmobj.objhdr, kObjTypeVNode);
+		ke_mutex_init(&vn->lock);
+		vn->locked_for_paging =false;
 		vn->type = node->attr.type;
 		vn->ops = vn->type == VCHR ? &tmpfs_spec_vnops : &tmpfs_vnops;
 		vn->vfsp = vfs;
@@ -175,6 +177,16 @@ tlookup(tmpnode_t *node, const char *filename)
 	return NULL;
 }
 
+static int tmakedirent(tmpnode_t *tdn, tmpnode_t * tn,  const char *name)
+{
+	tmpdirent_t *td =  kmem_alloc(sizeof(*td));
+	td->name = strdup(name);
+	td->node = tn;
+	tn->linkcnt++;
+	TAILQ_INSERT_TAIL(&tdn->dir.entries, td, entries);
+	return 0;
+}
+
 static tmpnode_t *
 tmakenode(tmpnode_t *dn, const char *name, vattr_t *attr)
 {
@@ -224,6 +236,33 @@ tmp_create(vnode_t *dvn, vnode_t **out, const char *pathname, vattr_t *attr)
 
 	kassert(dvn && dvn->vfsp && dvn->vfsp->ops && dvn->vfsp->ops->vget);
 	return dvn->vfsp->ops->vget(dvn->vfsp, out, (ino_t)n);
+}
+
+static int tmp_remove(vnode_t *dvn, const char *name)
+{
+	tmpnode_t *dn = VNTOTN(dvn);
+	tmpdirent_t *td;
+
+	kassert(dn->attr.type == VDIR);
+
+	TAILQ_FOREACH(td, &dn->dir.entries, entries) {
+		if (strcmp(td->name, name) == 0) {
+			TAILQ_REMOVE(&dn->dir.entries, td, entries);
+			kmem_strfree(td->name);
+			td->node->linkcnt--;
+			kmem_free(td, sizeof(*td));
+			return 0;
+		}
+	}
+
+	return -ENOENT;
+}
+
+static int tmp_link(vnode_t *dvn, vnode_t *vn, const char *name)
+{
+	tmpnode_t *dn = VNTOTN(dvn), *tn = VNTOTN(vn);
+	kassert(dn->attr.type == VDIR);
+	return tmakedirent(dn, tn, name);
 }
 
 int
@@ -346,11 +385,16 @@ struct vfsops tmpfs_vfsops = {
 };
 
 struct vnops tmpfs_vnops = {
-	.create = tmp_create,
-	.lookup = tmp_lookup,
-	.getattr = tmp_getattr,
 	.read = tmp_read,
 	.write = tmp_write,
+	.getattr = tmp_getattr,
+
+	.lookup = tmp_lookup,
+	.create = tmp_create,
+	.remove = tmp_remove,
+	.link = tmp_link,
+
+
 	.readdir = tmp_readdir,
 };
 
