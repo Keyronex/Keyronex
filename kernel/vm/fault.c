@@ -390,7 +390,7 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		objpage = kmem_alloc(sizeof(*objpage));
 		objpage->page = page;
 		objpage->page_index = key.page_index;
-		objpage->stat = kVMPObjPageClean;
+		objpage->stat = kVMPObjPageCreated;
 		RB_INSERT(vmp_objpage_rbtree, &obj->page_rbtree, objpage);
 
 		/*
@@ -469,7 +469,7 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		pmap_enter_pageable(map, page, vaddr,
 		    map_readonly ? (kVMRead | kVMExecute) : kVMAll);
 		if (!map_readonly)
-			vmp_objpage_dirty(objpage);
+			vmp_objpage_dirty(obj, objpage);
 
 		return kVMFaultRetOK;
 	}

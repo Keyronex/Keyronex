@@ -833,7 +833,7 @@ sys_unlinkat(int fd, const char *path, int flags)
 #endif
 
 	if (fd == AT_FDCWD) {
-		vn = ps_curcwd();
+		vn = obj_direct_retain(ps_curcwd());
 	} else {
 		struct file *file = ps_getfile(ps_curproc(), fd);
 
@@ -842,7 +842,7 @@ sys_unlinkat(int fd, const char *path, int flags)
 			goto out;
 		}
 
-		vn = file->vn;
+		vn = obj_direct_retain(file->vn);
 	}
 
 	pathcpy = strdup(path);

@@ -134,7 +134,7 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		    read_cr2());
 		md_intr_frame_trace(frame);
 		hang_until_told();
-		return;
+		goto out;
 	}
 
 	TAILQ_FOREACH (entry, entries, queue_entry) {
@@ -223,7 +223,7 @@ page_fault(hl_intr_frame_t *frame, void *arg)
 			kdprintf("vm_fault failed");
 
 			hang_until_told();
-			break;
+			return kVMFaultRetOK;
 
 		case kVMFaultRetPageShortage:
 			kfatal("path unimplemented\n");

@@ -16,6 +16,7 @@ vm_object_new_vnode(vm_object_t **out, struct vnode *vnode)
 	ke_mutex_init(&obj->mutex);
 
 	obj->is_anonymous = false;
+	obj->ndirty = 0;
 	RB_INIT(&obj->page_rbtree);
 	obj->vnode = vnode;
 

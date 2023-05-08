@@ -13,6 +13,7 @@
 #include <linux/magic.h>
 
 #include "kdk/kernel.h"
+#include "kdk/object.h"
 
 #define VNTOPN(VN) ((procnode_t *)(VN)->data)
 
@@ -67,6 +68,7 @@ proc_makevnode(procnode_t *pn, vnode_t **out)
 	vn->ops = &proc_vnops;
 	vn->vfsp = proc_vfs;
 	vn->vfsmountedhere = NULL;
+	vn->path = NULL;
 
 	if (pn->kind == kPNRoot)
 		vn->isroot = true;
@@ -86,10 +88,18 @@ static int
 proc_getvnode(procnode_t *pn, vnode_t **out)
 {
 	if (pn->vn != NULL) {
-		*out = pn->vn;
+		*out = obj_direct_retain(pn->vn);
 		return 0;
-	} else
-		return proc_makevnode(pn, out);
+	} else {
+		vnode_t *vn;
+		int r;
+		r = proc_makevnode(pn, &vn);
+		if (r == 0) {
+			obj_direct_retain(vn);
+		}
+		*out = vn;
+		return r;
+	}
 }
 
 static procnode_t *

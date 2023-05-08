@@ -22,6 +22,7 @@
  * Pages thus migrate slowly to the clean queue.
  */
 enum vmp_objpage_status {
+	kVMPObjPageCreated,
 	kVMPObjPageDirty,
 	kVMPObjPageClean,
 	kVMPObjPageCleaning,
@@ -141,7 +142,7 @@ vm_map_entry_t *vmp_map_find(vm_map_t *ps, vaddr_t vaddr);
 void vmp_objpage_created(struct vmp_objpage *opage);
 
 /*! @brief Inform the cleaner an object page is potentially dirty. */
-void vmp_objpage_dirty(struct vmp_objpage *opage);
+void vmp_objpage_dirty(vm_object_t *obj, struct vmp_objpage *opage);
 
 /*! @brief Initialise an amap. */
 int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);

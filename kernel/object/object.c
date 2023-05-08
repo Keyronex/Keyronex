@@ -13,9 +13,13 @@
  */
 
 #include "kdk/kernel.h"
+#include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
 #include "kdk/vfs.h"
+
+#define DEBUG_ADDRESSES 1
+#define DEBUG_VNODE 1
 
 struct file;
 
@@ -29,13 +33,31 @@ obj_initialise_header(object_header_t *hdr, object_type_t type)
 	hdr->name = NULL;
 }
 
+#if DEBUG_VNODE
+static void
+print_vnode_op(const char *op, vnode_t *vn)
+{
+	kdprintf(" ** %s vnode (type %d mount %s path %s)\n", op, vn->type,
+	    vn->vfsp ? vn->vfsp->mountpoint ? vn->vfsp->mountpoint : "?" : "?",
+	    vn->path ? vn->path : "?");
+}
+#endif
+
 void *
 obj_retain(object_header_t *hdr)
 {
-#ifdef DEBUG_OBJ
-	kdprintf("retain %p from %p - new rc = %d\n", hdr,
-	    __builtin_return_address(0), hdr->reference_count);
+#if DEBUG_ADDRESSES
+	kassert((uintptr_t)hdr >= HHDM_BASE &&
+	    (uintptr_t)hdr <= KHEAP_BASE + KHEAP_SIZE);
 #endif
+
+#if DEBUG_VNODE > 1
+	if (hdr->type == kObjTypeVNode) {
+		vnode_t *vn = (vnode_t *)hdr;
+		print_vnode_op("reTAINing", vn);
+	}
+#endif
+
 	__atomic_fetch_add(&hdr->reference_count, 1, __ATOMIC_SEQ_CST);
 	return (void *)hdr;
 }
@@ -49,16 +71,19 @@ obj_direct_retain(void *obj)
 void
 obj_release(object_header_t *hdr)
 {
-#ifdef DEBUG_OBJ
-	kdprintf("release %p from %p - new rc = %d\n", obj,
-	    __builtin_return_address(0), hdr->reference_count - 1);
-	kassert(obj != NULL);
+#if DEBUG_ADDRESSES
+	kassert((uintptr_t)hdr >= HHDM_BASE &&
+	    (uintptr_t)hdr <= KHEAP_BASE + KHEAP_SIZE);
+#endif
+
+#if DEBUG_VNODE > 1
+	if (hdr->type == kObjTypeVNode)
+		print_vnode_op("reLEASing", (vnode_t *)hdr);
 #endif
 
 	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
 	    1) {
-		if (hdr->type != kObjTypeVNode)
-			kassert(hdr->reference_count == 0);
+		kassert(hdr->reference_count == 0);
 
 		switch (hdr->type) {
 		case kObjTypeFile:
@@ -67,8 +92,16 @@ obj_release(object_header_t *hdr)
 
 		case kObjTypeVNode: {
 			vnode_t *vn = (vnode_t *)hdr;
-			kdprintf("VNode %p (vfs %s) to be freed\n", vn,
-			    vn->vfsp->mountpoint);
+
+#if DEBUG_VNODE > 0
+			print_vnode_op("INactivating", vn);
+#endif
+
+			if (vn == root_vnode || vn == dev_vnode)
+				kfatal("Attempted to release %s vnode\n",
+				    vn == root_vnode ? "root" : "/dev");
+			if (vn->ops->inactive != NULL)
+				vn->ops->inactive(vn);
 			break;
 		}
 
@@ -85,6 +118,6 @@ obj_release(object_header_t *hdr)
 void *
 obj_direct_release(void *obj)
 {
-	 obj_release(obj);
-	 return NULL;
+	obj_release(obj);
+	return NULL;
 }
