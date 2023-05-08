@@ -66,6 +66,8 @@ class NinePFS : public Device {
 	static int vget(vfs_t *vfs, vnode_t **out, ino_t ino);
 
 	/*! VNode ops */
+	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+	static int write(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 	static int create(vnode_t *vn, vnode_t **out, const char *name,
 	    vattr_t *attr);
 	static int getattr(vnode_t *vn, vattr_t *out);
@@ -74,14 +76,13 @@ class NinePFS : public Device {
 	static int rename(vnode_t *old_dvn, const char *old_name,
 	    vnode_t *new_dvn, const char *new_name);
 	static int lookup(vnode_t *vn, vnode_t **out, const char *pathname);
-	static int read(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 	static int mkdir(vnode_t *vn, vnode_t **out, const char *name,
 	    vattr_t *attr);
 	static off_t readdir(vnode_t *dvn, void *buf, size_t nbyte,
 	    size_t *bytesRead, off_t seqno);
 	static int readlink(vnode_t *vn, char *out);
+	static int inactive(vnode_t *vn);
 	static int remove(vnode_t *vn, const char *name);
-	static int write(vnode_t *vn, void *buf, size_t nbyte, off_t off);
 
 	/*! @brief IOP dispatch (read/write for pager). */
 	iop_return_t dispatchIOP(iop_t *iop);
@@ -95,7 +96,7 @@ class NinePFS : public Device {
 	 * @returns a ninepfs_node with a reference held, or NULL
 	 */
 	ninepfs_node *findOrCreateNodePair(vtype_t type, size_t size,
-	    struct ninep_qid *qid, int rdwrfid);
+	    struct ninep_qid *qid, int rdwrfid, const char *name = NULL);
 
 	/*!
 	 * @brief Get or create the built-in pager FID for a node.

@@ -101,9 +101,11 @@ loop:
 		opage = TAILQ_LAST(&dirty_queue, vmp_objpage_dirty_queue);
 
 		if (opage->page->wirecnt > 0) {
-			kdprintf("Page is wired\n") goto replace;
+			kdprintf("Page is wired\n");
+			goto replace;
 		}
 
+		kassert(opage->stat == kVMPObjPageDirty);
 		TAILQ_REMOVE(&dirty_queue, opage, dirtyqueue_entry);
 
 		r = page_trylock_owner(opage->page);
@@ -117,23 +119,36 @@ loop:
 
 		dirty = pmap_pageable_undirty(opage->page);
 		if (!dirty) {
+			opage->page->obj->ndirty--;
 			pgcleaner_stats.dirty--;
 			pgcleaner_stats.clean++;
 			TAILQ_INSERT_TAIL(&clean_queue, opage,
 			    dirtyqueue_entry);
 			page_unlock_owner(opage->page);
+
+			if (opage->page->obj->ndirty == 0)
+				/*
+				 * the number of dirty pages has dropped to 0;
+				 * it's time to drop the reference we made to
+				 * the vnode when its first page was dirtied..
+				 */
+				obj_direct_release(opage->page->obj->vnode);
 			continue;
 		} else {
 			kdprintf("Page %lu is dirty\n",
 			    (uintptr_t)opage->page->pfn);
 
-			vnode_t *vnode;
 			vm_mdl_t *mdl;
 			vm_page_t *page = opage->page;
+			vnode_t *vnode = obj_direct_retain(page->obj->vnode);
 
 			kassert(!page->obj->is_anonymous);
 
 			opage->stat = kVMPObjPageCleaning;
+			pgcleaner_stats.dirty--;
+			pgcleaner_stats.clean++;
+			TAILQ_INSERT_TAIL(&clean_queue, opage,
+			    dirtyqueue_entry);
 			page_unlock_owner(page);
 			vmp_release_pfn_lock(ipl);
 
@@ -157,6 +172,14 @@ loop:
 			iop_return_t res = iop_send_sync(iop);
 			kassert(res == kIOPRetCompleted);
 
+			page->obj->ndirty--;
+			if (page->obj->ndirty == 0) {
+
+				obj_direct_release(vnode);
+			}
+
+			obj_direct_release(vnode);
+
 			ipl = vmp_acquire_pfn_lock();
 		}
 	}
@@ -179,12 +202,20 @@ vmp_objpage_created(struct vmp_objpage *opage)
 }
 
 void
-vmp_objpage_dirty(struct vmp_objpage *opage)
+vmp_objpage_dirty(vm_object_t *obj, struct vmp_objpage *opage)
 {
 	ipl_t ipl = vmp_acquire_pfn_lock();
 
 	if (opage->stat == kVMPObjPageDirty)
 		goto out;
+
+	obj->ndirty++;
+	if (obj->ndirty == 1)
+		/*
+		 * note: dirty vnodes are retained until all pages cleaned.
+		 * when obj->ndirty hits one, the reference is added.
+		 */
+		obj_direct_retain(obj->vnode);
 
 	pgcleaner_stats.clean--;
 	pgcleaner_stats.dirty++;

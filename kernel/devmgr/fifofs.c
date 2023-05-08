@@ -84,6 +84,8 @@ sys_pipe(int *out, int flags)
 
 	read_vn = kmem_alloc(sizeof(vnode_t));
 	write_vn = kmem_alloc(sizeof(vnode_t));
+	memset(read_vn, 0x0, sizeof(*read_vn));
+	memset(write_vn, 0x0, sizeof(*write_vn));
 
 	vnode_init(read_vn, VFIFO, NULL, &fifofs_vnops);
 	vnode_init(write_vn, VFIFO, NULL, &fifofs_vnops);

@@ -77,6 +77,8 @@ typedef struct vnode {
 	struct vnops *ops;
 	/*! (~) type of vnode */
 	vtype_t type;
+	/*! (l) possible path (not reliable) */
+	char *path;
 
 	/*! (l) size of regular file */
 	size_t size;
@@ -241,6 +243,11 @@ struct vnops {
 	 * @brief Read a symlink's target.
 	 */
 	int (*readlink)(vnode_t *dvn, char *out);
+
+	/*!
+	 * @brief Vnode is no longer referenced at the time of call.
+	 */
+	int (*inactive)(vnode_t *vn);
 
 	/*!
 	 * @brief Change poll state.

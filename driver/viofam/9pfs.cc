@@ -188,7 +188,7 @@ NinePFS::doAttach()
 
 ninepfs_node *
 NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
-    int rdwrfid)
+    int rdwrfid, const char *name)
 {
 	struct ninepfs_node key, *node;
 	kwaitstatus_t w;
@@ -229,6 +229,8 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 	node->vnode->ops = &vnops;
 	node->vnode->vfsmountedhere = NULL;
 	node->vnode->size = size;
+	if (name != NULL)
+		node->vnode->path = strdup(name);
 	ke_mutex_init(&node->vnode->lock);
 
 	vm_object_new_vnode(&node->vnode->vmobj, node->vnode);
@@ -648,7 +650,7 @@ NinePFS::lookup(vnode_t *vn, vnode_t **out, const char *pathname)
 	/* TODO(high) !!! clunk the fid if we got an existing node.... */
 
 	res = self->findOrCreateNodePair(mode_to_vtype(vattr.mode), vattr.size,
-	    &qid, newfid);
+	    &qid, newfid, pathname);
 	if (!res)
 		return -ENOENT;
 
@@ -1094,6 +1096,40 @@ out:
 }
 
 int
+NinePFS::inactive(vnode_t *vn)
+{
+	NinePFS *self = (NinePFS *)vn->vfsp->data;
+	ninepfs_node *node = ((ninepfs_node *)vn->data);
+	kwaitstatus_t w;
+
+	/*
+	 * With no remaining references, the only place left where a vnode can
+	 * be found is in our node cache mutex. Therefore when that is acquired,
+	 * verify that the vnode has not been referenced in the meantime.
+	 */
+
+	w = ke_wait(&self->nodecache_mutex, "9p_inactive:nodecache_mutex",
+	    false, false, -1);
+	kassert(w == kKernWaitStatusOK);
+
+	kassert(vn->objhdr.reference_count == 0);
+
+	RB_REMOVE(ninepfs_node_rbt, &self->node_rbt, node);
+
+	vn->vmobj->amap.l3 = (vmp_amap_l3 *)0xdeadbeefdeadbeef;
+	memset(vn, 0xdeadbeef, sizeof(*vn));
+	memset(node, 0xdeadbeef, sizeof(*node));
+
+	// obj_direct_release(vn->vmobj);
+
+	ke_mutex_release(&self->nodecache_mutex);
+
+	kdprintf("Released the node.\n");
+
+	return 0;
+}
+
+int
 NinePFS::root(vfs_t *vfs, vnode_t **vout)
 {
 	NinePFS *self = (NinePFS *)(vfs->data);
@@ -1268,6 +1304,8 @@ struct vfsops NinePFS::vfsops = {
 	.statfs = statfs,
 };
 
+/* clang-format off */
+
 struct vnops NinePFS::vnops = {
 	.read = read,
 	.write = write,
@@ -1282,5 +1320,7 @@ struct vnops NinePFS::vnops = {
 	.mkdir = mkdir,
 	.readdir = readdir,
 
-	.readlink = readlink
+	.readlink = readlink,
+
+	.inactive = inactive,
 };

@@ -218,6 +218,7 @@ typedef struct vm_object {
 	object_header_t objhdr;
 	bool is_anonymous;
 	kmutex_t mutex;
+	size_t ndirty;
 	union {
 		struct vm_amap amap;
 		struct {
