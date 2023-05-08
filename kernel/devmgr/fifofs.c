@@ -49,7 +49,7 @@ struct fifonode {
 static void
 vnode_init(vnode_t *vn, vtype_t type, vfs_t *vfs, struct vnops *ops)
 {
-	obj_initialise_header(&vn->vmobj.objhdr, kObjTypeVNode);
+	obj_initialise_header(&vn->objhdr, kObjTypeVNode);
 	vn->type = type;
 	vn->vfsp = vfs;
 	vn->ops = ops;

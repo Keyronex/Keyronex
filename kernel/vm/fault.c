@@ -256,9 +256,8 @@ fault_anonymous(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		vm_page_t *page;
 		vaddr_t parent_offset;
 
-		/* can't fault from an anonymous parent */
-		kassert(!parent->is_anonymous &&
-		    parent->objhdr.type == kObjTypeVNode);
+		/* can't fault from an anonymous parent yet */
+		kassert(!parent->is_anonymous);
 		/* anonymous objects don't have parents */
 		kassert(!aobj);
 
@@ -402,7 +401,7 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		ke_mutex_release(&obj->mutex);
 		ke_mutex_release(&map->mutex);
 
-		vnode_t *vnode = (vnode_t *)obj;
+		vnode_t *vnode = obj->vnode;
 		vm_mdl_t *mdl = vm_mdl_alloc(1);
 
 #if 0
@@ -491,7 +490,7 @@ fault_object(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry, voff_t offset,
 		r = fault_anonymous(map, vaddr, entry, &obj->amap, obj, NULL,
 		    offset, flags, out);
 	} else {
-		kassert(obj->objhdr.type == kObjTypeVNode);
+		kassert(obj->vnode != NULL);
 		r = fault_vnode(map, vaddr, entry, obj, offset, flags, out,
 		    false);
 	}

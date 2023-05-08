@@ -60,7 +60,7 @@ proc_makevnode(procnode_t *pn, vnode_t **out)
 	vn = kmem_alloc(sizeof(*vn));
 	pn->vn = vn;
 
-	obj_initialise_header(&vn->vmobj.objhdr, kObjTypeVNode);
+	obj_initialise_header(&vn->objhdr, kObjTypeVNode);
 	ke_mutex_init(&vn->lock);
 	vn->locked_for_paging = false;
 	vn->type = pn_vtype(pn->kind);
@@ -73,8 +73,7 @@ proc_makevnode(procnode_t *pn, vnode_t **out)
 	else
 		vn->isroot = false;
 
-	if (vn->type == VREG)
-		vm_object_init_anonymous(&vn->vmobj, kernel_process.map, -1U);
+	vn->vmobj = NULL;
 
 	vn->data = (uintptr_t)pn;
 

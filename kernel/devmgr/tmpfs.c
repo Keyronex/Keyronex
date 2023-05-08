@@ -113,7 +113,7 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 	} else {
 		vnode_t *vn = kmem_alloc(sizeof(*vn));
 		node->vn = vn;
-		obj_initialise_header(&vn->vmobj.objhdr, kObjTypeVNode);
+		obj_initialise_header(&vn->objhdr, kObjTypeVNode);
 		ke_mutex_init(&vn->lock);
 		vn->locked_for_paging = false;
 		vn->type = node->attr.type;
@@ -123,14 +123,7 @@ tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 		/* root vnode is kept referenced */
 		vn->isroot = false;
 		if (node->attr.type == VREG) {
-			/*
-			 * please note:
-			 * a VREG vnode in tmpfs is only created once and then
-			 * it remains until no links or open handles to the file
-			 * remain
-			 */
-			vm_object_init_anonymous(&vn->vmobj, kernel_process.map,
-			    -1U);
+			vn->vmobj = node->reg.vmobj;
 		} else if (node->attr.type == VCHR) {
 			devfs_setup_vnode(vn, node->attr.rdevice,
 			    node->attr.rdevops);
@@ -243,6 +236,11 @@ tmakenode(tmpnode_t *dn, const char *name, vattr_t *attr)
 	n->vn = NULL;
 
 	switch (attr->type) {
+	case VREG:
+		vm_object_new_anonymous(kernel_process.map, UINT32_MAX,
+		    &n->reg.vmobj);
+		break;
+
 	case VDIR:
 		TAILQ_INIT(&n->dir.entries);
 		n->dir.parent = dn;

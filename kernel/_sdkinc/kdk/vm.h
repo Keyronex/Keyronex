@@ -29,6 +29,8 @@
 extern "C" {
 #endif
 
+struct vnode;
+
 /*! Fault flags. For convenience, matches amd64 MMU. */
 typedef enum vm_fault_flags {
 	kVMFaultPresent = 1,
@@ -211,9 +213,6 @@ RB_HEAD(vmp_objpage_rbtree, vmp_objpage);
 
 /*!
  * A mappable VM object. Either regular or anonymous.
- *
- * Note that in vnodes, this is embedded in the vnode structure (as its first
- * element.)
  */
 typedef struct vm_object {
 	object_header_t objhdr;
@@ -221,7 +220,10 @@ typedef struct vm_object {
 	kmutex_t mutex;
 	union {
 		struct vm_amap amap;
-		struct vmp_objpage_rbtree page_rbtree;
+		struct {
+			struct vnode *vnode; /* refcounting 'passed through' */
+			struct vmp_objpage_rbtree page_rbtree;
+		};
 	};
 } vm_object_t;
 
@@ -392,6 +394,9 @@ int vm_object_new_anonymous(vm_map_t *map, size_t size, vm_object_t **out);
 
 /*! @brief Initialise a new anonymous VM object and charge \p map for it.*/
 int vm_object_init_anonymous(vm_object_t *obj, vm_map_t *map, size_t size);
+
+/*! @brief Allocate a new vnode VM object. */
+int vm_object_new_vnode(vm_object_t **out, struct vnode *vnode);
 
 extern kspinlock_t vmp_pfn_lock;
 

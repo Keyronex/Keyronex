@@ -63,8 +63,7 @@ typedef struct vattr {
  * (l) vnode->lock
  */
 typedef struct vnode {
-	/*! (~) */
-	vm_object_t vmobj;
+	object_header_t objhdr;
 
 	bool
 	    /* (l) vnode is locked for paging I/O */
@@ -92,6 +91,8 @@ typedef struct vnode {
 	uintptr_t data2;
 
 	union {
+		vm_object_t *vmobj;
+
 		struct {
 			/*! (~) device */
 			struct device *rdevice;

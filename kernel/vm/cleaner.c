@@ -131,15 +131,14 @@ loop:
 			vm_mdl_t *mdl;
 			vm_page_t *page = opage->page;
 
-			kassert(page->obj->objhdr.type == kObjTypeVNode);
+			kassert(!page->obj->is_anonymous);
 
 			opage->stat = kVMPObjPageCleaning;
 			page_unlock_owner(page);
 			vmp_release_pfn_lock(ipl);
 
-			vnode = (vnode_t *)page->obj;
+			vnode = page->obj->vnode;
 			mdl = vm_mdl_alloc(1);
-
 
 			/* should handling of this move into the vnode op? */
 			size_t actual_size;

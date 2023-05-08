@@ -99,11 +99,16 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	    exact ? kVMemExact : 0, &addr);
 	if (r < 0) {
 		kdprintf("vm_map_object failed at vmem_xalloc with %d\n", r);
-		for (;;) asm("pause");
+		for (;;)
+			asm("pause");
 	}
 
-	if (object != NULL)
-		obj_direct_retain(object);
+	if (object != NULL) {
+		if (!object->is_anonymous)
+			obj_direct_retain(object->vnode);
+		else
+			obj_direct_retain(object);
+	}
 
 	vad = kmem_alloc(sizeof(vm_map_entry_t));
 	vad->start = (vaddr_t)addr;
@@ -224,8 +229,13 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			pmap_unenter_pageable_range(map, entry->start,
 			    entry->end);
 
-			if (entry->object)
-				obj_direct_release(entry->object);
+			if (entry->object) {
+				if (!entry->object->is_anonymous)
+					obj_direct_release(
+					    entry->object->vnode);
+				else
+					obj_direct_release(entry->object);
+			}
 
 			if (entry->has_anonymous)
 				vmp_amap_free(map, &entry->amap);

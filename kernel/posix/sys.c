@@ -83,7 +83,8 @@ vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 			    private ? kVMInheritCopy : kVMInheritShared,
 			    flags & MAP_FIXED, private);
 		} else {
-			r = vm_map_object(proc->map, &file->vn->vmobj, &at_addr,
+			kassert(file->vn->vmobj != NULL);
+			r = vm_map_object(proc->map, file->vn->vmobj, &at_addr,
 			    len, offset, vmprot, kVMAll,
 			    private ? kVMInheritCopy : kVMInheritShared,
 			    flags & MAP_FIXED, private);

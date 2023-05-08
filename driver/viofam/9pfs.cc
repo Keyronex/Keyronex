@@ -13,6 +13,7 @@
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
+#include "kdk/objhdr.h"
 
 #include "9pfs.hh"
 
@@ -219,7 +220,7 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 	node->fid = rdwrfid;
 	node->has_generic_fid = false;
 	node->vnode = new (kmem_general) vnode;
-	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
+	obj_initialise_header(&node->vnode->objhdr, kObjTypeVNode);
 	if (rdwrfid == 1)
 		node->vnode->isroot = true;
 	node->vnode->data = (uintptr_t)node;
@@ -230,9 +231,7 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 	node->vnode->size = size;
 	ke_mutex_init(&node->vnode->lock);
 
-	node->vnode->vmobj.is_anonymous = false;
-	ke_mutex_init(&node->vnode->vmobj.mutex);
-	RB_INIT(&node->vnode->vmobj.page_rbtree);
+	vm_object_new_vnode(&node->vnode->vmobj, node->vnode);
 
 	RB_INSERT(ninepfs_node_rbt, &node_rbt, node);
 
@@ -1168,7 +1167,8 @@ NinePFS::statfs(vfs_t *vfs, struct statfs *buf)
 	buf->f_bsize = bsize;
 	buf->f_namelen = namelen;
 	buf->f_fsid.__val[0] = fsid1;
-	buf->f_fsid.__val[1] = fsid2;;
+	buf->f_fsid.__val[1] = fsid2;
+
 	buf->f_frsize = 0;
 	buf->f_flags = 0;
 

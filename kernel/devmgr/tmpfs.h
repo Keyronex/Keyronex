@@ -21,6 +21,11 @@ typedef struct tmpnode {
 	vattr_t attr; /* file attributes */
 
 	union {
+		/* VREG case */
+		struct {
+			vm_object_t *vmobj; /*!< anon VMO, referenced */
+		} reg;
+
 		/* VDIR case */
 		struct {
 			TAILQ_HEAD(, tmpdirent) entries;

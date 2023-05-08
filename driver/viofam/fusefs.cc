@@ -190,7 +190,7 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 	node->have_pager_file_handle = false;
 	node->inode = fuse_ino;
 	node->vnode = new (kmem_general) vnode;
-	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
+	obj_initialise_header(&node->vnode->objhdr, kObjTypeVNode);
 	node->vnode->data = (uintptr_t)node;
 	node->vnode->type = type;
 	node->vnode->vfsp = vfs;
@@ -199,9 +199,7 @@ FuseFS::findOrCreateNodePair(vtype_t type, size_t size, ino_t fuse_ino,
 	node->vnode->size = size;
 	ke_mutex_init(&node->vnode->lock);
 
-	node->vnode->vmobj.is_anonymous = false;
-	ke_mutex_init(&node->vnode->vmobj.mutex);
-	RB_INIT(&node->vnode->vmobj.page_rbtree);
+	vm_object_new_vnode(&node->vnode->vmobj, node->vnode);
 
 	RB_INSERT(fusefs_node_rbt, &node_rbt, node);
 
