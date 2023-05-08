@@ -1484,8 +1484,11 @@ packages:
       - host-gcc
     pkgs_required:
       - mlibc
+      - libSM
       - libX11
+      - libXmu
       - libXrandr
+      - libXt
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
