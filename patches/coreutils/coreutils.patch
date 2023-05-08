@@ -1,0 +1,24 @@
+diff -ruNp -x '*.[^ch]' coreutils-9.2/src/fs.h coreutils/src/fs.h
+--- coreutils-9.2/src/fs.h	2023-03-13 18:17:28.000000000 +0000
++++ coreutils/src/fs.h	2023-05-07 19:09:34.668224696 +0100
+@@ -2,7 +2,7 @@
+    Please send additions to bug-coreutils@gnu.org and meskes@debian.org.
+    This file is generated automatically from ./src/stat.c. */
+ 
+-#if defined __linux__ || defined __ANDROID__
++#if defined __linux__ || defined __ANDROID__ || defined __keyronex__
+ # define S_MAGIC_AAFS 0x5A3C69F0
+ # define S_MAGIC_ACFS 0x61636673
+ # define S_MAGIC_ADFS 0xADF5
+diff -ruNp -x '*.[^ch]' coreutils-9.2/src/stat.c coreutils/src/stat.c
+--- coreutils-9.2/src/stat.c	2023-03-13 18:08:10.000000000 +0000
++++ coreutils/src/stat.c	2023-05-07 19:09:29.466115758 +0100
+@@ -265,7 +265,7 @@ human_fstype (STRUCT_STATVFS const *stat
+ #else
+   switch (statfsbuf->f_type)
+     {
+-# if defined __linux__ || defined __ANDROID__
++# if defined __linux__ || defined __ANDROID__ || defined __keyronex__
+ 
+       /* Compare with what's in libc:
+          f=/a/libc/sysdeps/unix/sysv/linux/linux_fsinfo.h

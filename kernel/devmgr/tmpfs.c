@@ -3,8 +3,11 @@
  * Created on Fri Mar 03 2023.
  */
 
-#include "abi-bits/errno.h"
-#include "dirent.h"
+#include <sys/errno.h>
+
+#include <dirent.h>
+#include <linux/magic.h>
+
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
@@ -78,6 +81,27 @@ tmpfs_root(vfs_t *vfs, vnode_t **out)
 }
 
 static int
+tmpfs_statfs(vfs_t *vfs, struct statfs *out)
+{
+	out->f_type = S_MAGIC_TMPFS;
+	out->f_bsize = PGSIZE;
+	out->f_blocks = vmstat.ntotal;
+	out->f_bfree = vmstat.nfree;
+	out->f_bavail = vmstat.nfree;
+
+	out->f_files = 0;
+	out->f_ffree = vmstat.ntotal * PGSIZE /
+	    (sizeof(struct tmpnode) + sizeof(vnode_t));
+	out->f_fsid.__val[0] = 0;
+	out->f_fsid.__val[1] = 1;
+	out->f_namelen = 255;
+	out->f_frsize = 0;
+	out->f_flags = 0;
+
+	return 0;
+}
+
+static int
 tmpfs_vget(vfs_t *vfs, vnode_t **vout, ino_t ino)
 {
 	tmpnode_t *node = (tmpnode_t *)ino;
@@ -133,8 +157,14 @@ tmpfs_mount(vfs_t *vfs, vnode_t *over, void *data)
 	vroot->isroot = true;
 	vfs->ops = &tmpfs_vfsops;
 	vfs->data = (uintptr_t)vroot;
+	vfs->vnodecovered = over;
+	vfs->type = "tmpfs";
+	vfs->devname = "tmpfs";
+	vfs->mountpoint = "/tmp"; /* fixme */
 
+	/* todo: lock mount_lock */
 	over->vfsmountedhere = vfs;
+	TAILQ_INSERT_TAIL(&vfs_tailq, vfs, tailq_entry);
 
 	return 0;
 }
@@ -155,6 +185,12 @@ vfs_mountdev1(void)
 	dev_vfs.ops = &tmpfs_vfsops;
 	dev_vfs.data = (uintptr_t)vroot;
 	dev_vnode = vroot;
+	dev_vfs.devname = "tmpfs";
+	dev_vfs.type = "tmpfs";
+	dev_vfs.mountpoint = "/dev";
+	dev_vfs.vnodecovered = NULL;
+
+	TAILQ_INSERT_HEAD(&vfs_tailq, &dev_vfs, tailq_entry);
 
 	return 0;
 }
@@ -390,6 +426,7 @@ finish:
 
 struct vfsops tmpfs_vfsops = {
 	.root = tmpfs_root,
+	.statfs = tmpfs_statfs,
 	.vget = tmpfs_vget,
 	.mount = tmpfs_mount,
 };

@@ -63,6 +63,7 @@ init_thread_start(void *rsdp)
 	kassert(r == 0);
 
 	dev_shadowed->vfsmountedhere = &dev_vfs;
+	dev_vfs.vnodecovered = dev_shadowed;
 
 	int fbdev_init(void);
 	fbdev_init();

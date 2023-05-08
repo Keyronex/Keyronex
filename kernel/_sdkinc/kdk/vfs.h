@@ -120,6 +120,13 @@ typedef struct vfs {
 	struct device *dev;
 	/*! fs-private data */
 	uintptr_t data;
+
+	/* device name or similar */
+	const char *devname;
+	/* mountpoint */
+	const char *mountpoint;
+	/* fs type */
+	const char *type;
 } vfs_t;
 
 struct vnops {

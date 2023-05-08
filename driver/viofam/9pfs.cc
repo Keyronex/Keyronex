@@ -62,6 +62,10 @@ NinePFS::NinePFS(device_t *provider, vfs_t *vfs)
 	vfs->ops = &vfsops;
 	vfs->data = (uintptr_t)this;
 	vfs->dev = this;
+
+	vfs->devname = "/dev/vio9pprt0";
+	vfs->mountpoint = "/";
+	vfs->type = "9pfs";
 }
 
 io_9p_request *
@@ -216,6 +220,8 @@ NinePFS::findOrCreateNodePair(vtype_t type, size_t size, struct ninep_qid *qid,
 	node->has_generic_fid = false;
 	node->vnode = new (kmem_general) vnode;
 	obj_initialise_header(&node->vnode->vmobj.objhdr, kObjTypeVNode);
+	if (rdwrfid == 1)
+		node->vnode->isroot = true;
 	node->vnode->data = (uintptr_t)node;
 	node->vnode->type = type;
 	node->vnode->vfsp = vfs;

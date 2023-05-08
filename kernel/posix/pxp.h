@@ -124,9 +124,9 @@ typedef struct posix_thread {
 	    false, -1)
 #define px_release_proctree_mutex() ke_mutex_release(&px_proctree_mutex);
 #endif
-#define px_acquire_proctree_mutex() ke_spinlock_acquire(&px_proctree_mutex)
+#define px_acquire_proctree_mutex() ke_spinlock_acquire(&px_proctree_lock)
 #define px_release_proctree_mutex(IPL) \
-	ke_spinlock_release(&px_proctree_mutex, IPL);
+	ke_spinlock_release(&px_proctree_lock, IPL);
 
 static inline posix_proc_t *
 px_curproc(void)
@@ -180,6 +180,6 @@ void psx_signal_pgroup(struct posix_pgroup *pg, int sig);
 
 void pxp_ast(hl_intr_frame_t *frame);
 
-extern kspinlock_t px_proctree_mutex;
+extern kspinlock_t px_proctree_lock;
 
 #endif /* KRX_POSIX_PASP_H */

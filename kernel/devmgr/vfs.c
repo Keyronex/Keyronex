@@ -162,13 +162,12 @@ vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
 			/* note: ought to check if is dir */
 			continue;
 		} else if (strcmp(np->name, "..") == 0) {
-#if 0
-			if (vn->flags & kVNodeRoot) {
-				next_vn = vn->vfs->vnodecovered;
+			/* note: shuld lock mount_lock and probably loop */
+			if (vn->isroot && vn->vfsp->vnodecovered != NULL) {
+				next_vn = vn->vfsp->vnodecovered;
 				obj_direct_release(vn);
-				continue
+				vn = next_vn;
 			}
-#endif
 		}
 
 		r = VOP_LOOKUP(vn, &next_vn, np->name);

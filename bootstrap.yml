@@ -394,6 +394,7 @@ packages:
       - args: [ 'cp', '-r', '@THIS_SOURCE_DIR@/etc', '@THIS_COLLECT_DIR@']
       - args: [ 'ln', '-s', 'usr/bin', '@THIS_COLLECT_DIR@/bin' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/dev' ]
+      - args: [ 'mkdir', '@THIS_COLLECT_DIR@/proc' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/tmp' ]
 
 #
@@ -407,6 +408,7 @@ packages:
       format: 'tar.xz'
       version: '9.2'
       extract_path: 'coreutils-9.2'
+      patch-path-strip: 1
       tools_required:
         - host-autoconf-2.69
         - host-automake-1.16

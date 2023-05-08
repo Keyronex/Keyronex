@@ -61,7 +61,7 @@ static posix_thread_t posix_thread0;
 static struct posix_pgroup posix_pgroup0;
 static struct posix_session posix_session0;
 static posix_proc_t *posix_proc1;
-kspinlock_t px_proctree_mutex;
+kspinlock_t px_proctree_lock;
 static TAILQ_HEAD(, posix_proc) psx_allprocs = TAILQ_HEAD_INITIALIZER(
     psx_allprocs);
 static RB_HEAD(posix_pgroup_rb, posix_pgroup) pgroup_rb;
@@ -618,7 +618,7 @@ psx_init(void)
 {
 	int r;
 
-	ke_spinlock_init(&px_proctree_mutex);
+	ke_spinlock_init(&px_proctree_lock);
 
 	proc_init_common(&posix_proc0, NULL, &posix_thread0, NULL,
 	    &kernel_process, ps_curthread());
@@ -639,7 +639,7 @@ psx_init(void)
 	r = pxp_make_syscon_tty();
 	kassert(r == 0);
 
-#if 0
+#if 1
 	vnode_t *tmpvn;
 	r = vfs_lookup(root_vnode, &tmpvn, "/tmp", 0);
 	if (r != 0) {
@@ -651,6 +651,23 @@ psx_init(void)
 	r = tmpfs_vfsops.mount(tmp_vfs, tmpvn, NULL);
 	if (r != 0) {
 		kfatal("Failed to mount tmpfs at /tmp: %d\n", r);
+	}
+#endif
+
+#if 1
+	extern struct vfsops proc_vfsops;
+	vnode_t *procvn;
+
+	r = vfs_lookup(root_vnode, &procvn, "/proc", 0);
+	if (r != 0) {
+		kfatal("Failed to find /proc folder for mounting over\n");
+	}
+
+	vfs_t *proc_vfs = kmem_alloc(sizeof(*proc_vfs));
+
+	r = proc_vfsops.mount(proc_vfs, procvn, NULL);
+	if (r != 0) {
+		kfatal("Failed to mount procfs at /proc: %d\n", r);
 	}
 #endif
 

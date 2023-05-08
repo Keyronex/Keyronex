@@ -793,6 +793,7 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	sb->st_ctim = vattr.ctim;
 	sb->st_mtim = vattr.mtim;
 	sb->st_ino = vattr.ino;
+	sb->st_dev = (dev_t)vn->vfsp;
 
 out:
 	if (pathcpy != NULL)

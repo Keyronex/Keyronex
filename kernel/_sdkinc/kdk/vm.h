@@ -298,6 +298,9 @@ paddr_t vm_translate(vaddr_t vaddr);
 /*! @brief Allocate an MDL of a given size without initialising page entries. */
 vm_mdl_t *vm_mdl_alloc(size_t npages);
 
+/*! @brief Allocate an MDL to cover and pin the given range of memory. */
+vm_mdl_t *vm_mdl_from_range(vaddr_t addr, size_t nbytes);
+
 /*! @brief Allocate an MDL populated with pages for a buffer. */
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
 
