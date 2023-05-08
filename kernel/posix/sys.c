@@ -580,7 +580,7 @@ sys_readlink(const char *path, char *buf, size_t bufsize)
 	int r;
 	char *pathcpy = strdup(path), *link = NULL;
 	size_t linklen;
-	vnode_t *vn;
+	vnode_t *vn = NULL;
 
 	r = vfs_lookup(ps_curcwd(), &vn, pathcpy, kLookupNoFollowFinalSymlink);
 	if (r != 0)
@@ -588,6 +588,7 @@ sys_readlink(const char *path, char *buf, size_t bufsize)
 
 	link = kmem_alloc(256);
 	r = VOP_READLINK(vn, link);
+	vn = obj_direct_release(vn);
 
 	if (r != 0)
 		goto out;
@@ -702,7 +703,7 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
     struct stat *sb)
 {
 	int r;
-	vnode_t *vn;
+	vnode_t *vn = NULL;
 	vattr_t vattr;
 	char *pathcpy = NULL;
 	int lookupflags = 0;
@@ -749,10 +750,8 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	}
 
 	r = VOP_GETATTR(vn, &vattr);
-	if (r != 0) {
-		obj_direct_release(vn);
+	if (r != 0)
 		goto out;
-	}
 
 	memset(sb, 0x0, sizeof(*sb));
 	sb->st_mode = vattr.mode & ~S_IFMT;
@@ -796,6 +795,9 @@ sys_stat(enum posix_stat_kind kind, int fd, const char *path, int flags,
 	sb->st_dev = (dev_t)vn->vfsp;
 
 out:
+	if (vn != NULL)
+		obj_direct_release(vn);
+
 	if (pathcpy != NULL)
 		kmem_strfree(pathcpy);
 
@@ -1222,6 +1224,10 @@ posix_syscall(hl_intr_frame_t *frame)
 	case kPXSysRenameAt:
 		RET = sys_renameat(ARG1, (const char *)ARG2, ARG3,
 		    (const char *)ARG4);
+		break;
+
+	case kPXSysFCntl:
+		RET = 0;
 		break;
 
 	case kPXSysEPollCreate:

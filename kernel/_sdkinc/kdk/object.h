@@ -42,8 +42,10 @@ void *obj_direct_retain(void *obj);
 /*!
  * Release a reference held via a direct pointer to an object (as e.g. by a call
  * to obi_retain() or obi_initialise_header()).
+ *
+ * @returns NULL for covenience
  */
-void obj_direct_release(void *obj);
+void *obj_direct_release(void *obj);
 
 #ifdef __cplusplus
 } /* extern "C" */

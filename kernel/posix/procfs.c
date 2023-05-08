@@ -242,8 +242,6 @@ proc_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t *bytesRead,
 			ino_t ino;
 			unsigned char type = DT_UNKNOWN;
 
-			kdprintf("I: %d\n", i);
-
 			if (i == 0) {
 				name = ".";
 				ino = 2;

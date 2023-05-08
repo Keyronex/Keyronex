@@ -87,4 +87,5 @@ file_free(struct file *file)
 {
 	if (file->vn->ops->close)
 		file->vn->ops->close(file->vn);
+	file->vn = obj_direct_release(file->vn);
 }

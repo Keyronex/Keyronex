@@ -76,7 +76,7 @@ devfs_mmap(vnode_t *vn, vm_map_t *map, krx_inout vaddr_t *vaddrp, size_t size,
 static int
 tmpfs_root(vfs_t *vfs, vnode_t **out)
 {
-	*out = (vnode_t *)vfs->data;
+	*out = obj_direct_retain((vnode_t *)vfs->data);
 	return 0;
 }
 

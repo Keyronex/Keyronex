@@ -15,6 +15,7 @@
 #include "kdk/kernel.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
+#include "kdk/vfs.h"
 
 struct file;
 
@@ -56,19 +57,23 @@ obj_release(object_header_t *hdr)
 
 	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
 	    1) {
-		if (hdr->type == kObjTypeVNode)
-			/* todo: refcounting on vnodes broken */
-			return;
+		if (hdr->type != kObjTypeVNode)
+			kassert(hdr->reference_count == 0);
 
-		kassert(hdr->reference_count == 0);
+		switch (hdr->type) {
+		case kObjTypeFile:
+			file_free((struct file *)hdr);
+			break;
 
-		switch(hdr->type) {
-			case kObjTypeFile:
-				file_free((struct file*)hdr);
-				break;
+		case kObjTypeVNode: {
+			vnode_t *vn = (vnode_t *)hdr;
+			kdprintf("VNode %p (vfs %s) to be freed\n", vn,
+			    vn->vfsp->mountpoint);
+			break;
+		}
 
-			default:
-				break;
+		default:
+			break;
 		}
 #ifdef DEBUG_OBJ
 		kdprintf("objmgr: <%p> (type %d) is to be freed\n", hdr,
@@ -77,8 +82,9 @@ obj_release(object_header_t *hdr)
 	}
 }
 
-void
+void *
 obj_direct_release(void *obj)
 {
-	return obj_release(obj);
+	 obj_release(obj);
+	 return NULL;
 }

@@ -75,7 +75,7 @@ ps_process_create(krx_out eprocess_t **process_out, eprocess_t *parent)
 			eproc->files[i] = NULL;
 	}
 
-	eproc->cwd = parent->cwd;
+	eproc->cwd = obj_direct_retain(parent->cwd);
 
 	ke_mutex_release(&parent->fd_mutex);
 
