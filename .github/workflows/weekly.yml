@@ -41,13 +41,16 @@ jobs:
       - name: Build everything
         run: make all
 
+      - name: Set TAG_DATE environment variable
+        run: echo "TAG_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
       - name: Build and rename ISO
         run: |
           make iso
-          mv build/barebones.iso keyronex-weekly-$(date +'%Y%m%d').iso
+          mv build/barebones.iso keyronex-$TAG_DATE.iso
 
-      - name: Set TAG_DATE environment variable
-        run: echo "TAG_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+      - name: Create a tarball of the system root
+        run: tar -C build/system-root/ -cf keyronex-sysroot-$TAG_DATE.tar.zst --zstd .
 
       - name: Tag and push new release tag
         run: |
@@ -59,8 +62,9 @@ jobs:
         with:
           name: Weekly build ${{ env.TAG_DATE }}
           tag_name: weekly-${{ env.TAG_DATE }}
-          body: Image of a weekly Keyronex build.
+          body: Image of a weekly Keyronex build together with a system root tarball.
           files: |
-            keyronex-weekly-${{ env.TAG_DATE }}.iso
+            keyronex-${{ env.TAG_DATE }}.iso
+            keyronex-sysroot-${{ env.TAG_DATE }}.tar.zst
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
