@@ -990,6 +990,7 @@ packages:
       - host-gcc
     pkgs_required:
       - mlibc
+      - gettext
       - xorg-util-macros
       - xorgproto
       - libX11
@@ -1003,6 +1004,8 @@ packages:
         - '--sysconfdir=/etc'
         - '--localstatedir=/var'
         - '--disable-static'
+        environ:
+          ac_cv_search_gettext: '-lintl'
     build:
       - args: ['make', '-j@PARALLELISM@']
       - args: ['make', 'install-strip']
