@@ -74,6 +74,7 @@ m4
 meson (>= 0.57.0)
 pkg-config
 python3
+python3-mako
 python3-pip
 texinfo
 yacc

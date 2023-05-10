@@ -1,6 +1,7 @@
 name: Weekly Keyronex build
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 0 * * 0'
 
@@ -16,30 +17,50 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y autopoint gettext git gperf help2man libgmp-dev libmpc-dev libmpfr-dev libtool m4 meson pkg-config python3 python3-pip texinfo yacc xbstrap xorriso
+          sudo apt-get install -y \
+            autopoint \
+            gettext \
+            git \
+            gperf \
+            help2man \
+            libgmp-dev \
+            libmpc-dev \
+            libmpfr-dev \
+            libtool \
+            m4 \
+            meson \
+            pkg-config \
+            python3 \
+            python3-mako \
+            python3-pip \
+            texinfo \
+            yacc \
+            xorriso
+          sudo pip install xbstrap
 
       - name: Build everything
         run: make all
 
-      - name: Build ISO
-        run: make iso
+      - name: Build and rename ISO
+        run: |
+          make iso
+          mv build/barebones.iso keyronex-weekly-$(date +'%Y%m%d').iso
 
-      - name: Rename ISO
-        run: mv build/barebones.iso keyronex-weekly-$(date +'%Y%m%d').iso
-
-      - name: Set TAG_DATE variable
+      - name: Set TAG_DATE environment variable
         run: echo "TAG_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
 
-      - name: Tag new weekly release
-        run: git tag weekly-$TAG_DATE && git push --tags
+      - name: Tag and push new release tag
+        run: |
+          git tag weekly-$TAG_DATE
+          git push --tags
 
-      - name: Create weekly release
+      - name: Create new release
         uses: softprops/action-gh-release@v1
         with:
           name: Weekly build ${{ env.TAG_DATE }}
           tag_name: weekly-${{ env.TAG_DATE }}
-          body: Image of an up to date weekly Keyronex build.
+          body: Image of a weekly Keyronex build.
           files: |
-            keyronex-weekly-*.iso
+            keyronex-weekly-${{ env.TAG_DATE }}.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
