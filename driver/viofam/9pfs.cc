@@ -1112,7 +1112,14 @@ NinePFS::inactive(vnode_t *vn)
 	    false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
-	kassert(vn->objhdr.reference_count == 0);
+	if (vn->objhdr.reference_count != 1) {
+		kassert(vn->objhdr.reference_count > 1);
+		__atomic_sub_fetch(&vn->objhdr.reference_count, 1, __ATOMIC_SEQ_CST);
+		ke_mutex_release(&self->nodecache_mutex);
+		return 0;
+	}
+
+	kassert(vn->objhdr.reference_count == 1);
 
 	RB_REMOVE(ninepfs_node_rbt, &self->node_rbt, node);
 
@@ -1122,9 +1129,9 @@ NinePFS::inactive(vnode_t *vn)
 
 	// obj_direct_release(vn->vmobj);
 
-	ke_mutex_release(&self->nodecache_mutex);
+	kdprintf("Released node %p.\n", vn);
 
-	kdprintf("Released the node.\n");
+	ke_mutex_release(&self->nodecache_mutex);
 
 	return 0;
 }

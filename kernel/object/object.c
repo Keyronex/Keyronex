@@ -37,7 +37,8 @@ obj_initialise_header(object_header_t *hdr, object_type_t type)
 static void
 print_vnode_op(const char *op, vnode_t *vn)
 {
-	kdprintf(" ** %s vnode (type %d mount %s path %s)\n", op, vn->type,
+	kdprintf(" ** %s vnode  %p (type %d mount %s path %s)\n", op, vn,
+	    vn->type,
 	    vn->vfsp ? vn->vfsp->mountpoint ? vn->vfsp->mountpoint : "?" : "?",
 	    vn->path ? vn->path : "?");
 }
@@ -71,6 +72,8 @@ obj_direct_retain(void *obj)
 void
 obj_release(object_header_t *hdr)
 {
+	uint32_t old_cnt;
+
 #if DEBUG_ADDRESSES
 	kassert((uintptr_t)hdr >= HHDM_BASE &&
 	    (uintptr_t)hdr <= KHEAP_BASE + KHEAP_SIZE);
@@ -81,16 +84,10 @@ obj_release(object_header_t *hdr)
 		print_vnode_op("reLEASing", (vnode_t *)hdr);
 #endif
 
-	if (__atomic_fetch_sub(&hdr->reference_count, 1, __ATOMIC_SEQ_CST) <=
-	    1) {
-		kassert(hdr->reference_count == 0);
-
-		switch (hdr->type) {
-		case kObjTypeFile:
-			file_free((struct file *)hdr);
-			break;
-
-		case kObjTypeVNode: {
+	if (hdr->type == kObjTypeVNode) {
+		/* will we actually need a  */
+		if (__atomic_load_n(&hdr->reference_count, __ATOMIC_SEQ_CST) ==
+		    1) {
 			vnode_t *vn = (vnode_t *)hdr;
 
 #if DEBUG_VNODE > 0
@@ -102,8 +99,23 @@ obj_release(object_header_t *hdr)
 				    vn == root_vnode ? "root" : "/dev");
 			if (vn->ops->inactive != NULL)
 				vn->ops->inactive(vn);
-			break;
+
+			return;
+		} else {
+			old_cnt = __atomic_fetch_sub(&hdr->reference_count, 1,
+			    __ATOMIC_SEQ_CST);
+			kassert(old_cnt > 1);
+			return;
 		}
+	}
+
+	old_cnt = __atomic_fetch_sub(&hdr->reference_count, 1,
+	    __ATOMIC_SEQ_CST);
+	if (old_cnt == 1) {
+		switch (hdr->type) {
+		case kObjTypeFile:
+			file_free((struct file *)hdr);
+			break;
 
 		default:
 			break;
