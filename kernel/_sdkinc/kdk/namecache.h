@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2023 NetaScale Object Solutions.
+ * Created on Thur May 11 2023.
+ */
+
 #ifndef KRX_KDK_NAMECACHE_H
 #define KRX_KDK_NAMECACHE_H
 
@@ -32,7 +37,7 @@
  * thereafter it is as durable as the namecache itself.
  *
  * name and key may change (e.g. with rename) ofc under tight locking
- * constraints.
+ * constraints, i.e. parent locked and nc locked
  *
  * Locking:
  * 	(m) => namecache::lock
@@ -48,7 +53,7 @@ struct namecache {
 	RB_HEAD(namecache_rb, namecache) entries; /*!< (m) names in directory */
 	struct namecache *parent; /*!< (l to read) parent directory namecache */
 	struct vnode *vp;	  /*!< underlying vnode or NULL if a negative */
-	const char *name;	  /*!< filename */
+	char *name;		  /*!< filename */
 	uint64_t key;		  /*!< rb key: len << 32 | hash(name) */
 	uint64_t unused2; /*!< could use this space to store an inline name? */
 };
@@ -62,5 +67,10 @@ typedef struct nchandle {
 	struct namecache *ncp;
 	struct vfs *vfsp;
 } nchandle_t;
+
+/*! @brief Retain a retained or (if refcnt = 0) locked namecache. */
+struct namecache *nc_retain(struct namecache *nc);
+/*! @brief Release a retained, unlocked namecache. */
+struct namecache *nc_release(struct namecache *nc);
 
 #endif /* KRX_KDK_NAMECACHE_H */

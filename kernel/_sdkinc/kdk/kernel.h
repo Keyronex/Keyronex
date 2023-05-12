@@ -480,6 +480,11 @@ void ke_mutex_init(kmutex_t *mutex);
  */
 void ke_mutex_release(kmutex_t *mutex);
 
+/*!
+ * @brief Assert the mutex is held by the current thread.
+ */
+#define ke_mutex_assert_held(MUTEX) (kassert((MUTEX)->owner == ke_curthread()))
+
 /*! @brief Initialise a new process. */
 int ke_process_init(kprocess_t *kproc);
 

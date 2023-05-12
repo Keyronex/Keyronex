@@ -19,6 +19,7 @@ ke_mutex_release(kmutex_t *mtx)
 	ipl_t ipl = ke_acquire_dispatcher_lock();
 
 	kassert(mtx->owner == ke_curthread());
+	mtx->owner = NULL;
 	mtx->hdr.signalled++;
 	kassert(mtx->hdr.signalled <= 1);
 
