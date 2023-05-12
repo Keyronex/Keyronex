@@ -22,10 +22,6 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
     vmem_addr_t *out)
 {
 	int r;
-	ipl_t ipl;
-
-	if (!(flags & kVMemPFNDBHeld))
-		ipl = vmp_acquire_pfn_lock();
 
 	kassert(vmem == &kernel_process.map->vmem);
 
@@ -43,9 +39,6 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		    (vaddr_t)*out + i, kVMAll);
 	}
 
-	if (!(flags & kVMemPFNDBHeld))
-		vmp_release_pfn_lock(ipl);
-
 	return 0;
 }
 
@@ -54,17 +47,11 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
     vmem_flag_t flags)
 {
 	int r;
-	ipl_t ipl;
-
 	kassert(vmem == &kernel_process.map->vmem);
-
-	if (!(flags & kVMemPFNDBHeld))
-		ipl = vmp_acquire_pfn_lock();
 
 	r = vmem_xfree(vmem, addr, size, flags | kVMemPFNDBHeld);
 	if (r < 0) {
 		kdprintf("internal_freewired: vmem returned %d\n", r);
-		vmp_release_pfn_lock(ipl);
 		return;
 	}
 	r = size;
@@ -77,9 +64,6 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		page->wirecnt = 0;
 		vmp_page_free_locked(kernel_process.map, page);
 	}
-
-	if (!(flags & kVMemPFNDBHeld))
-		vmp_release_pfn_lock(ipl);
 }
 
 void
@@ -108,9 +92,15 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 {
 	vmem_addr_t addr;
 	int r;
+	ipl_t ipl;
 
-	r = vmem_xalloc(&vm_kernel_wired, npages * PGSIZE, 0, 0, 0, 0, 0, flags,
+	if (!(flags & kVMemPFNDBHeld))
+		ipl = vmp_acquire_pfn_lock();
+	r = vmem_xalloc(&vm_kernel_wired, npages * PGSIZE, 0, 0, 0, 0, 0, flags | kVMemPFNDBHeld,
 	    &addr);
+	if (!(flags & kVMemPFNDBHeld))
+		vmp_release_pfn_lock(ipl);
+
 	kassert(r == 0);
 	if (r == 0)
 		return (vaddr_t)addr;
@@ -121,5 +111,10 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 void
 vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 {
-	vmem_xfree(&vm_kernel_wired, (vmem_addr_t)addr, npages * PGSIZE, flags);
+	ipl_t ipl;
+	if (!(flags & kVMemPFNDBHeld))
+		ipl = vmp_acquire_pfn_lock();
+	vmem_xfree(&vm_kernel_wired, (vmem_addr_t)addr, npages * PGSIZE, flags | kVMemPFNDBHeld);
+	if (!(flags & kVMemPFNDBHeld))
+		vmp_release_pfn_lock(ipl);
 }
