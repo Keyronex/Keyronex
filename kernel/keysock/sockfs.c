@@ -11,6 +11,9 @@
 
 #define VNTOSON(VN) ((struct socknode *)(VN)->data)
 
+extern struct socknodeops udp_soops;
+extern struct socknodeops tcp_soops;
+
 const char *sockstate_str[] = {
 	[kSockInitialised] = "init",
 	[kSockListening] = "listen",
@@ -24,24 +27,13 @@ sock_ready_for_read(struct socknode *sock)
 	    kKernWaitStatusOK;
 }
 
-static struct socknodeops *
-sock_ops(struct socknode *sonode)
-{
-	switch (sonode->domain) {
-	case PF_LOCAL:
-		return &unix_soops;
-
-	default:
-		kfatal("No sonodeops for domain %d\n", sonode->domain);
-	}
-}
-
 int
 sock_event_raise(struct socknode *sock, int events)
 {
 	struct pollhead *ph, *tmp;
 
-	LIST_FOREACH_SAFE (ph, &sock->polllist.pollhead_list, polllist_entry, tmp) {
+	LIST_FOREACH_SAFE (ph, &sock->polllist.pollhead_list, polllist_entry,
+	    tmp) {
 		pollhead_raise(ph, events);
 	}
 
@@ -57,8 +49,21 @@ sock_create(int domain, int type, int protocol, vnode_t **out)
 		    protocol);
 		return unix_soops.create(out, domain, type, protocol);
 
+	case PF_INET:
+		switch (type) {
+		case SOCK_STREAM:
+			return tcp_soops.create(out, domain, type, protocol);
+
+		case SOCK_DGRAM:
+			return udp_soops.create(out, domain, type, protocol);
+
+		default:
+			return -EPROTONOSUPPORT;
+		}
+
 	default:
-		kdprintf("Unsupported domain %d\n", domain);
+		kdprintf("Unsupported domain %d (type %d, proto %d)\n", domain,
+		    type, protocol);
 		return -EAFNOSUPPORT;
 	}
 }
@@ -67,9 +72,9 @@ int
 sock_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct socknode *sonode;
-	kassert(vn->ops = &sock_vnops);
+	kassert(vn->ops == &sock_vnops);
 	sonode = VNTOSON(vn);
-	return sock_ops(sonode)->bind(vn, addr, addrlen);
+	return sonode->sockops->bind(vn, addr, addrlen);
 }
 
 int
@@ -77,9 +82,9 @@ sock_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen)
 {
 	struct socknode *sonode;
 	int r;
-	kassert(vn->ops = &sock_vnops);
+	kassert(vn->ops == &sock_vnops);
 	sonode = VNTOSON(vn);
-	r = sock_ops(sonode)->connect(vn, addr, addrlen);
+	r = sonode->sockops->connect(vn, addr, addrlen);
 	if (r == 0)
 		sonode->state = kSockConnected;
 	return r;
@@ -90,9 +95,9 @@ sock_listen(vnode_t *vn, uint8_t backlog)
 {
 	struct socknode *sonode;
 	int r;
-	kassert(vn->ops = &sock_vnops);
+	kassert(vn->ops == &sock_vnops);
 	sonode = VNTOSON(vn);
-	r = sock_ops(sonode)->listen(vn, backlog);
+	r = sonode->sockops->listen(vn, backlog);
 	if (r == 0)
 		sonode->state = kSockListening;
 	return r;
@@ -105,7 +110,7 @@ sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	kwaitstatus_t w;
 	ipl_t ipl;
 
-	kassert(vn->ops = &sock_vnops);
+	kassert(vn->ops == &sock_vnops);
 	kassert(msg->msg_iovlen > 0);
 
 again:
@@ -121,6 +126,8 @@ again:
 		ke_spinlock_release(&sock->lock, ipl);
 		goto again;
 	}
+
+	kassert(msg->msg_iovlen == 1);
 
 	/* lmao */
 	return sock->sockops->recv(vn, msg->msg_iov[0].iov_base,
@@ -207,9 +214,10 @@ sock_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 		}
 
 		if (r != 1) {
-			struct pollhead * aph;
+			struct pollhead *aph;
 
-			LIST_FOREACH(aph, &sock->polllist.pollhead_list, polllist_entry) {
+			LIST_FOREACH (aph, &sock->polllist.pollhead_list,
+			    polllist_entry) {
 				kassert(aph != ph);
 			}
 
@@ -245,7 +253,7 @@ sock_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	kwaitstatus_t w;
 	ipl_t ipl;
 
-	kassert(vn->ops = &sock_vnops);
+	kassert(vn->ops == &sock_vnops);
 
 again:
 	/* modified for nonblock - fix as with recvmsg pls. */
@@ -269,7 +277,7 @@ sock_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 {
 	struct socknode *sonode;
 
-	kassert(vn->ops = &sock_vnops);
+	kassert(vn->ops == &sock_vnops);
 	sonode = VNTOSON(vn);
 
 	return sonode->sockops->send(vn, buf, nbyte);

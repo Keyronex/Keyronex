@@ -36,15 +36,18 @@ sock_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
  * Create a new unbound UDP socket.
  */
 int
-sock_udp_create(int domain, int protocol, krx_out vnode_t **vnode)
+sock_udp_create(krx_out vnode_t **vnode, int domain, int type, int protocol)
 {
 	struct sock_udp *sock;
-	vnode_t *vn;
+	int r;
 
 	if (protocol != IPPROTO_UDP && protocol != 0)
 		return -EPROTONOSUPPORT;
 
 	sock = kmem_alloc(sizeof(*sock));
+	r = sock_init(&sock->socknode, &unix_soops);
+
+	kassert(r == 0);
 
 	sock->udp_pcb = udp_new_ip_type(
 	    domain == AF_INET ? IPADDR_TYPE_V4 : IPADDR_TYPE_ANY);
@@ -55,11 +58,7 @@ sock_udp_create(int domain, int protocol, krx_out vnode_t **vnode)
 
 	udp_recv(sock->udp_pcb, sock_udp_recv_cb, sock);
 
-	vn = kmem_alloc(sizeof(*vn));
-	vn->type = VSOCK;
-	vn->data = (uintptr_t)sock;
-
-	*vnode = vn;
+	*vnode = sock->socknode.vnode;
 
 	return 0;
 }
@@ -116,3 +115,7 @@ sock_udp_sendto(vnode_t *vn, void *buf, size_t len, const struct sockaddr *nam,
 
 	return err_to_errno(err);
 }
+
+struct socknodeops udp_soops = {
+	.create = sock_udp_create,
+};

@@ -28,7 +28,7 @@ struct sock_tcp {
 	struct tcp_pcb *tcp_pcb;
 };
 
-static struct socknodeops tcp_soops;
+extern struct socknodeops tcp_soops;
 
 static int
 sock_tcp_common_alloc(krx_out vnode_t **vnode)
@@ -271,6 +271,6 @@ test_tcpserver(void)
 	return 0;
 }
 
-static struct socknodeops tcp_soops = {
+struct socknodeops tcp_soops = {
 	.accept = sock_tcp_accept,
 };

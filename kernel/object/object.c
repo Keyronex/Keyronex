@@ -19,7 +19,7 @@
 #include "kdk/vfs.h"
 
 #define DEBUG_ADDRESSES 1
-#define DEBUG_VNODE 1
+#define DEBUG_VNODE 0
 
 struct file;
 
@@ -104,7 +104,7 @@ obj_release(object_header_t *hdr)
 		} else {
 			old_cnt = __atomic_fetch_sub(&hdr->reference_count, 1,
 			    __ATOMIC_SEQ_CST);
-			kassert(old_cnt > 1);
+			kassert(old_cnt > 1 && old_cnt < 500);
 			return;
 		}
 	}
