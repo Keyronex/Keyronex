@@ -100,7 +100,7 @@ sys_pipe(int *out, int flags)
 		obj_initialise_header(&ps_curproc()->files[fds[i]]->objhdr,
 		    kObjTypeFile);
 		ps_curproc()->files[fds[i]]->offset = 0;
-		ps_curproc()->files[fds[i]]->flags = 0;
+		ps_curproc()->files[fds[i]]->flags = flags;
 	}
 
 	ps_curproc()->files[fds[0]]->vn = read_vn;
@@ -123,7 +123,7 @@ fifofs_close(vnode_t *vn)
 
 	if (vn->data2 == O_WRONLY) {
 		if (--pnode->nwriters == 0) {
-			// pollhead_raise(&pnode->polllist, int events)
+			// pollhead_raise(&pnode->polllist, EPOLLIN);
 			ke_event_signal(&pnode->readable);
 		}
 	} else {
@@ -159,8 +159,10 @@ fifofs_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 			r = 1;
 		}
 
-		LIST_INSERT_HEAD(&pnode->polllist.pollhead_list, ph,
-		    polllist_entry);
+		if (r != 1) {
+			LIST_INSERT_HEAD(&pnode->polllist.pollhead_list, ph,
+			    polllist_entry);
+		}
 	} else if (kind == kChPollChange) {
 		kfatal("Unimplemented");
 	} else if (kind == kChPollRemove) {
@@ -179,6 +181,7 @@ fifofs_read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 	ipl_t ipl;
 	size_t nread = 0;
 	uint8_t *cbuf = buf;
+	kwaitstatus_t w;
 
 	if (vn->data2 != O_RDONLY)
 		return -EINVAL;
@@ -192,8 +195,11 @@ wait:
 		if (pnode->nwriters == 0)
 			return 0;
 
-		ke_wait(&pnode->readable, "fifofs_read:readable", false, false,
-		    -1);
+		w = ke_wait(&pnode->readable, "fifofs_read:readable", false,
+		    false, flags & O_NONBLOCK ? 0 : -1);
+		if (w == kKernWaitStatusTimedOut)
+			return -EAGAIN;
+
 		goto wait;
 	}
 
@@ -245,6 +251,8 @@ wait:
 
 		if (pnode->count == pnode->size) {
 			ke_mutex_release(&pnode->mtx);
+			if (flags & O_NONBLOCK)
+				return nwritten == 0 ? -EAGAIN : nwritten;
 			ke_wait(&pnode->writeable, "fifofs_read:writeable",
 			    false, false, -1);
 			goto wait;

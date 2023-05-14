@@ -106,7 +106,7 @@ sock_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
  * Socket connected callback.
  */
 static err_t
-tcp_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
+sock_tcp_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
 {
 	struct sock_tcp *sock = arg;
 
@@ -120,7 +120,7 @@ tcp_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
  * New connection callback.
  */
 static err_t
-sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
+sock_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
 	struct sock_tcp *sock = (struct sock_tcp *)arg, *newsock;
 	vnode_t *newvn;
@@ -242,7 +242,7 @@ sock_tcp_connect(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 	}
 
 	LOCK_TCPIP_CORE();
-	err = tcp_connect(sock->tcp_pcb, &ip_addr, port, tcp_connected_cb);
+	err = tcp_connect(sock->tcp_pcb, &ip_addr, port, sock_tcp_connected_cb);
 	UNLOCK_TCPIP_CORE();
 	if (err != ERR_OK)
 		return err_to_errno(err);
@@ -270,7 +270,7 @@ sock_tcp_listen(vnode_t *vn, uint8_t backlog)
 	sock->tcp_pcb = new_pcb;
 
 	tcp_arg(sock->tcp_pcb, sock);
-	tcp_accept(sock->tcp_pcb, sock_tcp_cb_accept);
+	tcp_accept(sock->tcp_pcb, sock_tcp_accept_cb);
 	UNLOCK_TCPIP_CORE();
 
 	return 0;
@@ -348,7 +348,7 @@ sock_tcp_send(vnode_t *vn, void *buf, size_t len)
 	err = tcp_write(sock->tcp_pcb, cpy, len, 0);
 	UNLOCK_TCPIP_CORE();
 
-	return err_to_errno(err);
+	return err == ERR_OK ? len : err_to_errno(err);
 }
 
 int

@@ -212,8 +212,8 @@ sock_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 	switch (kind) {
 	case kChPollAdd:
 #if DEBUG_SOCKFS == 1
-		kdprintf("%d: [%p(%s)] Chpoll Add (events: 0x%x).\n",
-		    ps_curproc()->id, sock, sockstate_str[sock->state],
+		kdprintf("%d: [%p(%s)] Chpoll Add %p (events: 0x%x).\n",
+		    ps_curproc()->id, sock, sockstate_str[sock->state], ph,
 		    ph->event.events);
 #endif
 
@@ -249,12 +249,13 @@ sock_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 
 	case kChPollRemove:
 #if DEBUG_SOCKFS == 1
-		kdprintf("%d: [%p(%s)] Chpoll Rem (events: 0x%x).\n",
-		    ps_curproc()->id, sock, sockstate_str[sock->state],
+		kdprintf("%d: [%p(%s)] Chpoll Rem %p (events: 0x%x).\n",
+		    ps_curproc()->id, sock, sockstate_str[sock->state], ph,
 		    ph->event.events);
 #endif
 
 		LIST_REMOVE(ph, polllist_entry);
+
 		break;
 	}
 
