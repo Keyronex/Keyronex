@@ -22,10 +22,24 @@
 
 #define VNTOTCP(VN) ((struct sock_tcp *)(VN)->data)
 
+struct tcp_packet {
+	/*! Linkage in receive queue. */
+	STAILQ_ENTRY(tcp_packet) stailq_entry;
+	/*! Byte size of the main data body of the packet. */
+	uint32_t size;
+	/*! Bytes already read. */
+	uint32_t offset;
+	/*! Main data body. */
+	uint8_t *data;
+};
+
 struct sock_tcp {
 	struct socknode socknode;
-
 	struct tcp_pcb *tcp_pcb;
+	struct kevent connect_ev;
+
+	/*! Receive queue. */
+	STAILQ_HEAD(, tcp_packet) rx_queue;
 };
 
 extern struct socknodeops tcp_soops;
@@ -40,6 +54,9 @@ sock_tcp_common_alloc(krx_out vnode_t **vnode)
 	r = sock_init(&sock->socknode, &tcp_soops);
 	kassert(r == 0);
 
+	ke_event_init(&sock->connect_ev, false);
+	STAILQ_INIT(&sock->rx_queue);
+
 	*vnode = sock->socknode.vnode;
 
 	return 0;
@@ -49,12 +66,46 @@ sock_tcp_common_alloc(krx_out vnode_t **vnode)
  * Packet received callback.
  */
 static err_t
-sock_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *pbuf, err_t err)
+sock_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
-	if (err != ERR_OK)
-		kfatal("bad err: %d\n", err);
+	struct sock_tcp *sock = arg;
+	struct tcp_packet *pkt;
+	size_t len = p->tot_len;
+	ipl_t ipl;
 
-	kfatal("implement\n");
+	kassert(p->ref == 1);
+	kassert(err == ERR_OK);
+
+	pkt = kmem_alloc(sizeof(*pkt));
+	pkt->size = p->tot_len;
+	pkt->offset = 0;
+	pkt->data = kmem_alloc(p->tot_len);
+	pbuf_copy_partial(p, pkt->data, p->tot_len, 0);
+	pbuf_free(p);
+
+	ipl = ke_spinlock_acquire(&sock->socknode.lock);
+	STAILQ_INSERT_TAIL(&sock->rx_queue, pkt, stailq_entry);
+	ke_event_signal(&sock->socknode.read_evobj);
+	sock_event_raise(&sock->socknode, EPOLLIN);
+	ke_spinlock_release(&sock->socknode.lock, ipl);
+
+	tcp_recved(pcb, len);
+
+	return ERR_OK;
+}
+
+/*!
+ * Socket connected callback.
+ */
+static err_t
+tcp_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
+{
+	struct sock_tcp *sock = arg;
+
+	kassert(err == ERR_OK);
+	ke_event_signal(&sock->connect_ev);
+
+	return ERR_OK;
 }
 
 /*!
@@ -78,6 +129,8 @@ sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 	newsock->tcp_pcb = newpcb;
 
 	tcp_backlog_delayed(newpcb);
+	tcp_arg(newpcb, newsock);
+	tcp_recv(newpcb, sock_tcp_recv_cb);
 
 	ipl = ke_spinlock_acquire(&sock->socknode.lock);
 	STAILQ_INSERT_TAIL(&sock->socknode.accept_stailq, &newsock->socknode,
@@ -92,8 +145,8 @@ sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 /*!
  * Create a new unbound TCP socket.
  */
-int
-sock_tcp_create(int domain, int protocol, krx_out vnode_t **vnode)
+static int
+sock_tcp_create(krx_out vnode_t **vnode, int domain, int type, int protocol)
 {
 	struct sock_tcp *sock;
 	vnode_t *vn;
@@ -118,6 +171,7 @@ sock_tcp_create(int domain, int protocol, krx_out vnode_t **vnode)
 		return -ENOBUFS;
 	}
 
+	tcp_arg(sock->tcp_pcb, sock);
 	tcp_recv(sock->tcp_pcb, sock_tcp_recv_cb);
 	UNLOCK_TCPIP_CORE();
 
@@ -129,7 +183,7 @@ sock_tcp_create(int domain, int protocol, krx_out vnode_t **vnode)
 /*!
  * Assign an address to a TCP socket.
  */
-int
+static int
 sock_tcp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 {
 	err_t err;
@@ -140,7 +194,7 @@ sock_tcp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 	inet_addr_to_ip4addr(ip_2_ip4(&ip_addr), &(sin->sin_addr));
 	port = lwip_ntohs((sin)->sin_port);
 
-	kdprintf("Binding to %x:%d\n", ip_addr.addr, port);
+	kdprintf("TCP: Binding to %x:%d\n", ip_addr.addr, port);
 
 	LOCK_TCPIP_CORE();
 	err = tcp_bind(VNTOTCP(vn)->tcp_pcb, &ip_addr, port);
@@ -152,13 +206,32 @@ sock_tcp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 /*!
  * Connect a TCP socket to an address. (todo)
  */
-int
+static int
 sock_tcp_connect(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 {
-	return -EOPNOTSUPP;
+	err_t err;
+	ip_addr_t ip_addr;
+	uint16_t port;
+	struct sock_tcp *sock = VNTOTCP(vn);
+
+	err = addr_unpack_ip(nam, addr_len, &ip_addr, &port);
+	if (err != ERR_OK) {
+		return -err_to_errno(err);
+	}
+
+	LOCK_TCPIP_CORE();
+	err = tcp_connect(sock->tcp_pcb, &ip_addr, port, tcp_connected_cb);
+	UNLOCK_TCPIP_CORE();
+	if (err != ERR_OK)
+		return err_to_errno(err);
+
+	ke_wait(&sock->connect_ev, "tcp_connect:sock_>connect_ev", false, false,
+	    -1);
+
+	return 0;
 }
 
-int
+static int
 sock_tcp_listen(vnode_t *vn, uint8_t backlog)
 {
 	err_t err;
@@ -181,18 +254,76 @@ sock_tcp_listen(vnode_t *vn, uint8_t backlog)
 	return 0;
 }
 
+static int
+sock_tcp_recv(vnode_t *vn, void *buf, size_t nbyte, int flags, ipl_t ipl)
+{
+	struct sock_tcp *sock = VNTOTCP(vn);
+	struct tcp_packet *pkt;
+	size_t nread;
+	size_t pkt_offset;
+
+	/* note: entered spinlocked */
+
+	kassert(!STAILQ_EMPTY(&sock->rx_queue));
+	pkt = STAILQ_FIRST(&sock->rx_queue);
+
+	nread = MIN2(pkt->size - pkt->offset, nbyte);
+	kassert(nread > 0);
+
+	pkt_offset = pkt->offset;
+
+	if (flags & MSG_PEEK)
+		goto do_read;
+
+	pkt->offset += nread;
+	kassert(pkt->offset <= pkt->size);
+
+	if (pkt->offset == pkt->size) {
+		STAILQ_REMOVE_HEAD(&sock->rx_queue, stailq_entry);
+		if (STAILQ_EMPTY(&sock->rx_queue))
+			ke_event_clear(&sock->socknode.read_evobj);
+			/* todo(low?): this is technically improper */
+#if 0
+		else
+			kdprintf(" !!! There is more data remaining.\n");
+#endif
+	}
+
+do_read:
+	ke_spinlock_release(&sock->socknode.lock, ipl);
+
+	/*
+	 * n.b. need to free packet eventually without lock. Can do that by
+	 * having the packet store a refcount. When we unlock to do copy out,
+	 * we increment refcnt on the packet so it won't go away on us while
+	 * we are working with it.
+	 */
+
+#if DEBUG_UDS == 0
+	kdprintf("%s %zu on a socket; pkt %p, data %p, offs %zu\n",
+	    flags & MSG_PEEK ? "Peeked" : "Received", nread, pkt, pkt->data,
+	    pkt_offset);
+#endif
+
+	memcpy(buf, pkt->data + pkt_offset, nread);
+
+	return nread;
+}
+
 /*!
  * Send on an TCP socket.
  */
 int
-sock_tcp_sendto(vnode_t *vn, void *buf, size_t len,
-    const struct sockaddr *nam __unused, socklen_t addr_len __unused)
+sock_tcp_send(vnode_t *vn, void *buf, size_t len)
 {
 	err_t err;
 	struct sock_tcp *sock = VNTOTCP(vn);
 
+	void *cpy = kmem_alloc(len);
+	memcpy(cpy, buf, len);
+
 	LOCK_TCPIP_CORE();
-	err = tcp_write(sock->tcp_pcb, buf, len, 0);
+	err = tcp_write(sock->tcp_pcb, cpy, len, 0);
 	UNLOCK_TCPIP_CORE();
 
 	return err_to_errno(err);
@@ -228,7 +359,7 @@ test_tcpserver(void)
 	nam.sin_port = htons(8080);
 	nam.sin_addr.s_addr = htonl(INADDR_ANY);
 
-	r = sock_tcp_create(AF_INET, IPPROTO_TCP, &vnode);
+	r = sock_tcp_create(&vnode, AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (r != 0)
 		kfatal("sock_tcp_created failed: %d\n", r);
 
@@ -264,7 +395,7 @@ test_tcpserver(void)
 
 	static const char resp[] =
 	    "HTTP/1.1 200 OK\r\nContent-Length: 29\r\nConnection: close\r\n\r\n<h1>Hello from Keyronex!</h1>";
-	r = sock_tcp_sendto(peer_vn, (void *)resp, sizeof(resp), NULL, 0);
+	r = sock_tcp_send(peer_vn, (void *)resp, sizeof(resp));
 	if (r != 0)
 		kfatal("sock_tcp_sendto failed: %d\n", r);
 
@@ -272,5 +403,9 @@ test_tcpserver(void)
 }
 
 struct socknodeops tcp_soops = {
+	.create = sock_tcp_create,
 	.accept = sock_tcp_accept,
+	.connect = sock_tcp_connect,
+	.recv = sock_tcp_recv,
+	.send = sock_tcp_send,
 };

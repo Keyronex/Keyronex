@@ -38,6 +38,7 @@ int sys_dup3(int oldfd, int newfd, int flags);
 
 #if 0
 #define DEBUG_SYSCALLS 1
+#define DEBUG_FD_SYSCALLS 1
 #endif
 
 void *
@@ -186,6 +187,10 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 
 	r = fd;
 
+#if DEBUG_FD_SYSCALLS == 1
+	kdprintf("(%d) Opened new FD %d\n", ps_curproc()->id, r);
+#endif
+
 out:
 	if (r < 0) {
 		if (fd != -1)
@@ -241,8 +246,12 @@ sys_close(int fd)
 
 	r = do_close(eproc, fd);
 
-#if DEBUG_SYSCALLS == 1
-	kdprintf("%d: Closed FD %d\n", eproc->id, fd);
+#if DEBUG_FD_SYSCALLS == 1
+	if (r == 0) {
+		kdprintf("%d: Closed FD %d\n", eproc->id, fd);
+	} else {
+		kdprintf("%d: Failed to close FD %d\n", eproc->id, fd);
+	}
 #endif
 
 	ke_mutex_release(&eproc->fd_mutex);
@@ -273,7 +282,7 @@ sys_dup(int oldfd)
 	if (r >= 0)
 		eproc->files[r] = obj_direct_retain(eproc->files[oldfd]);
 
-#if DEBUG_SYSCALLS == 1
+#if DEBUG_FD_SYSCALLS == 1
 	kdprintf("%d: dup %d into %d\n", eproc->id, oldfd, r);
 #endif
 
@@ -287,6 +296,10 @@ sys_dup3(int oldfd, int newfd, int flags)
 {
 	eprocess_t *eproc = ps_curproc();
 	int r = newfd;
+
+	/* TODO: handle this properly, wget does it */
+	if (oldfd == newfd)
+		return newfd;
 
 	ke_wait(&eproc->fd_mutex, "dup3:eproc->fd_mutex", false, false, -1);
 
@@ -302,11 +315,13 @@ sys_dup3(int oldfd, int newfd, int flags)
 
 	if (eproc->files[newfd] != NULL) {
 		do_close(eproc, newfd);
+		eproc->files[newfd] = NULL;
 	}
 
-	eproc->files[newfd] = obj_direct_retain(eproc->files[oldfd]);
+	if (eproc->files[oldfd] != NULL)
+		eproc->files[newfd] = obj_direct_retain(eproc->files[oldfd]);
 
-#if DEBUG_SYSCALLS == 1
+#if DEBUG_FD_SYSCALLS == 1
 	kdprintf("%d: dup3 %d into %d\n", eproc->id, oldfd, newfd);
 #endif
 
@@ -1019,6 +1034,10 @@ sys_socket(int domain, int type, int protocol)
 	obj_initialise_header(&ps_curproc()->files[fd]->objhdr, kObjTypeFile);
 	ps_curproc()->files[fd]->offset = 0;
 	ps_curproc()->files[fd]->vn = vn;
+
+#if DEBUG_FD_SYSCALLS == 1
+	kdprintf("(%d): Opened new socket %d\n", ps_curproc()->id, fd);
+#endif
 
 	return fd;
 }

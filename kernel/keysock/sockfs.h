@@ -77,7 +77,7 @@ struct socknodeops {
 	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
 	    socklen_t addr_len);
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
-	int (*recv)(vnode_t *vn, void *buf, size_t nbyte,
+	int (*recv)(vnode_t *vn, void *buf, size_t nbyte, int flags,
 	    ipl_t ipl); /* (unlocks) */
 	int (*send)(vnode_t *vn, void *buf, size_t nbyte);
 	int (*sendmsg)(vnode_t *vn, struct msghdr *msg, int flags);

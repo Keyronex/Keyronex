@@ -116,7 +116,6 @@ sock_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	return sock->sockops->sendmsg(vn, msg, flags);
 }
 
-
 int
 sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags)
 {
@@ -145,7 +144,7 @@ again:
 
 	/* lmao */
 	return sock->sockops->recv(vn, msg->msg_iov[0].iov_base,
-	    msg->msg_iov[0].iov_len, ipl);
+	    msg->msg_iov[0].iov_len, flags, ipl);
 }
 
 /* review the below! these were made ages ago */
@@ -283,7 +282,7 @@ again:
 		goto again;
 	}
 
-	return sock->sockops->recv(vn, buf, nbyte, ipl);
+	return sock->sockops->recv(vn, buf, nbyte, 0, ipl);
 }
 
 int

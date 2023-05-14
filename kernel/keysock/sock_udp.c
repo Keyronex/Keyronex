@@ -64,6 +64,7 @@ sock_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
 	pkt->addr = *addr;
 	pkt->port = port;
 	pkt->size = p->tot_len;
+	pkt->offset = 0;
 	pkt->data = kmem_alloc(p->tot_len);
 	pbuf_copy_partial(p, pkt->data, p->tot_len, 0);
 	pbuf_free(p);
@@ -149,7 +150,7 @@ sock_udp_connect(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 }
 
 int
-sock_udp_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
+sock_udp_recv(vnode_t *vn, void *buf, size_t nbyte, int flags, ipl_t ipl)
 {
 	struct sock_udp *sock = VNTOUDP(vn);
 	struct udp_packet *pkt;

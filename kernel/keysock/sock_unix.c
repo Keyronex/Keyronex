@@ -230,7 +230,7 @@ isprint(int c)
 #endif
 
 int
-sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, ipl_t ipl)
+sock_unix_recv(vnode_t *vn, void *buf, size_t nbyte, int flags, ipl_t ipl)
 {
 	struct sock_unix *sock = VNTOUNP(vn);
 	struct unix_packet *pkt;
