@@ -167,7 +167,7 @@ procfs_statfs(vfs_t *vfs, struct statfs *out)
 }
 
 static int
-proc_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+proc_read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	procnode_t *pn = VNTOPN(vn);
 	vfs_t *vfs;

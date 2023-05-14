@@ -129,7 +129,7 @@ sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags)
 again:
 	/* modified for NONBLOCK - todo set/getsockopt and O_NONBLOCK */
 	w = ke_wait(&sock->read_evobj, "sock_read:sock->read_evobj", false,
-	    false, 0);
+	    false, flags & MSG_DONTWAIT ? 0 : -1);
 	if (w == kKernWaitStatusTimedOut)
 		return -EAGAIN;
 	kassert(w == kKernWaitStatusOK);
@@ -260,7 +260,7 @@ sock_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 }
 
 int
-sock_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+sock_read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	struct socknode *sock = VNTOSON(vn);
 	kwaitstatus_t w;
@@ -271,7 +271,7 @@ sock_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 again:
 	/* modified for nonblock - fix as with recvmsg pls. */
 	w = ke_wait(&sock->read_evobj, "sock_read:sock->read_evobj", false,
-	    false, 0);
+	    false, flags & O_NONBLOCK ? 0 : -1);
 	if (w == kKernWaitStatusTimedOut)
 		return -EAGAIN;
 	kassert(w == kKernWaitStatusOK);
@@ -286,7 +286,7 @@ again:
 }
 
 int
-sock_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+sock_write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	struct socknode *sonode;
 
@@ -296,8 +296,16 @@ sock_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
 	return sonode->sockops->send(vn, buf, nbyte);
 }
 
+int
+sock_close(vnode_t *vn)
+{
+	kdprintf("SOCK_CLOSE\n");
+	return 0;
+}
+
 struct vnops sock_vnops = {
-	.chpoll = sock_chpoll,
 	.read = sock_read,
 	.write = sock_write,
+	.close = sock_close,
+	.chpoll = sock_chpoll,
 };

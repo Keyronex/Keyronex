@@ -151,11 +151,11 @@ struct vnops {
 	/*!
 	 * @brief Read (via page cache) from a vnode.
 	 */
-	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+	int (*read)(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags);
 	/*!
 	 * @brief Write (via page cache) to a vnode.
 	 */
-	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off);
+	int (*write)(vnode_t *vn, void *buf, size_t nbyte, off_t off, int fllgs);
 	/*!
 	 * @brief I/O control
 	 */
@@ -297,13 +297,13 @@ enum lookup_flags {
 #define VOP_IOCTL(VN, CMD, DATA) (VN)->ops->ioctl(VN, CMD, DATA)
 #define VOP_LINK(DVN, VN, NAME) (VN)->ops->link(DVN, VN, NAME)
 #define VOP_OPEN(VN, mode) (*VN)->ops->open(VN, mode)
-#define VOP_READ(vnode, buf, nbyte, off) \
-	vnode->ops->read(vnode, buf, nbyte, off)
+#define VOP_READ(vnode, buf, nbyte, off, FLAGS) \
+	vnode->ops->read(vnode, buf, nbyte, off, FLAGS)
 #define VOP_READDIR(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO) \
 	(VN)->ops->readdir(VN, BUF, BUFSIZE, PBYTES_READ, SEQNO)
 #define VOP_READLINK(PVN, PBUF) (PVN)->ops->readlink(PVN, PBUF)
-#define VOP_WRITE(vnode, buf, nbyte, off) \
-	vnode->ops->write(vnode, buf, nbyte, off)
+#define VOP_WRITE(vnode, buf, nbyte, off, flags) \
+	vnode->ops->write(vnode, buf, nbyte, off, flags)
 #define VOP_CREAT(vnode, out, name, attr) \
 	vnode->ops->create(vnode, out, name, attr)
 #define VOP_REMOVE(VN, NAME) (VN)->ops->remove(VN, NAME)

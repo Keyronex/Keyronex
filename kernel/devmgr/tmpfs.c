@@ -46,15 +46,15 @@ devfs_ioctl(vnode_t *vn, unsigned long command, void *arg)
 }
 
 static int
-devfs_read(vnode_t *vn, void *buf, size_t size, off_t off)
+devfs_read(vnode_t *vn, void *buf, size_t size, off_t off, int flags)
 {
-	return vn->rdeviceops->read(vn, buf, size, off);
+	return vn->rdeviceops->read(vn, buf, size, off, flags);
 }
 
 static int
-devfs_write(vnode_t *vn, void *buf, size_t size, off_t off)
+devfs_write(vnode_t *vn, void *buf, size_t size, off_t off, int flags)
 {
-	return vn->rdeviceops->write(vn, buf, size, off);
+	return vn->rdeviceops->write(vn, buf, size, off, flags);
 }
 
 static int
@@ -344,13 +344,13 @@ tmp_getattr(vnode_t *vn, vattr_t *out)
 }
 
 int
-tmp_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+tmp_read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	return pgcache_read(vn, buf, nbyte, off);
 }
 
 int
-tmp_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+tmp_write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	return pgcache_write(vn, buf, nbyte, off);
 }

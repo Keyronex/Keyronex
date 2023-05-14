@@ -34,6 +34,7 @@ struct file {
 	object_header_t objhdr;
 	struct vnode *vn;
 	int64_t offset;
+	int flags;
 };
 
 /*!

@@ -387,7 +387,7 @@ ret:
 }
 
 int
-FuseFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+FuseFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	return pgcache_read(vn, buf, nbyte, off);
 }
@@ -464,7 +464,7 @@ FuseFS::readlink(vnode_t *vn, char *out)
 }
 
 int
-FuseFS::write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+FuseFS::write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	return pgcache_write(vn, buf, nbyte, off);
 }

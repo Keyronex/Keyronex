@@ -42,7 +42,7 @@ loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
 		return r;
 	}
 
-	r = VOP_READ(vn, &ehdr, sizeof ehdr, 0);
+	r = VOP_READ(vn, &ehdr, sizeof ehdr, 0, 0);
 	if (r < 0) {
 		kdprintf("exec: failed to read %s (errno %d)\n", path, -r);
 		return r;
@@ -57,7 +57,8 @@ loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
 	if (!phdrs)
 		return -ENOMEM;
 
-	r = VOP_READ(vn, phdrs, ehdr.e_phnum * ehdr.e_phentsize, ehdr.e_phoff);
+	r = VOP_READ(vn, phdrs, ehdr.e_phnum * ehdr.e_phentsize, ehdr.e_phoff,
+	    0);
 	if (r < 0)
 		return r;
 
@@ -87,7 +88,7 @@ loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
 		kassert(r == 0);
 
 		r = VOP_READ(vn, (void *)(segbase + pageoff), phdr->p_filesz,
-		    phdr->p_offset);
+		    phdr->p_offset, 0);
 		if (r < 0)
 			return r; /* TODO: this won't work anymore */
 	}

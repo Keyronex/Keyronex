@@ -789,13 +789,13 @@ NinePFS::rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
 }
 
 int
-NinePFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+NinePFS::read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	return pgcache_read(vn, buf, nbyte, off);
 }
 
 int
-NinePFS::write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+NinePFS::write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	return pgcache_write(vn, buf, nbyte, off);
 }

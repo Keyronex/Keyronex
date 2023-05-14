@@ -100,6 +100,7 @@ sys_pipe(int *out, int flags)
 		obj_initialise_header(&ps_curproc()->files[fds[i]]->objhdr,
 		    kObjTypeFile);
 		ps_curproc()->files[fds[i]]->offset = 0;
+		ps_curproc()->files[fds[i]]->flags = 0;
 	}
 
 	ps_curproc()->files[fds[0]]->vn = read_vn;
@@ -172,7 +173,7 @@ fifofs_chpoll(vnode_t *vn, struct pollhead *ph, enum chpoll_kind kind)
 }
 
 static int
-fifofs_read(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+fifofs_read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	struct fifonode *pnode = (struct fifonode *)vn->data;
 	ipl_t ipl;
@@ -221,7 +222,7 @@ wait:
 }
 
 static int
-fifofs_write(vnode_t *vn, void *buf, size_t nbyte, off_t off)
+fifofs_write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 {
 	struct fifonode *pnode = (struct fifonode *)vn->data;
 	ipl_t ipl;

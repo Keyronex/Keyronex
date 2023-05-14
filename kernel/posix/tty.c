@@ -176,7 +176,7 @@ out:
 }
 
 int
-tty_read(vnode_t *vn, void *buf, size_t nbyte, io_off_t off)
+tty_read(vnode_t *vn, void *buf, size_t nbyte, io_off_t off, int flags)
 {
 	struct tty *tty = (struct tty *)vn->rdevice;
 	ipl_t ipl;
@@ -213,7 +213,7 @@ in:
 }
 
 int
-tty_write(struct vnode *vn, void *buf, size_t nbyte, io_off_t off)
+tty_write(struct vnode *vn, void *buf, size_t nbyte, io_off_t off, int flags)
 {
 	ipl_t ipl;
 	char *mybuf = NULL;

@@ -41,6 +41,16 @@ int sys_dup3(int oldfd, int newfd, int flags);
 #define DEBUG_FD_SYSCALLS 1
 #endif
 
+static void
+setup_file(eprocess_t *eproc, int fd, vnode_t *vn, int flags)
+{
+	eproc->files[fd] = kmem_alloc(sizeof(struct file));
+	obj_initialise_header(&eproc->files[fd]->objhdr, kObjTypeFile);
+	eproc->files[fd]->offset = 0;
+	eproc->files[fd]->flags = flags;
+	eproc->files[fd]->vn = vn;
+}
+
 void *
 vm_mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset)
 {
@@ -180,10 +190,7 @@ posix_do_openat(vnode_t *dvn, const char *path, int flags, int mode)
 		}
 	}
 
-	eproc->files[fd] = kmem_alloc(sizeof(struct file));
-	obj_initialise_header(&eproc->files[fd]->objhdr, kObjTypeFile);
-	eproc->files[fd]->vn = vn;
-	eproc->files[fd]->offset = 0;
+	setup_file(ps_curproc(), fd, vn, flags);
 
 	r = fd;
 
@@ -577,7 +584,7 @@ sys_read(int fd, void *buf, size_t nbyte)
 	if (file == NULL)
 		return -EBADF;
 
-	r = VOP_READ(file->vn, buf, nbyte, file->offset);
+	r = VOP_READ(file->vn, buf, nbyte, file->offset, file->flags);
 	if (r < 0) {
 #if DEBUG_SYSCALL_ERRORS == 1
 		kdprintf("VOP_READ got %d\n", r);
@@ -668,7 +675,7 @@ sys_write(int fd, void *buf, size_t nbyte)
 	if (file == NULL)
 		return -EBADF;
 
-	r = VOP_WRITE(file->vn, buf, nbyte, file->offset);
+	r = VOP_WRITE(file->vn, buf, nbyte, file->offset, file->flags);
 	if (r < 0) {
 		kdprintf("VOP_WRITE got %d\n", r);
 		for (;;)
@@ -888,6 +895,45 @@ out:
 	return r;
 }
 
+static int
+sys_fcntl(int fd, int request, uint64_t arg)
+{
+	struct file *file = ps_getfile(ps_curproc(), fd);
+	int r = 0;
+
+	if (file == NULL)
+		return -EBADF;
+
+	switch (request) {
+#if 0
+	case F_GETFD:
+		if (file->flags & O_CLOEXEC)
+			r = O_CLOEXEC;
+		break;
+
+	case F_SETFD:
+		if (arg & O_CLOEXEC)
+			file->flags |= O_CLOEXEC;
+		else
+			file->flags &= ~O_CLOEXEC;
+		break;
+#endif
+
+	case F_SETFL:
+		file->flags = arg;
+		break;
+
+	case F_GETFL:
+		r = file->flags;
+		break;
+
+	default:
+		kdprintf("Unhandled fcntl request %d\n", request);
+	}
+
+	return r;
+}
+
 uintptr_t
 sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
     const sigset_t *sigmask)
@@ -965,11 +1011,7 @@ sys_epoll_create(int flags)
 		return r;
 	}
 
-	/* todo: factor with simiar logic in devmgr/fifofs.c */
-	ps_curproc()->files[fd] = kmem_alloc(sizeof(struct file));
-	obj_initialise_header(&ps_curproc()->files[fd]->objhdr, kObjTypeFile);
-	ps_curproc()->files[fd]->offset = 0;
-	ps_curproc()->files[fd]->vn = epoll_new();
+	setup_file(ps_curproc(), fd, epoll_new(), flags);
 
 	return fd;
 }
@@ -1030,10 +1072,7 @@ sys_socket(int domain, int type, int protocol)
 	}
 
 	/* todo: factor with simiar logic above & in  devmgr/fifofs.c */
-	ps_curproc()->files[fd] = kmem_alloc(sizeof(struct file));
-	obj_initialise_header(&ps_curproc()->files[fd]->objhdr, kObjTypeFile);
-	ps_curproc()->files[fd]->offset = 0;
-	ps_curproc()->files[fd]->vn = vn;
+	setup_file(ps_curproc(), fd, vn, flags);
 
 #if DEBUG_FD_SYSCALLS == 1
 	kdprintf("(%d): Opened new socket %d\n", ps_curproc()->id, fd);
@@ -1064,12 +1103,7 @@ sys_accept(int fd, struct sockaddr *addr, socklen_t *addrlen, int flags)
 		return r;
 	}
 
-	/* todo: factor with simiar logic above & in  devmgr/fifofs.fc */
-	ps_curproc()->files[newfd] = kmem_alloc(sizeof(struct file));
-	obj_initialise_header(&ps_curproc()->files[newfd]->objhdr,
-	    kObjTypeFile);
-	ps_curproc()->files[newfd]->offset = 0;
-	ps_curproc()->files[newfd]->vn = newvn;
+	setup_file(ps_curproc(), newfd, newvn, flags);
 
 	return newfd;
 }
@@ -1113,13 +1147,14 @@ sys_listen(int fd, uint8_t backlog)
 int
 sys_recvmsg(int fd, struct msghdr *msg, int flags)
 {
-	vnode_t *vn;
+	struct file *file;
 
-	vn = ps_getfile(ps_curproc(), fd)->vn;
-	if (!vn)
+	file = ps_getfile(ps_curproc(), fd);
+	if (!file)
 		return -EBADF;
 
-	return sock_recvmsg(vn, msg, flags);
+	return sock_recvmsg(file->vn, msg,
+	    flags | (file->flags & O_NONBLOCK ? MSG_DONTWAIT : 0));
 }
 
 int
@@ -1259,7 +1294,7 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 
 	case kPXSysFCntl:
-		RET = 0;
+		RET = sys_fcntl(ARG1, ARG2, ARG3);
 		break;
 
 	case kPXSysEPollCreate:

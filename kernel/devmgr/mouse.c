@@ -120,7 +120,7 @@ mouse_open(krx_inout vnode_t **vn, int mode)
 }
 
 static int
-mouse_read(vnode_t *vn, void *buf, size_t nbyte, off_t offset)
+mouse_read(vnode_t *vn, void *buf, size_t nbyte, off_t offset, int flags)
 {
 	struct mouse *mouse = (struct mouse *)(vn->rdevice);
 	struct mouse_packet packet_read = { .flags = 255 };
