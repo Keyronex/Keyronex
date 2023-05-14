@@ -104,6 +104,20 @@ sock_listen(vnode_t *vn, uint8_t backlog)
 }
 
 int
+sock_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
+{
+	struct socknode *sock = VNTOSON(vn);
+
+	kassert(vn->ops == &sock_vnops);
+	kassert(msg->msg_iovlen == 1);
+	kdprintf("Sockops = %p\n", sock->sockops);
+
+	/* lmao */
+	return sock->sockops->sendmsg(vn, msg, flags);
+}
+
+
+int
 sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags)
 {
 	struct socknode *sock = VNTOSON(vn);

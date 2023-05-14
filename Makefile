@@ -53,5 +53,8 @@ iso:
 run:
 	@tools/amd64_run.sh -9 -k -r ${KRX_SYSROOT} -i ${ISO}
 
+runnet:
+	@tools/amd64_run.sh -9 -k -n -r ${KRX_SYSROOT} -i ${ISO}
+
 runnosmp:
 	@tools/amd64_run.sh -9 -s 1 -r ${KRX_SYSROOT} -i ${ISO}

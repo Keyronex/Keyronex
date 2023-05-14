@@ -80,6 +80,7 @@ struct socknodeops {
 	int (*recv)(vnode_t *vn, void *buf, size_t nbyte,
 	    ipl_t ipl); /* (unlocks) */
 	int (*send)(vnode_t *vn, void *buf, size_t nbyte);
+	int (*sendmsg)(vnode_t *vn, struct msghdr *msg, int flags);
 };
 
 int sock_accept(vnode_t *vn, krx_out struct sockaddr *addr,
@@ -107,6 +108,8 @@ int sock_event_raise(struct socknode *sock, int events);
 
 extern const char *sockstate_str[];
 extern struct socknodeops unix_soops;
+extern struct socknodeops udp_soops;
+extern struct socknodeops tcp_soops;
 extern struct vnops sock_vnops;
 
 #endif /* KRX_KEYSOCK_SOCKFS_H */

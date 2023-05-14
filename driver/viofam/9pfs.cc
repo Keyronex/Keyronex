@@ -1129,7 +1129,9 @@ NinePFS::inactive(vnode_t *vn)
 
 	// obj_direct_release(vn->vmobj);
 
+#if DEBUG_NODE_RELEASE == 1
 	kdprintf("Released node %p.\n", vn);
+#endif
 
 	ke_mutex_release(&self->nodecache_mutex);
 

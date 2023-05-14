@@ -1104,6 +1104,18 @@ sys_recvmsg(int fd, struct msghdr *msg, int flags)
 }
 
 int
+sys_sendmsg(int fd, struct msghdr *msg, int flags)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_sendmsg(vn, msg, flags);
+}
+
+int
 posix_syscall(hl_intr_frame_t *frame)
 {
 #define ARG1 frame->rdi
@@ -1316,6 +1328,10 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysListen:
 		RET = sys_listen(ARG1, ARG2);
+		break;
+
+	case kPXSysSendMsg:
+		RET = sys_sendmsg(ARG1, (struct msghdr *)ARG2, ARG3);
 		break;
 
 	case kPXSysRecvMsg:

@@ -131,6 +131,8 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 		DKDevLog(this, "Failed to set interface up: %d\n", err);
 	}
 
+	netif_set_default(&nic);
+
 #if 0
 	for (;;)
 		asm("pause");
