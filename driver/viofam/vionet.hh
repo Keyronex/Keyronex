@@ -49,6 +49,8 @@ class VirtIONIC : VirtIODevice {
 
 	void intrDpc();
 	void processUsed(virtio_queue *queue, struct vring_used_elem *e);
+	void processUsedOnRX(struct vring_used_elem *e);
+	void processUsedOnTX(struct vring_used_elem *e);
 
 	void initRXQueue();
 	void tryStartRequests();

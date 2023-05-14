@@ -70,10 +70,18 @@ sock_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
 	struct sock_tcp *sock = arg;
 	struct tcp_packet *pkt;
-	size_t len = p->tot_len;
+	size_t len;
 	ipl_t ipl;
 
+	if (p == NULL) {
+		kdprintf("TCP Socket %p peer disconnected\n", arg);
+		return ERR_OK;
+	}
+
+	len = p->tot_len;
+
 	kassert(p->ref == 1);
+	kassert(len > 0);
 	kassert(err == ERR_OK);
 
 	pkt = kmem_alloc(sizeof(*pkt));
@@ -120,6 +128,8 @@ sock_tcp_cb_accept(void *arg, struct tcp_pcb *newpcb, err_t err)
 	ipl_t ipl;
 
 	/* This is called with the TCP/IP core lock locked. */
+
+	kfatal("SOCK_TCP_ACCEPT!\n");
 
 	r = sock_tcp_common_alloc(&newvn);
 	if (r != 0)
@@ -201,6 +211,18 @@ sock_tcp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 	UNLOCK_TCPIP_CORE();
 
 	return err_to_errno(err);
+}
+
+static int
+sock_tcp_close(vnode_t *vn)
+{
+	struct sock_tcp *sock = VNTOTCP(vn);
+
+	LOCK_TCPIP_CORE();
+	tcp_close(sock->tcp_pcb);
+	UNLOCK_TCPIP_CORE();
+
+	return 0;
 }
 
 /*!
@@ -299,7 +321,7 @@ do_read:
 	 * we are working with it.
 	 */
 
-#if DEBUG_UDS == 0
+#if DEBUG_UDS == 1
 	kdprintf("%s %zu on a socket; pkt %p, data %p, offs %zu\n",
 	    flags & MSG_PEEK ? "Peeked" : "Received", nread, pkt, pkt->data,
 	    pkt_offset);
@@ -406,6 +428,7 @@ struct socknodeops tcp_soops = {
 	.create = sock_tcp_create,
 	.accept = sock_tcp_accept,
 	.connect = sock_tcp_connect,
+	.close = sock_tcp_close,
 	.recv = sock_tcp_recv,
 	.send = sock_tcp_send,
 };

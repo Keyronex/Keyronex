@@ -198,7 +198,7 @@ VirtIONIC::intrDpc()
 }
 
 void
-VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
+VirtIONIC::processUsedOnRX(struct vring_used_elem *e)
 {
 	struct vring_desc *dhdr, *ddata;
 	uint16_t ddataidx;
@@ -221,7 +221,7 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 
 	err = tcpip_input(&p->pbuf.pbuf, &nic);
 	if (err != ERR_OK) {
-#if 0
+#if 1
 		DKDevLog(this, "ip input error: %d; packed dropped\n", err);
 #endif
 		/* mark the pbuf for locked free*/
@@ -239,6 +239,32 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 			MIB2_STATS_NETIF_INC(nic, ifinucastpkts);
 		}
 		LINK_STATS_INC(link.recv);
+	}
+}
+
+void
+VirtIONIC::processUsedOnTX(struct vring_used_elem *e)
+{
+	struct vring_desc *dhdr;
+	uint16_t ddataidx;
+
+	dhdr = &QUEUE_DESC_AT(&tx_vq, e->id);
+	kassert(dhdr->flags & VRING_DESC_F_NEXT);
+	ddataidx = dhdr->next;
+
+	/* just return the descs for future use */
+	freeDescNumOnQueue(&tx_vq, e->id);
+	freeDescNumOnQueue(&tx_vq, ddataidx);
+}
+
+void
+VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
+{
+	if (queue == &rx_vq)
+		return processUsedOnRX(e);
+	else {
+		kassert(queue == &tx_vq);
+		return processUsedOnTX(e);
 	}
 }
 
@@ -316,6 +342,8 @@ VirtIONIC::freeRXPBuf(struct pbuf *p)
 	struct netif *netif;
 	VirtIONIC *self;
 	pbuf_rx *pbuf = (pbuf_rx *)p;
+
+	p->ref = 1;
 
 	netif = netif_get_by_index(p->if_idx);
 	kassert(netif != NULL);

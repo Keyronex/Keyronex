@@ -127,7 +127,11 @@ sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	kassert(msg->msg_iovlen > 0);
 
 again:
-	/* modified for NONBLOCK - todo set/getsockopt and O_NONBLOCK */
+#if DEBUG_SOCKFS == 1
+	kdprintf("Attempt to receive (max %lu bytes)\n",
+	    msg->msg_iov[0].iov_len);
+#endif
+
 	w = ke_wait(&sock->read_evobj, "sock_read:sock->read_evobj", false,
 	    false, flags & MSG_DONTWAIT ? 0 : -1);
 	if (w == kKernWaitStatusTimedOut)
@@ -269,6 +273,10 @@ sock_read(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 	kassert(vn->ops == &sock_vnops);
 
 again:
+#if DEBUG_SOCKFS == 1
+	kdprintf("Attempt to read (max %lu bytes)\n", nbyte);
+#endif
+
 	/* modified for nonblock - fix as with recvmsg pls. */
 	w = ke_wait(&sock->read_evobj, "sock_read:sock->read_evobj", false,
 	    false, flags & O_NONBLOCK ? 0 : -1);
@@ -299,7 +307,14 @@ sock_write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 int
 sock_close(vnode_t *vn)
 {
-	kdprintf("SOCK_CLOSE\n");
+	struct socknode *sonode;
+
+	kassert(vn->ops == &sock_vnops);
+	sonode = VNTOSON(vn);
+
+	if (sonode->sockops->close != NULL)
+		return sonode->sockops->close(vn);
+
 	return 0;
 }
 

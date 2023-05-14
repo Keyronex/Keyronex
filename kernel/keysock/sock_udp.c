@@ -20,6 +20,7 @@
 #include "keysock/sockfs.h"
 #include "lwip/err.h"
 #include "lwip/inet.h"
+#include "lwip/tcpip.h"
 #include "lwip/udp.h"
 
 #define VNTOUDP(VN) ((struct sock_udp *)vn->data)
@@ -125,10 +126,24 @@ sock_udp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen)
 
 	kdprintf("SOCK_UDP_BIND to %x:%d\n", ip_addr.addr, port);
 
+	LOCK_TCPIP_CORE();
 	err = udp_bind(VNTOUDP(vn)->udp_pcb, &ip_addr, port);
+	UNLOCK_TCPIP_CORE();
 
 	return err_to_errno(err);
 }
+
+static int sock_udp_close(vnode_t *vn)
+{
+	struct sock_udp *sock = VNTOUDP(vn);
+
+	LOCK_TCPIP_CORE();
+	udp_remove(sock->udp_pcb);
+	UNLOCK_TCPIP_CORE();
+
+	return 0;
+}
+
 
 /*!
  * Connect a UDP socket to an address. (todo)
@@ -224,11 +239,14 @@ sock_udp_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	void *data = kmem_alloc(msg->msg_iov[0].iov_len);
 	memcpy(data, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len);
 
+	LOCK_TCPIP_CORE();
 	p = pbuf_alloc_reference(data, msg->msg_iov[0].iov_len, PBUF_ROM);
 	if (!p)
 		return -ENOBUFS;
 
 	err = udp_sendto(VNTOUDP(vn)->udp_pcb, p, &ip_addr, port);
+	UNLOCK_TCPIP_CORE();
+
 	kdprintf("UDP_SENDTO RETURNED %d\n", err_to_errno(err));
 
 	return err == ERR_OK ? msg->msg_iov[0].iov_len : err_to_errno(err);
@@ -236,6 +254,7 @@ sock_udp_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 
 struct socknodeops udp_soops = {
 	.create = sock_udp_create,
+	.close = sock_udp_close,
 	.recv = sock_udp_recv,
 	.sendmsg = sock_udp_sendmsg,
 };

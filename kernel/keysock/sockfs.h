@@ -70,6 +70,7 @@ struct socknode {
 struct socknodeops {
 	int (*create)(krx_out vnode_t **out_vn, int domain, int type,
 	    int protocol);
+	int (*close)(vnode_t *vn);
 	int (*accept)(vnode_t *vn, krx_out struct sockaddr *addr,
 	    krx_inout socklen_t *addrlen);
 	int (*bind)(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen);
