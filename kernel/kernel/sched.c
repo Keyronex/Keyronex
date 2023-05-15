@@ -10,6 +10,7 @@
 #define NANOPRINTF_IMPLEMENTATION
 #include <nanoprintf/nanoprintf.h>
 
+int64_t timestamp_base = 0;
 kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER;
 kspinlock_t dpc_queues_lock = KSPINLOCK_INITIALISER;
 kspinlock_t dprintf_lock = KSPINLOCK_INITIALISER;
@@ -146,6 +147,11 @@ ki_reschedule(void)
 	}
 
 	hl_switch(curthread, next);
+}
+
+void ke_datetime_set(int64_t timestamp)
+{
+	timestamp_base = timestamp - __atomic_load_n(&cpu_bsp.ticks, __ATOMIC_SEQ_CST);
 }
 
 void

@@ -1428,6 +1428,26 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 	}
 
+	case kPXSysClockGet: {
+		switch (ARG1) {
+		case CLOCK_REALTIME:
+		case CLOCK_REALTIME_ALARM:
+		case CLOCK_REALTIME_COARSE:
+			RET = ke_datetime_get();
+			break;
+
+		case CLOCK_MONOTONIC:
+		case CLOCK_MONOTONIC_COARSE:
+		case CLOCK_MONOTONIC_RAW:
+			RET = __atomic_load_n(&cpu_bsp.ticks, __ATOMIC_SEQ_CST);
+			break;
+
+		default:
+			kfatal("Unhandled clock %lu\n", ARG1);
+		}
+		break;
+	}
+
 	case kPXSysForkThread:
 		RET = psx_fork_thread(frame, (void *)ARG1, (void *)ARG2);
 		break;

@@ -1,5 +1,6 @@
 kernel_link_args += ['-Wl,-T' + meson.current_source_dir() + '/linker.ld']
-kernel_sources += files('apic.c', 'cpu.c', 'intr.c', 'locore.S', 'start.c')
+kernel_sources += files('apic.c', 'cpu.c', 'intr.c', 'locore.S', 'rtc.c',
+	'start.c')
 
 kernel = executable(
 	'keyronex',

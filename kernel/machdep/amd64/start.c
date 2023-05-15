@@ -28,6 +28,9 @@ void setup_cpu_gdt(kcpu_t *cpu);
 void idt_load(void);
 void idt_setup(void);
 
+/* rtc.c */
+void read_rtc();
+
 /* vmamd64.c */
 void pmap_kernel_init(void);
 
@@ -354,6 +357,8 @@ _start(void)
 	kmem_init();
 
 	smp_init();
+	read_rtc();
+
 	psp_init_0();
 	ex_init(rsdp_request.response->address);
 

@@ -434,6 +434,13 @@ void ki_raise_dpc_interrupt(void);
 /*! @brief Start a newly-created thread. */
 void ki_thread_start(kthread_t *thread);
 
+/*! @brief Set the date/time to the given Unix-like nanosecond timestamp. */
+void ke_datetime_set(int64_t timestamp);
+
+/*! @brief Get the date/time as a Unix-like nanosecond timestamp. */
+#define ke_datetime_get() \
+	(__atomic_load_n(&cpu_bsp.ticks, __ATOMIC_SEQ_CST) + timestamp_base)
+
 /*! @brief Enqueue a DPC (will be run immediately if IPL < kIPLDPC) */
 void ke_dpc_enqueue(kdpc_t *dpc);
 
@@ -575,6 +582,8 @@ extern kcpu_t cpu_bsp;
 extern kcpu_t **all_cpus;
 /*! NUmber of CPUs in system. */
 extern size_t ncpus;
+/*! Timestamp + cpu_bsp->ticks = current time */
+extern int64_t timestamp_base;
 
 #ifdef __cplusplus
 }
