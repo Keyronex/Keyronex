@@ -4,12 +4,11 @@
  */
 
 #include <sys/socket.h>
+#include <sys/errno.h>
+#include <netinet/in.h>
 
-#include <elf.h>
 #include <stdint.h>
 
-#include "abi-bits/errno.h"
-#include "abi-bits/in.h"
 #include "executive/epoll.h"
 #include "kdk/kerndefs.h"
 #include "kdk/kernel.h"
@@ -42,6 +41,8 @@ struct sock_tcp {
 	STAILQ_HEAD(, tcp_packet) rx_queue;
 };
 
+static void sock_tcp_pcb_init(struct sock_tcp *sock, struct tcp_pcb *pcb);
+
 extern struct socknodeops tcp_soops;
 
 static int
@@ -62,9 +63,55 @@ sock_tcp_common_alloc(krx_out vnode_t **vnode)
 	return 0;
 }
 
-/*!
- * Packet received callback.
- */
+/* New connection callback. */
+static err_t
+sock_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
+{
+	struct sock_tcp *sock = (struct sock_tcp *)arg, *newsock;
+	vnode_t *newvn;
+	int r;
+	ipl_t ipl;
+
+	kfatal("SOCK_TCP_ACCEPT!\n");
+
+	r = sock_tcp_common_alloc(&newvn);
+	if (r != 0)
+		return ERR_MEM;
+
+	newsock = VNTOTCP(newvn);
+	sock_tcp_pcb_init(newsock, newpcb);
+
+	tcp_backlog_delayed(newpcb);
+
+	ipl = ke_spinlock_acquire(&sock->socknode.lock);
+	STAILQ_INSERT_TAIL(&sock->socknode.accept_stailq, &newsock->socknode,
+	    accept_stailq_entry);
+	ke_event_signal(&sock->socknode.accept_evobj);
+	sock_event_raise(&sock->socknode, EPOLLIN);
+	ke_spinlock_release(&sock->socknode.lock, ipl);
+
+	return ERR_OK;
+}
+
+/* Socket connected callback. */
+static err_t
+sock_tcp_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
+{
+	struct sock_tcp *sock = arg;
+
+	kassert(err == ERR_OK);
+	ke_event_signal(&sock->connect_ev);
+
+	return ERR_OK;
+}
+
+/* Socket error callback. */
+static void sock_tcp_err_cb(void *arg, err_t err)
+{
+	kfatal("sock_tcp_err_cb (%d)\n", err);
+}
+
+/* Packet received callback. */
 static err_t
 sock_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
@@ -102,54 +149,20 @@ sock_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 	return ERR_OK;
 }
 
-/*!
- * Socket connected callback.
- */
-static err_t
-sock_tcp_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
+static err_t sock_tcp_sent_cb(void * arg, struct tcp_pcb *pcb, uint16_t len)
 {
-	struct sock_tcp *sock = arg;
-
-	kassert(err == ERR_OK);
-	ke_event_signal(&sock->connect_ev);
-
+	kdprintf(" ** sent %d\n", len);
 	return ERR_OK;
 }
 
-/*!
- * New connection callback.
- */
-static err_t
-sock_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
+static void sock_tcp_pcb_init(struct sock_tcp *sock, struct tcp_pcb *pcb)
 {
-	struct sock_tcp *sock = (struct sock_tcp *)arg, *newsock;
-	vnode_t *newvn;
-	int r;
-	ipl_t ipl;
-
-	/* This is called with the TCP/IP core lock locked. */
-
-	kfatal("SOCK_TCP_ACCEPT!\n");
-
-	r = sock_tcp_common_alloc(&newvn);
-	if (r != 0)
-		return ERR_MEM;
-
-	newsock = VNTOTCP(newvn);
-	newsock->tcp_pcb = newpcb;
-
-	tcp_backlog_delayed(newpcb);
-	tcp_arg(newpcb, newsock);
-	tcp_recv(newpcb, sock_tcp_recv_cb);
-
-	ipl = ke_spinlock_acquire(&sock->socknode.lock);
-	STAILQ_INSERT_TAIL(&sock->socknode.accept_stailq, &newsock->socknode,
-	    accept_stailq_entry);
-	ke_event_signal(&sock->socknode.accept_evobj);
-	sock_event_raise(&sock->socknode, EPOLLIN);
-	ke_spinlock_release(&sock->socknode.lock, ipl);
-
-	return ERR_OK;
+	sock->tcp_pcb = pcb;
+	tcp_arg(sock->tcp_pcb, sock);
+	tcp_accept(sock->tcp_pcb, sock_tcp_accept_cb);
+	tcp_err(sock->tcp_pcb, sock_tcp_err_cb);
+	tcp_recv(sock->tcp_pcb, sock_tcp_recv_cb);
+	tcp_sent(sock->tcp_pcb, sock_tcp_sent_cb);
 }
 
 /*!
@@ -180,9 +193,7 @@ sock_tcp_create(krx_out vnode_t **vnode, int domain, int type, int protocol)
 		kmem_free(sock, sizeof(*sock));
 		return -ENOBUFS;
 	}
-
-	tcp_arg(sock->tcp_pcb, sock);
-	tcp_recv(sock->tcp_pcb, sock_tcp_recv_cb);
+	sock_tcp_pcb_init(sock, sock->tcp_pcb);
 	UNLOCK_TCPIP_CORE();
 
 	*vnode = vn;
@@ -268,9 +279,6 @@ sock_tcp_listen(vnode_t *vn, uint8_t backlog)
 	}
 
 	sock->tcp_pcb = new_pcb;
-
-	tcp_arg(sock->tcp_pcb, sock);
-	tcp_accept(sock->tcp_pcb, sock_tcp_accept_cb);
 	UNLOCK_TCPIP_CORE();
 
 	return 0;

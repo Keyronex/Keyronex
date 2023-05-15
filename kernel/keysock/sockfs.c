@@ -110,9 +110,7 @@ sock_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 
 	kassert(vn->ops == &sock_vnops);
 	kassert(msg->msg_iovlen == 1);
-	kdprintf("Sockops = %p\n", sock->sockops);
 
-	/* lmao */
 	return sock->sockops->sendmsg(vn, msg, flags);
 }
 
