@@ -87,20 +87,32 @@
  * @brief Implementation of the VMem resource allocator.
  */
 
-#include "kdk/vmem_impl.h"
 #ifdef _KERNEL
 #include "kdk/kernel.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
+#include "kdk/vmem_impl.h"
 #else
+#include <sys/queue.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include "../_sdkinc/kdk/vmem_impl.h"
+
+typedef int kspinlock_t;
+#define KSPINLOCK_INITIALISER 0
+
+#define ke_spinlock_acquire(LOCK) 0
+#define ke_spinlock_release(LOCK, IPL)
+#define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 #define vm_kalloc(SIZE, FLAGS) malloc(SIZE)
 #define kmalloc malloc
 #define kdprintf printf
-#define kfatal(...)                               \
+#define kassert(...) assert(__VA_ARGS__)
+#define kfatal(...)                              \
 	{                                        \
 		kdprintf("fatal: " __VA_ARGS__); \
 		exit(EXIT_FAILURE);              \
@@ -562,8 +574,14 @@ free:
 	}
 
 	if (!coalesced) {
+		/* todo: this is the proper behaviour */
+#if 0
+		seg->type = kVMemSegFree;
+		freelist_insert(vmem, seg);
+#else
 		TAILQ_REMOVE(&vmem->segqueue, seg, segqueue);
 		seg_free(vmem, seg);
+#endif
 	}
 
 	vmem->used -= size;
@@ -608,13 +626,13 @@ main()
 {
 	vmem_t *vmem = malloc(sizeof *vmem);
 	vmem_seg_t *span;
-	vmem_addr_t addr = -1ul;
+	vmem_addr_t addr[8];
 
 	vmem_earlyinit();
 
 	vmem_init(vmem, "hello", 0x0, 0x1000000, 0x1000, NULL, NULL, NULL, 0, 0,
 	    0);
-	vmem_xalloc(vmem, 0x2000, 0, 0, 0, 0x2000, 0, kVMemExact, &addr);
+	vmem_xalloc(vmem, 0x2000, 0, 0, 0, 0x2000, 0, kVMemExact, &addr[7]);
 
 #if 0
 	vmem_add(vmem, 0x1000, 0x1000, 0);
@@ -624,6 +642,7 @@ main()
 	vmem_add(vmem, 0x10000, 0x5000, 0);
 #endif
 
+	kdprintf("INITIALLY:\n");
 	kdprintf("spans:\n");
 	LIST_FOREACH (span, &vmem->spanlist, seglist) {
 		kdprintf("[%p-%p]\n", span->base, span->base + span->size);
@@ -634,9 +653,13 @@ main()
 		    span->base, span->base + span->size);
 	}
 
-	vmem_xalloc(vmem, 0x2000, 0, 0, 0, 0, 0, 0, &addr);
+	vmem_xalloc(vmem, 0x2000, 0, 0, 0, 0, 0, 0, &addr[0]);
+	vmem_xalloc(vmem, 0x1000, 0, 0, 0, 0, 0, 0, &addr[1]);
+	vmem_xalloc(vmem, 0x1000, 0, 0, 0, 0, 0, 0, &addr[2]);
+	vmem_xalloc(vmem, 0x1000, 0, 0, 0, 0, 0, 0, &addr[3]);
+	vmem_xalloc(vmem, 0x1000, 0, 0, 0, 0, 0, 0, &addr[4]);
 
-#if 0
+#if 1
 	kdprintf("\nsegs\n");
 	TAILQ_FOREACH (span, &vmem->segqueue, segqueue) {
 		kdprintf("[%s:%p-%p]\n", vmem_seg_type_str[span->type],
@@ -644,9 +667,14 @@ main()
 	}
 
 	kdprintf("FREEING\n");
-	vmem_xfree(vmem, addr, 0x2000);
+	vmem_xfree(vmem, addr[2], 0x1000, 0);
 #endif
+	vmem_xalloc(vmem, 0x1000, 0, 0, 0, 0, 0, 0, &addr[4]);
 
 	kdprintf("\nsegs\n");
+	TAILQ_FOREACH (span, &vmem->segqueue, segqueue) {
+		kdprintf("[%s:%p-%p]\n", vmem_seg_type_str[span->type],
+		    span->base, span->base + span->size);
+	}
 }
 #endif

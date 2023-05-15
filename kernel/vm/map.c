@@ -183,6 +183,9 @@ vm_map_phys(vm_map_t *map, paddr_t paddr, krx_inout vaddr_t *vaddrp,
 	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
+	/* don't think this ever happens, check in case it does */
+	kassert(map != kernel_process.map);
+
 	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0,
 	    exact ? kVMemExact : 0, &addr);
 	if (r < 0) {
