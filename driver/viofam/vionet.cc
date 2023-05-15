@@ -63,9 +63,12 @@ VirtIONIC::netifOutput(struct netif *nic, struct pbuf *p)
 {
 	VirtIONIC *self = (VirtIONIC *)nic->state;
 	ipl_t ipl = ke_spinlock_acquire(&self->tx_vq.spinlock);
-	/* !!! lwip may have freed the pbuf; we need to copy it really */
-	STAILQ_INSERT_TAIL(&self->pbuf_txq, p, stailq_entry);
-	ke_dpc_enqueue(&self->interrupt_dpc);
+	pbuf_ref(p);
+	if (self->trySend(p) == 0) {
+		/* can't send yet, need to enqueue */
+		STAILQ_INSERT_TAIL(&self->pbuf_txq, p, stailq_entry);
+		ke_dpc_enqueue(&self->interrupt_dpc);
+	}
 	ke_spinlock_release(&self->tx_vq.spinlock, ipl);
 	return ERR_OK;
 }
@@ -268,26 +271,15 @@ VirtIONIC::processUsed(virtio_queue *queue, struct vring_used_elem *e)
 	}
 }
 
-void
-VirtIONIC::tryStartRequests()
+int
+VirtIONIC::trySend(struct pbuf *p)
 {
-	vaddr_t nethdr_tx_pagebase = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(
-	    nethdrs_page) + 64 * sizeof(struct virtio_net_hdr_mrg_rxbuf);
-	struct pbuf *p;
+	vaddr_t nhdr_base = (vaddr_t)VM_PAGE_DIRECT_MAP_ADDR(nethdrs_page) +
+	    64 * sizeof(struct virtio_net_hdr_mrg_rxbuf);
 	struct virtio_net_hdr_mrg_rxbuf *hdr;
 	struct vring_desc *dhdr, *ddata;
 	uint16_t dhdridx, ddataidx;
 	uint16_t i;
-
-again:
-	if (tx_vq.nfree_descs < 2)
-		return;
-
-	p = STAILQ_FIRST(&pbuf_txq);
-	if (!p)
-		return;
-
-	STAILQ_REMOVE(&pbuf_txq, p, pbuf, stailq_entry);
 
 	dhdridx = allocateDescNumOnQueue(&tx_vq);
 	ddataidx = allocateDescNumOnQueue(&tx_vq);
@@ -297,8 +289,7 @@ again:
 
 	i = dhdridx / 2;
 
-	hdr = (virtio_net_hdr_mrg_rxbuf *)(nethdr_tx_pagebase +
-	    i * sizeof(*hdr));
+	hdr = (virtio_net_hdr_mrg_rxbuf *)(nhdr_base + i * sizeof(*hdr));
 	hdr->num_buffers = 1;
 
 	dhdr->len = sizeof(*hdr);
@@ -313,6 +304,7 @@ again:
 
 	kassert(p->tot_len <= 2048);
 	pbuf_copy_partial(p, P2V(ddata->addr), 2048, 0);
+	pbuf_free(p);
 
 	submitDescNumToQueue(&tx_vq, dhdridx);
 	notifyQueue(&tx_vq);
@@ -331,6 +323,29 @@ again:
 #endif
 
 	LINK_STATS_INC(link.xmit);
+
+	return 1;
+}
+
+void
+VirtIONIC::tryStartRequests()
+{
+	struct pbuf *p;
+
+	/* called with tx_vq.spinlock held */
+
+again:
+	if (tx_vq.nfree_descs < 2)
+		return;
+
+	p = STAILQ_FIRST(&pbuf_txq);
+	if (!p)
+		return;
+
+	if (trySend(p) == 1)
+		STAILQ_REMOVE(&pbuf_txq, p, pbuf, stailq_entry);
+	else
+		return;
 
 	goto again;
 }

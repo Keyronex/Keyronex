@@ -52,7 +52,11 @@ class VirtIONIC : VirtIODevice {
 	void processUsedOnRX(struct vring_used_elem *e);
 	void processUsedOnTX(struct vring_used_elem *e);
 
+	/* Initialise the receive virtqueue. */
 	void initRXQueue();
+	/* Try to send a pbuf immediately. Returns 1 if sent. */
+	int trySend(struct pbuf *p);
+	/* Try to start pending transmits. */
 	void tryStartRequests();
 
     public:
