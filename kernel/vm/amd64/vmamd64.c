@@ -330,17 +330,17 @@ pmap_enter_pageable(vm_map_t *map, vm_page_t *page, vaddr_t virt,
 	pve->map = map;
 	pve->vaddr = virt;
 
-#if 1
+#if 0
 	ipl = ke_spinlock_acquire(&map->md.lock);
 #else
 	ipl = vmp_acquire_pfn_lock();
 	ke_spinlock_acquire_nospl(&map->md.lock);
 #endif
 
-	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot, 0);
+	pmap_enter_common(map, VM_PAGE_PADDR(page), virt, prot, kVMemPFNDBHeld);
 	LIST_INSERT_HEAD(&page->pv_list, pve, list_entry);
 
-#if 1
+#if 0
 	ke_spinlock_release(&map->md.lock, ipl);
 #else
 	ke_spinlock_release_nospl(&map->md.lock);

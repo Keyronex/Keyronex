@@ -100,7 +100,7 @@
 #define vm_kalloc(SIZE, FLAGS) malloc(SIZE)
 #define kmalloc malloc
 #define kdprintf printf
-#define fatal(...)                               \
+#define kfatal(...)                               \
 	{                                        \
 		kdprintf("fatal: " __VA_ARGS__); \
 		exit(EXIT_FAILURE);              \
@@ -293,6 +293,7 @@ vmem_init(vmem_t *vmem, const char *name, vmem_addr_t base, vmem_size_t size,
 	strcpy(vmem->name, name);
 	vmem->base = base;
 	vmem->size = size;
+	vmem->used = 0;
 	vmem->quantum = quantum;
 	vmem->flags = flags;
 	vmem->allocfn = allocfn;
@@ -459,6 +460,8 @@ search:
 split_seg:
 	split_seg(vmem, freeseg, &newlseg, &newrseg, addr, size);
 
+	vmem->used += size;
+
 	*out = addr;
 	return 0;
 }
@@ -495,9 +498,9 @@ vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size, vmem_flag_t flags)
 	return -1;
 
 free:
-#if 0
+#if 1
 	if (size != 0 && seg->size != size)
-		fatal(
+		kfatal(
 		    "vmem_xfree: mismatched size (given 0x%lx, actual 0x%lx)\n",
 		    size, seg->size);
 #endif
@@ -543,7 +546,7 @@ free:
 		/* XXX seg not set free yet if it wasn't coalesced */
 #if 0
 		if(seg->type != kVMemSegFree) {
-			fatal("unexpected seg type %d\n", seg->type);
+			kfatal("unexpected seg type %d\n", seg->type);
 		}
 #endif
 		if (coalesced)
@@ -562,6 +565,8 @@ free:
 		TAILQ_REMOVE(&vmem->segqueue, seg, segqueue);
 		seg_free(vmem, seg);
 	}
+
+	vmem->used -= size;
 
 	return size;
 }

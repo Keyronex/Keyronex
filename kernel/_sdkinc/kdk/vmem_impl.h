@@ -57,6 +57,7 @@ typedef struct vmem {
 	vmem_addr_t base;    /** base address */
 	vmem_size_t size;    /** size in bytes */
 	vmem_size_t quantum; /** minimum allocation size */
+	vmem_size_t used;
 
 	vmem_flag_t flags;
 

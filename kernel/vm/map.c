@@ -11,6 +11,7 @@
 #include "kdk/objhdr.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
+#include "kdk/vmem.h"
 #include "vm/vm_internal.h"
 
 RB_GENERATE(vm_map_entry_rbtree, vm_map_entry, rbtree_entry, vmp_map_entry_cmp);
@@ -85,6 +86,8 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 	kwaitstatus_t w;
 	vm_map_entry_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
+	ipl_t ipl;
+	int vmem_flags = 0;
 
 	if (addr % PGSIZE != 0) {
 		return -EINVAL;
@@ -92,11 +95,20 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 		return -EINVAL;
 	}
 
+	if (exact)
+		vmem_flags |= kVMemExact;
+
 	w = ke_wait(&map->mutex, "vm_map_object:map->mutex", false, false, -1);
 	kassert(w == kKernWaitStatusOK);
 
-	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0,
-	    exact ? kVMemExact : 0, &addr);
+	if (map == kernel_process.map) {
+		vmem_flags |= kVMemPFNDBHeld;
+		ipl = vmp_acquire_pfn_lock();
+	}
+	r = vmem_xalloc(&map->vmem, size, 0, 0, 0, addr, 0, vmem_flags, &addr);
+	if (map == kernel_process.map)
+		vmp_release_pfn_lock(ipl);
+
 	if (r < 0) {
 		kdprintf("vm_map_object failed at vmem_xalloc with %d\n", r);
 		for (;;)
@@ -218,16 +230,22 @@ vm_map_deallocate(vm_map_t *map, vaddr_t start, size_t size)
 			continue;
 		else if (entry->start >= start && entry->end <= end) {
 			int r;
-
-			r = vmem_xfree(&map->vmem, entry->start,
-			    entry->end - entry->start, 0);
-			kassert(r == entry->end - entry->start);
+			ipl_t ipl;
 
 			RB_REMOVE(vm_map_entry_rbtree, &map->entry_queue,
 			    entry);
 
 			pmap_unenter_pageable_range(map, entry->start,
 			    entry->end);
+
+			if (map == kernel_process.map)
+				ipl = vmp_acquire_pfn_lock();
+			r = vmem_xfree(&map->vmem, entry->start,
+			    entry->end - entry->start,
+			    map == kernel_process.map ? kVMemPFNDBHeld : 0);
+			kassert(r == entry->end - entry->start);
+			if (map == kernel_process.map)
+				vmp_release_pfn_lock(ipl);
 
 			if (entry->object) {
 				if (!entry->object->is_anonymous)
