@@ -164,7 +164,8 @@ vfs_lookup(vnode_t *start, vnode_t **out, const char *path,
 		} else if (strcmp(np->name, "..") == 0) {
 			/* note: shuld lock mount_lock and probably loop */
 			if (vn->isroot && vn->vfsp->vnodecovered != NULL) {
-				next_vn = vn->vfsp->vnodecovered;
+				next_vn = obj_direct_retain(
+				    vn->vfsp->vnodecovered);
 				obj_direct_release(vn);
 				vn = next_vn;
 			}
