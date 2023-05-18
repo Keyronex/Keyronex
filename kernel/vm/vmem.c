@@ -575,7 +575,7 @@ free:
 
 	if (!coalesced) {
 		/* todo: this is the proper behaviour */
-#if 0
+#if 1
 		seg->type = kVMemSegFree;
 		freelist_insert(vmem, seg);
 #else

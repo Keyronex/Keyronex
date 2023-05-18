@@ -117,7 +117,7 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 	DKDevLog(this, "MAC address: " MAC_FMT "\n", cfg->mac[0], cfg->mac[1],
 	    cfg->mac[2], cfg->mac[3], cfg->mac[4], cfg->mac[5]);
 
-#if TEST_IP == 1
+#if TEST_IP == 0
 	ip4_addr_t ip, netmask, gw;
 	ip.addr = ipaddr_addr("192.168.122.50");
 	netmask.addr = ipaddr_addr("255.255.255.0");
@@ -221,6 +221,7 @@ VirtIONIC::processUsedOnRX(struct vring_used_elem *e)
 	p->pbuf.custom_free_function = freeRXPBuf;
 	p->hdr_desc_id = e->id;
 	p->pbuf.pbuf.if_idx = netif_get_index(&nic);
+	p->locked = false;
 
 	err = tcpip_input(&p->pbuf.pbuf, &nic);
 	if (err != ERR_OK) {

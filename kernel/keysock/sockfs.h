@@ -8,7 +8,6 @@
 
 #include <sys/socket.h>
 
-#include <abi-bits/in.h>
 #include <stdint.h>
 
 #include "executive/epoll.h"
@@ -74,6 +73,7 @@ struct socknodeops {
 	int (*accept)(vnode_t *vn, krx_out struct sockaddr *addr,
 	    krx_inout socklen_t *addrlen);
 	int (*bind)(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen);
+	int (*ioctl)(vnode_t *vn, unsigned long op, void *arg);
 	int (*listen)(vnode_t *vn, uint8_t backlog);
 	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
 	    socklen_t addr_len);
@@ -83,6 +83,27 @@ struct socknodeops {
 	int (*send)(vnode_t *vn, void *buf, size_t nbyte);
 	int (*sendmsg)(vnode_t *vn, struct msghdr *msg, int flags);
 };
+
+/*!
+ * Packet structure used for TCP, UDP, and Unix sockets alike.
+ */
+struct packet {
+	/*! Linkage in queue. */
+	STAILQ_ENTRY(packet) stailq_entry;
+	/*! Byte size of the main data body of the packet. */
+	uint32_t size;
+	/*! Bytes already read. */
+	uint32_t offset;
+	/*! Main data body. */
+	uint8_t *data;
+	/*! Reference count. */
+	uint32_t refcount;
+};
+
+/*!
+ * Packet simplequeue.
+ */
+STAILQ_HEAD(packet_stailq, packet);
 
 int sock_accept(vnode_t *vn, krx_out struct sockaddr *addr,
     krx_inout socklen_t *addrlen, krx_out vnode_t **out);
@@ -108,9 +129,10 @@ int sock_init(struct socknode *sock, struct socknodeops *ops);
 int sock_event_raise(struct socknode *sock, int events);
 
 extern const char *sockstate_str[];
+extern struct socknodeops raw_soops;
+extern struct socknodeops tcp_soops;
 extern struct socknodeops unix_soops;
 extern struct socknodeops udp_soops;
-extern struct socknodeops tcp_soops;
 extern struct vnops sock_vnops;
 
 #endif /* KRX_KEYSOCK_SOCKFS_H */

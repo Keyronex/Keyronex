@@ -144,7 +144,6 @@ static int sock_udp_close(vnode_t *vn)
 	return 0;
 }
 
-
 /*!
  * Connect a UDP socket to an address. (todo)
  */
@@ -159,9 +158,13 @@ sock_udp_connect(vnode_t *vn, const struct sockaddr *nam, socklen_t addr_len)
 	if (err != 0)
 		return err;
 
+	LOCK_TCPIP_CORE();
+	err = udp_connect(VNTOUDP(vn)->udp_pcb, &ip_addr, port);
+	UNLOCK_TCPIP_CORE();
+
 	kdprintf("SOCK_UDP_CONNECT to %x:%d\n", ip_addr.addr, port);
 
-	return -EOPNOTSUPP;
+	return err_to_errno(err);
 }
 
 int
@@ -244,6 +247,8 @@ sock_udp_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	if (!p)
 		return -ENOBUFS;
 
+		udp_bind_netif(VNTOUDP(vn)->udp_pcb, netif_get_by_index(1));
+
 	err = udp_sendto(VNTOUDP(vn)->udp_pcb, p, &ip_addr, port);
 	UNLOCK_TCPIP_CORE();
 
@@ -254,7 +259,9 @@ sock_udp_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 
 struct socknodeops udp_soops = {
 	.create = sock_udp_create,
+	.bind = sock_udp_bind,
 	.close = sock_udp_close,
+	.connect = sock_udp_connect,
 	.recv = sock_udp_recv,
 	.sendmsg = sock_udp_sendmsg,
 };

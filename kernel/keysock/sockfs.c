@@ -57,6 +57,9 @@ sock_create(int domain, int type, int protocol, vnode_t **out)
 		case SOCK_DGRAM:
 			return udp_soops.create(out, domain, type, protocol);
 
+		case SOCK_RAW:
+			return raw_soops.create(out, domain, type, protocol);
+
 		default:
 			return -EPROTONOSUPPORT;
 		}
@@ -64,6 +67,7 @@ sock_create(int domain, int type, int protocol, vnode_t **out)
 	default:
 		kdprintf("Unsupported domain %d (type %d, proto %d)\n", domain,
 		    type, protocol);
+		kfatal("FAILED!\n");
 		return -EAFNOSUPPORT;
 	}
 }
@@ -304,6 +308,18 @@ sock_write(vnode_t *vn, void *buf, size_t nbyte, off_t off, int flags)
 }
 
 int
+sock_ioctl(vnode_t *vn, unsigned long op, void *arg)
+{
+	struct socknode *sonode;
+
+	kassert(vn->ops == &sock_vnops);
+	sonode = VNTOSON(vn);
+
+	kassert(sonode->sockops->ioctl != NULL);
+	return sonode->sockops->ioctl(vn, op, arg);
+}
+
+int
 sock_close(vnode_t *vn)
 {
 	struct socknode *sonode;
@@ -320,6 +336,7 @@ sock_close(vnode_t *vn)
 struct vnops sock_vnops = {
 	.read = sock_read,
 	.write = sock_write,
+	.ioctl = sock_ioctl,
 	.close = sock_close,
 	.chpoll = sock_chpoll,
 };

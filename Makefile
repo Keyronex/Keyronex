@@ -24,7 +24,7 @@ build/: mlibc/meson.build
 	touch build/
 
 rebuild-kernel: build/
-	(cd build && xbstrap install --rebuild mlibc-headers mlibc keyronex-kernel)
+	(cd build && xbstrap install --rebuild mlibc-headers keyronex-kernel-headers mlibc keyronex-kernel)
 
 iso:
 	@rm -rf ${ISO_DIR}
