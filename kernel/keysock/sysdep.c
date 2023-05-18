@@ -10,6 +10,9 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
+ kthread_t *lwprot_thread = NULL;
+ size_t lwprot_nest = 0;
+
 u32_t
 sys_now(void)
 {

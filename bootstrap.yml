@@ -379,6 +379,7 @@ packages:
         - 'setup'
         - '--cross-file=@BUILD_ROOT@/crossfile.ini'
         - '-Dno_headers=true'
+#        - '--optimization=2'
         - '@THIS_SOURCE_DIR@'
         - '--prefix=/'
     build:
