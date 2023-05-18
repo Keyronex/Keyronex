@@ -27,16 +27,6 @@ struct sock_raw {
 
 #define VNTORAW(VN) ((struct sock_raw *)(VN)->data)
 
-#if 1
-
-void
-packet_queue_init(struct packet_stailq *queue)
-{
-	STAILQ_INIT(queue);
-}
-
-#endif /* Packet routines */
-
 uint8_t
 sock_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
     const ip_addr_t *addr)

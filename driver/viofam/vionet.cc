@@ -200,6 +200,8 @@ VirtIONIC::intrDpc()
 	ke_spinlock_release(&tx_vq.spinlock, ipl);
 }
 
+extern "C" int packet_deliver_to_sockets(struct pbuf *p);
+
 void
 VirtIONIC::processUsedOnRX(struct vring_used_elem *e)
 {
@@ -222,6 +224,8 @@ VirtIONIC::processUsedOnRX(struct vring_used_elem *e)
 	p->hdr_desc_id = e->id;
 	p->pbuf.pbuf.if_idx = netif_get_index(&nic);
 	p->locked = false;
+
+	packet_deliver_to_sockets(&p->pbuf.pbuf);
 
 	err = tcpip_input(&p->pbuf.pbuf, &nic);
 	if (err != ERR_OK) {

@@ -133,7 +133,8 @@ sock_udp_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen)
 	return err_to_errno(err);
 }
 
-static int sock_udp_close(vnode_t *vn)
+static int
+sock_udp_close(vnode_t *vn)
 {
 	struct sock_udp *sock = VNTOUDP(vn);
 
@@ -247,7 +248,7 @@ sock_udp_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 	if (!p)
 		return -ENOBUFS;
 
-		udp_bind_netif(VNTOUDP(vn)->udp_pcb, netif_get_by_index(1));
+	// udp_bind_netif(VNTOUDP(vn)->udp_pcb, netif_get_by_index(1));
 
 	err = udp_sendto(VNTOUDP(vn)->udp_pcb, p, &ip_addr, port);
 	UNLOCK_TCPIP_CORE();

@@ -45,29 +45,39 @@ sock_create(int domain, int type, int protocol, vnode_t **out)
 {
 	switch (domain) {
 	case PF_LOCAL:
-		kprintf("Create a Unix socket, type %d proto %d\n", type,
-		    protocol);
+		kprintf("[SockFS] Create a Unix socket, type %d proto %d\n",
+		    type, protocol);
 		return unix_soops.create(out, domain, type, protocol);
 
 	case PF_INET:
 		switch (type) {
 		case SOCK_STREAM:
+			kprintf("[SockFS] Create an internet stream socket\n");
 			return tcp_soops.create(out, domain, type, protocol);
 
 		case SOCK_DGRAM:
+			kprintf(
+			    "[SockFS] Create an internet datagram socket\n");
+
 			return udp_soops.create(out, domain, type, protocol);
 
 		case SOCK_RAW:
+			kprintf("[SockFS] Create an internet raw socket\n");
+
 			return raw_soops.create(out, domain, type, protocol);
 
 		default:
 			return -EPROTONOSUPPORT;
 		}
 
-	default:
-		kdprintf("Unsupported domain %d (type %d, proto %d)\n", domain,
+	case PF_PACKET:
+		kprintf("[SockFS] Create a packet socket, type %d proto %d\n",
 		    type, protocol);
-		kfatal("FAILED!\n");
+		return packet_soops.create(out, domain, type, protocol);
+
+	default:
+		kprintf("[SockFS] Unsupported domain %d (type %d, proto %d)\n",
+		    domain, type, protocol);
 		return -EAFNOSUPPORT;
 	}
 }

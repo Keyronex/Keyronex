@@ -85,7 +85,7 @@ struct socknodeops {
 };
 
 /*!
- * Packet structure used for TCP, UDP, and Unix sockets alike.
+ * Packet structure used for raw, TCP, UDP, and Unix sockets alike.
  */
 struct packet {
 	/*! Linkage in queue. */
@@ -104,6 +104,10 @@ struct packet {
  * Packet simplequeue.
  */
 STAILQ_HEAD(packet_stailq, packet);
+
+void packet_queue_init(struct packet_stailq *queue);
+void packet_add_to_queue(struct packet_stailq *queue,
+    struct packet *packet);
 
 int sock_accept(vnode_t *vn, krx_out struct sockaddr *addr,
     krx_inout socklen_t *addrlen, krx_out vnode_t **out);
@@ -129,6 +133,7 @@ int sock_init(struct socknode *sock, struct socknodeops *ops);
 int sock_event_raise(struct socknode *sock, int events);
 
 extern const char *sockstate_str[];
+extern struct socknodeops packet_soops;
 extern struct socknodeops raw_soops;
 extern struct socknodeops tcp_soops;
 extern struct socknodeops unix_soops;
