@@ -60,7 +60,26 @@ sock_raw_create(krx_out vnode_t **vnode, int domain, int type, int protocol)
 
 	*vnode = sock->socknode.vnode;
 
-	kdprintf("Created Raw Socket\n");
+	return 0;
+}
+
+static int
+sock_raw_close(vnode_t *vn)
+{
+	struct sock_raw *sock = VNTORAW(vn);
+	ipl_t ipl;
+
+	LOCK_TCPIP_CORE();
+	raw_remove(sock->raw_pcb);
+	UNLOCK_TCPIP_CORE();
+
+	/* acquire the spinlock to ensure all packet deliveries are finished */
+	ipl = ke_spinlock_acquire(&sock->socknode.lock);
+	ke_spinlock_release(&sock->socknode.lock, ipl);
+
+	/* at this point */
+
+	kmem_free(sock, sizeof(*sock));
 
 	return 0;
 }
@@ -71,6 +90,38 @@ sock_raw_ioctl(vnode_t *vn, unsigned long op, void *arg)
 	struct ifreq *req = arg;
 
 	switch (op) {
+	case SIOCGIFCONF: {
+		size_t i = 0;
+		struct netif *netif;
+		struct ifconf *ifc = arg;
+		struct ifreq *ifr = ifc->ifc_req;
+
+		LOCK_TCPIP_CORE();
+		NETIF_FOREACH(netif)
+		{
+			if (((i * sizeof(struct ifreq)) +
+				sizeof(struct ifreq)) > ifc->ifc_len)
+				break;
+
+			netif_index_to_name(netif_get_index(netif),
+			    ifr[i].ifr_name);
+			if (netif_ip4_addr(netif) == IP4_ADDR_ANY)
+				ifr[i].ifr_addr.sa_family = AF_UNSPEC;
+			else {
+				ifr[i].ifr_addr.sa_family = AF_INET;
+				memcpy(ifr[i].ifr_addr.sa_data,
+				    netif_ip4_addr(netif),
+				    sizeof(struct in_addr));
+			}
+			i++;
+		}
+		UNLOCK_TCPIP_CORE();
+
+		ifc->ifc_len = i * sizeof(struct ifreq);
+
+		return 0;
+	}
+
 	case SIOCGIFINDEX: {
 		err_t err;
 		uint8_t index;
@@ -88,14 +139,15 @@ sock_raw_ioctl(vnode_t *vn, unsigned long op, void *arg)
 		struct netif *netif = netif_find(req->ifr_ifrn.ifrn_name);
 
 		if (netif == NULL) {
-			kdprintf("no such device <%s>\n",req->ifr_ifrn.ifrn_name);
+			kdprintf("no such device <%s>\n",
+			    req->ifr_ifrn.ifrn_name);
 			return -ENODEV;
 		}
 
 		req->ifr_addr.sa_family = ARPHRD_ETHER;
 		memcpy(req->ifr_addr.sa_data, netif->hwaddr,
 		    sizeof(netif->hwaddr));
-		
+
 		return 0;
 	}
 

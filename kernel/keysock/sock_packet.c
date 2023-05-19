@@ -95,6 +95,34 @@ sock_packet_create(krx_out vnode_t **vnode, int domain, int type, int protocol)
 }
 
 static int
+sock_packet_close(vnode_t *vn)
+{
+	struct sock_packet *sock = VNTOPKT(vn);
+	struct packet *packet;
+	struct packet_packet *ppacket;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&packetsocks_lock);
+	TAILQ_REMOVE(&packetsocks, sock, packetsock_tailq_entry);
+	ke_spinlock_release(&packetsocks_lock, ipl);
+
+	/* acquire the spinlock to ensure all packet deliveries are finished */
+	ipl = ke_spinlock_acquire(&sock->socknode.lock);
+	ke_spinlock_release(&sock->socknode.lock, ipl);
+
+	/* the socket is no longer referable so we can proceed unlocked */
+	STAILQ_FOREACH (packet, &sock->rx_queue, stailq_entry) {
+		ppacket = (void *)packet;
+		kmem_free(ppacket->packet.data, ppacket->packet.size);
+		kmem_free(ppacket, sizeof(*ppacket));
+	}
+
+	kmem_free(sock, sizeof(*sock));
+
+	return 0;
+}
+
+static int
 sock_packet_bind(vnode_t *vn, const struct sockaddr *nam, socklen_t namlen)
 {
 	struct sockaddr_ll *sll = (struct sockaddr_ll *)nam;
@@ -177,6 +205,7 @@ sock_packet_sendmsg(vnode_t *vn, struct msghdr *msg, int flags)
 
 struct socknodeops packet_soops = {
 	.create = sock_packet_create,
+	.close = sock_packet_close,
 	.bind = sock_packet_bind,
 	.recv = sock_packet_recv,
 	.sendmsg = sock_packet_sendmsg,
