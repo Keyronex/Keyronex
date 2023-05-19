@@ -78,6 +78,7 @@ struct socknodeops {
 	int (*connect)(vnode_t *vn, const struct sockaddr *nam,
 	    socklen_t addr_len);
 	int (*chpoll)(vnode_t *vn, struct pollhead *, enum chpoll_kind);
+	int (*pair)(vnode_t *vn, vnode_t *vn2);
 	int (*recv)(vnode_t *vn, void *buf, size_t nbyte, int flags,
 	    ipl_t ipl); /* (unlocks) */
 	int (*send)(vnode_t *vn, void *buf, size_t nbyte);
@@ -115,7 +116,7 @@ int sock_create(int domain, int type, int protocol, vnode_t **out);
 int sock_bind(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen);
 int sock_connect(vnode_t *vn, const struct sockaddr *addr, socklen_t addrlen);
 int sock_listen(vnode_t *vn, uint8_t backlog);
-int sock_pair(int domain, int type, int protocol, vnode_t *out[2]);
+int sock_pair(vnode_t *vn1, vnode_t *vn2);
 int sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags);
 int sock_sendmsg(vnode_t *vn, struct msghdr *msg, int flags);
 

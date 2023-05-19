@@ -199,7 +199,12 @@ in:
 	}
 
 	while (nread < nbyte) {
-		int c = dequeue(tty);
+		int c;
+
+		if (tty->buflen == 0)
+			break;
+
+		c = dequeue(tty);
 		/* todo: this is illegal at this IPL */
 		((char *)buf)[nread++] = c;
 		if (tty_iscanon(tty) && c == tty->termios.c_cc[VEOL]) {

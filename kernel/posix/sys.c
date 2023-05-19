@@ -949,6 +949,18 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 		struct epoll_event ev;
 		struct pollfd *pfd = &pfds[i];
 
+		if (pfd->fd < 0) {
+			/*
+			 * "If the value of fd is less than 0, events shall be
+			 * ignored, and revents shall be set to 0 in that entry
+			 * on return from poll()."
+			 *
+			 * We initialise all revents fields to 0 anyway so press
+			 * on.
+			 */
+			continue;
+		}
+
 		ev.data.u32 = i;
 		ev.events = 0;
 		if (pfd->events & POLLIN)
@@ -1061,17 +1073,11 @@ sys_socket(int domain, int type, int protocol)
 	flags = type & (SOCK_CLOEXEC | SOCK_NONBLOCK);
 	type &= ~flags;
 
-	if (flags & SOCK_NONBLOCK) {
-		kfatal("nonblock not supported yet!\n");
-	}
-
 	r = sock_create(domain, type, protocol, &vn);
 	if (r != 0) {
 		ps_curproc()->files[fd] = NULL;
 		return r;
 	}
-
-	/* todo: factor with simiar logic above & in  devmgr/fifofs.c */
 	setup_file(ps_curproc(), fd, vn, flags);
 
 #if DEBUG_FD_SYSCALLS == 1
@@ -1079,6 +1085,51 @@ sys_socket(int domain, int type, int protocol)
 #endif
 
 	return fd;
+}
+
+static int
+sys_socketpair(int domain, int type, int protocol, int *out)
+{
+	vnode_t *vn[2] = { 0, 0 };
+	int fd[2];
+	int r;
+	int flags;
+
+	r = ps_allocfiles(2, fd);
+	if (r != 0)
+		return r;
+
+	flags = type & (SOCK_CLOEXEC | SOCK_NONBLOCK);
+	type &= ~flags;
+
+	r = sock_create(domain, type, protocol, &vn[0]);
+	if (r != 0)
+		goto out;
+
+	r = sock_create(domain, type, protocol, &vn[1]);
+	if (r != 0)
+		goto out;
+
+	r = sock_pair(vn[0], vn[1]);
+	if (r != 0)
+		goto out;
+
+	setup_file(ps_curproc(), fd[0], vn[0], flags);
+	setup_file(ps_curproc(), fd[0], vn[0], flags);
+
+	memcpy(out, fd, sizeof(fd));
+
+out:
+	if (r != 0) {
+		if (vn[0] != NULL)
+			obj_direct_release(vn[0]);
+		if (vn[1] != NULL)
+			obj_direct_release(vn[1]);
+		ps_curproc()->files[fd[0]] = NULL;
+		ps_curproc()->files[fd[1]] = NULL;
+	}
+
+	return r;
 }
 
 int
@@ -1124,6 +1175,9 @@ int
 sys_connect(int fd, const struct sockaddr *addr, socklen_t addrlen)
 {
 	vnode_t *vn;
+
+	if (ps_getfile(ps_curproc(), fd) == NULL)
+		return -EBADF;
 
 	vn = ps_getfile(ps_curproc(), fd)->vn;
 	if (!vn)
@@ -1365,6 +1419,11 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysSocket:
 		RET = sys_socket(ARG1, ARG2, ARG3);
+		break;
+
+	case kPXSysSocketPair:
+		kfatal("SocketPair\n");
+		RET = sys_socketpair(ARG1, ARG2, ARG3, (int *)ARG4);
 		break;
 
 	case kPXSysAccept:
