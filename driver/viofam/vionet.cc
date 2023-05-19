@@ -227,7 +227,13 @@ VirtIONIC::processUsedOnRX(struct vring_used_elem *e)
 
 	packet_deliver_to_sockets(&p->pbuf.pbuf);
 
-	err = tcpip_input(&p->pbuf.pbuf, &nic);
+	if (nic.flags & NETIF_FLAG_UP)
+		err = tcpip_input(&p->pbuf.pbuf, &nic);
+	else {
+		p->locked = true;
+		pbuf_free(&p->pbuf.pbuf);
+		err = ERR_OK;
+	}
 	if (err != ERR_OK) {
 #if 1
 		DKDevLog(this, "ip input error: %d; packed dropped\n", err);
@@ -238,13 +244,13 @@ VirtIONIC::processUsedOnRX(struct vring_used_elem *e)
 		p = NULL;
 		LINK_STATS_INC(link.memerr);
 		LINK_STATS_INC(link.drop);
-		MIB2_STATS_NETIF_INC(netif, ifindiscards);
+		MIB2_STATS_NETIF_INC(&nic, ifindiscards);
 	} else {
-		MIB2_STATS_NETIF_ADD(nic, ifinoctets, p->tot_len);
+		MIB2_STATS_NETIF_ADD(&nic, ifinoctets, p->pbuf.pbuf.tot_len);
 		if (((u8_t *)p->pbuf.pbuf.payload)[0] & 1) {
-			MIB2_STATS_NETIF_INC(nic, ifinnucastpkts);
+			MIB2_STATS_NETIF_INC(&nic, ifinnucastpkts);
 		} else {
-			MIB2_STATS_NETIF_INC(nic, ifinucastpkts);
+			MIB2_STATS_NETIF_INC(&nic, ifinucastpkts);
 		}
 		LINK_STATS_INC(link.recv);
 	}
@@ -314,13 +320,13 @@ VirtIONIC::trySend(struct pbuf *p)
 	submitDescNumToQueue(&tx_vq, dhdridx);
 	notifyQueue(&tx_vq);
 
-	MIB2_STATS_NETIF_ADD(netif, ifoutoctets, p->tot_len);
+	MIB2_STATS_NETIF_ADD(&nic, ifoutoctets, p->tot_len);
 	if (((u8_t *)p->payload)[0] & 1) {
 		/* multicast */
-		MIB2_STATS_NETIF_INC(netif, ifoutnucastpkts);
+		MIB2_STATS_NETIF_INC(&nic, ifoutnucastpkts);
 	} else {
 		/* unicast */
-		MIB2_STATS_NETIF_INC(netif, ifoutucastpkts);
+		MIB2_STATS_NETIF_INC(&nic, ifoutucastpkts);
 	}
 
 #if ETH_PAD_SIZE

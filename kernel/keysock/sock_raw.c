@@ -153,8 +153,7 @@ sock_raw_ioctl(vnode_t *vn, unsigned long op, void *arg)
 
 	case SIOCGIFADDR: {
 		struct netif *netif = netif_find(req->ifr_ifrn.ifrn_name);
-		struct sockaddr_in *inaddr =
-		    (struct sockaddr_in *)&req->ifr_addr;
+		struct sockaddr_in *inaddr = (void *)&req->ifr_addr;
 
 		if (netif == NULL)
 			return -ENODEV;
@@ -162,6 +161,56 @@ sock_raw_ioctl(vnode_t *vn, unsigned long op, void *arg)
 		inaddr->sin_family = AF_INET;
 		inaddr->sin_port = 0;
 		inaddr->sin_addr.s_addr = netif_ip4_addr(netif)->addr;
+
+		return 0;
+	}
+
+	case SIOCGIFNETMASK: {
+		struct netif *netif = netif_find(req->ifr_ifrn.ifrn_name);
+		struct sockaddr_in *inaddr = (void *)&req->ifr_addr;
+
+		if (netif == NULL)
+			return -ENODEV;
+
+		inaddr->sin_family = AF_INET;
+		inaddr->sin_port = 0;
+		inaddr->sin_addr.s_addr = netif_ip4_netmask(netif)->addr;
+
+		return 0;
+	}
+
+	case SIOCGIFGATEWAY: {
+		struct netif *netif = netif_find(req->ifr_ifrn.ifrn_name);
+		struct sockaddr_in *inaddr = (void *)&req->ifr_addr;
+
+		if (netif == NULL)
+			return -ENODEV;
+
+		inaddr->sin_family = AF_INET;
+		inaddr->sin_port = 0;
+		inaddr->sin_addr.s_addr = netif_ip4_gw(netif)->addr;
+
+		return 0;
+	}
+
+	case SIOCGIFSTATS: {
+		struct netif *netif = netif_find(req->ifr_ifrn.ifrn_name);
+		struct krx_if_statistics *stats = (void *)req->ifr_data;
+		struct stats_mib2_netif_ctrs *ctrs = &netif->mib2_counters;
+
+		if (netif == NULL)
+			return -ENODEV;
+
+		stats->rx_bytes = ctrs->ifinoctets;
+		stats->rx_packets = ctrs->ifinnucastpkts + ctrs->ifinucastpkts;
+		stats->rx_drops = ctrs->ifindiscards;
+		stats->rx_errors = ctrs->ifinerrors;
+
+		stats->tx_bytes = ctrs->ifoutoctets;
+		stats->tx_packets = ctrs->ifoutnucastpkts +
+		    ctrs->ifoutucastpkts;
+		stats->tx_drops = ctrs->ifoutdiscards;
+		stats->tx_errors = ctrs->ifouterrors;
 
 		return 0;
 	}
