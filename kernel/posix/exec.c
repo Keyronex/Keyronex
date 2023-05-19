@@ -17,6 +17,8 @@
 #include "pxp.h"
 
 #define ELFMAG "\177ELF"
+#define STRV_FOREACH(PSTR, STRV) \
+	for ((PSTR) = (STRV); (PSTR) && *(PSTR); (PSTR)++)
 
 typedef struct exec_package {
 	vm_map_t *map;	  /* map to load into */
@@ -27,6 +29,156 @@ typedef struct exec_package {
 	size_t phentsize; /* size of a phdr */
 	size_t phnum;	  /* count of phdrs */
 } exec_package_t;
+
+typedef char **strv_t;
+
+static size_t
+strv_length(strv_t strv)
+{
+	size_t n;
+
+	for (n = 0; *strv != NULL; strv++)
+		n++;
+
+	return n;
+}
+
+/*
+ * Prepend a simple array of string pointers (no terminating NULL) to an strv.
+ * The string pointers are copied as is and not duplicated to yield new strings.
+ */
+static int
+strv_precat_num_consume(strv_t *a, char **b, size_t n)
+{
+	char **new_strv = kmem_alloc(
+	    sizeof(char *) * (strv_length(*a) + n + 1));
+
+	memcpy(new_strv, b, sizeof(char *) * n);
+	/* include trailing null */
+	memcpy(&new_strv[n], *a, sizeof(char *) * (strv_length(*a) + 1));
+
+	*a = new_strv;
+
+	return 0;
+}
+
+void
+parse_shebang(const char *shebang, char **interp_out, char ***args_out,
+    size_t *n_args_out)
+{
+	const char *start = shebang;
+
+	/* skip leading whitespace */
+	while (isspace(*start)) {
+		start++;
+	}
+
+	/* get end of interpreter path; don't support spaces in that yet. */
+	const char *end = strchr(start, ' ');
+	if (end == NULL) {
+		/* no arguments present */
+		end = start + strlen(start);
+	}
+
+	/* get length of the interpreter path */
+	size_t length = end - start;
+
+	*interp_out = kmem_alloc((length + 1) * sizeof(char));
+	strncpy(*interp_out, start, length);
+	(*interp_out)[length] = '\0';
+
+	/* count number of arguments */
+	*n_args_out = 1;
+	*args_out = kmem_alloc(sizeof(char *));
+	(*args_out)[0] = kmem_alloc((length + 1) * sizeof(char));
+	strncpy((*args_out)[0], *interp_out, length);
+	((*args_out)[0])[length] = '\0';
+
+	if (*end != '\0') {
+		const char *arg = end + 1;
+		const char *arg_end = strchr(arg, ' ');
+
+		while (arg != NULL) {
+			if (arg_end != NULL)
+				length = arg_end - arg;
+			else
+				length = strlen(arg);
+
+			*args_out = kmem_realloc(*args_out,
+			    (*n_args_out) * sizeof(char *),
+			    (*n_args_out + 1) * sizeof(char *));
+			(*args_out)[*n_args_out] = kmem_alloc(
+			    (length + 1) * sizeof(char));
+			strncpy((*args_out)[*n_args_out], arg, length);
+			((*args_out)[*n_args_out])[length] = '\0';
+
+			(*n_args_out)++;
+
+			if (arg_end != NULL) {
+				arg = arg_end + 1;
+				arg_end = strchr(arg, ' ');
+			} else {
+				arg = NULL;
+			}
+		}
+	}
+}
+
+static int
+loadscript(char **path, strv_t *argp)
+{
+	vnode_t *vn;
+	char first[2];
+	char *line, *nl;
+	char *interpreter;
+	char **interp_args;
+	size_t n_args;
+	int r;
+
+	r = vfs_lookup(root_vnode, &vn, *path, 0);
+	if (r < 0) {
+		kdprintf("exec: failed to lookup %s (errno %d)\n", *path, -r);
+		return r;
+	}
+
+	r = VOP_READ(vn, first, sizeof(first), 0, 0);
+	if (r < 0) {
+		kdprintf("exec: failed to read %s (errno %d)\n", *path, -r);
+		return r;
+	}
+
+	if (memcmp(first, "#!", 2) != 0) {
+		kdprintf("exec: not a script in %s\n", *path);
+		return -ENOEXEC;
+	}
+
+	line = kmem_alloc(256);
+	memset(line, 0x0, 256);
+
+	r = VOP_READ(vn, line, 256, 2, 255);
+	if (r < 0) {
+		kdprintf("exec script: failed to read %s (errno %d)\n", *path,
+		    -r);
+		kmem_free(line, 256);
+		return r;
+	}
+
+	nl = strchr(line, '\n');
+	if (nl)
+		*nl = '\0';
+
+	parse_shebang(line, &interpreter, &interp_args, &n_args);
+
+	strv_precat_num_consume(argp, interp_args, n_args);
+
+	kmem_free(interp_args, sizeof(char *) * n_args);
+	kmem_free(line, 256);
+
+	kmem_strfree(*path);
+	*path = interpreter;
+
+	return 0;
+}
 
 static int
 loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
@@ -183,11 +335,10 @@ copyin_strv(const char *user_strv[], char ***out)
 	return 0;
 }
 
-#if 0
 static void
-strv_free(char **strv)
+strv_free(strv_t strv)
 {
-	size_t cnt = 0;
+	size_t cnt = 1;
 
 	if (*strv == NULL)
 		return;
@@ -201,7 +352,6 @@ strv_free(char **strv)
 
 	kmem_free(strv, sizeof(*strv) * cnt);
 }
-#endif
 
 int
 sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
@@ -232,10 +382,16 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	proc->eprocess->map = pkg.map;
 	vm_map_activate(pkg.map);
 
+load:
 	/* assume it's not PIE */
 	r = loadelf(path, (vaddr_t)0x0, &pkg);
-	if (r < 0)
-		goto fail;
+	if (r < 0) {
+		r = loadscript(&path, &argp);
+		if (r < 0)
+			goto fail;
+		else
+			goto load;
+	}
 
 	r = loadelf("/usr/lib/ld.so", (vaddr_t)0x40000000, &rtldpkg);
 	if (r < 0)
@@ -249,7 +405,6 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 	kassert(r == 0);
 
 	vm_map_free(oldmap);
-	// thread->stack = stack;
 
 	/* todo(low): separate this machine-dependent stuff */
 	memset(frame, 0x0, sizeof(*frame));
@@ -262,16 +417,12 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 
 	if (r != 0) {
 	fail:
-		kfatal("Failuer!\n");
 		vm_map_activate(oldmap);
 		proc->eprocess->map = oldmap;
 	}
 
 	kmem_strfree(path);
-#if 0
 	strv_free(argp);
 	strv_free(envp);
-#endif
-
 	return r;
 }

@@ -3,9 +3,9 @@
  * Created in 2022.
  */
 
-#include "kdk/libkern.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 
 /* ctype.h */
 int
@@ -102,7 +102,7 @@ memcmp(const void *str1, const void *str2, size_t count)
 void *
 memcpy(void *restrict dstv, const void *restrict srcv, size_t len)
 {
-	unsigned char	    *dst = (unsigned char *)dstv;
+	unsigned char *dst = (unsigned char *)dstv;
 	const unsigned char *src = (const unsigned char *)srcv;
 	for (size_t i = 0; i < len; i++)
 		dst[i] = src[i];
@@ -113,7 +113,7 @@ void *
 memmove(void *dst, const void *src, size_t n)
 {
 	const char *f = src;
-	char	   *t = dst;
+	char *t = dst;
 
 	if (f < t) {
 		f += n;
@@ -163,7 +163,7 @@ char *
 strdup(const char *src)
 {
 	size_t size = strlen(src) + 1;
-	char  *str = kmem_alloc(size);
+	char *str = kmem_alloc(size);
 	memcpy(str, src, size);
 	return str;
 }
@@ -180,7 +180,7 @@ char *
 strncpy(char *restrict dst, const char *restrict src, size_t n)
 {
 	if (n != 0) {
-		register char	    *d = dst;
+		register char *d = dst;
 		register const char *s = src;
 
 		do {
@@ -205,12 +205,24 @@ strlen(const char *str)
 }
 
 char *
+strchr(const char *p, int ch)
+{
+	do {
+		if (*p == (char)ch)
+			return ((char *)p);
+		if (!*p)
+			return ((char *)NULL);
+	} while (++p);
+	kfatal("strchr");
+}
+
+char *
 strrchr(const char *str, int c)
 {
 	char *p = NULL;
 
 	while (++str) {
-		if (*str == (char) c)
+		if (*str == (char)c)
 			p = (char *)str;
 		else if (*str == '\0')
 			return p;
