@@ -33,6 +33,9 @@ SECTIONS
         *(.rodata .rodata.*)
     } :rodata
 
+	.eh_frame_hdr : { *(.eh_frame_hdr) }
+	.eh_frame : { *(.eh_frame) }
+
     /* Move to the next memory page for .data */
     . += CONSTANT(MAXPAGESIZE);
 
@@ -51,7 +54,6 @@ SECTIONS
 
     /* Discard .note.* and .eh_frame since they may cause issues on some hosts. */
     /DISCARD/ : {
-        *(.eh_frame)
         *(.note .note.*)
     }
 }
