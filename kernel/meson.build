@@ -75,7 +75,8 @@ if not headers_only
 	krx_sdk_includes = [ include_directories(
 		'vendor/bsd-includes',
 		'vendor/uuid',
-		'_sdkinc'
+		'_sdkinc',
+		'../libdxf'
 		), limine_include_directories,
 		lwip_include_directories ]
 
@@ -108,6 +109,7 @@ if not headers_only
 	subdir('keysock')
 	subdir('posix')
 	subdir('vm')
+	subdir('kobjc')
 
 	if (arch == 'x86_64')
 		subdir('machdep/amd64')

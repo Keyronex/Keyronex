@@ -398,6 +398,30 @@ packages:
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/proc' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/tmp' ]
 
+  - name: libdxf
+    metadata:
+      summary: Data eXchange Format library
+    source:
+      name: 'libdxf'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'host-gcc'
+    pkgs_required:
+      - 'mlibc'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/usr'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
   - name: network_cmds
     metadata:
       summary: Network commands
