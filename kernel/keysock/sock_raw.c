@@ -222,5 +222,6 @@ sock_raw_ioctl(vnode_t *vn, unsigned long op, void *arg)
 
 struct socknodeops raw_soops = {
 	.create = sock_raw_create,
+	.close = sock_raw_close,
 	.ioctl = sock_raw_ioctl,
 };

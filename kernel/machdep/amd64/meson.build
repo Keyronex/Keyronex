@@ -22,5 +22,6 @@ kernel = executable(
 		'.'
 	],
 	install: true,
-	install_dir: '/boot'
+	install_dir: '/boot',
+	dependencies: [ libkobjcrt_dep ],
 )

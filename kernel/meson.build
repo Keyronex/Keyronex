@@ -7,7 +7,7 @@ if not headers_only
 	arch = target_machine.cpu_family()
 	os = target_machine.system()
 
-	add_languages('c', 'cpp')
+	add_languages('c', 'cpp', 'objc')
 
 	if not meson.is_cross_build()
 		error('Keyronex must be cross-compiled')
@@ -31,6 +31,10 @@ if not headers_only
 			'-mno-red-zone',
 			'-mcmodel=kernel',
 			'-D_KERNEL'
+		]
+		freestanding_objc_args = freestanding_c_args + [
+			'-fconstant-string-class=OFConstantString', '-std=gnu17',
+			'-fobjc-exceptions'
 		]
 		freestanding_cpp_args = freestanding_c_args + '-fno-exceptions' + '-fno-rtti'
 		freestanding_ld_args = ['-nostdlib', '-mno-red-zone']
@@ -83,6 +87,7 @@ if not headers_only
 	subdir('driver')
 
 	kernel_c_args = [freestanding_c_args, '-D_KERNEL']
+	kernel_objc_args = [freestanding_objc_args, '-D_KERNEL']
 	kernel_cpp_args = [freestanding_cpp_args]
 	kernel_link_args = []
 	kernel_include_directories = [ krx_sdk_includes,
