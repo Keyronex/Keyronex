@@ -593,6 +593,7 @@ packages:
       - host-libtool
     pkgs_required:
       - mlibc
+      - ncurses
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
