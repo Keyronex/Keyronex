@@ -97,7 +97,6 @@ ForEachMacros:
   - VM_PAGE_DUMP_FOREACH
 IndentCaseLabels: false
 IndentPPDirectives: None
-Language: Cpp
 NamespaceIndentation: None
 PointerAlignment: Right
 ContinuationIndentWidth: 4
