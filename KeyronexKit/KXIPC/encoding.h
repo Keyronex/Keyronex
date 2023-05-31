@@ -1,6 +1,8 @@
 #ifndef KRX_KXIPC_ENCODING_H
 #define KRX_KXIPC_ENCODING_H
 
+#include <stdint.h>
+
 #define _C_ID '@'
 #define _C_CLASS '#'
 #define _C_SEL ':'
@@ -31,5 +33,12 @@
 #define _C_STRUCT_E '}'
 #define _C_VECTOR '!'
 #define _C_CONST 'r'
+
+#define ROUNDUP(addr, align) (((addr) + align - 1) & ~(align - 1))
+#define ROUNDDOWN(addr, align) ((((uintptr_t)addr)) & ~(align - 1))
+
+size_t objc_sizeof_type(const char *type);
+const char *OFGetSizeAndAlignment(const char *typePtr, size_t *sizep,
+    size_t *alignp);
 
 #endif /* KRX_KXIPC_ENCODING_H */

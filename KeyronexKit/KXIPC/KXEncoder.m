@@ -5,9 +5,17 @@
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include "dxf/dxf.h"
 #include "encoding.h"
+
+@interface
+KXEncoder (Private)
+- (dxf_t *)doEncodeValueOfObjCType:(const char *)type at:(const void *)location;
+@end
 
 @implementation KXEncoder
 
@@ -22,6 +30,13 @@
 {
 	dxf_t *dxf = _dxf;
 	_dxf = NULL;
+	return dxf;
+}
+
+- (dxf_t *)doEncodePointerOfObjCType:(const char *)type
+				  at:(void *const *)location
+{
+	dxf_t *dxf = [self doEncodeValueOfObjCType:type at:*location];
 	return dxf;
 }
 
@@ -53,8 +68,109 @@
 		result = dxf_create_str(*(const char **)location);
 		break;
 
+#define INTEGRAL_CASE(CTYPE)                      \
+	{                                         \
+		CTYPE value = *(CTYPE *)location; \
+		result = dxf_create_u64(value);   \
+		break;                            \
+	}
+	case _C_CHR:
+		INTEGRAL_CASE(char);
+	case _C_UCHR:
+		INTEGRAL_CASE(unsigned char);
+	case _C_SHT:
+		INTEGRAL_CASE(short);
+	case _C_USHT:
+		INTEGRAL_CASE(unsigned short);
+	case _C_INT:
+		INTEGRAL_CASE(int);
+	case _C_UINT:
+		INTEGRAL_CASE(unsigned int);
+	case _C_LNG:
+		INTEGRAL_CASE(long);
+	case _C_ULNG:
+		INTEGRAL_CASE(unsigned long);
+	case _C_LNG_LNG:
+		INTEGRAL_CASE(long long);
+#undef INTEGRAL_CASE
+
 	case _C_ULNG_LNG: {
 		result = dxf_create_u64(*(uint64_t *)location);
+		break;
+	}
+
+	case _C_PTR: {
+		result = [self doEncodePointerOfObjCType:type + 1 at:location];
+		if (result)
+			break;
+		/* fallthrough */
+	}
+
+	case _C_STRUCT_B: {
+		uintptr_t item;
+		const char *subtype;
+		result = dxf_create_array();
+
+		/* pointer to first element of struct */
+		item = (uintptr_t)location;
+		/* skip struct name; xxx is that always present? */
+		subtype = strchr(type, '=') + 1;
+
+		for (const char *next_subtype; *subtype != _C_STRUCT_E;
+		     subtype = next_subtype) {
+			size_t size, align;
+			dxf_t *subdxf;
+
+			next_subtype = OFGetSizeAndAlignment(subtype, &size,
+			    &align);
+			if (align == 0)
+				align = 1;
+			item = ROUNDUP(item, align);
+			subdxf = [self
+			    doEncodeValueOfObjCType:subtype
+						 at:(const void *)item];
+			if (subdxf == NULL) {
+				printf("encoding of struct subtype %s failed\n",
+				    subtype);
+				dxf_release(result);
+				return NULL;
+			}
+
+			dxf_array_append_value(result, subdxf);
+			dxf_release(subdxf);
+
+			item += size;
+		}
+
+		break;
+	}
+
+	case _C_ARY_B: {
+		const char *item_type;
+		size_t count;
+		size_t sub_size;
+		uintptr_t item;
+
+		/* pointer to first element of array */
+		item = (uintptr_t)location;
+		count = strtol(type + 1, (char **)&item_type, 10);
+		OFGetSizeAndAlignment(item_type, &sub_size, NULL);
+		result = dxf_create_array();
+
+		for (size_t i = 0; i < count; i++) {
+			dxf_t *subdxf = [self
+			    doEncodeValueOfObjCType:item_type
+						 at:(const void *)item];
+			if (subdxf == NULL) {
+				dxf_release(result);
+				return NULL;
+			}
+			dxf_array_append_value(result, subdxf);
+			dxf_release(subdxf);
+
+			item += sub_size;
+		}
+
 		break;
 	}
 
