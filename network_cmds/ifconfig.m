@@ -5,6 +5,8 @@
 #include <net/if_arp.h>
 #include <netinet/in.h>
 
+#include <KernelProtocols/KXNetworking.h>
+
 #include <err.h>
 #include <stdio.h>
 #include <stdlib.h>

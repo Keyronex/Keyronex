@@ -147,6 +147,12 @@ retry:
 		count = strtol(type + 1, (char **)&item_type, 10);
 		OFGetSizeAndAlignment(item_type, &sub_size, NULL);
 
+		if (isIntegralType(item_type)) {
+			memcpy(location, dxf_bytes_get_data_ptr(_dxf),
+			    sub_size * count);
+			break;
+		}
+
 		for (size_t i = 0; i < count; i++) {
 			dxf_t *old = _dxf;
 			_dxf = dxf_array_get_value(_dxf, i);

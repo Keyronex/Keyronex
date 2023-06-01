@@ -161,6 +161,15 @@ retry:
 		item = (uintptr_t)location;
 		count = strtol(type + 1, (char **)&item_type, 10);
 		OFGetSizeAndAlignment(item_type, &sub_size, NULL);
+
+		if (isIntegralType(item_type)) {
+			result = dxf_create_bytes(sub_size * count);
+			memcpy(dxf_bytes_get_data_ptr(result), location,
+			    sub_size * count);
+			break;
+		}
+
+		/* not an integral type; do a proper array */
 		result = dxf_create_array();
 
 		for (size_t i = 0; i < count; i++) {

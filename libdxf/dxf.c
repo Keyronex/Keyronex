@@ -49,15 +49,17 @@ TAILQ_HEAD(dxf_array_head, dxf);
 
 /* immediately preceded by a PreIvars */
 struct dxf {
-	dxf_type_t type;
+	dxf_type_t type; /*!< type of object */
+	size_t size;	 /*!< for dict, array, bytes */
 	union {
 		struct dxf_dict_head dict;
 		struct dxf_array_head array;
 		char *str;
 		uint64_t u64;
 		int64_t i64;
+		void *bytes;
 	};
-	TAILQ_ENTRY(dxf) link;
+	TAILQ_ENTRY(dxf) link; /*!< linkage in an enclosing array */
 };
 
 static dxf_t *
@@ -95,7 +97,8 @@ dxf_release(dxf_t *self)
 	    1) {
 		switch (self->type) {
 		case kDXFTypeStr:
-#if 0 /* disabled for now because we need the string around if it's a return */
+#if 0 /* disabled for now because we need the string around if it's a return \
+       */
 			kmem_strfree(self->str);
 #endif
 			break;
@@ -116,6 +119,10 @@ dxf_release(dxf_t *self)
 				kmem_free(pair, sizeof(*pair));
 			}
 			break;
+		}
+
+		case kDXFTypeBytes: {
+			kmem_free(self->bytes, dxf->size);
 		}
 
 		default:
@@ -193,6 +200,15 @@ dxf_create_u64(uint64_t value)
 	return dxf;
 }
 
+dxf_t *
+dxf_create_bytes(size_t size)
+{
+	dxf_t *dxf = dxf_alloc(kDXFTypeBytes);
+	dxf->bytes = kmem_alloc(size);
+	dxf->size = size;
+	return dxf;
+}
+
 static dxf_t *
 do_array_get_value(dxf_t *dxf, size_t index, bool move)
 {
@@ -234,6 +250,13 @@ dxf_array_movein_value(dxf_t *dxf, dxf_t *value)
 	assert(dxf->type == kDXFTypeArray);
 	TAILQ_INSERT_TAIL(&dxf->array, value, link);
 	return 0;
+}
+
+void *
+dxf_bytes_get_data_ptr(dxf_t *dxf)
+{
+	assert(dxf->type == kDXFTypeBytes);
+	return dxf->bytes;
 }
 
 static dxf_t *
@@ -396,6 +419,7 @@ enum pack_type {
 	kString,
 	kU64,
 	kI64,
+	kBytes,
 	kNull,
 };
 
@@ -504,6 +528,11 @@ do_pack(dxf_t *dxf, struct pack_state *state)
 	case kDXFTypeU64:
 		TRY(emit_u8(state, kU64));
 		return emit_bytes(state, &dxf->i64, sizeof(uint64_t));
+
+	case kDXFTypeBytes:
+		TRY(emit_u8(state, kBytes));
+		TRY(emit_bytes(state, &dxf->size, sizeof(uint64_t)));
+		return emit_bytes(state, dxf->bytes, dxf->size);
 
 	case kDXFTypeNull:
 		return emit_u8(state, kNull);
@@ -679,11 +708,30 @@ do_unpack(struct pack_state *state, dxf_t **out)
 
 	case kU64: {
 		uint64_t val;
+
 		r = get_bytes(state, &val, sizeof(uint64_t));
 		if (r < 0)
 			return r;
 
 		result = dxf_create_u64(val);
+		break;
+	}
+
+	case kBytes: {
+		uint64_t size;
+
+		r = get_bytes(state, &size, sizeof(uint64_t));
+		if (r < 0)
+			return r;
+
+		result = dxf_create_bytes(size);
+
+		r = get_bytes(state, dxf_bytes_get_data_ptr(result), size);
+		if (r < 0) {
+			dxf_release(result);
+			return r;
+		}
+
 		break;
 	}
 
@@ -761,6 +809,21 @@ do_dump(dxf_t *dxf)
 	case kDXFTypeU64:
 		printf("%" PRIu64, dxf->u64);
 		return;
+	case kDXFTypeBytes: {
+		bool is_first = true;
+
+		printf("$[");
+		for (size_t i = 0; i < dxf->size; i++) {
+			if (is_first)
+				is_first = false;
+			else
+				printf(", ");
+			printf("%x",
+			    ((uint8_t *)dxf_bytes_get_data_ptr(dxf))[i]);
+		}
+		printf("]$");
+		return;
+	}
 	case kDXFTypeNull:
 		printf("null");
 		return;

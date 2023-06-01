@@ -1,6 +1,7 @@
 #ifndef KRX_KXIPC_ENCODING_H
 #define KRX_KXIPC_ENCODING_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define _C_ID '@'
@@ -36,6 +37,27 @@
 
 #define ROUNDUP(addr, align) (((addr) + align - 1) & ~(align - 1))
 #define ROUNDDOWN(addr, align) ((((uintptr_t)addr)) & ~(align - 1))
+
+static inline bool
+isIntegralType(const char *type)
+{
+	switch (*type) {
+	case _C_CHR:
+	case _C_UCHR:
+	case _C_SHT:
+	case _C_USHT:
+	case _C_INT:
+	case _C_UINT:
+	case _C_LNG:
+	case _C_ULNG:
+	case _C_LNG_LNG:
+	case _C_ULNG_LNG:
+		return true;
+
+	default:
+		return false;
+	}
+}
 
 size_t objc_sizeof_type(const char *type);
 const char *OFGetSizeAndAlignment(const char *typePtr, size_t *sizep,

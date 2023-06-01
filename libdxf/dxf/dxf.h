@@ -11,6 +11,7 @@ typedef enum dxf_type {
 	kDXFTypeStr,
 	kDXFTypeU64,
 	kDXFTypeI64,
+	kDXFTypeBytes,
 	kDXFTypeNull,
 } dxf_type_t;
 typedef struct dxf dxf_t;
@@ -27,10 +28,13 @@ dxf_t *dxf_create_dict(void);
 dxf_t *dxf_create_str(const char *value);
 dxf_t *dxf_create_i64(uint64_t value);
 dxf_t *dxf_create_u64(uint64_t value);
+dxf_t *dxf_create_bytes(size_t size);
 
 dxf_t *dxf_array_get_value(dxf_t *dxf, size_t index);
 
 int dxf_array_append_value(dxf_t *dxf, dxf_t *value);
+
+void * dxf_bytes_get_data_ptr(dxf_t *dxf);
 
 dxf_t *dxf_dict_get_value(dxf_t *dxf, const char *key);
 const char *dxf_dict_get_string(dxf_t *dxf, const char *key);
