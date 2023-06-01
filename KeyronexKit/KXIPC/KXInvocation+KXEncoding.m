@@ -46,11 +46,18 @@ KXInvocation (KXEncoding)
 	OFLog(@"Deserialise first part of OFInvocation:"
 	       "\n\tSelector: %s"
 	       "\n\tTarget: %@"
-	       "\nNow looking up method signature....",
+	       "\n",
 	    sel_getName(selector), target);
 
 	sig = [target methodSignatureForSelector:selector];
-	OFLog(@"Method signature: %@", sig);
+	OFLog(@"Method signature: %@", sig );
+	printf("\tReturn type: %s\n", [sig methodReturnType]);
+	for (int i = 0; i < sig.numberOfArguments; i++) {
+		printf("\tArg %d type: %s\n",i, [sig argumentTypeAtIndex:i]);
+	}
+
+	if (sig == nil)
+		return nil;
 
 	self = [self initWithMethodSignature:sig];
 	assert(self != nil);

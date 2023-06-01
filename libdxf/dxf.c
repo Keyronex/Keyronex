@@ -10,12 +10,13 @@
 
 #define fatal(...) errx(EXIT_FAILURE, __VA_ARGS__)
 #define kmem_alloc(SIZE) malloc(SIZE)
+#define kmem_strfree(STR) free(STR)
 #define kmem_free(PTR, SIZE) free(PTR)
 #define kmem_realloc(PTR, OLDSIZE, SIZE) realloc(PTR, SIZE)
 #else
-#include <kdk/libkern.h>
 #include <kdk/kernel.h>
 #include <kdk/kmem.h>
+#include <kdk/libkern.h>
 
 #define assert(...) kassert(__VA_ARGS__)
 #define fatal(...) kfatal(__VA_ARGS__)
@@ -52,7 +53,7 @@ struct dxf {
 	union {
 		struct dxf_dict_head dict;
 		struct dxf_array_head array;
-		const char *str;
+		char *str;
 		uint64_t u64;
 		int64_t i64;
 	};
@@ -81,11 +82,45 @@ dxf_retain(dxf_t *self)
 	return self;
 }
 
+#define TAILQ_FOREACH_SAFE(var, head, field, next)                             \
+	for ((var) = ((head)->tqh_first);                                      \
+	     (var) != TAILQ_END(head) && ((next) = TAILQ_NEXT(var, field), 1); \
+	     (var) = (next))
+#define TAILQ_END(head) (NULL)
+
 dxf_t *
 dxf_release(dxf_t *self)
 {
 	if (__atomic_fetch_sub(&PRE_IVARS->retainCount, 1, __ATOMIC_ACQ_REL) ==
 	    1) {
+		switch (self->type) {
+		case kDXFTypeStr:
+#if 0 /* disabled for now because we need the string around if it's a return */
+			kmem_strfree(self->str);
+#endif
+			break;
+
+		case kDXFTypeArray: {
+			dxf_t *memb, *tmp;
+			TAILQ_FOREACH_SAFE (memb, &self->array, link, tmp) {
+				dxf_release(memb);
+			}
+			break;
+		}
+
+		case kDXFTypeDict: {
+			struct dxfpair *pair, *tmp;
+			TAILQ_FOREACH_SAFE (pair, &self->dict, link, tmp) {
+				dxf_release(pair->value);
+				kmem_strfree(pair->key);
+				kmem_free(pair, sizeof(*pair));
+			}
+			break;
+		}
+
+		default:
+			break;
+		}
 		kmem_free(PRE_IVARS, PRE_IVARS_ALIGN + sizeof(dxf_t));
 	}
 	return NULL;
@@ -382,7 +417,9 @@ emit_u8(struct pack_state *state, uint8_t val)
 		state->buf = newbuf;
 		state->size = newsize;
 	}
+
 	state->buf[state->cursor++] = val;
+
 	return 0;
 }
 
@@ -399,8 +436,10 @@ emit_bytes(struct pack_state *state, const void *bytes, size_t len)
 		state->buf = newbuf;
 		state->size = newsize;
 	}
+
 	memcpy(&state->buf[state->cursor], bytes, len);
 	state->cursor += len;
+
 	return 0;
 }
 
@@ -470,7 +509,7 @@ do_pack(dxf_t *dxf, struct pack_state *state)
 		return emit_u8(state, kNull);
 
 	default:
-		fatal( "Bad DXF type %d\n", dxf->type);
+		fatal("Bad DXF type %d\n", dxf->type);
 	}
 }
 
@@ -703,7 +742,7 @@ do_dump(dxf_t *dxf)
 		return;
 	case kDXFTypeArray: {
 		struct dxf *el;
-		static bool is_first = true;
+		bool is_first = true;
 
 		printf("[ ");
 		TAILQ_FOREACH (el, &dxf->array, link) {
@@ -726,7 +765,7 @@ do_dump(dxf_t *dxf)
 		printf("null");
 		return;
 	default:
-		fatal( "Bad DXF type %d\n", dxf->type);
+		fatal("Bad DXF type %d\n", dxf->type);
 	}
 }
 

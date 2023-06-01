@@ -36,6 +36,7 @@ dxf_t *dxf_dict_get_value(dxf_t *dxf, const char *key);
 const char *dxf_dict_get_string(dxf_t *dxf, const char *key);
 uint64_t dxf_dict_get_u64(dxf_t *dxf, const char *key);
 
+int dxf_dict_movein_value(dxf_t *dxf, const char *key, dxf_t *val);
 int dxf_dict_set_value(dxf_t *dxf, const char *key, dxf_t *val);
 int dxf_dict_set_string(dxf_t *dxf, const char *key, const char *value);
 int dxf_dict_set_u64(dxf_t *dxf, const char *key, uint64_t value);

@@ -1,10 +1,9 @@
 #ifndef _KXEncoder_H
 #define _KXEncoder_H
 
-#import <ObjFW/OFObject.h>
-
-#include <dxf/dxf.h>
 #include <KeyronexKit/KXInvocation.h>
+#import <ObjFW/OFObject.h>
+#include <dxf/dxf.h>
 
 @class KXEncoder;
 @class KXInvocation;
@@ -12,8 +11,8 @@
 @protocol KXArrayEncoding
 - (size_t)count;
 - (void)getElementLocation:(const void **)loc
-          andTypeSignature:(const char **)sig
-                        at:(size_t)i;
+	  andTypeSignature:(const char **)sig
+			at:(size_t)i;
 @end
 
 @interface OFObject (Coding)
@@ -25,7 +24,7 @@
 @end
 
 @interface KXEncoder : OFObject {
-  dxf_t *_dxf;
+	dxf_t *_dxf;
 }
 
 - (instancetype)init;
@@ -44,13 +43,13 @@
  * @brief Encode a given object or data for the given key.
  */
 - (void)encodeValueOfObjCType:(const char *)type
-                           at:(const void *)location
-                       forKey:(const char *)key;
+			   at:(const void *)location
+		       forKey:(const char *)key;
 /*!
  * @brief Encode (by calling back \p object) an array.
  */
 - (void)encodeValuesOfObjCTypesInArray:(id<KXArrayEncoding>)object
-                                forKey:(const char *)key;
+				forKey:(const char *)key;
 
 - (void)dump;
 

@@ -246,7 +246,6 @@ do_retain(KXInvocation *self, size_t idx, id obj, id block, char *cstr)
 - (void)invokeWithTarget:(id)target
 {
 	[self setTarget:target];
-	printf("Selector: %p\n", [self selector]);
 	_raw.fptr = [target methodForSelector:[self selector]];
 	if (_raw.isStretCall)
 		_raw.rdi = (uint64_t)[self returnValuePtr];
@@ -413,9 +412,6 @@ KXInvocationForwardC(struct RawArguments *r)
 {
 	id obj;
 	SEL sel;
-
-	printf("IS STRET CALL? %d\n", r->isStretCall);
-	// r->isStretCall = true;
 
 	if (r->isStretCall) {
 		obj = (id)r->rsi;

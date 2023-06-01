@@ -26,7 +26,12 @@
 
 - (void)doDecodeValueOfObjCType:(const char *)type at:(void *)location
 {
+retry:
 	switch (*type) {
+	case _C_CONST:
+		type++;
+		goto retry;
+
 	case _C_ID: {
 		const char *name;
 		Class cls;

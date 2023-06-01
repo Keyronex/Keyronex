@@ -44,7 +44,13 @@ KXEncoder (Private)
 {
 	dxf_t *result;
 
+retry:
 	switch (*type) {
+	case _C_CONST: {
+		type++;
+		goto retry;
+	}
+
 	case _C_ID: {
 		id object = *(id *)location;
 		dxf_t *old = _dxf;

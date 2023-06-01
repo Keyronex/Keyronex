@@ -10,6 +10,7 @@
 	int _fd;
 	id _object;
 	Protocol *_protocol;
+	size_t _seqno;
 }
 
 /* server-side */
@@ -18,7 +19,7 @@
 - (instancetype)initWithUnixSocketPath:(const char *)path
 			      protocol:(Protocol *)protocol;
 - (id)remoteObjectProxy;
-- (void)sendInvocation:(KXInvocation*) invocation;
+- (void)sendInvocation:(KXInvocation *)invocation;
 
 @end
 
