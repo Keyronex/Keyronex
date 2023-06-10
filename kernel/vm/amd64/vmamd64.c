@@ -117,17 +117,24 @@ pmap_free_sub(vm_map_t *map, uint64_t *table, int level)
 		}
 
 	page = vmp_paddr_to_page((uintptr_t)V2P(table));
+	vm_page_unwire(page);
 	vmp_page_free(map, page);
 }
 
 void
 pmap_free(vm_map_t *map)
 {
+	vm_page_t *page;
 	uint64_t *vpml4 = P2V(map->md.cr3);
+
 	for (int i = 0; i < 255; i++) {
 		pte_t *entry = &vpml4[i];
 		pmap_free_sub(map, pte_get_addr(*entry), 3);
 	}
+
+	page = vmp_paddr_to_page(map->md.cr3);
+	vm_page_unwire(page);
+	vmp_page_free(map, page);
 }
 
 /* get the flags of a pte */

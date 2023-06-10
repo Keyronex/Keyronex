@@ -278,6 +278,8 @@ void
 vm_map_free(vm_map_t *map)
 {
 	int r = vm_map_deallocate(map, 0x0, USER_BASE + USER_SIZE);
-	kassert(RB_EMPTY(&map->entry_queue));
 	kassert(r == 0);
+	kassert(RB_EMPTY(&map->entry_queue));
+	pmap_free(map);
+	kmem_free(map, sizeof(*map));
 }

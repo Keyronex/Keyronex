@@ -122,7 +122,7 @@ dxf_release(dxf_t *self)
 		}
 
 		case kDXFTypeBytes: {
-			kmem_free(self->bytes, dxf->size);
+			kmem_free(self->bytes, self->size);
 		}
 
 		default:

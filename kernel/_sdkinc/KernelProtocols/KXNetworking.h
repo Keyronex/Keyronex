@@ -2,7 +2,6 @@
 #define KRX_KERNELPROTOCOLS_KXNETWORK_H
 
 #import <ObjFW/OFArray.h>
-#include <ObjFW/macros.h>
 
 @protocol KXNetworking
 

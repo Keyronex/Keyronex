@@ -78,6 +78,9 @@ struct vmp_amap_l1 {
 /*! @brief Initialise the pmap of a newly created map. */
 void pmap_new(struct vm_map *map);
 
+/*! @brief Free a pmap (the map should already be empty.) */
+void pmap_free(vm_map_t *map);
+
 /*! @brief Enter a page mapping. */
 void pmap_enter(vm_map_t *map, paddr_t phys, vaddr_t virt,
     vm_protection_t prot);
