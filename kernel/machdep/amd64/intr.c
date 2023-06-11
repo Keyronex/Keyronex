@@ -113,7 +113,14 @@ handle_int(hl_intr_frame_t *frame, uintptr_t num)
 		kdprintf("Switch from %p to %p\n", old, next);
 #endif
 
-		old->frame = *frame;
+		if (old->state == kThreadStateDone) {
+			/* we can now put this on the to-free list */
+			TAILQ_INSERT_TAIL(&hl_curcpu()->thread_free_queue, old,
+			    runqueue_link);
+			ke_dpc_enqueue(&hl_curcpu()->thread_free_dpc);
+		} else {
+			old->frame = *frame;
+		}
 
 		*frame = next->frame;
 		hl_curcpu()->hl.tss->rsp0 = next->kstack;
@@ -300,13 +307,19 @@ md_intr_frame_trace(hl_intr_frame_t *frame)
 }
 
 void
-hl_switch(struct kthread *from, struct kthread *to)
+hl_switch(struct kthread *from, struct kthread *to, bool drop)
 {
 	from->saved_ipl = splget();
 	hl_curcpu()->hl.oldthread = from;
 	hl_curcpu()->hl.newthread = to;
 	from->hl.fs = rdmsr(kAMD64MSRFSBase);
 	wrmsr(kAMD64MSRFSBase, to->hl.fs);
-	/* the dispatcher db lock will be dropped (and IPL too) here */
-	asm("int $240");
+
+	/* the dispatcher db lock will be dropped (and IPL too) in the ISR */
+
+	/* switch stack if thread is going away */
+	if (drop)
+		asm volatile("mov %0, %%rsp; int $240" : : "r"(to->frame.rsp));
+
+	asm volatile("int $240");
 }

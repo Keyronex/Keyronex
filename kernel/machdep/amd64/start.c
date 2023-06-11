@@ -260,9 +260,14 @@ common_init(struct limine_smp_info *smpi)
 	TAILQ_INIT(&cpu->runqueue);
 	TAILQ_INIT(&cpu->timer_queue);
 	TAILQ_INIT(&cpu->dpc_queue);
+	TAILQ_INIT(&cpu->thread_free_queue);
 	cpu->dpc_int = false;
 	cpu->reschedule_reason = kRescheduleReasonNone;
 	cpu->idle_thread = thread;
+
+	cpu->thread_free_dpc.arg = cpu;
+	cpu->thread_free_dpc.callback = ki_do_thread_free_queue;
+	cpu->thread_free_dpc.state = kDPCUnbound;
 
 	/* enable SSE and SSE2 */
 	uint64_t cr0 = read_cr0();

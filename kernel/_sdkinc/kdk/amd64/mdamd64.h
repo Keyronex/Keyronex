@@ -7,9 +7,9 @@
 #define KRX_HL_HL_H
 
 #include <bsdqueue/queue.h>
+#include <limine.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <limine.h>
 
 #include "kdk/kerndefs.h"
 
@@ -189,7 +189,7 @@ md_intr_x(bool en)
 void hl_clock_start();
 
 /*! @brief Low-level context switch. */
-void hl_switch(struct kthread *from, struct kthread *to);
+void hl_switch(struct kthread *from, struct kthread *to, bool drop);
 
 /*! @brief Send a reschedule IPI to a CPU. */
 void hl_ipi_reschedule(struct kcpu *cpu);

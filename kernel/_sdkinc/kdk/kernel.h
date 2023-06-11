@@ -192,7 +192,7 @@ typedef struct kthread {
 	kthread_state_t state;
 	/*! Thread's current CPU binding. */
 	struct kcpu *cpu;
-	/*! Runqueue linkage */
+	/*! Runqueue/deferred free queue linkage */
 	TAILQ_ENTRY(kthread) runqueue_link;
 	/*! Scheduling statistics. */
 	struct kthread_stats stats;
@@ -278,6 +278,11 @@ typedef struct kcpu {
 
 	/*! Platform-specific data */
 	struct hl_cpu hl;
+
+	/*! Deferred thread-free queue. */
+	TAILQ_HEAD(, kthread) thread_free_queue;
+	/*! Deferred thread-free DPC. */
+	kdpc_t thread_free_dpc;
 } kcpu_t;
 
 #define ke_curthread() hl_curcpu()->current_thread
@@ -420,6 +425,11 @@ bool ki_cpu_hardclock(hl_intr_frame_t *frame, void *arg);
  * @brief Reschedule request IPI handler.
  */
 bool ki_reschedule_ipi(hl_intr_frame_t *frame, void *arg);
+
+/*!
+ * @brief DPC routine to process the queue of threads to be freed on a CPU.
+ */
+void ki_do_thread_free_queue(void *arg);
 
 /*!
  * @brief Reschedule the CPU.

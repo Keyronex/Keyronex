@@ -106,6 +106,7 @@ ki_reschedule(void)
 {
 	kcpu_t *cpu = hl_curcpu();
 	kthread_t *curthread = ke_curthread(), *next;
+	bool drop = false;
 
 	kassert(splget() == kIPLDPC);
 	kassert(ke_spinlock_held(&dispatcher_lock));
@@ -123,9 +124,11 @@ ki_reschedule(void)
 #if 0
 		kdprintf("thread %p going to wait\n", curthread);
 #endif
+
 		/* accounting? */
 	} else if (curthread->state == kThreadStateDone) {
 		/* exit the thread */
+		drop = true;
 	}
 
 	curthread->stats.total_run_time +=
@@ -146,12 +149,14 @@ ki_reschedule(void)
 		vm_map_activate(eprocess(next->process)->map);
 	}
 
-	hl_switch(curthread, next);
+	hl_switch(curthread, next, drop);
 }
 
-void ke_datetime_set(int64_t timestamp)
+void
+ke_datetime_set(int64_t timestamp)
 {
-	timestamp_base = timestamp - __atomic_load_n(&cpu_bsp.ticks, __ATOMIC_SEQ_CST);
+	timestamp_base = timestamp -
+	    __atomic_load_n(&cpu_bsp.ticks, __ATOMIC_SEQ_CST);
 }
 
 void

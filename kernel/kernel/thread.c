@@ -4,6 +4,7 @@
  */
 
 #include "kdk/kernel.h"
+#include "kdk/kmem.h"
 #include "kdk/process.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
@@ -78,6 +79,19 @@ ki_thread_init(kthread_t *thread, kprocess_t *proc, const char *name,
 	kmd_thread_init(thread, start, arg);
 
 	return 0;
+}
+
+void
+ki_do_thread_free_queue(void *arg)
+{
+	kthread_t *thread;
+	kcpu_t *cpu = arg;
+
+	while ((thread = TAILQ_FIRST(&cpu->thread_free_queue)) != NULL) {
+		TAILQ_REMOVE(&cpu->thread_free_queue, thread, runqueue_link);
+		vm_kfree(thread->kstack - 6 * PGSIZE, 6, 0);
+		kmem_free(thread, sizeof(*thread));
+	}
 }
 
 int
