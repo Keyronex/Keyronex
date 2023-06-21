@@ -1009,6 +1009,9 @@ sys_ppoll(struct pollfd *pfds, int nfds, const struct timespec *timeout,
 		pfds[revents[i].data.u32].revents = revents[i].events;
 	}
 
+	if (nfds > 0)
+		kmem_free(revents, sizeof(struct epoll_event) * nfds);
+
 	return r;
 }
 

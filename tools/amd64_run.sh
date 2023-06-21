@@ -87,4 +87,4 @@ echo "Launching: ${qemu_exe} ${qemu_args} -smp $smpnum -boot d"
 echo ""
 echo ""
 
-${qemu_exe} ${qemu_args} --trace "v9fs_*" -m 256 -M q35 -smp $smpnum -boot d -s
+${qemu_exe} ${qemu_args} --trace "v9fs_*" -m 256 -M q35 -smp $smpnum -boot d -s -debugcon file:debug.log

@@ -273,6 +273,9 @@ psx_exit(int status)
 	}
 
 	obj_direct_release(proc->eprocess->cwd);
+	proc->eprocess->pas_proc = NULL;
+
+	kmem_free(px_curthread(), sizeof(struct posix_thread));
 
 	map = proc->eprocess->map;
 	proc->eprocess->map = kernel_process.map;

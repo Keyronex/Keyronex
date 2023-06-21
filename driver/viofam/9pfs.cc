@@ -1114,7 +1114,8 @@ NinePFS::inactive(vnode_t *vn)
 
 	if (vn->objhdr.reference_count != 1) {
 		kassert(vn->objhdr.reference_count > 1);
-		__atomic_sub_fetch(&vn->objhdr.reference_count, 1, __ATOMIC_SEQ_CST);
+		__atomic_sub_fetch(&vn->objhdr.reference_count, 1,
+		    __ATOMIC_SEQ_CST);
 		ke_mutex_release(&self->nodecache_mutex);
 		return 0;
 	}
@@ -1123,11 +1124,16 @@ NinePFS::inactive(vnode_t *vn)
 
 	RB_REMOVE(ninepfs_node_rbt, &self->node_rbt, node);
 
+#if 0
 	vn->vmobj->amap.l3 = (vmp_amap_l3 *)0xdeadbeefdeadbeef;
 	memset(vn, 0xdeadbeef, sizeof(*vn));
 	memset(node, 0xdeadbeef, sizeof(*node));
-
-	// obj_direct_release(vn->vmobj);
+#else
+	obj_direct_release(vn->vmobj);
+	kmem_strfree(vn->path);
+	kmem_free(vn, sizeof(*vn));
+	delete_kmem(node);
+#endif
 
 #if DEBUG_NODE_RELEASE == 1
 	kdprintf("Released node %p.\n", vn);

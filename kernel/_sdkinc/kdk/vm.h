@@ -399,6 +399,9 @@ int vm_object_init_anonymous(vm_object_t *obj, vm_map_t *map, size_t size);
 /*! @brief Allocate a new vnode VM object. */
 int vm_object_new_vnode(vm_object_t **out, struct vnode *vnode);
 
+/*! @brief Free some kind of VM object. */
+int vm_object_free(vm_map_t *map, vm_object_t *obj);
+
 extern kspinlock_t vmp_pfn_lock;
 
 #ifdef __cplusplus

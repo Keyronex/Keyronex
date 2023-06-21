@@ -16,7 +16,9 @@
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/objhdr.h"
+#include "kdk/process.h"
 #include "kdk/vfs.h"
+#include "kdk/vm.h"
 
 #define DEBUG_ADDRESSES 1
 #define DEBUG_VNODE 0
@@ -116,6 +118,11 @@ obj_release(object_header_t *hdr)
 		case kObjTypeFile:
 			file_free((struct file *)hdr);
 			break;
+
+		case kObjTypeSection:
+			vm_object_free(kernel_process.map, (vm_object_t*)hdr);
+			break;
+
 
 		default:
 			break;
