@@ -459,6 +459,7 @@ packages:
       - 'host-gcc'
     pkgs_required:
       - 'mlibc'
+      - 'KeyronexKit'
     configure:
       - args:
         - 'meson'
