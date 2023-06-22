@@ -1130,7 +1130,8 @@ NinePFS::inactive(vnode_t *vn)
 	memset(node, 0xdeadbeef, sizeof(*node));
 #else
 	obj_direct_release(vn->vmobj);
-	kmem_strfree(vn->path);
+	if (vn->path != NULL)
+		kmem_strfree(vn->path);
 	kmem_free(vn, sizeof(*vn));
 	delete_kmem(node);
 #endif

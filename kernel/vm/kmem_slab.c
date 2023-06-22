@@ -42,8 +42,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kdk/amd64/portio.h"
 #include "kdk/kernel.h"
 #include "kdk/kmem.h"
+#include "kdk/process.h"
 #include "kdk/vmem.h"
 
 #ifdef _KERNEL
@@ -196,7 +198,45 @@ static kmem_zone_t *kmem_alloc_zones[] = { ZONE_SIZES(REFERENCE_ZONE) };
 /*! list of all zones; TODO(med): protect with a lock */
 struct kmem_zones kmem_zones = STAILQ_HEAD_INITIALIZER(kmem_zones);
 
+bool kmem_log_allocs = false;
+static kspinlock_t alloc_log_lock = KSPINLOCK_INITIALISER;
+
 #define KMEM_SANITY_CHECKS 1
+
+static void
+e9_log(int ch, void *)
+{
+	outb(0xe9, ch);
+}
+
+void
+trace_stack(void)
+{
+	uintptr_t *bp;
+	asm volatile("mov %%rbp, %0" : "=r"(bp));
+
+	for (uintptr_t ip = bp[1]; bp; ip = bp[1], bp = (uintptr_t *)bp[0])
+		npf_pprintf(e9_log, NULL, "%p ", (void *)ip);
+}
+
+void
+kmem_log_alloc(const char *zonename, void *addr)
+{
+	ipl_t ipl = ke_spinlock_acquire(&alloc_log_lock);
+	npf_pprintf(e9_log, NULL, "ALLOC %d str:%s %p ", ps_curproc()->id,
+	    zonename, addr);
+	trace_stack();
+	npf_pprintf(e9_log, NULL, "\n");
+	ke_spinlock_release(&alloc_log_lock, ipl);
+}
+
+void
+kmem_log_free(const char *zonename, void *addr)
+{
+	ipl_t ipl = ke_spinlock_acquire(&alloc_log_lock);
+	npf_pprintf(e9_log, NULL, "FREE str:%s %p\n", zonename, addr);
+	ke_spinlock_release(&alloc_log_lock, ipl);
+}
 
 void
 kmem_zone_init(struct kmem_zone *zone, const char *name, size_t size)
@@ -313,6 +353,12 @@ slab_free(kmem_zone_t *zone, struct kmem_slab *slab, vmem_flag_t flags)
 	if (zone->size > kSmallSlabMax) {
 		vm_kfree((vaddr_t)slab->data[0], slabsize(zone) / PGSIZE,
 		    flags);
+		for (struct kmem_bufctl *bufctl = slab->firstfree;
+		     bufctl != NULL;) {
+			struct kmem_bufctl *next = bufctl->entrylist.sle_next;
+			kmem_xzonefree(&kmem_bufctl, bufctl, 0);
+			bufctl = next;
+		}
 		kmem_xzonefree(&kmem_slab, slab, flags);
 	} else {
 		vm_kfree(PGROUNDDOWN((uintptr_t)slab), 1, flags);
@@ -393,6 +439,9 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 
 	ke_spinlock_release(&zone->lock, ipl);
 
+	if (kmem_log_allocs)
+		kmem_log_alloc(zone->name, ret);
+
 	return ret;
 }
 
@@ -448,17 +497,22 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 	kassert(slab->nfree + slab->nalloced == slabcapacity(zone));
 #endif
 
+	newfree->entrylist.sle_next = slab->firstfree;
+	slab->firstfree = newfree;
+
 	if (slab->nfree == slabcapacity(zone)) {
 		STAILQ_REMOVE(&zone->slablist, slab, kmem_slab, slablist);
 		slab_free(zone, slab, flags);
 	} else {
 		/* TODO: push slab to front; if nfree == slab capacity, free the
 		 * slab */
-		newfree->entrylist.sle_next = slab->firstfree;
-		slab->firstfree = newfree;
+
 	}
 
 	ke_spinlock_release(&zone->lock, ipl);
+
+	if (kmem_log_allocs)
+		kmem_log_free(zone->name, ptr);
 }
 
 void
