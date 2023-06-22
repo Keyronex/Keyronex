@@ -89,6 +89,10 @@ ki_do_thread_free_queue(void *arg)
 
 	while ((thread = TAILQ_FIRST(&cpu->thread_free_queue)) != NULL) {
 		TAILQ_REMOVE(&cpu->thread_free_queue, thread, runqueue_link);
+		SLIST_REMOVE(&thread->process->threads, thread, kthread,
+		    kproc_threads_link);
+		if (SLIST_EMPTY(&thread->process->threads))
+			kmem_free(thread->process, sizeof(eprocess_t));
 		vm_kfree(thread->kstack - 6 * PGSIZE, 6, 0);
 		kmem_free(thread, sizeof(*thread));
 	}

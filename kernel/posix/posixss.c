@@ -494,7 +494,13 @@ dowait:
 			r = subproc->eprocess->id;
 			LIST_REMOVE(subproc, subprocs_link);
 			TAILQ_REMOVE(&psx_allprocs, subproc, allprocs_link);
-			/* free the process stucture */
+			/*
+			 * TODO: This isn't yet possible - the process is still
+			 * doing things at the time exited is set.
+			 */
+#if 0
+			kmem_free(subproc, sizeof(*subproc));
+#endif
 			break;
 		}
 	}
