@@ -30,17 +30,26 @@ vm_object_new_vnode(vm_object_t **out, struct vnode *vnode)
 int
 vm_object_free(vm_map_t *map, vm_object_t *obj)
 {
-	/* here, we know the object can't be mapped anywhere anymore */
+	/*
+	 * Acquire the object lock to prevent any unexpected pageouts. (todo!)
+	 */
 
 	if (obj->is_anonymous)
 		vmp_amap_free(map, &obj->amap);
 	else {
-		struct vmp_objpage *objpage;
-		RB_FOREACH(objpage, vmp_objpage_rbtree ,&obj->page_rbtree ) {
-			/* todo(HIGH): !!! Come back to this ; queues? */
-			vmp_page_free(map, objpage->page);
-			objpage->page = NULL;
+		struct vmp_objpage *opage, *tmp;
+
+		/*
+		 * Dirty object pages keep a reference to objects - if we are
+		 * here, there cannot be any.
+		 */
+
+		RB_FOREACH_SAFE (opage, vmp_objpage_rbtree, &obj->page_rbtree,
+		    tmp) {
+			RB_REMOVE(vmp_objpage_rbtree, &obj->page_rbtree, opage);
+			vmp_objpage_free(map, opage);
 		}
+
 		kmem_free(obj, sizeof(*obj));
 	}
 	return 0;

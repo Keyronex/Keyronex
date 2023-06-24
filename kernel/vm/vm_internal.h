@@ -147,6 +147,9 @@ void vmp_objpage_created(struct vmp_objpage *opage);
 /*! @brief Inform the cleaner an object page is potentially dirty. */
 void vmp_objpage_dirty(vm_object_t *obj, struct vmp_objpage *opage);
 
+/*! @brief Free an object page. Must be clean & object must be LOCKED. */
+void vmp_objpage_free(vm_map_t *map, struct vmp_objpage *opage);
+
 /*! @brief Initialise an amap. */
 int vmp_amap_init(vm_map_t *map, struct vm_amap *amap);
 

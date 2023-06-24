@@ -6,7 +6,7 @@
 #include "kdk/amd64/vmamd64.h"
 #include "kdk/devmgr.h"
 #include "kdk/kernel.h"
-#include "kdk/objhdr.h"
+#include "kdk/kmem.h"
 #include "kdk/process.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
@@ -225,4 +225,14 @@ vmp_objpage_dirty(vm_object_t *obj, struct vmp_objpage *opage)
 
 out:
 	vmp_release_pfn_lock(ipl);
+}
+
+void
+vmp_objpage_free(vm_map_t *map, struct vmp_objpage *opage)
+{
+	vmp_page_free(map, opage->page);
+	opage->page = NULL;
+	kassert(opage->stat == kVMPObjPageClean);
+	TAILQ_REMOVE(&dirty_queue, opage, dirtyqueue_entry);
+	kmem_free(opage, sizeof(*opage));
 }
