@@ -40,7 +40,7 @@ vm_object_free(vm_map_t *map, vm_object_t *obj)
 		struct vmp_objpage *opage, *tmp;
 
 		/*
-		 * Dirty object pages keep a reference to objects - if we are
+		 * Dirty object pages keep a reference to vnode - if we are
 		 * here, there cannot be any.
 		 */
 
