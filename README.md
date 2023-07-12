@@ -62,6 +62,7 @@ Requirements
 ------------
 
 To build Keyronex and all of the userspace you will need the following dependencies:
+
 ```
 autopoint
 gettext
@@ -83,6 +84,10 @@ yacc
 xbstrap
 xorriso
 ```
+
+These packages are gotten with `apt install` on Ubuntu, except for `xbstrap`,
+which is gotten with `pip install xbstrap`.
+
 
 Platform Support
 ----------------

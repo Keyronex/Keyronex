@@ -350,7 +350,7 @@ packages:
   - name: freetype
     source:
       subdir: 'ports'
-      url: 'https://download.savannah.gnu.org/releases/freetype/freetype-2.13.0.tar.xz'
+      url: 'https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.13.0.tar.xz'
       format: 'tar.xz'
       extract_path: 'freetype-2.13.0'
       version: '2.13.0'
