@@ -100,6 +100,10 @@ loop:
 
 		opage = TAILQ_LAST(&dirty_queue, vmp_objpage_dirty_queue);
 
+		/*
+		 * todo: should wiring forbid write-back? need to think about
+		 * how we deal with the dirtying of wired pages.
+		 */
 		if (opage->page->wirecnt > 0) {
 			kdprintf("Page is wired\n");
 			goto replace;
@@ -119,6 +123,7 @@ loop:
 
 		dirty = pmap_pageable_undirty(opage->page);
 		if (!dirty) {
+			opage->stat = kVMPObjPageClean;
 			opage->page->obj->ndirty--;
 			pgcleaner_stats.dirty--;
 			pgcleaner_stats.clean++;
@@ -135,8 +140,9 @@ loop:
 				obj_direct_release(opage->page->obj->vnode);
 			continue;
 		} else {
+			uintptr_t pfn = opage->page->pfn;
 			kdprintf("Page %lu is dirty\n",
-			    (uintptr_t)opage->page->pfn);
+			    pfn);
 
 			vm_mdl_t *mdl;
 			vm_page_t *page = opage->page;
@@ -144,7 +150,7 @@ loop:
 
 			kassert(!page->obj->is_anonymous);
 
-			opage->stat = kVMPObjPageCleaning;
+			opage->stat = kVMPObjPageClean;
 			pgcleaner_stats.dirty--;
 			pgcleaner_stats.clean++;
 			TAILQ_INSERT_TAIL(&clean_queue, opage,
@@ -172,9 +178,16 @@ loop:
 			iop_return_t res = iop_send_sync(iop);
 			kassert(res == kIOPRetCompleted);
 
+			/*
+			 * !!! xxx we need to make a real solution here.
+			 * clean up how we deal with this, how we deal with
+			 * the refcounting of dirty pages and so on.
+			 * we also probably want a lock around paging i/o for
+			 * a file that inhibits the file being shrank etc.
+			 */
+
 			page->obj->ndirty--;
 			if (page->obj->ndirty == 0) {
-
 				obj_direct_release(vnode);
 			}
 
@@ -230,9 +243,9 @@ out:
 void
 vmp_objpage_free(vm_map_t *map, struct vmp_objpage *opage)
 {
+	kassert(opage->stat == kVMPObjPageClean);
 	vmp_page_free(map, opage->page);
 	opage->page = NULL;
-	kassert(opage->stat == kVMPObjPageClean);
-	TAILQ_REMOVE(&dirty_queue, opage, dirtyqueue_entry);
+	TAILQ_REMOVE(&clean_queue, opage, dirtyqueue_entry);
 	kmem_free(opage, sizeof(*opage));
 }
