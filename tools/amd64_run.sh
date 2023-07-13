@@ -66,7 +66,9 @@ if [ "$virtiodisk" = "1" ]; then
 fi
 
 if [ "$virtionet" = "1" ]; then
-	qemu_args="${qemu_args} -net bridge,br=virbr0 -net nic,model=virtio"
+	#qemu_args="${qemu_args} -net bridge,br=virbr0"
+	qemu_args="${qemu_args} -net user"
+	qemu_args="${qemu_args} -net nic,model=virtio"
 fi
 
 if [ "$virtio9p" = "1" ]; then

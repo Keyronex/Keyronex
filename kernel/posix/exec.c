@@ -224,6 +224,7 @@ loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
 		size_t pageoff;
 		size_t size;
 		vaddr_t segbase;
+		vaddr_t mapaddr;
 
 		if (phdr->p_type == PT_PHDR) {
 			pkg->phaddr = base + phdr->p_vaddr;
@@ -235,12 +236,14 @@ loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
 		pageoff = phdr->p_vaddr - (uintptr_t)segbase;
 		size = PGROUNDUP(pageoff + phdr->p_memsz);
 		segbase += (uintptr_t)base;
+		mapaddr = segbase + pageoff;
 
 		r = vm_map_allocate(pkg->map, &segbase, size, true);
 		kassert(r == 0);
 
-		r = VOP_READ(vn, (void *)(segbase + pageoff), phdr->p_filesz,
-		    phdr->p_offset, 0);
+		r = vm_map_object(pkg->map, vn->vmobj, &mapaddr,
+		    PGROUNDUP(phdr->p_filesz), phdr->p_offset, kVMAll, kVMAll,
+		    kVMInheritCopy, true, true);
 		if (r < 0)
 			return r; /* TODO: this won't work anymore */
 	}
