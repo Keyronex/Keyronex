@@ -111,6 +111,7 @@ vm_map_object(vm_map_t *map, vm_object_t *object, krx_inout vaddr_t *vaddrp,
 
 	if (r < 0) {
 		kdprintf("vm_map_object failed at vmem_xalloc with %d\n", r);
+		vmp_map_dump(map);
 		for (;;)
 			asm("pause");
 	}

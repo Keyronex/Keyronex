@@ -1244,10 +1244,13 @@ posix_syscall(hl_intr_frame_t *frame)
 #endif
 
 	switch (frame->rax) {
-	case kPXSysDebug:
-		kdprintf("<DEBUG>: %s\n", (char *)ARG1);
+	case kPXSysDebug: {
+		char *str = strdup((char*)ARG1);
+		kdprintf("<DEBUG>: %s\n", str);
+		kmem_strfree(str);
 		syscon_printstats();
 		break;
+	}
 
 	case kPXSysMmap:
 		RET = (uintptr_t)vm_mmap((void *)ARG1, ARG2, ARG3, ARG4, ARG5,

@@ -238,12 +238,18 @@ loadelf(const char *path, vaddr_t base, exec_package_t *pkg)
 		segbase += (uintptr_t)base;
 		mapaddr = segbase + pageoff;
 
-		r = vm_map_allocate(pkg->map, &segbase, size, true);
-		kassert(r == 0);
-
+#if 0
 		r = vm_map_object(pkg->map, vn->vmobj, &mapaddr,
 		    PGROUNDUP(phdr->p_filesz), phdr->p_offset, kVMAll, kVMAll,
 		    kVMInheritCopy, true, true);
+#else
+		(void)mapaddr;
+		r = vm_map_allocate(pkg->map, &segbase, size, true);
+		kassert(r == 0);
+
+		r = VOP_READ(vn, (void *)(segbase + pageoff), phdr->p_filesz,
+		    phdr->p_offset, 0);
+#endif
 		if (r < 0)
 			return r; /* TODO: this won't work anymore */
 	}

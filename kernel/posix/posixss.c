@@ -376,6 +376,10 @@ psx_setpgid(pid_t pid, pid_t pgid)
 			r = -ESRCH;
 			goto out;
 		} else {
+			if (proc->exited) {
+				r = -ESRCH;
+				goto out;
+			}
 			kassert(proc->pgroup != NULL);
 			if (proc->pgroup->session !=
 			    px_curproc()->pgroup->session) {
