@@ -114,5 +114,8 @@ main(int argc, char *argv[])
 	} else {
 		if (argc != 5)
 			usage(argv[0]);
+
+		printf("%s: todo! %s ip %s nm %s gw %s\n", argv[0], argv[1],
+		    argv[2], argv[3], argv[4]);
 	}
 }

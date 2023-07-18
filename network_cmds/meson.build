@@ -13,6 +13,10 @@ executable('ifconfig', 'ifconfig.m',
 	install: true
 )
 
+#
+# udhcpc
+#
+
 udhcpc_sources = []
 foreach p : [ 'clientpacket.c', 'dhcpc.c', 'options.c', 'pidfile.c', 'packet.c',
 	'script.c', 'socket.c',]
@@ -25,4 +29,8 @@ udhcpc = executable('udhcpc', udhcpc_sources,
 	],
 	c_args: [ '-DVERSION="0.9.8-keyronex"'],
 	install: true
+)
+
+install_data('default.script',
+	install_dir: 'share/udhcpc'
 )

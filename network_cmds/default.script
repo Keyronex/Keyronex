@@ -1,0 +1,34 @@
+#!/bin/sh
+
+[ -z "$1" ] && echo "Error: should be called from udhcpc" && exit 1
+
+RESOLV_CONF="/etc/resolv.conf"
+
+if [ -n "$subnet" ]; then
+	NETMASK="$subnet"
+else
+	NETMASK="255.255.255.0"
+fi
+
+if [ -n "$router" ] ; then
+	routers=($router)
+	ROUTER=${router[0]}
+fi
+
+case "$1" in
+	deconfig)
+		ifconfig $interface 0.0.0.0 0.0.0.0 0.0.0.0
+		;;
+
+	renew|bound)
+		ifconfig $interface $ip $NETMASK $ROUTER
+
+		#echo -n > $RESOLV_CONF
+		[ -n "$domain" ] && echo "--> search $domain"
+		for i in $dns ; do
+			echo "--> nameserver $i"
+		done
+		;;
+esac
+
+exit 0

@@ -1,6 +1,6 @@
 /* script.c
  *
- * Functions to call the DHCP client notification scripts 
+ * Functions to call the DHCP client notification scripts
  *
  * Russ Dill <Russ.Dill@asu.edu> July 2001
  *
@@ -154,9 +154,9 @@ static char **fill_envp(struct dhcpMessage *packet)
 		if ((temp = get_option(packet, DHCP_OPTION_OVER)))
 			over = *temp;
 		if (!(over & FILE_FIELD) && packet->file[0]) num_options++;
-		if (!(over & SNAME_FIELD) && packet->sname[0]) num_options++;		
+		if (!(over & SNAME_FIELD) && packet->sname[0]) num_options++;
 	}
-	
+
 	envp = xmalloc((num_options + 5) * sizeof(char *));
 	envp[0] = xmalloc(sizeof("interface=") + strlen(client_config.interface));
 	sprintf(envp[0], "interface=%s", client_config.interface);
@@ -192,7 +192,7 @@ static char **fill_envp(struct dhcpMessage *packet)
 		packet->sname[sizeof(packet->sname) - 1] = '\0';
 		envp[j] = xmalloc(sizeof("sname=") + strlen(packet->sname));
 		sprintf(envp[j++], "sname=%s", packet->sname);
-	}	
+	}
 	envp[j] = NULL;
 	return envp;
 }
@@ -213,16 +213,20 @@ void run_script(struct dhcpMessage *packet, const char *name)
 		waitpid(pid, NULL, 0);
 		return;
 	} else if (pid == 0) {
+		char *argv[3];
+
 		envp = fill_envp(packet);
-		
+
 		/* close fd's? */
-		
+
 		/* exec script */
-		DEBUG(LOG_INFO, "execle'ing %s", client_config.script);
-		execle(client_config.script, client_config.script,
-		       name, NULL, envp);
+		argv[0] = client_config.script;
+		argv[1] = (char*)name;
+		argv[2] = NULL;
+		DEBUG(LOG_INFO, "execve'ing %s", client_config.script);
+		execve(client_config.script, argv, envp);
 		LOG(LOG_ERR, "script %s failed: %s",
 		    client_config.script, strerror(errno));
 		exit(1);
-	}			
+	}
 }
