@@ -415,6 +415,7 @@ fault_vnode(vm_map_t *map, vaddr_t vaddr, vm_map_entry_t *entry,
 		iop->stack[0].vnode = vnode;
 		iop_return_t res = iop_send_sync(iop);
 		kassert(res == kIOPRetCompleted);
+		iop_free(iop);
 
 		/*
 		 * the I/O having completed, we can change the page status from
