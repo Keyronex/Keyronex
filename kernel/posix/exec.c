@@ -386,6 +386,8 @@ sys_exec(posix_proc_t *proc, const char *u_path, const char *u_argp[],
 
 #if DEBUG_SYSCALLS == 1
 	kdprintf("SYS_EXEC(%s)\n", path);
+	for (const char **arg = u_argp; *arg != NULL; arg++)
+		kdprintf("ARG: %s\n", *arg);
 #endif
 
 	proc->eprocess->map = pkg.map;

@@ -119,9 +119,9 @@ VirtIONIC::VirtIONIC(PCIDevice *provider, pci_device_info &info)
 
 #if TEST_IP == 1
 	ip4_addr_t ip, netmask, gw;
-	ip.addr = ipaddr_addr("192.168.122.50");
+	ip.addr = ipaddr_addr("10.0.2.15");
 	netmask.addr = ipaddr_addr("255.255.255.0");
-	gw.addr = ipaddr_addr("192.168.122.1");
+	gw.addr = ipaddr_addr("10.0.2.2");
 
 	err = netifapi_netif_set_addr(&nic, &ip, &netmask, &gw);
 	if (err != ERR_OK) {

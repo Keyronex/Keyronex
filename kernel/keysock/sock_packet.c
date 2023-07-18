@@ -56,7 +56,6 @@ packet_deliver_to_sockets(struct pbuf *p)
 			packet->packet.offset = 0;
 			packet->packet.refcount = 1;
 			packet->packet.size = p->tot_len;
-			kdprintf("DELIVERING ON PACKET SOCKET...\n");
 			ke_spinlock_acquire_nospl(&sock->socknode.lock);
 			packet_add_to_queue(&sock->rx_queue, &packet->packet);
 			ke_event_signal(&sock->socknode.read_evobj);

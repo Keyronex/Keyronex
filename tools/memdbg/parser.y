@@ -75,8 +75,8 @@ opt_hex_list:
 note:
       ALLOC INT string hex opt_hex_list {
         if(allocs.find($4) != allocs.end()) {
-            std::cout << "Allocation of an already-allocated address!\n";
-            abort();
+            std::cout << "Allocation of an already-allocated address(" << $4 << ") !\n";
+            //abort();
         }
         allocs[$4] = Allocation { $2, $3, $5 };
     }
