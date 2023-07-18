@@ -26,6 +26,9 @@ build/: mlibc/meson.build
 rebuild-kernel: build/
 	(cd build && xbstrap install --rebuild mlibc-headers keyronex-kernel-headers mlibc keyronex-kernel)
 
+rebuild-cmds: build/
+	(cd build && xbstrap install --rebuild network_cmds)
+
 iso:
 	@rm -rf ${ISO_DIR}
 	@mkdir -p ${ISO_DIR}

@@ -983,6 +983,7 @@ NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
 	NinePFS *self = (NinePFS *)vn->vfsp->data;
 	ninepfs_node *node = ((ninepfs_node *)vn->data);
 	off_t r = 0;
+	char * buf_limit = (char*)buf + buf_size;
 
 	iop_t *iop;
 	io_9p_request *req;
@@ -1045,12 +1046,6 @@ NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
 	r = ninep_buf_getu32(buf_out, &bytes_from_9p);
 	kassert(r == 0);
 
-	/*
-	 * we don't rangecheck our output buffer because the 9p dirent format is
-	 * larger, so it will always fit. It might be prudent to assert this
-	 * just in case.
-	 */
-
 	while (bytes_from_9p) {
 		ninep_qid qid;
 		uint64_t offset;
@@ -1070,9 +1065,14 @@ NinePFS::readdir(vnode_t *vn, void *buf, size_t buf_size, size_t *bytes_read,
 		kassert(r == 0);
 
 		/* TODO: eliminate double copy */
-
 		r = ninep_buf_getstr(buf_out, &name);
 		kassert(r == 0);
+
+		/* make sure it can fit */
+		if ((char*)buf + DIRENT_RECLEN(strlen(name)) > buf_limit) {
+			kmem_strfree(name);
+			break;
+		}
 
 		out_buf->d_off = offset;
 		out_buf->d_ino = qid.path;
