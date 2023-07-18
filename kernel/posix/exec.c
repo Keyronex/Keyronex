@@ -428,6 +428,8 @@ load:
 	fail:
 		vm_map_activate(oldmap);
 		proc->eprocess->map = oldmap;
+		if (pkg.map)
+			vm_map_free(pkg.map);
 	}
 
 	kmem_strfree(path);

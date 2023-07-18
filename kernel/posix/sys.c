@@ -1428,7 +1428,6 @@ posix_syscall(hl_intr_frame_t *frame)
 		break;
 
 	case kPXSysSocketPair:
-		kfatal("SocketPair\n");
 		RET = sys_socketpair(ARG1, ARG2, ARG3, (int *)ARG4);
 		break;
 

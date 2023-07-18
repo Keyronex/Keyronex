@@ -121,7 +121,8 @@ int sock_pair(vnode_t *vn1, vnode_t *vn2)
 {
 	struct socknode *sock = VNTOSON(vn1);
 
-	/* we can assume we are being called sanely */
+	if (sock->sockops->pair == NULL)
+		return -ENOSYS;
 
 	return sock->sockops->pair(vn1, vn2);
 }

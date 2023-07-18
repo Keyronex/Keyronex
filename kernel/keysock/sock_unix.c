@@ -22,6 +22,15 @@
  * from references to that socket (in such a way as to enable listening on it.)
  */
 
+/*
+ * Note: Initial plan is that for paired sockets, the remote field does not
+ * retain a reference to the peer.
+ * Instead, socket release could acquire both the local and remote's spinlocks
+ * and do the needful.
+ * We need to think about whether this can be racy; if so, we'd have to then
+ * consider a global unix socket lock.
+ */
+
 /*!
  * Messages on both datagram and stream sockets in the Unix domain are
  * represented with these packets. SCM_CREDENTIALS and SCM_RIGHTS control
@@ -118,6 +127,21 @@ sock_unix_create(krx_out vnode_t **out_vn, int domain, int type, int protocol)
 	sock->socknode.protocol = protocol;
 
 	*out_vn = vn;
+
+	return 0;
+}
+
+int sock_unix_pair(vnode_t *vn, vnode_t *vn2)
+{
+	struct sock_unix *sock1, *sock2;
+
+	sock1 = VNTOUNP(vn);
+	sock2 = VNTOUNP(vn2);
+
+	sock1->socknode.state = kSockConnected;
+	sock2->socknode.state = kSockConnected;
+	sock1->remote = sock2;
+	sock2->remote = sock1;
 
 	return 0;
 }
@@ -339,6 +363,7 @@ sock_unix_send(vnode_t *vn, void *buf, size_t nbyte)
 struct socknodeops unix_soops = {
 	.accept = sock_unix_accept,
 	.create = sock_unix_create,
+	.pair = sock_unix_pair,
 	.bind = sock_unix_bind,
 	.connect = sock_unix_connect,
 	.listen = sock_unix_listen,

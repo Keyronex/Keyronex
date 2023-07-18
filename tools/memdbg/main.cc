@@ -35,7 +35,7 @@ main(int argc, char **argv)
 
 		for (int i = 5; i < 7; i++) {
 			std::string invocation =
-			    "addr2line -e ../../../build/system-root/boot/keyronex " +
+			    "addr2line -e ../system-root/boot/keyronex " +
 			    (*alloc.second.addresses)[i];
 			std::cout << "  ";
 			system(invocation.c_str());
