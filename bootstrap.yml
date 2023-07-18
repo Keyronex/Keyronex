@@ -394,6 +394,7 @@ packages:
     build:
       - args: [ 'cp', '-r', '@THIS_SOURCE_DIR@/etc', '@THIS_COLLECT_DIR@']
       - args: [ 'ln', '-s', 'usr/bin', '@THIS_COLLECT_DIR@/bin' ]
+      - args: [ 'ln', '-s', 'usr/sbin', '@THIS_COLLECT_DIR@/sbin' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/dev' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/proc' ]
       - args: [ 'mkdir', '@THIS_COLLECT_DIR@/tmp' ]

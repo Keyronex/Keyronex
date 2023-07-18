@@ -22,6 +22,9 @@
 	},
 	"esbonio.sphinx.confDir": "",
 	"C/C++ Include Guard.Auto Update Include Guard": false,
-	"files.insertFinalNewline": true
+	"files.insertFinalNewline": true,
+	"files.trimTrailingWhitespace": true,
+	"files.trimFinalNewlines": true,
+	"editor.renderFinalNewline": "dimmed"
 
 }
