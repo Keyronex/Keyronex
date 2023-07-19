@@ -119,6 +119,10 @@ int sock_listen(vnode_t *vn, uint8_t backlog);
 int sock_pair(vnode_t *vn1, vnode_t *vn2);
 int sock_recvmsg(vnode_t *vn, struct msghdr *msg, int flags);
 int sock_sendmsg(vnode_t *vn, struct msghdr *msg, int flags);
+int sock_getsockopt(vnode_t *vn, int layer, int number, void *__restrict buffer,
+    socklen_t *__restrict size);
+int sock_setsockopt(vnode_t *vn, int layer, int number, void *buffer,
+    socklen_t size);
 
 /* internal functions */
 /*! @brief Unack an IP/port from a sockaddr. */

@@ -1227,6 +1227,31 @@ sys_sendmsg(int fd, struct msghdr *msg, int flags)
 }
 
 int
+sys_getsockopt(int fd, int layer, int number, void *__restrict buffer,
+    socklen_t *__restrict size)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_getsockopt(vn, layer, number, buffer, size);
+}
+
+int
+sys_setsockopt(int fd, int layer, int number, void *buffer, socklen_t size)
+{
+	vnode_t *vn;
+
+	vn = ps_getfile(ps_curproc(), fd)->vn;
+	if (!vn)
+		return -EBADF;
+
+	return sock_setsockopt(vn, layer, number, buffer, size);
+}
+
+int
 posix_syscall(hl_intr_frame_t *frame)
 {
 #define ARG1 frame->rdi
@@ -1454,6 +1479,15 @@ posix_syscall(hl_intr_frame_t *frame)
 
 	case kPXSysRecvMsg:
 		RET = sys_recvmsg(ARG1, (struct msghdr *)ARG2, ARG3);
+		break;
+
+	case kPXSysGetSockOpt:
+		RET = sys_getsockopt(ARG1, ARG2, ARG3, (void *)ARG4,
+		    (socklen_t *)ARG5);
+		break;
+
+	case kPXSysSetSockOpt:
+		RET = sys_setsockopt(ARG1, ARG2, ARG3, (void *)ARG4, ARG5);
 		break;
 
 	case kPXSysUTSName: {

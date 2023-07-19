@@ -353,6 +353,38 @@ sock_close(vnode_t *vn)
 	return 0;
 }
 
+int
+sock_getsockopt(vnode_t *vn, int layer, int number, void *__restrict buffer,
+    socklen_t *__restrict size)
+{
+#if 0
+	struct socknode *sonode;
+
+	kassert(vn->ops == &sock_vnops);
+	sonode = VNTOSON(vn);
+#endif
+
+	if (layer == SOL_SOCKET) {
+		switch (number) {
+		case SO_ERROR:
+			*(int *)buffer = 0;
+			return 0;
+
+		default:
+			return -ENOPROTOOPT;
+		}
+	} else {
+		return -ENOPROTOOPT;
+	}
+}
+
+int
+sock_setsockopt(vnode_t *vn, int layer, int number, void *buffer,
+    socklen_t size)
+{
+	return -ENOSYS;
+}
+
 struct vnops sock_vnops = {
 	.read = sock_read,
 	.write = sock_write,
