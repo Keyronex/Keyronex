@@ -684,6 +684,20 @@ kmem_strfree(char *str)
 	return NULL;
 }
 
+void
+kmem_zone_dump_locked(kmem_zone_t *zone)
+{
+	struct kmem_slab *iter;
+
+	kprintf("Zone %s (%zu bytes)\n", zone->name, zone->size);
+	STAILQ_FOREACH (iter, &zone->slablist, slablist) {
+		kprintf("\tSlab %p: %u objects allocated, %u free, sane: %d\n",
+		    iter, iter->nalloced, iter->nfree,
+		    (iter->nalloced + iter->nfree) == slabcapacity(zone));
+		;
+	}
+}
+
 #ifndef _KERNEL
 int
 main(int argc, char *argv[])
