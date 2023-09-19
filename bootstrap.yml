@@ -1,0 +1,258 @@
+declare_options:
+  - name: arch
+    default: x86_64
+  - name: arch-triple
+    default: x86_64-keyronex
+
+
+################################################################################
+#
+# Sources
+#
+################################################################################
+
+sources:
+
+  - name: '.'
+
+  - name: 'mlibc'
+
+  - name: pkgconf
+    subdir: 'sources'
+    url: 'https://github.com/pkgconf/pkgconf/archive/refs/tags/pkgconf-1.8.0.tar.gz'
+    format: 'tar.gz'
+    extract_path: 'pkgconf-pkgconf-1.8.0'
+    version: '1.8.0'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+    regenerate:
+      - args: [ 'libtoolize', '-cfvi' ]
+      - args: ['autoreconf',  '-fvi']
+
+  - name: binutils
+    subdir: 'sources'
+    url: 'https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.xz'
+    format: 'tar.xz'
+    extract_path: 'binutils-2.41'
+    version: '2.41'
+    patch-path-strip: 1
+
+  - name: gcc
+    subdir: 'sources'
+    url: 'https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz'
+    format: 'tar.xz'
+    extract_path: 'gcc-13.2.0'
+    patch-path-strip: 1
+    version: '13.2.0'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+    regenerate:
+      - args: ['autoreconf',  '-fvi']
+      - args: ['autoconf']
+        workdir: '@THIS_SOURCE_DIR@/gcc'
+      - args: ['autoconf']
+        workdir: '@THIS_SOURCE_DIR@/libstdc++-v3'
+
+################################################################################
+#
+# Tools
+#
+################################################################################
+
+tools: 
+
+  - name: 'crossfile'
+    source:
+      name: 'tools'
+    install:
+     - args: [
+        'sh',
+        '@THIS_SOURCE_DIR@/mkcrossfile.sh',
+        '@OPTION:arch@',
+        '@SYSROOT_DIR@',
+        '@BUILD_ROOT@/crossfile.ini'
+      ]
+
+#
+# autotools, libtool, etc
+#
+
+  - name: host-autoconf-2.69
+    source:
+      name: autoconf-2.69
+      subdir: 'sources'
+      url: 'https://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'autoconf-2.69'
+      version: '2.69'
+    configure:
+      - args: ['@THIS_SOURCE_DIR@/configure', '--prefix=@PREFIX@']
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: host-autoconf-archive
+    architecture: noarch
+    exports_aclocal: true
+    source:
+      subdir: 'sources'
+      url: 'https://ftp.gnu.org/gnu/autoconf-archive/autoconf-archive-2019.01.06.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'autoconf-archive-2019.01.06'
+      version: '2019.01.06'
+    install:
+      - args: ['mkdir', '-p', '@BUILD_ROOT@/tools/host-autoconf-archive/share/']
+      - args: ['cp', '-r', '@THIS_SOURCE_DIR@/m4', '@BUILD_ROOT@/tools/host-autoconf-archive/share/aclocal']
+
+  - name: host-automake-1.16
+    source:
+      name: automake-1.16
+      subdir: 'sources'
+      url: 'https://ftp.gnu.org/gnu/automake/automake-1.16.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'automake-1.16'
+      version: '1.16'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+      regenerate:
+        - args: ['./bootstrap']
+    tools_required:
+      - host-autoconf-2.69
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: |
+          set -e
+          export PATH="`pwd`/bin:$PATH"
+          make bin/aclocal-1.16 bin/automake-1.16 -j@PARALLELISM@
+          make -j@PARALLELISM@
+    install:
+      - args: ['make', 'install-strip']
+      - args: ['ln', '-sf', '@PREFIX@/share/aclocal-1.16', '@PREFIX@/share/aclocal']
+
+  - name: host-libtool
+    exports_aclocal: true
+    source:
+      name: libtool
+      subdir: 'sources'
+      url: 'https://ftp.gnu.org/gnu/libtool/libtool-2.4.7.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libtool-2.4.7'
+      patch-path-strip: 1
+      version: '2.4.7'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+      regenerate:
+        - args: ['./bootstrap', '--force']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: host-pkgconf
+    exports_aclocal: true
+    from_source: pkgconf
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+      - args: ['ln', '-sf', 'pkgconf', '@PREFIX@/bin/pkg-config']
+
+#
+# cross compilers
+#
+
+  - name: host-binutils
+    from_source: binutils
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+        - '--target=@OPTION:arch-triple@'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--disable-werror'
+        - 'CFLAGS=-pipe'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+
+################################################################################
+#
+# Packages
+#
+################################################################################
+
+packages:
+
+  - name: basefiles
+    tools_required:
+      - 'host-binutils'
+    source:
+      name: 'basefiles'
+    build:
+      - args: [ 'mkdir', '@THIS_COLLECT_DIR@/dev' ]
+
+  - name: mlibc-headers
+    from_source: 'mlibc'
+    implict_package: true
+    tools_required:
+      - 'crossfile'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '-Dheaders_only=true'
+        - '-Dbuildtype=debug'
+        - '-Dlinux_kernel_headers=@SOURCE_ROOT@/kernel/include'
+        - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: kernel-headers
+    metadata:
+      summary: Keyronex kernel SDK headers
+    from_source: '.'
+    implict_package: true
+    tools_required:
+      - 'crossfile'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '-Dheaders_only=true'
+        - '-Darch=@OPTION:arch@'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'

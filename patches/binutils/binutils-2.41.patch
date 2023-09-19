@@ -1,0 +1,118 @@
+diff -ruN binutils-2.41-original/bfd/config.bfd binutils-2.41/bfd/config.bfd
+--- binutils-2.41-original/bfd/config.bfd	2023-09-19 15:28:53.771990768 +0100
++++ binutils-2.41/bfd/config.bfd	2023-09-19 16:51:39.720980816 +0100
+@@ -283,6 +283,11 @@
+     targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec"
+     want64=true
+     ;;
++  aarch64-*-keyronex*)
++    targ_defvec=aarch64_elf64_le_vec
++    targ_selvecs="aarch64_elf32_le_vec"
++    want64=true
++    ;;
+   aarch64-*-linux* | aarch64-*-netbsd* | aarch64-*-nto*)
+     targ_defvec=aarch64_elf64_le_vec
+     targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec aarch64_pei_le_vec aarch64_pe_le_vec"
+@@ -734,6 +739,11 @@
+     targ_selvecs="i386_elf32_vec iamcu_elf32_vec x86_64_elf32_vec"
+     want64=true
+     ;;
++  x86_64-*-keyronex*)
++    targ_defvec=x86_64_elf64_vec
++    targ_selvecs=i386_elf32_vec
++    want64=true
++    ;;
+ #endif
+   i[3-7]86-*-lynxos*)
+     targ_defvec=i386_elf32_vec
+@@ -831,6 +841,9 @@
+   m68*-*-haiku*)
+     targ_defvec=m68k_elf32_vec
+     ;;
++  m68*-*-keyronex*)
++    targ_defvec=m68k_elf32_vec
++    ;;
+   m68hc11-*-* | m6811-*-*)
+     targ_defvec=m68hc11_elf32_vec
+     targ_selvecs="m68hc11_elf32_vec m68hc12_elf32_vec"
+diff -ruN binutils-2.41-original/config.sub binutils-2.41/config.sub
+--- binutils-2.41-original/config.sub	2023-09-19 15:28:53.871990746 +0100
++++ binutils-2.41/config.sub	2023-09-19 16:51:39.720980816 +0100
+@@ -1758,7 +1758,7 @@
+ 	     | onefs* | tirtos* | phoenix* | fuchsia* | redox* | bme* \
+ 	     | midnightbsd* | amdhsa* | unleashed* | emscripten* | wasi* \
+ 	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* | zephyr* \
+-	     | fiwix* | mlibc* )
++	     | fiwix* | mlibc* | keyronex*)
+ 		;;
+ 	# This one is extra strict with allowed versions
+ 	sco3.2v2 | sco3.2v[4-9]* | sco5v6*)
+diff -ruN binutils-2.41-original/gas/configure.tgt binutils-2.41/gas/configure.tgt
+--- binutils-2.41-original/gas/configure.tgt	2023-09-19 15:28:53.941990736 +0100
++++ binutils-2.41/gas/configure.tgt	2023-09-19 16:51:39.720980816 +0100
+@@ -137,6 +137,7 @@
+   aarch64*-*-nto*)			fmt=elf;;
+   aarch64*-*-openbsd*)			fmt=elf;;
+   aarch64*-*-pe* | aarch64*-*-mingw*)	fmt=coff em=pepaarch64 ;;
++  aarch64*-*-keyronex*)                 fmt=elf em=linux;;
+   alpha-*-*vms*)			fmt=evax ;;
+   alpha-*-osf*)				fmt=ecoff ;;
+   alpha-*-linux*ecoff*)			fmt=ecoff ;;
+@@ -241,6 +242,7 @@
+     esac ;;
+   i386-*-lynxos*)			fmt=elf em=lynx ;;
+   i386-*-redox*)			fmt=elf ;;
++  i386-*-keyronex*)			fmt=elf em=linux ;;
+   i386-*-solaris*)			fmt=elf em=solaris ;;
+   i386-*-freebsd* \
+   | i386-*-kfreebsd*-gnu)		fmt=elf em=freebsd ;;
+@@ -297,6 +299,8 @@
+   m68k-*-gnu*)				fmt=elf ;;
+   m68k-*-netbsd*)			fmt=elf em=nbsd ;;
+   m68k-*-haiku*)			fmt=elf em=haiku ;;
++  m68k-*-keyronex*)			fmt=elf em=linux ;;
++
+ 
+   s12z-*-*)				fmt=elf ;;
+ 
+@@ -371,6 +375,7 @@
+   pru-*-*)				fmt=elf ;;
+ 
+   riscv*-*-haiku*)			fmt=elf endian=little em=haiku ;;
++  riscv*-*-haiku*)			fmt=elf endian=little em=linux ;;
+   riscv*-*-*)				fmt=elf ;;
+ 
+   rx-*-linux*)				fmt=elf em=linux ;;
+diff -ruN binutils-2.41-original/ld/configure.tgt binutils-2.41/ld/configure.tgt
+--- binutils-2.41-original/ld/configure.tgt	2023-09-19 15:28:55.171990475 +0100
++++ binutils-2.41/ld/configure.tgt	2023-09-19 18:12:18.579996817 +0100
+@@ -126,6 +126,10 @@
+ 			targ_extra_emuls="arm64pe"
+ 			targ_extra_ofiles="deffilep.o pep-dll-aarch64.o pe-dll.o pdb.o"
+ 			;;
++aarch64-*-keyronex*)
++			targ_emul=aarch64elf
++			targ_extra_emuls="aarch64elfb $targ_extra_emuls"
++			;;
+ alpha*-*-freebsd* | alpha*-*-kfreebsd*-gnu)
+ 			targ_emul=elf64alpha_fbsd
+ 			targ_extra_emuls="elf64alpha alpha"
+@@ -495,6 +499,8 @@
+ 			;;
+ m68*-*-haiku*)		targ_emul=m68kelf
+ 			;;
++m68*-*-keyronex*)		targ_emul=m68kelfnbsd
++			;;
+ m68*-*-*)		targ_emul=m68kelf
+ 			;;
+ mcore-*-pe)		targ_emul=mcorepe ;
+@@ -1011,6 +1017,9 @@
+ x86_64-*-redox*)	targ_emul=elf_x86_64
+ 			targ_extra_emuls=elf_i386
+ 			;;
++x86_64-*-keyronex*)	targ_emul=elf_x86_64
++			targ_extra_emuls=elf_i386
++			;;
+ x86_64-*-solaris2*)	targ_emul=elf_x86_64_sol2
+ 			targ_extra_emuls="elf_x86_64 elf_i386_sol2 elf_i386_ldso elf_i386 elf_iamcu"
+ 			targ_extra_libpath=$targ_extra_emuls

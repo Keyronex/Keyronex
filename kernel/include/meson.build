@@ -1,0 +1,1 @@
+install_subdir('kdk', install_dir: 'usr/include')
