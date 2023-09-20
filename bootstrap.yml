@@ -338,3 +338,29 @@ packages:
       - args: ['ninja', 'install']
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: kernel
+    metadata:
+      summary: Keyronex kernel
+    from_source: '.'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'bootstrap-host-gcc'
+    pkgs_required:
+      - 'mlibc-headers'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '-Darch=@OPTION:arch@'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '-Dno_headers=true'
+#        - '--optimization=2'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'

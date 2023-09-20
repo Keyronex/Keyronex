@@ -1,3 +1,7 @@
 [submodule "mlibc"]
 	path = mlibc
 	url = ../../Keyronex/mlibc
+[submodule "vendor/limine"]
+	path = vendor/limine
+	url = https://github.com/limine-bootloader/limine.git
+	branch = v5.x-branch-binary

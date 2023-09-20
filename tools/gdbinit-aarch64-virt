@@ -1,0 +1,2 @@
+file build/aarch64/pkg-builds/kernel/platform/aarch64-virt/keyronex
+target remote localhost:1234

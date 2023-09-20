@@ -5,10 +5,12 @@ BUILD_SETUP_TARGET=${BUILD_DIR}/.setup
 
 ifeq ($(ARCH), amd64)
 	TARGET_TRIPLE := x86_64-keyronex
+	PLATFORM ?= amd64
 else ifeq ($(ARCH), m68k)
 	TARGET_TRIPLE := m68k-keyronex
 else ifeq ($(ARCH), aarch64)
 	TARGET_TRIPLE := aarch64-keyronex
+	PLATFORM ?= aarch64-virt
 else ifeq ($(ARCH), riscv64)
 	TARGET_TRIPLE := riscv64-keyronex
 else
@@ -41,3 +43,8 @@ rebuild-kernel: ${BUILD_SETUP_TARGET}
 
 build-all: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install -c --all)
+
+image: build-all
+
+debug:
+	gdb-multiarch -x tools/gdbinit-$(PLATFORM)

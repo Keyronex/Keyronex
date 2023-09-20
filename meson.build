@@ -2,12 +2,94 @@ project('Keyronex')
 
 headers_only = get_option('headers_only')
 no_headers = get_option('no_headers')
-port = get_option('arch')
+arch = get_option('arch')
 
-if not headers_only
-	add_languages('c', 'cpp', 'objc')
-endif
 
 if not no_headers
 	subdir('kernel/include')
+endif
+
+if not headers_only
+	add_languages('c', 'cpp', 'objc')
+
+	freestanding_c_args = [
+		'-fno-strict-aliasing',
+		'-fwrapv',
+		'-fno-delete-null-pointer-checks',
+	]
+
+	if (arch == 'amd64')
+		meson_cpu_family = 'x86_64'
+		freestanding_c_args += [
+			'-ffreestanding',
+			'-fno-stack-protector',
+			'-fno-stack-check',
+			'-fno-pie',
+			'-fno-pic',
+			'-m64',
+			'-march=x86-64',
+			'-mabi=sysv',
+			'-mno-80387',
+			'-mno-mmx',
+			'-mno-sse',
+			'-mno-sse2',
+			'-mno-red-zone',
+			'-mcmodel=kernel',
+			'-DAMD64',
+		]
+	elif (arch == 'm68k')
+		cpu = 'm68k'
+		meson_cpu_family = cpu
+		freestanding_c_args += [
+			'-ffreestanding',
+			'-fno-stack-protector',
+			'-fno-stack-check',
+			'-fno-pie',
+			'-fno-pic',
+		]
+	elif (arch == 'aarch64')
+		cpu = 'aarch64'
+		meson_cpu_family = cpu
+		freestanding_c_args += [
+			'-DAARCH64',
+			'-ffreestanding',
+			'-fno-stack-protector',
+			'-fno-stack-check',
+			'-fno-pie',
+			'-fno-pic',
+			'-mgeneral-regs-only',
+		]
+	else
+		message('\n\tport ' + arch + ' is not supported by Keyronex')
+		error('\n\tbad arch')
+	endif
+
+	message(cpu)
+
+	freestanding_c_args += [ '-D_KERNEL', '-DARCH=' + arch]
+	freestanding_include_dirs = [ include_directories(
+		'vendor/include',
+		'vendor/include-private',
+		'vendor/limine',
+		'kernel/include',
+		'kernel'
+	)]
+
+	executable(
+		'limine',
+		'vendor/limine/limine.c',
+		native: true
+	)
+
+	bin2c = executable('bin2c', 'tools/bin2c.c', native: true)
+
+	bin2c_gen = generator(bin2c,
+		output : '@PLAINNAME@.c',
+		arguments : [ '-i', '@INPUT@', '-o', '@OUTPUT@', '-s', '@BASENAME@'  ]
+	)
+
+	subdir('vendor/objfwrt')
+	subdir('vendor/lai')
+	subdir('kernel')
+	subdir('platform/aarch64-virt')
 endif
