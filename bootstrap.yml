@@ -62,7 +62,7 @@ sources:
 #
 ################################################################################
 
-tools: 
+tools:
 
   - name: 'crossfile'
     source:
@@ -197,6 +197,60 @@ tools:
       - args: ['make', 'install']
 
 
+  - name: bootstrap-host-gcc
+    from_source: gcc
+    tools_required:
+      - tool: host-binutils
+        recursive: true
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+        - '--target=@OPTION:arch-triple@'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--enable-languages=c,c++,objc,lto'
+        - '--enable-initfini-array'
+        - '--without-headers'
+        - '--without-newlib'
+        - '--disable-shared'
+        - '--disable-hosted-libstdcxx'
+        # libstdc++ can detect that wchar_t is supported by @SYSROOT_DIR@ and
+        # try to enable code we don't want for wchar handling.  just remove it.
+        - '--disable-wchar_t'
+        - '--disable-libssp'
+        - '--disable-libsanitizer'
+        - '--disable-libquadmath'
+        - '--disable-gcov'
+        # -g blows up GCC's binary size.
+        - 'CFLAGS=-O1 -pipe'
+        - 'CXXFLAGS=-O1 -pipe'
+    stages:
+      - name: compiler
+        pkgs_required:
+         - mlibc-headers
+        compile:
+          # GCC complains if the include directory is non-existant.
+          - args: ['mkdir', '-p', '@SYSROOT_DIR@/usr/include']
+          - args: ['make', '-j@PARALLELISM@', 'all-gcc']
+        install:
+          - args: ['make', 'install-gcc']
+          # GCC does *not* look for target-prefixed LD/AS.
+          # Instead, it searches a list of prefix directories. Link AS/LD to make it happy.
+          - args: ['mkdir', '-p', '@PREFIX@/@OPTION:arch-triple@/bin']
+          - args: ['ln', '-sf', '../../../host-binutils/@OPTION:arch-triple@/bin/as',
+                               '@PREFIX@/@OPTION:arch-triple@/bin/as']
+          - args: ['ln', '-sf', '../../../host-binutils/@OPTION:arch-triple@/bin/ld',
+                               '@PREFIX@/@OPTION:arch-triple@/bin/ld']
+
+      - name: libgcc
+        tools_required:
+          - tool: bootstrap-host-gcc
+            stage_dependencies: [compiler]
+        compile:
+          - args: ['make', '-j@PARALLELISM@', 'all-target-libgcc']
+        install:
+          - args: ['make', 'install-target-libgcc']
+
 ################################################################################
 #
 # Packages
@@ -251,6 +305,34 @@ packages:
         - '-Darch=@OPTION:arch@'
         - '@THIS_SOURCE_DIR@'
         - '--prefix=/'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: mlibc
+    from_source: 'mlibc'
+    implict_package: true
+    pkgs_required:
+      - 'kernel-headers'
+      - 'mlibc-headers'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'bootstrap-host-gcc'
+    configure:
+      - args: [ 'echo', '@THIS_SOURCE_DIR@']
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '-Dmlibc_no_headers=true'
+        - '-Dbuildtype=debug'
+        - '-Dlinux_kernel_headers=@SOURCE_ROOT@/kernel/include'
+        - '@THIS_SOURCE_DIR@'
     build:
       - args: ['ninja']
       - args: ['ninja', 'install']

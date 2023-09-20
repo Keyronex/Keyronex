@@ -25,14 +25,14 @@ mlibc/meson.build:
 	fi
 
 # create the build/ directory and set it up
-${BUILD_SETUP_TARGET}: 
+${BUILD_SETUP_TARGET}:
 	mkdir -p ${BUILD_DIR}
 	echo "define_options:" > ${BUILD_DIR}/bootstrap-site.yml
 	echo "    arch: ${ARCH}" >> ${BUILD_DIR}/bootstrap-site.yml
 	echo "    arch-triple: ${TARGET_TRIPLE}" >> ${BUILD_DIR}/bootstrap-site.yml
 	echo "labels:" >> ${BUILD_DIR}/bootstrap-site.yml
-	echo "    match:" >> ${BUILD_DIR}/bootstrap-site.yml
-	echo "      - ${ARCH}" >> ${BUILD_DIR}/bootstrap-site.yml
+	echo "    ban:" >> ${BUILD_DIR}/bootstrap-site.yml
+	echo "      - no_${ARCH}" >> ${BUILD_DIR}/bootstrap-site.yml
 	(cd ${BUILD_DIR} && xbstrap init ../..)
 	touch $@
 

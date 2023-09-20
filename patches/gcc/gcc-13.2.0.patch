@@ -1,0 +1,1775 @@
+diff -ruN gcc-13.2.0-git/config.sub gcc-managarm-gcc-13/config.sub
+--- gcc-13.2.0-git/config.sub	2023-09-20 09:32:31.975855419 +0100
++++ gcc-managarm-gcc-13/config.sub	2023-09-20 11:52:04.594154323 +0100
+@@ -1749,7 +1749,7 @@
+ 	     | onefs* | tirtos* | phoenix* | fuchsia* | redox* | bme* \
+ 	     | midnightbsd* | amdhsa* | unleashed* | emscripten* | wasi* \
+ 	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* | zephyr* \
+-	     | fiwix* )
++	     | fiwix* | keyronex* )
+ 		;;
+ 	# This one is extra strict with allowed versions
+ 	sco3.2v2 | sco3.2v[4-9]* | sco5v6*)
+diff -ruN gcc-13.2.0-git/gcc/config/aarch64/aarch64-keyronex.h gcc-managarm-gcc-13/gcc/config/aarch64/aarch64-keyronex.h
+--- gcc-13.2.0-git/gcc/config/aarch64/aarch64-keyronex.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/aarch64/aarch64-keyronex.h	2023-09-20 09:45:37.205696718 +0100
+@@ -0,0 +1,44 @@
++
++#undef GCC_AARCH64_KEYRONEX
++#define GCC_AARCH64_KEYRONEX 1
++
++#define GNU_USER_DYNAMIC_LINKER "/usr/lib/ld.so"
++
++#define KEYRONEX_TARGET_LINK_SPEC  "%{h*}		\
++   %{static:-Bstatic}				\
++   %{shared:-shared}				\
++   %{symbolic:-Bsymbolic}			\
++   %{!static:%{!static-pie:			\
++     %{rdynamic:-export-dynamic}		\
++     %{!shared:-dynamic-linker " GNU_USER_DYNAMIC_LINKER "}}} \
++   %{static-pie:-Bstatic -pie --no-dynamic-linker -z text} \
++   -X						\
++   -EL"
++
++#if TARGET_FIX_ERR_A53_835769_DEFAULT
++#define CA53_ERR_835769_SPEC \
++  " %{!mno-fix-cortex-a53-835769:--fix-cortex-a53-835769}"
++#else
++#define CA53_ERR_835769_SPEC \
++  " %{mfix-cortex-a53-835769:--fix-cortex-a53-835769}"
++#endif
++
++#if TARGET_FIX_ERR_A53_843419_DEFAULT
++#define CA53_ERR_843419_SPEC \
++  " %{!mno-fix-cortex-a53-843419:--fix-cortex-a53-843419}"
++#else
++#define CA53_ERR_843419_SPEC \
++  " %{mfix-cortex-a53-843419:--fix-cortex-a53-843419}"
++#endif
++
++#define LINK_SPEC KEYRONEX_TARGET_LINK_SPEC \
++                  CA53_ERR_835769_SPEC \
++                  CA53_ERR_843419_SPEC
++
++#define GNU_USER_TARGET_MATHFILE_SPEC \
++  "%{Ofast|ffast-math|funsafe-math-optimizations:crtfastmath.o%s}"
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC   \
++  GNU_USER_TARGET_MATHFILE_SPEC " " \
++  GNU_USER_TARGET_ENDFILE_SPEC
+diff -ruN gcc-13.2.0-git/gcc/config/aarch64/t-aarch64-keyronex gcc-managarm-gcc-13/gcc/config/aarch64/t-aarch64-keyronex
+--- gcc-13.2.0-git/gcc/config/aarch64/t-aarch64-keyronex	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/aarch64/t-aarch64-keyronex	2023-09-20 09:45:22.345699884 +0100
+@@ -0,0 +1,4 @@
++
++LIB1ASMSRC   = aarch64/lib1funcs.asm
++LIB1ASMFUNCS = _aarch64_sync_cache_range
++
+diff -ruN gcc-13.2.0-git/gcc/config/i386/i386-keyronex.h gcc-managarm-gcc-13/gcc/config/i386/i386-keyronex.h
+--- gcc-13.2.0-git/gcc/config/i386/i386-keyronex.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/i386/i386-keyronex.h	2023-09-20 09:40:26.765761275 +0100
+@@ -0,0 +1,11 @@
++
++#undef GCC_I386_KEYRONEX
++#define GCC_I386_KEYRONEX 1
++
++#define GNU_USER_LINK_EMULATION32 "elf_i386"
++#define GNU_USER_LINK_EMULATION64 "elf_x86_64"
++#define GNU_USER_LINK_EMULATIONX32 "elf32_x86_64"
++
++#define GNU_USER_DYNAMIC_LINKER32 "/lib/i386-keyronex/ld.so"
++#define GNU_USER_DYNAMIC_LINKER64 "/usr/lib/ld.so"
++#define GNU_USER_DYNAMIC_LINKERX32 "/lib/x86_64-keyronex-x32/ld.so"
+diff -ruN gcc-13.2.0-git/gcc/config/i386/t-keyronex64 gcc-managarm-gcc-13/gcc/config/i386/t-keyronex64
+--- gcc-13.2.0-git/gcc/config/i386/t-keyronex64	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/i386/t-keyronex64	2023-09-20 13:39:29.142839657 +0100
+@@ -0,0 +1,2 @@
++
++
+diff -ruN gcc-13.2.0-git/gcc/config/keyronex-mlibc.h gcc-managarm-gcc-13/gcc/config/keyronex-mlibc.h
+--- gcc-13.2.0-git/gcc/config/keyronex-mlibc.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/keyronex-mlibc.h	2023-07-27 17:49:00.000000000 +0100
+@@ -0,0 +1,3 @@
++
++#undef LIB_SPEC
++#define LIB_SPEC "-lc"
+diff -ruN gcc-13.2.0-git/gcc/config/keyronex.h gcc-managarm-gcc-13/gcc/config/keyronex.h
+--- gcc-13.2.0-git/gcc/config/keyronex.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/keyronex.h	2023-09-20 13:38:00.642857969 +0100
+@@ -0,0 +1,10 @@
++#undef GNU_USER_TARGET_OS_CPP_BUILTINS
++#define GNU_USER_TARGET_OS_CPP_BUILTINS()		\
++  do						\
++    {						\
++	builtin_define ("__keyronex__");	\
++	builtin_define_std ("unix");		\
++	builtin_assert ("system=unix");		\
++	builtin_assert ("system=posix");	\
++    }						\
++  while (0)
+diff -ruN gcc-13.2.0-git/gcc/config/m68k/keyronex.h gcc-managarm-gcc-13/gcc/config/m68k/keyronex.h
+--- gcc-13.2.0-git/gcc/config/m68k/keyronex.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/m68k/keyronex.h	2023-09-20 14:03:20.452551144 +0100
+@@ -0,0 +1,358 @@
++/* Definitions for Motorola 68k running Linux-based GNU systems with
++   ELF format.
++   Copyright (C) 1995-2023 Free Software Foundation, Inc.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++/* Add %(asm_cpu_spec) to a generic definition of ASM_SPEC.  */
++#undef ASM_SPEC
++#define ASM_SPEC "%(asm_cpu_spec) %(asm_pcrel_spec)"
++
++#undef PREFERRED_STACK_BOUNDARY
++#define PREFERRED_STACK_BOUNDARY 32
++
++/* for 68k machines this only needs to be TRUE for the 68000 */
++
++#undef STRICT_ALIGNMENT
++#define STRICT_ALIGNMENT 0
++#undef M68K_HONOR_TARGET_STRICT_ALIGNMENT
++#define M68K_HONOR_TARGET_STRICT_ALIGNMENT 0
++
++/* Here are four prefixes that are used by asm_fprintf to
++   facilitate customization for alternate assembler syntaxes.
++   Machines with no likelihood of an alternate syntax need not
++   define these and need not use asm_fprintf.  */
++
++/* The prefix for register names.  Note that REGISTER_NAMES
++   is supposed to include this prefix. Also note that this is NOT an
++   fprintf format string, it is a literal string */
++
++#undef REGISTER_PREFIX
++#define REGISTER_PREFIX "%"
++
++/* The prefix for local (compiler generated) labels.
++   These labels will not appear in the symbol table.  */
++
++#undef LOCAL_LABEL_PREFIX
++#define LOCAL_LABEL_PREFIX "."
++
++/* The prefix to add to user-visible assembler symbols.  */
++
++#undef USER_LABEL_PREFIX
++#define USER_LABEL_PREFIX ""
++
++#define ASM_COMMENT_START "|"
++
++/* Target OS builtins.  */
++#undef TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()         \
++  do {                                   \
++    builtin_define ("__keyronex__");    \
++    builtin_define ("__unix__");         \
++    builtin_assert ("system=keyronex"); \
++    builtin_assert ("system=unix");      \
++    builtin_assert ("system=posix");     \
++    builtin_define ("__m68k__");		\
++    builtin_define ("__SVR4_ABI__");		\
++    builtin_define ("__motorola__");		\
++    if (TARGET_HARD_FLOAT)			\
++	   builtin_define ("__HAVE_FPU__");	\
++  } while (0);
++
++#undef CPP_SPEC
++#define CPP_SPEC "%{posix:-D_POSIX_SOURCE} %{pthread:-D_REENTRANT}"
++
++/* Provide a LINK_SPEC appropriate for GNU/Linux.  Here we provide support
++   for the special GCC options -static and -shared, which allow us to
++   link things in one of these three modes by applying the appropriate
++   combinations of options at link-time.
++
++   When the -shared link option is used a final link is not being
++   done.  */
++
++#define GLIBC_DYNAMIC_LINKER "/usr/lib/ld.so"
++
++
++#undef LINK_SPEC
++#define LINK_SPEC "-m m68kelfnbsd %{shared} \
++  %{!shared: \
++    %{!static: \
++      %{rdynamic:-export-dynamic} \
++      -dynamic-linker " GLIBC_DYNAMIC_LINKER "} \
++    %{static}}"
++
++/* For compatibility with linux/a.out */
++
++#undef PCC_BITFIELD_TYPE_MATTERS
++
++/* Currently, JUMP_TABLES_IN_TEXT_SECTION must be defined in order to
++   keep switch tables in the text section.  */
++
++#define JUMP_TABLES_IN_TEXT_SECTION 1
++
++/* Use the default action for outputting the case label.  */
++#undef ASM_OUTPUT_CASE_LABEL
++#define ASM_RETURN_CASE_JUMP				\
++  do {							\
++    if (TARGET_COLDFIRE)				\
++      {							\
++	if (ADDRESS_REG_P (operands[0]))		\
++	  return "jmp %%pc@(2,%0:l)";			\
++	else if (TARGET_LONG_JUMP_TABLE_OFFSETS)	\
++	  return "jmp %%pc@(2,%0:l)";			\
++	else						\
++	  return "ext%.l %0\n\tjmp %%pc@(2,%0:l)";	\
++      }							\
++    else if (TARGET_LONG_JUMP_TABLE_OFFSETS)		\
++      return "jmp %%pc@(2,%0:l)";			\
++    else						\
++      return "jmp %%pc@(2,%0:w)";			\
++  } while (0)
++
++/* This is how to output an assembler line that says to advance the
++   location counter to a multiple of 2**LOG bytes.  */
++
++#undef ASM_OUTPUT_ALIGN
++#define ASM_OUTPUT_ALIGN(FILE,LOG)				\
++  if ((LOG) > 0)						\
++    fprintf ((FILE), "%s%u\n", ALIGN_ASM_OP, 1 << (LOG));
++
++/* If defined, a C expression whose value is a string containing the
++   assembler operation to identify the following data as uninitialized global
++   data.  */
++
++#define BSS_SECTION_ASM_OP "\t.section\t.bss"
++
++/* A C statement (sans semicolon) to output to the stdio stream
++   FILE the assembler definition of uninitialized global DECL named
++   NAME whose size is SIZE bytes and alignment is ALIGN bytes.
++   Try to use asm_output_aligned_bss to implement this macro.  */
++
++#define ASM_OUTPUT_ALIGNED_BSS(FILE, DECL, NAME, SIZE, ALIGN) \
++  asm_output_aligned_bss (FILE, DECL, NAME, SIZE, ALIGN)
++
++/* Output assembler code to FILE to increment profiler label # LABELNO
++   for profiling a function entry.  */
++#define NO_PROFILE_COUNTERS 1
++#undef FUNCTION_PROFILER
++#define FUNCTION_PROFILER(FILE, LABELNO) \
++{									\
++  if (flag_pic)								\
++    fprintf (FILE, "\tbsr.l _mcount@PLTPC\n");				\
++  else									\
++    fprintf (FILE, "\tjbsr _mcount\n");					\
++}
++
++/* 1 if N is a possible register number for a function value.  For
++   m68k/SVR4 allow d0, a0, or fp0 as return registers, for integral,
++   pointer, or floating types, respectively.  Reject fp0 if not using
++   a 68881 coprocessor.  */
++
++#undef FUNCTION_VALUE_REGNO_P
++#define FUNCTION_VALUE_REGNO_P(N) \
++  ((N) == D0_REG || (N) == A0_REG || (TARGET_68881 && (N) == FP0_REG))
++
++/* Define this to be true when FUNCTION_VALUE_REGNO_P is true for
++   more than one register.  */
++
++#undef NEEDS_UNTYPED_CALL
++#define NEEDS_UNTYPED_CALL 1
++
++/* Define how to generate (in the callee) the output value of a
++   function and how to find (in the caller) the value returned by a
++   function.  VALTYPE is the data type of the value (as a tree).  If
++   the precise function being called is known, FUNC is its
++   FUNCTION_DECL; otherwise, FUNC is 0.  For m68k/SVR4 generate the
++   result in d0, a0, or fp0 as appropriate.  */
++
++#undef FUNCTION_VALUE
++#define FUNCTION_VALUE(VALTYPE, FUNC)					\
++  m68k_function_value (VALTYPE, FUNC)
++
++/* Define how to find the value returned by a library function
++   assuming the value has mode MODE.
++   For m68k/SVR4 look for integer values in d0, pointer values in d0
++   (returned in both d0 and a0), and floating values in fp0.  */
++
++#undef LIBCALL_VALUE
++#define LIBCALL_VALUE(MODE)						\
++  m68k_libcall_value (MODE)
++
++/* For m68k SVR4, structures are returned using the reentrant
++   technique.  */
++#undef PCC_STATIC_STRUCT_RETURN
++#define DEFAULT_PCC_STRUCT_RETURN 0
++
++/* Finalize the trampoline by flushing the insn cache.  */
++
++#undef FINALIZE_TRAMPOLINE
++#define FINALIZE_TRAMPOLINE(TRAMP)					\
++  maybe_emit_call_builtin___clear_cache ((TRAMP),			\
++					 plus_constant (Pmode,		\
++							(TRAMP),	\
++							TRAMPOLINE_SIZE))
++
++/* Clear the instruction cache from `beg' to `end'.  This makes an
++   inline system call to SYS_cacheflush.  The arguments are as
++   follows:
++
++	cacheflush (addr, scope, cache, len)
++
++   addr	  - the start address for the flush
++   scope  - the scope of the flush (see the cpush insn)
++   cache  - which cache to flush (see the cpush insn)
++   len    - a factor relating to the number of flushes to perform:
++	    len/16 lines, or len/4096 pages.  */
++
++#define CLEAR_INSN_CACHE(BEG, END)					\
++{									\
++  register unsigned long _beg __asm ("%d1") = (unsigned long) (BEG);	\
++  unsigned long _end = (unsigned long) (END);				\
++  register unsigned long _len __asm ("%d4") = (_end - _beg + 32);	\
++  __asm __volatile							\
++    ("move%.l #123, %/d0\n\t"	/* system call nr */			\
++     "move%.l #1, %/d2\n\t"	/* clear lines */			\
++     "move%.l #3, %/d3\n\t"	/* insn+data caches */			\
++     "trap #0"								\
++     : /* no outputs */							\
++     : "d" (_beg), "d" (_len)						\
++     : "%d0", "%d2", "%d3");						\
++}
++
++#define TARGET_ASM_FILE_END file_end_indicate_exec_stack
++
++#undef  SIZE_TYPE
++#define SIZE_TYPE "unsigned int"
++
++#undef  PTRDIFF_TYPE
++#define PTRDIFF_TYPE "int"
++
++#undef  WCHAR_TYPE
++#define WCHAR_TYPE "long int"
++
++#undef  WCHAR_TYPE_SIZE
++#define WCHAR_TYPE_SIZE BITS_PER_WORD
++
++/* Install the __sync libcalls.  */
++#undef TARGET_INIT_LIBFUNCS
++#define TARGET_INIT_LIBFUNCS  m68k_init_sync_libfuncs
++
++
++
++/* XXX
++   The following chunk is more or less lifted from m68kv4.h.
++   We'd like to just #include that file, but it has not yet
++   been converted to the new include style.
++
++   Should there be a m68kv4-abi.h ??  */
++
++
++/* Register in which address to store a structure value is passed to a
++   function.  The default in m68k.h is a1.  For m68k/SVR4 it is a0. */
++
++#undef M68K_STRUCT_VALUE_REGNUM
++#define M68K_STRUCT_VALUE_REGNUM A0_REG
++
++
++/* Register in which static-chain is passed to a function.  The
++   default isn m68k.h is a0, but that is already the struct value
++   regnum.  Make it a1 instead.  */
++
++#undef STATIC_CHAIN_REGNUM
++#define STATIC_CHAIN_REGNUM A1_REG
++#undef M68K_STATIC_CHAIN_REG_NAME
++#define M68K_STATIC_CHAIN_REG_NAME REGISTER_PREFIX "a1"
++
++
++/* Now to renumber registers for gdb.
++   We use the Sun-3 convention, which is:
++   floating point registers have numbers 18 to 25, not
++   16 to 23 as they do in the compiler.  */
++
++#undef DEBUGGER_REGNO
++#define DEBUGGER_REGNO(REGNO) ((REGNO) < 16 ? (REGNO) : (REGNO) + 2)
++
++
++/* 1 if N is a possible register number for a function value.  For
++   m68k/SVR4 allow d0, a0, or fp0 as return registers, for integral,
++   pointer, or floating types, respectively.  Reject fp0 if not using
++   a 68881 coprocessor.  */
++
++#undef FUNCTION_VALUE_REGNO_P
++#define FUNCTION_VALUE_REGNO_P(N)					\
++  ((N) == D0_REG || (N) == A0_REG || (TARGET_68881 && (N) == FP0_REG))
++
++
++/* Define this to be true when FUNCTION_VALUE_REGNO_P is true for
++   more than one register.  */
++
++#undef NEEDS_UNTYPED_CALL
++#define NEEDS_UNTYPED_CALL 1
++
++
++/* Define how to generate (in the callee) the output value of a
++   function and how to find (in the caller) the value returned by a
++   function.  VALTYPE is the data type of the value (as a tree).  If
++   the precise function being called is known, FUNC is its
++   FUNCTION_DECL; otherwise, FUNC is 0.  For m68k/SVR4 generate the
++   result in d0, a0, or fp0 as appropriate.  */
++
++#undef FUNCTION_VALUE
++#define FUNCTION_VALUE(VALTYPE, FUNC)					\
++  m68k_function_value (VALTYPE, FUNC)
++
++
++/* Define how to find the value returned by a library function
++   assuming the value has mode MODE.
++   For m68k/SVR4 look for integer values in d0, pointer values in d0
++   (returned in both d0 and a0), and floating values in fp0.  */
++
++#undef LIBCALL_VALUE
++#define LIBCALL_VALUE(MODE)						\
++  m68k_libcall_value (MODE)
++
++
++/* Boundary (in *bits*) on which stack pointer should be aligned.
++   The m68k/SVR4 convention is to keep the stack pointer longword aligned.  */
++
++#undef STACK_BOUNDARY
++#define STACK_BOUNDARY 32
++
++
++/* Alignment of field after `int : 0' in a structure.
++   For m68k/SVR4, this is the next longword boundary.  */
++
++#undef EMPTY_FIELD_BOUNDARY
++#define EMPTY_FIELD_BOUNDARY 32
++
++
++/* No data type wants to be aligned rounder than this.
++   For m68k/SVR4, some types (doubles for example) are aligned on 8 byte
++   boundaries */
++
++#undef BIGGEST_ALIGNMENT
++#define BIGGEST_ALIGNMENT 64
++
++
++/* The svr4 ABI for the m68k says that records and unions are returned
++   in memory.  */
++
++#undef DEFAULT_PCC_STRUCT_RETURN
++#define DEFAULT_PCC_STRUCT_RETURN 1
++
++/* XXX
++   This is the end of the chunk lifted from m68kv4.h  */
+diff -ruN gcc-13.2.0-git/gcc/config/riscv/keyronex.h gcc-managarm-gcc-13/gcc/config/riscv/keyronex.h
+--- gcc-13.2.0-git/gcc/config/riscv/keyronex.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/riscv/keyronex.h	2023-09-20 09:44:39.185708753 +0100
+@@ -0,0 +1,64 @@
++/* Definitions for RISC-V Managarm systems with ELF format.
++   Adopted from the Linux definitions.
++   Copyright (C) 1998-2021 Free Software Foundation, Inc.
++   Managarm-specific changes by Alexander van der Grinten.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify
++it under the terms of the GNU General Public License as published by
++the Free Software Foundation; either version 3, or (at your option)
++any later version.
++
++GCC is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU General Public License for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++/* Because RISC-V only has word-sized atomics, it requries libatomic where
++   others do not.  So link libatomic by default, as needed.  */
++#undef LIB_SPEC
++#ifdef LD_AS_NEEDED_OPTION
++#define LIB_SPEC GNU_USER_TARGET_LIB_SPEC \
++  " %{pthread:" LD_AS_NEEDED_OPTION " -latomic " LD_NO_AS_NEEDED_OPTION "}"
++#else
++#define LIB_SPEC GNU_USER_TARGET_LIB_SPEC " -latomic "
++#endif
++
++#define ICACHE_FLUSH_FUNC "__riscv_flush_icache"
++
++#define CPP_SPEC "%{pthread:-D_REENTRANT}"
++
++#define LD_EMUL_SUFFIX \
++  "%{mabi=lp64d:}" \
++  "%{mabi=lp64f:_lp64f}" \
++  "%{mabi=lp64:_lp64}" \
++  "%{mabi=ilp32d:}" \
++  "%{mabi=ilp32f:_ilp32f}" \
++  "%{mabi=ilp32:_ilp32}"
++
++#define GNU_USER_DYNAMIC_LINKER "/usr/lib/ld.so"
++
++#define LINK_SPEC "\
++-melf" XLEN_SPEC DEFAULT_ENDIAN_SPEC "riscv" LD_EMUL_SUFFIX " \
++%{mno-relax:--no-relax} \
++%{mbig-endian:-EB} \
++%{mlittle-endian:-EL} \
++%{shared} \
++  %{!shared: \
++    %{!static: \
++      %{rdynamic:-export-dynamic} \
++      -dynamic-linker " GNU_USER_DYNAMIC_LINKER "} \
++    %{static:-static}}"
++
++#define TARGET_ASM_FILE_END file_end_indicate_exec_stack
++
++#define STARTFILE_PREFIX_SPEC 			\
++   "/lib" XLEN_SPEC "/" ABI_SPEC "/ "		\
++   "/usr/lib" XLEN_SPEC "/" ABI_SPEC "/ "	\
++   "/lib/ "					\
++   "/usr/lib/ "
+diff -ruN gcc-13.2.0-git/gcc/config/riscv/t-keyronex gcc-managarm-gcc-13/gcc/config/riscv/t-keyronex
+--- gcc-13.2.0-git/gcc/config/riscv/t-keyronex	1970-01-01 01:00:00.000000000 +0100
++++ gcc-managarm-gcc-13/gcc/config/riscv/t-keyronex	2023-09-20 09:50:47.995633735 +0100
+@@ -0,0 +1 @@
++
+diff -ruN gcc-13.2.0-git/gcc/config.gcc gcc-managarm-gcc-13/gcc/config.gcc
+--- gcc-13.2.0-git/gcc/config.gcc	2023-09-20 09:32:28.585856154 +0100
++++ gcc-managarm-gcc-13/gcc/config.gcc	2023-09-20 10:11:27.285382412 +0100
+@@ -927,6 +927,15 @@
+       ;;
+   esac
+   ;;
++*-*-keyronex*)
++  extra_options="$extra_options gnu-user.opt"
++  gas=yes
++  gnu_ld=yes
++  default_use_cxa_atexit=yes
++  use_gcc_stdint=wrap
++  tmake_file="${tmake_file} t-slibgcc"
++  thread_file=posix
++  ;;
+ *-*-netbsd*)
+   tm_p_file="${tm_p_file} netbsd-protos.h"
+   tmake_file="t-netbsd t-slibgcc"
+@@ -1169,6 +1178,14 @@
+ 	tmake_file="${tmake_file} aarch64/t-aarch64 aarch64/t-aarch64-freebsd"
+ 	tm_defines="${tm_defines}  TARGET_DEFAULT_ASYNC_UNWIND_TABLES=1"
+ 	;;
++aarch64*-*-keyronex*)
++	tm_file="${tm_file} elfos.h gnu-user.h keyronex.h glibc-stdint.h"
++	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-keyronex.h"
++	tmake_file="${tmake_file} aarch64/t-aarch64 aarch64/t-aarch64-keyronex"
++	tm_defines="${tm_defines}  TARGET_DEFAULT_ASYNC_UNWIND_TABLES=1"
++	tm_file="${tm_file} keyronex-mlibc.h"
++	TM_MULTILIB_CONFIG="lp64"
++	;;
+ aarch64*-*-netbsd*)
+ 	tm_file="${tm_file} elfos.h ${nbsd_tm_file}"
+ 	tm_file="${tm_file} aarch64/aarch64-elf.h aarch64/aarch64-errata.h aarch64/aarch64-netbsd.h"
+@@ -1895,6 +1912,12 @@
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h ${nbsd_tm_file} i386/netbsd-elf.h"
+ 	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
+ 	;;
++x86_64-*-keyronex*)
++	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h gnu-user.h glibc-stdint.h \
++		 i386/x86-64.h i386/gnu-user-common.h i386/gnu-user64.h keyronex.h i386/i386-keyronex.h"
++	tmake_file="${tmake_file} i386/t-keyronex64"
++	tm_file="${tm_file} keyronex-mlibc.h"
++	;;
+ x86_64-*-netbsd*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h ${nbsd_tm_file} i386/x86-64.h i386/netbsd64.h"
+ 	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
+@@ -2334,6 +2357,13 @@
+ 	extra_options="${extra_options} netbsd.opt netbsd-elf.opt"
+ 	tm_defines="${tm_defines} MOTOROLA=1 CHAR_FAST8=1 SHORT_FAST16=1"
+ 	;;
++m68k*-*-keyronex*)
++	default_m68k_cpu=68020
++	default_cf_cpu=5475
++	tm_file="${tm_file} elfos.h gnu-user.h keyronex.h glibc-stdint.h m68k/keyronex.h"
++	tm_defines="${tm_defines} MOTOROLA=1 CHAR_FAST8=1 SHORT_FAST16=1"
++	tm_file="${tm_file} keyronex-mlibc.h"
++	;;
+ m68k-*-uclinux*)		# Motorola m68k/ColdFire running uClinux
+ 				# with uClibc, using the new GNU/Linux-style
+ 				# ABI.
+@@ -2476,6 +2506,13 @@
+ 	gcc_cv_initfini_array=yes
+ 	;;
+ 
++riscv*-*-keyronex*)
++	tm_file="${tm_file} elfos.h gnu-user.h keyronex.h glibc-stdint.h"
++	tm_file="${tm_file} riscv/keyronex.h"
++	tmake_file="${tmake_file} riscv/t-riscv riscv/t-keyronex"
++	tm_file="${tm_file} keyronex-mlibc.h"
++	;;
++
+ loongarch*-*-linux*)
+ 	tm_file="elfos.h gnu-user.h linux.h linux-android.h glibc-stdint.h ${tm_file}"
+ 	tm_file="${tm_file} loongarch/gnu-user.h loongarch/linux.h"
+diff -ruN gcc-13.2.0-git/gcc/config.host gcc-managarm-gcc-13/gcc/config.host
+--- gcc-13.2.0-git/gcc/config.host	2023-09-20 09:32:31.755855466 +0100
++++ gcc-managarm-gcc-13/gcc/config.host	2023-09-20 09:37:33.685795342 +0100
+@@ -100,7 +100,7 @@
+ 
+ case ${host} in
+   aarch64*-*-freebsd* | aarch64*-*-linux* | aarch64*-*-fuchsia* |\
+-  aarch64*-*-darwin*)
++  aarch64*-*-darwin* | aarch64*-*-keyronex*)
+     case ${target} in
+       aarch64*-*-*)
+ 	host_extra_gcc_objs="driver-aarch64.o"
+diff -ruN gcc-13.2.0-git/gcc/configure gcc-managarm-gcc-13/gcc/configure
+--- gcc-13.2.0-git/gcc/configure	2023-09-20 09:32:31.885855435 +0100
++++ gcc-managarm-gcc-13/gcc/configure	2023-09-20 09:37:34.075795274 +0100
+@@ -14777,6 +14777,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -19111,6 +19115,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -19825,7 +19839,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 19828 "configure"
++#line 19842 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -19931,7 +19945,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 19934 "configure"
++#line 19948 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -22786,6 +22800,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libatomic/configure gcc-managarm-gcc-13/libatomic/configure
+--- gcc-13.2.0-git/libatomic/configure	2023-09-20 09:32:28.325856210 +0100
++++ gcc-managarm-gcc-13/libatomic/configure	2023-09-20 09:37:34.025795283 +0100
+@@ -6089,6 +6089,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10692,6 +10696,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -11406,7 +11420,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11409 "configure"
++#line 11423 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11512,7 +11526,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11515 "configure"
++#line 11529 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/libbacktrace/configure gcc-managarm-gcc-13/libbacktrace/configure
+--- gcc-13.2.0-git/libbacktrace/configure	2023-09-20 09:32:26.275856660 +0100
++++ gcc-managarm-gcc-13/libbacktrace/configure	2023-09-20 09:37:33.685795342 +0100
+@@ -6492,6 +6492,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10827,6 +10831,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -11541,7 +11555,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11544 "configure"
++#line 11558 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11647,7 +11661,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11650 "configure"
++#line 11664 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/libcc1/configure gcc-managarm-gcc-13/libcc1/configure
+--- gcc-13.2.0-git/libcc1/configure	2023-09-20 09:32:28.315856215 +0100
++++ gcc-managarm-gcc-13/libcc1/configure	2023-09-20 09:37:34.045795278 +0100
+@@ -5753,6 +5753,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10087,6 +10091,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -10801,7 +10815,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10804 "configure"
++#line 10818 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -10907,7 +10921,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10910 "configure"
++#line 10924 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -14168,6 +14182,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libffi/configure gcc-managarm-gcc-13/libffi/configure
+--- gcc-13.2.0-git/libffi/configure	2023-09-20 09:32:32.055855402 +0100
++++ gcc-managarm-gcc-13/libffi/configure	2023-09-20 09:37:34.045795278 +0100
+@@ -6279,6 +6279,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10882,6 +10886,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -11596,7 +11610,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11599 "configure"
++#line 11613 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11702,7 +11716,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11705 "configure"
++#line 11719 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -14557,6 +14571,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libgcc/config.host gcc-managarm-gcc-13/libgcc/config.host
+--- gcc-13.2.0-git/libgcc/config.host	2023-09-20 09:32:26.375856639 +0100
++++ gcc-managarm-gcc-13/libgcc/config.host	2023-09-20 09:52:41.305610685 +0100
+@@ -288,6 +288,11 @@
+     extra_parts="$extra_parts vtv_start.o vtv_end.o vtv_start_preinit.o vtv_end_preinit.o"
+   fi
+   ;;
++*-*-keyronex*)
++  extra_parts="$extra_parts crtbegin.o crtbeginS.o crtend.o crtendS.o"
++  tmake_file="$tmake_file t-crtstuff-pic"
++  tmake_file="$tmake_file t-slibgcc t-slibgcc-gld t-slibgcc-elf-ver t-libgcc-pic"
++  ;;
+ *-*-lynxos*)
+   tmake_file="$tmake_file t-lynx $cpu_type/t-crtstuff t-crtstuff-pic t-libgcc-pic"
+   extra_parts="crtbegin.o crtbeginS.o crtend.o crtendS.o"
+@@ -424,6 +429,13 @@
+ 	tmake_file="${tmake_file} ${cpu_type}/t-softfp t-softfp t-crtfm"
+ 	tmake_file="${tmake_file} t-dfprules"
+ 	;;
++aarch64*-*-keyronex*)
++	extra_parts="$extra_parts crtfastmath.o"
++	md_unwind_header=aarch64/aarch64-unwind.h
++	tmake_file="${tmake_file} ${cpu_type}/t-aarch64"
++	tmake_file="${tmake_file} ${cpu_type}/t-lse t-slibgcc-libgcc"
++	tmake_file="${tmake_file} ${cpu_type}/t-softfp t-softfp t-crtfm"
++	;;
+ aarch64*-*-vxworks7*)
+ 	extra_parts="$extra_parts crtfastmath.o"
+ 	md_unwind_header=aarch64/aarch64-unwind.h
+@@ -747,6 +759,10 @@
+ 	tm_file="${tm_file} i386/elf-lib.h"
+ 	md_unwind_header=i386/linux-unwind.h
+ 	;;
++x86_64-*-keyronex*)
++	extra_parts="$extra_parts crtprec32.o crtprec64.o crtprec80.o crtfastmath.o"
++	tmake_file="$tmake_file i386/t-crtpc t-crtfm i386/t-crtstuff t-dfprules"
++	;;
+ i[34567]86-*-kfreebsd*-gnu | i[34567]86-*-kopensolaris*-gnu)
+ 	extra_parts="$extra_parts crtprec32.o crtprec64.o crtprec80.o crtfastmath.o"
+ 	tmake_file="${tmake_file} i386/t-crtpc t-crtfm i386/t-crtstuff t-dfprules"
+@@ -966,6 +982,8 @@
+ 	;;
+ m68k*-*-netbsdelf*)
+ 	;;
++m68k*-*-keyronex*)
++	;;
+ m68k*-*-openbsd*)
+ 	;;
+ m68k-*-uclinux*)	# Motorola m68k/ColdFire running uClinux with uClibc
+@@ -1308,6 +1326,10 @@
+ 	extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o crtendS.o crtbeginT.o"
+ 	md_unwind_header=riscv/linux-unwind.h
+ 	;;
++riscv*-*-keyronex*)
++	tmake_file="${tmake_file} riscv/t-softfp${host_address} t-softfp riscv/t-elf riscv/t-elf${host_address} t-slibgcc-libgcc"
++	md_unwind_header=riscv/linux-unwind.h
++	;;
+ riscv*-*-freebsd*)
+ 	tmake_file="${tmake_file} riscv/t-softfp${host_address} t-softfp riscv/t-elf riscv/t-elf${host_address} t-slibgcc-libgcc"
+ 	extra_parts="$extra_parts crtbegin.o crtend.o crti.o crtn.o crtendS.o crtbeginT.o"
+diff -ruN gcc-13.2.0-git/libgfortran/configure gcc-managarm-gcc-13/libgfortran/configure
+--- gcc-13.2.0-git/libgfortran/configure	2023-09-20 09:32:32.005855409 +0100
++++ gcc-managarm-gcc-13/libgfortran/configure	2023-09-20 09:37:34.045795278 +0100
+@@ -7711,6 +7711,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -12059,6 +12063,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -12791,7 +12805,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12794 "configure"
++#line 12808 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12897,7 +12911,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12900 "configure"
++#line 12914 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -15848,6 +15862,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libgm2/configure gcc-managarm-gcc-13/libgm2/configure
+--- gcc-13.2.0-git/libgm2/configure	2023-09-20 09:32:28.315856215 +0100
++++ gcc-managarm-gcc-13/libgm2/configure	2023-09-20 09:37:34.035795277 +0100
+@@ -7625,6 +7625,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -11974,6 +11978,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -12706,7 +12720,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12709 "configure"
++#line 12723 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12812,7 +12826,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12815 "configure"
++#line 12829 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -15673,6 +15687,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libgomp/configure gcc-managarm-gcc-13/libgomp/configure
+--- gcc-13.2.0-git/libgomp/configure	2023-09-20 09:32:27.085856483 +0100
++++ gcc-managarm-gcc-13/libgomp/configure	2023-09-20 09:37:34.045795278 +0100
+@@ -6102,6 +6102,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10705,6 +10709,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -11419,7 +11433,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11422 "configure"
++#line 11436 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11525,7 +11539,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11528 "configure"
++#line 11542 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -14364,6 +14378,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libitm/configure gcc-managarm-gcc-13/libitm/configure
+--- gcc-13.2.0-git/libitm/configure	2023-09-20 09:32:31.975855419 +0100
++++ gcc-managarm-gcc-13/libitm/configure	2023-09-20 09:37:34.035795277 +0100
+@@ -6764,6 +6764,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -11368,6 +11372,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -12082,7 +12096,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12085 "configure"
++#line 12099 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12188,7 +12202,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12191 "configure"
++#line 12205 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -15043,6 +15057,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libobjc/configure gcc-managarm-gcc-13/libobjc/configure
+--- gcc-13.2.0-git/libobjc/configure	2023-09-20 09:32:26.385856633 +0100
++++ gcc-managarm-gcc-13/libobjc/configure	2023-09-20 09:37:33.685795342 +0100
+@@ -5407,6 +5407,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10064,6 +10068,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -10796,7 +10810,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10799 "configure"
++#line 10813 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -10902,7 +10916,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10905 "configure"
++#line 10919 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/libphobos/configure gcc-managarm-gcc-13/libphobos/configure
+--- gcc-13.2.0-git/libphobos/configure	2023-09-20 09:32:28.265856223 +0100
++++ gcc-managarm-gcc-13/libphobos/configure	2023-09-20 09:37:34.035795277 +0100
+@@ -6726,6 +6726,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -11060,6 +11064,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -11774,7 +11788,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11777 "configure"
++#line 11791 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11880,7 +11894,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11883 "configure"
++#line 11897 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/libquadmath/configure gcc-managarm-gcc-13/libquadmath/configure
+--- gcc-13.2.0-git/libquadmath/configure	2023-09-20 09:32:26.305856651 +0100
++++ gcc-managarm-gcc-13/libquadmath/configure	2023-09-20 09:37:33.685795342 +0100
+@@ -5748,6 +5748,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10098,6 +10102,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -10830,7 +10844,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10833 "configure"
++#line 10847 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -10936,7 +10950,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10939 "configure"
++#line 10953 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/libsanitizer/configure gcc-managarm-gcc-13/libsanitizer/configure
+--- gcc-13.2.0-git/libsanitizer/configure	2023-09-20 09:32:32.035855406 +0100
++++ gcc-managarm-gcc-13/libsanitizer/configure	2023-09-20 09:37:34.035795277 +0100
+@@ -7335,6 +7335,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -11669,6 +11673,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -12383,7 +12397,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12386 "configure"
++#line 12400 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12489,7 +12503,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12492 "configure"
++#line 12506 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -15344,6 +15358,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/libssp/configure gcc-managarm-gcc-13/libssp/configure
+--- gcc-13.2.0-git/libssp/configure	2023-09-20 09:32:28.305856214 +0100
++++ gcc-managarm-gcc-13/libssp/configure	2023-09-20 09:37:33.725795333 +0100
+@@ -5934,6 +5934,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10284,6 +10288,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -11016,7 +11030,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11019 "configure"
++#line 11033 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -11122,7 +11136,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 11125 "configure"
++#line 11139 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/libstdc++-v3/configure.host gcc-managarm-gcc-13/libstdc++-v3/configure.host
+--- gcc-13.2.0-git/libstdc++-v3/configure.host	2023-09-20 09:32:28.045856276 +0100
++++ gcc-managarm-gcc-13/libstdc++-v3/configure.host	2023-07-27 17:49:00.000000000 +0100
+@@ -255,7 +255,7 @@
+   freebsd*)
+     os_include_dir="os/bsd/freebsd"
+     ;;
+-  linux-musl*)
++  linux-musl* | linux-mlibc*)
+     os_include_dir="os/generic"
+     ;;
+   gnu* | linux* | kfreebsd*-gnu | uclinux*)
+diff -ruN gcc-13.2.0-git/libstdc++-v3/crossconfig.m4 gcc-managarm-gcc-13/libstdc++-v3/crossconfig.m4
+--- gcc-13.2.0-git/libstdc++-v3/crossconfig.m4	2023-09-20 09:32:28.135856253 +0100
++++ gcc-managarm-gcc-13/libstdc++-v3/crossconfig.m4	2023-07-27 17:49:00.000000000 +0100
+@@ -299,6 +299,17 @@
+ dnl # long_double_math_on_this_cpu in configure.ac, right after
+ dnl # the expansion of the present macro.
+     ;;
++  *-mlibc*)
++    GLIBCXX_CHECK_COMPILER_FEATURES
++    GLIBCXX_CHECK_LINKER_FEATURES
++    GLIBCXX_CHECK_MATH_SUPPORT
++    GLIBCXX_CHECK_STDLIB_SUPPORT
++    AC_DEFINE([_GLIBCXX_USE_DEV_RANDOM])
++    AC_DEFINE([_GLIBCXX_USE_RANDOM_TR1])
++    GCC_CHECK_TLS
++    AC_CHECK_FUNCS([aligned_alloc posix_memalign memalign _aligned_malloc])
++    AC_CHECK_FUNCS([timespec_get])
++    ;;
+   *)
+     AC_MSG_ERROR([No support for this host/target combination.])
+    ;;
+diff -ruN gcc-13.2.0-git/libstdc++-v3/include/bits/stl_algobase.h gcc-managarm-gcc-13/libstdc++-v3/include/bits/stl_algobase.h
+--- gcc-13.2.0-git/libstdc++-v3/include/bits/stl_algobase.h	2023-09-20 09:32:28.115856255 +0100
++++ gcc-managarm-gcc-13/libstdc++-v3/include/bits/stl_algobase.h	2023-07-27 17:49:00.000000000 +0100
+@@ -1050,8 +1050,10 @@
+   __size_to_integer(float __n) { return (long long)__n; }
+   inline _GLIBCXX_CONSTEXPR long long
+   __size_to_integer(double __n) { return (long long)__n; }
++#if !(defined(__clang__) && !__STDC_HOSTED__) // clang in kernel context
+   inline _GLIBCXX_CONSTEXPR long long
+   __size_to_integer(long double __n) { return (long long)__n; }
++#endif
+ #if !defined(__STRICT_ANSI__) && defined(_GLIBCXX_USE_FLOAT128)
+   __extension__ inline _GLIBCXX_CONSTEXPR long long
+   __size_to_integer(__float128 __n) { return (long long)__n; }
+diff -ruN gcc-13.2.0-git/libstdc++-v3/include/std/atomic gcc-managarm-gcc-13/libstdc++-v3/include/std/atomic
+--- gcc-13.2.0-git/libstdc++-v3/include/std/atomic	2023-09-20 09:32:28.075856266 +0100
++++ gcc-managarm-gcc-13/libstdc++-v3/include/std/atomic	2023-07-27 17:49:00.000000000 +0100
+@@ -1649,6 +1649,7 @@
+       using __atomic_float<double>::operator=;
+     };
+ 
++#if !(defined(__clang__) && !__STDC_HOSTED__) // clang in kernel context
+   template<>
+     struct atomic<long double> : __atomic_float<long double>
+     {
+@@ -1663,6 +1664,7 @@
+ 
+       using __atomic_float<long double>::operator=;
+     };
++#endif
+ 
+ #ifdef __STDCPP_FLOAT16_T__
+   template<>
+diff -ruN gcc-13.2.0-git/libtool.m4 gcc-managarm-gcc-13/libtool.m4
+--- gcc-13.2.0-git/libtool.m4	2023-09-20 09:32:26.285856655 +0100
++++ gcc-managarm-gcc-13/libtool.m4	2023-09-20 09:37:33.675795341 +0100
+@@ -2440,6 +2440,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -3109,6 +3119,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[[^/]]+(\.so\.[[0-9]]+\.[[0-9]]+|_pic\.a)$'
+diff -ruN gcc-13.2.0-git/libvtv/configure gcc-managarm-gcc-13/libvtv/configure
+--- gcc-13.2.0-git/libvtv/configure	2023-09-20 09:32:28.275856224 +0100
++++ gcc-managarm-gcc-13/libvtv/configure	2023-09-20 09:37:34.035795277 +0100
+@@ -7230,6 +7230,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -11564,6 +11568,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -12278,7 +12292,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12281 "configure"
++#line 12295 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12384,7 +12398,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12387 "configure"
++#line 12401 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -15239,6 +15253,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+diff -ruN gcc-13.2.0-git/lto-plugin/configure gcc-managarm-gcc-13/lto-plugin/configure
+--- gcc-13.2.0-git/lto-plugin/configure	2023-09-20 09:32:32.015855410 +0100
++++ gcc-managarm-gcc-13/lto-plugin/configure	2023-09-20 09:37:33.685795342 +0100
+@@ -7085,6 +7085,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -11420,6 +11424,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -12134,7 +12148,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12137 "configure"
++#line 12151 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -12240,7 +12254,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 12243 "configure"
++#line 12257 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+diff -ruN gcc-13.2.0-git/zlib/configure gcc-managarm-gcc-13/zlib/configure
+--- gcc-13.2.0-git/zlib/configure	2023-09-20 09:32:28.205856241 +0100
++++ gcc-managarm-gcc-13/zlib/configure	2023-09-20 09:37:33.685795342 +0100
+@@ -5410,6 +5410,10 @@
+   lt_cv_deplibs_check_method=pass_all
+   ;;
+ 
++keyronex*)
++  lt_cv_deplibs_check_method=pass_all
++  ;;
++
+ netbsd*)
+   if echo __ELF__ | $CC -E - | $GREP __ELF__ > /dev/null; then
+     lt_cv_deplibs_check_method='match_pattern /lib[^/]+(\.so\.[0-9]+\.[0-9]+|_pic\.a)$'
+@@ -10027,6 +10031,16 @@
+   dynamic_linker=no
+   ;;
+ 
++keyronex* | linux*-mlibc*)
++  version_type=linux
++  need_lib_prefix=no
++  need_version=no
++  library_names_spec='${libname}${release}${shared_ext}$versuffix ${libname}${release}${shared_ext}${major} ${libname}${shared_ext}'
++  soname_spec='${libname}${release}${shared_ext}$major'
++  shlibpath_var=LD_LIBRARY_PATH
++  hardcode_into_libs=yes
++  ;;
++
+ # This must be Linux ELF.
+ 
+ # uclinux* changes (here and below) have been submitted to the libtool
+@@ -10759,7 +10773,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10762 "configure"
++#line 10776 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -10865,7 +10879,7 @@
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 10868 "configure"
++#line 10882 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H

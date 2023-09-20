@@ -1,0 +1,30 @@
+{
+    "C/C++ Include Guard.Macro Type": "Filepath",
+    "C/C++ Include Guard.Path Depth": 1,
+    "C/C++ Include Guard.Remove Extension": false,
+    "C/C++ Include Guard.Prefix": "KRX_",
+    "C/C++ Include Guard.Suffix": "",
+	"fileHeaderComment.parameter":{
+		"*":{
+			"commentbegin": "/*",
+			"commentprefix": " *",
+			"commentend": " */",
+			"company": "Your Company"
+		}
+	},
+	"fileHeaderComment.template":{
+		"*":[
+			"${commentbegin}",
+			"${commentprefix} Copyright (c) ${year} NetaScale Object Solutions.",
+			"${commentprefix} Created on ${date}.",
+			"${commentend}"
+		]
+	},
+	"esbonio.sphinx.confDir": "",
+	"C/C++ Include Guard.Auto Update Include Guard": false,
+	"files.insertFinalNewline": true,
+	"files.trimTrailingWhitespace": true,
+	"files.trimFinalNewlines": true,
+	"editor.renderFinalNewline": "dimmed"
+
+}
