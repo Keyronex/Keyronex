@@ -1,13 +1,13 @@
-#include "kdk/nanokern.h"
 #include "kdk/libkern.h"
+#include "kdk/nanokern.h"
 
 extern void thread_trampoline();
 
 void
 md_switch(kthread_t *old_thread)
 {
-	 extern void asm_swtch(void * old, void * new);
-	 asm_swtch(&old_thread->pcb, &curthread()->pcb);
+	extern void asm_swtch(void *old, void *new);
+	asm_swtch(&old_thread->pcb, &curthread()->pcb);
 }
 
 void

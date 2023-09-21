@@ -22,8 +22,8 @@
 #define PADDR_TO_PFN(PADDR) ((uintptr_t)(PADDR) >> 12)
 #define PFN_TO_PADDR(PFN) ((uintptr_t)(PFN) << 12)
 
-#define P2V(addr) ((void *)(((char *)(addr)) + HHDM_BASE))
-#define V2P(addr) ((void *)(((char *)(addr)) - HHDM_BASE))
+#define P2V(addr) ((((char *)(addr)) + HHDM_BASE))
+#define V2P(addr) ((((char *)(addr)) - HHDM_BASE))
 
 /* This stuff belongs in inttypes.h, but let's define it temporarily... */
 #define PRIu32 "u"
@@ -40,8 +40,11 @@ typedef struct aarch64_context {
 } aarch64_context_t;
 
 typedef struct __attribute__((packed)) md_intr_frame {
-	void *what;
-}  md_intr_frame_t;
+	uint64_t x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13,
+	    x14, x15, x16, x17, x18, x19, x20, x21, x22, x23, x24, x25, x26,
+	    x27, x28, x29, x30;
+	void *elr_el1;
+} md_intr_frame_t;
 
 typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);
 
@@ -60,7 +63,6 @@ typedef struct md_pcb {
 typedef struct md_cpucb {
 	ipl_t ipl;
 } md_cpucb_t;
-
 
 static inline void
 hcf(void)
