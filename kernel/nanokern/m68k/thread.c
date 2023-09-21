@@ -2,6 +2,11 @@
 #include "kdk/nanokern.h"
 
 void
+md_cpu_init(kcpu_t *cpu)
+{
+}
+
+void
 md_switch(kthread_t *old_thread)
 {
 	extern void asm_swtch(m68k_context_t * old, m68k_context_t * new);

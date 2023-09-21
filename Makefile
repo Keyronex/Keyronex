@@ -8,6 +8,7 @@ ifeq ($(ARCH), amd64)
 	PLATFORM ?= amd64
 else ifeq ($(ARCH), m68k)
 	TARGET_TRIPLE := m68k-keyronex
+	PLATFORM ?= m68k-virt
 else ifeq ($(ARCH), aarch64)
 	TARGET_TRIPLE := aarch64-keyronex
 	PLATFORM ?= aarch64-virt

@@ -1,0 +1,2 @@
+file build/amd64/pkg-builds/kernel/platform/amd64/keyronex
+target remote localhost:1234

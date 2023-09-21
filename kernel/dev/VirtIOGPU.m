@@ -1,17 +1,18 @@
 #include <stddef.h>
 
 #include "ObjFWRT.h"
-#include "VirtIOGPU.h"
 #include "ddk/DKDevice.h"
 #include "ddk/DKFramebuffer.h"
 #include "ddk/DKVirtIOMMIODevice.h"
 #include "ddk/virtio_gpu.h"
 #include "ddk/virtioreg.h"
 #include "dev/FBTerminal.h"
+#include "dev/VirtIOGPU.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
+#include "kdk/object.h"
 
 #define PROVIDER ((DKVirtIOMMIODevice *)m_provider)
 

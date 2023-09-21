@@ -6,6 +6,7 @@
 #include "kdk/vm.h"
 
 struct vring_used_elem;
+@class DKVirtIOMMIODevice;
 
 struct virtio_queue {
 	/* queue number/index */
@@ -40,6 +41,8 @@ struct virtio_queue {
 #define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
 
 @protocol DKVirtIODelegate
++ (BOOL)probeWithProvider:(DKVirtIOMMIODevice*) provider;
+
 - (void)deferredProcessing;
 @end
 

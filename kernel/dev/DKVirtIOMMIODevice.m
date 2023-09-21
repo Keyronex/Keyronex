@@ -259,7 +259,7 @@ dpc_handler(void *arg)
 		return -1;
 	}
 
-#if defined(VIRT68K)
+#if 1 //defined(VIRT68K)
 	gfpic_handle_irq(m_interrupt, vitrio_handler, self);
 	gfpic_unmask_irq(m_interrupt);
 #endif

@@ -72,9 +72,9 @@ md_raise_dpc_interrupt(void)
 	curcpu()->dpc_int = true;
 }
 
-void md_cpu_init(kcpu_t *cpu)
+void
+md_cpu_init(kcpu_t *cpu)
 {
-
 }
 
 void
@@ -83,7 +83,8 @@ md_switch(kthread_t *old_thread)
 	kfatal("Implement this\n");
 }
 
-void ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
+void
+ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 {
 	kfatal("Implement me\n");
 }
@@ -153,10 +154,10 @@ _start()
 	kmem_init();
 	obj_init();
 
-	struct id_aa64pfr0_el1  pfr = read_id_aa64pfr0_el1();
+	struct id_aa64pfr0_el1 pfr = read_id_aa64pfr0_el1();
 	void intr_setup(void);
 	intr_setup();
-	*(char*)0xdeaddeafbeef = '\b';
+	*(char *)0xdeaddeafbeef = '\b';
 	void ddk_init(void), ddk_autoconf(void);
 	ddk_init();
 	ddk_autoconf();

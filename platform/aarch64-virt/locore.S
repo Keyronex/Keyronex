@@ -3,7 +3,7 @@
 	\asm_label:
 		.cfi_startproc simple
 		.cfi_signal_frame
-		sub sp, sp, #256
+		sub sp, sp, #272
 		.cfi_def_cfa %sp, 0
 
 		stp x0, x1, [sp, #8 * 0]
@@ -53,6 +53,8 @@
 		.cfi_offset x29, 232
 		str x30, [sp, #8 * 30]
 		.cfi_offset x30, 240
+		mrs x0, elr_el1
+		str x0, [sp, #248]
 
 		.cfi_val_offset sp, 272
 
@@ -107,27 +109,27 @@
 		ldr x30, [sp, #8 * 15]
 		.cfi_restore x30
 
-		add sp, sp, #256
+		add sp, sp, #272
 		.cfi_restore sp
 
 		eret
 		.cfi_endproc
 .endm
 
-MAKE_HANDLER asm_el1t_sync, c_exception
-MAKE_HANDLER asm_el1t_irq, c_exception
-MAKE_HANDLER asm_el1t_fiq, c_exception
-MAKE_HANDLER asm_el1t_error, c_exception
+MAKE_HANDLER asm_el1t_sync, c_el1t_sync
+MAKE_HANDLER asm_el1t_irq, c_el1t_irq
+MAKE_HANDLER asm_el1t_fiq, c_el1t_fiq
+MAKE_HANDLER asm_el1t_error, c_el1t_error
 
-MAKE_HANDLER asm_el1h_sync, c_exception
-MAKE_HANDLER asm_el1h_intr, c_exception
-MAKE_HANDLER asm_el1h_fiq, c_exception
-MAKE_HANDLER asm_el1h_error, c_exception
+MAKE_HANDLER asm_el1h_sync, c_el1_sync
+MAKE_HANDLER asm_el1h_intr, c_el1_intr
+MAKE_HANDLER asm_el1h_fiq, c_el1_fiq
+MAKE_HANDLER asm_el1h_error, c_el1_error
 
-MAKE_HANDLER asm_el0_sync, c_exception
-MAKE_HANDLER asm_el0_intr, c_exception
-MAKE_HANDLER asm_el0_fiq, c_exception
-MAKE_HANDLER asm_el0_error, c_exception
+MAKE_HANDLER asm_el0_sync, c_el0_sync
+MAKE_HANDLER asm_el0_intr, c_el0_intr
+MAKE_HANDLER asm_el0_fiq, c_el0_fiq
+MAKE_HANDLER asm_el0_error, c_el0_error
 
 MAKE_HANDLER asm_el0_sync32, c_exception
 MAKE_HANDLER asm_el0_intr32, c_exception

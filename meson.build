@@ -20,6 +20,7 @@ if not headers_only
 
 	if (arch == 'amd64')
 		meson_cpu_family = 'x86_64'
+		cpu = 'amd64'
 		freestanding_c_args += [
 			'-ffreestanding',
 			'-fno-stack-protector',
@@ -64,8 +65,6 @@ if not headers_only
 		error('\n\tbad arch')
 	endif
 
-	message(cpu)
-
 	freestanding_c_args += [ '-D_KERNEL', '-DARCH=' + arch]
 	freestanding_include_dirs = [ include_directories(
 		'vendor/include',
@@ -91,5 +90,12 @@ if not headers_only
 	subdir('vendor/objfwrt')
 	subdir('vendor/lai')
 	subdir('kernel')
-	subdir('platform/aarch64-virt')
+	if (arch == 'amd64')
+		subdir('platform/amd64')
+	elif (arch == 'm68k')
+		subdir('platform/m68k-virt')
+		subdir('loader/m68k-virt-loader')
+	elif (arch == 'aarch64')
+		subdir('platform/aarch64-virt')
+	endif
 endif

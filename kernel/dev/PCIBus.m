@@ -1,9 +1,12 @@
 #include "PCIBus.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
+#include "ntcompat/NTStorPort.h"
+
+#if defined(__arch64__) || defined (__amd64__)
 #include "lai/helpers/pci.h"
 #include "lai/host.h"
-#include "ntcompat/NTStorPort.h"
+#endif
 
 enum {
 	kVendorID = 0x0, /* u16 */
@@ -31,6 +34,7 @@ enum {
 {
 	struct pci_dev_info info;
 
+#if defined(__arch64__) || defined (__amd64__)
 #define CFG_READ(WIDTH, OFFSET) \
 	laihost_pci_read##WIDTH(seg, bus, slot, fun, OFFSET)
 
@@ -61,6 +65,7 @@ enum {
 			    ACPI_SMALL_IRQ_EDGE_TRIGGERED;
 		}
 	}
+#endif
 
 #if 0
 	kprintf("%x:%x (klass %x subclass %x)\n", info.vendorId, info.deviceId,
@@ -83,6 +88,7 @@ enum {
 	[self registerDevice];
 	DKLogAttach(self);
 
+#if defined(__arch64__) || defined (__amd64__)
 	for (unsigned slot = 0; slot < 32; slot++) {
 		size_t nFun = 1;
 
@@ -96,6 +102,7 @@ enum {
 		for (unsigned fun = 0; fun < nFun; fun++)
 			[self doSegment:seg bus:bus slot:slot function:fun];
 	}
+#endif
 
 	return self;
 }

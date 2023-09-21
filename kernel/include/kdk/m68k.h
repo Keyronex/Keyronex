@@ -2,6 +2,7 @@
 #define KRX_KDK_M68K_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #define BIG_ENDIAN 0
 #define LITTLE_ENDIAN 1
@@ -106,6 +107,16 @@ typedef struct md_pcb {
 typedef struct md_cpucb {
 	ipl_t ipl;
 } md_cpucb_t;
+
+typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);
+
+/*! A private structure. */
+struct intr_entry {
+	const char *name;
+	ipl_t ipl;
+	void *arg;
+	bool shareable;
+};
 
 static inline __attribute__((noreturn)) void
 hcf(void)

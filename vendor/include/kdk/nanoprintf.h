@@ -16,7 +16,7 @@
   #define NPF_VISIBILITY extern
 #endif
 
-#ifdef __aarch64__
+#ifndef __amd64__
 #define __builtin_ms_va_list __builtin_va_list
 #define __builtin_ms_va_start __builtin_va_start
 #define __builtin_ms_va_end __builtin_va_end

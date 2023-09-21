@@ -3,3 +3,4 @@ build/
 sources/
 compile_commands.json
 *.xbstrap
+*.img
