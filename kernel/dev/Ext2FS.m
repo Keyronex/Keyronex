@@ -1,4 +1,5 @@
 #include "Ext2FS.h"
+#include "buf.h"
 #include "ddk/ext2_fs.h"
 #include "ddk/ext2_inl.h"
 #include "kdk/dev.h"
@@ -10,35 +11,64 @@
 #include "kdk/vm.h"
 
 /*!
- * A block buffer.
+ * Locking Protocol
+ * ================
+ *
+ * An I-node's type never changes as long as it exists.
+ *
+ * per-fs:
+ * - ext2_state::queue_lock => guards I-node number to vnode lookup tree
+ * - ext2_state::fs_lock => guards superblock, cylinder groups, as such guards
+ *   allocation of inodes, blocks.
+ * per-inode:
+ * - ext2_inode::rwlock => guards read/write of data (including directory
+ *   inodes' dirents); as such also guards the I-node's block ptrs.
+ * - ext2_inode::metadata_rwlock => guards I-node fields other than block ptrs.
+ *
+ * ordering: ext2_inode::rwlock -> ext2_inode::metadata_rwlock
+ *  -> ext2_state::queue_lock -> ext2_state::fs_lock
+ *
+ * I-node allocation
+ * =================
+ *
+ * This one should be quite simple because, in principle, the inode shouldn't be
+ * referrable until it has been allocated. The corner case would be something
+ * like NFS bringing a stale file handle. But that can probably be checked
+ * against generation count.
  */
-typedef struct buf {
-        /*! Lock on contents. */
-	kmutex_t mutex;
-	/*! Owner. */
-	struct bufhead *head;
-	/*! Buffer tree linkage. */
-	RB_ENTRY(buf) rb_link;
-	/*! Whether the buf is busy. If so, it can't be put back to disk. */
-        bool busy;
-	/*! FS logical block number that the buf represents. */
-	io_blkoff_t blkno;
-	/*! Pointer to the actual data. */
-	char *data;
-} buf_t;
 
-typedef RB_HEAD(buftree, buf) buftree_t;
+#define VTOI(VNODE) ((struct inode *)(VNODE)->fs_data)
 
-typedef struct bufhead {
-	void *device;
-	size_t block_size;
-	buftree_t tree;
-} bufhead_t;
+RB_HEAD(ext2_inode_rb, inum_key);
+
+enum ext2_i_mode_type {
+	kExt2IModeTypeMask = 0170000,
+	kExt2IModeFifo = 0010000,
+	kExt2IModeChr = 0020000,
+	kExt2IModeDir = 0040000,
+	kExt2IModeBlk = 0060000,
+	kExt2IModeReg = 0100000,
+	kExt2IModeLnk = 0120000,
+	kExt2IModeSock = 0140000,
+};
+
+struct inum_key {
+	/*! linkage in inum-to-inode RB */
+	RB_ENTRY(inum_key) inum_rb_entry;
+	/*! inode number */
+	uint32_t inum;
+};
 
 struct inode {
-	vnode_t vnode;
-	/*! linkage in inum-to-inode RB */
-	RB_ENTRY(inode) inum_rb_entry;
+	struct inum_key key;
+	/*! associated vnode */
+	vnode_t *vnode;
+	/*! guards read/write; will become an actual rwlock sometime */
+	kmutex_t rwlock;
+	/*! guards inode fields */
+	kmutex_t metadata_rwlock;
+	/*! is it being read in? */
+	bool busy;
 	/*! common part with disk inode */
 	union {
 		struct ext2_inode ic;
@@ -47,70 +77,28 @@ struct inode {
 };
 
 struct ext2fs_state {
-	struct ext2_super_block *sb;
 	/*! locks inode number to vnode queue */
 	kmutex_t queue_lock;
-
+	/*! locks superblock, cylinder groups */
+	kmutex_t fs_lock;
+	/*! buffer cache */
 	bufhead_t bufhead;
+	/*! superblock in-memory */
+	struct ext2_super_block *sb;
+	/*! inode number to inode struct lookup */
+	struct ext2_inode_rb inode_rb;
 };
-
-static int buf_cmp(buf_t *a, buf_t *b);
-
-RB_PROTOTYPE_STATIC(buftree, buf, rb_link, buf_cmp);
-RB_GENERATE_STATIC(buftree, buf, rb_link, buf_cmp);
 
 static int counter = 0;
 
-/* Compare two buffers' block number - for use by the RB tree code. */
-static int
-buf_cmp(buf_t *a, buf_t *b)
+static inline int32_t
+inum_key_cmp(struct inum_key *x, struct inum_key *y)
 {
-        return a->blkno - b->blkno;
+	return (int32_t)x->inum - y->inum;
 }
 
-void bufhead_init(bufhead_t *head, DKDevice *device, size_t block_size)
-{
-	RB_INIT(&head->tree);
-	head->device = device;
-	head->block_size = block_size;
-}
-
-buf_t *
-bread(bufhead_t *head, io_blkoff_t block)
-{
-	buf_t *buf, key;
-
-	key.blkno = block;
-	if ((buf = RB_FIND(buftree, &head->tree, &key)) != NULL) {
-		ke_wait(&buf->mutex, "bread", false, false, -1);
-		return buf;
-	}
-
-	/*! create and read in */
-	buf = kmem_alloc(sizeof(buf_t));
-	buf->blkno = block;
-	buf->head = head;
-	ke_mutex_init(&buf->mutex);
-	ke_wait(&buf->mutex, "bread", false, false, -1);
-	buf->data = kmem_alloc(head->block_size);
-	RB_INSERT(buftree, &head->tree, buf);
-
-	/*! now read */
-	vm_mdl_t *mdl = vm_mdl_create(buf->data, head->block_size);
-	iop_t *iop = iop_new_read(head->device, mdl, head->block_size,
-	    block * head->block_size);
-	iop_send_sync(iop);
-	iop_free(iop);
-
-	return buf;
-}
-
-void
-buf_release(buf_t *buf)
-{
-	if (buf == NULL)
-		return;
-}
+RB_PROTOTYPE(ext2_inode_rb, inum_key, inum_rb_entry, inum_key_cmp);
+RB_GENERATE(ext2_inode_rb, inum_key, inum_rb_entry, inum_key_cmp);
 
 @implementation Ext2FS
 
@@ -167,10 +155,33 @@ fs_ino_size(struct ext2fs_state *state)
 	return le16_to_native(state->sb->s_inode_size);
 }
 
-/*! load an inode from disk. queue_lock shall be locked.  */
-- (struct inode *)loadInode:(uint64_t)inum
+static inline vtype_t
+ext2_i_mode_to_vtype(le16_t i_mode)
 {
-	struct inode *inode;
+	switch (le16_to_native(i_mode) & kExt2IModeTypeMask) {
+	case kExt2IModeFifo:
+		return VFIFO;
+	case kExt2IModeChr:
+		return VCHR;
+	case kExt2IModeDir:
+		return VDIR;
+	case kExt2IModeBlk:
+		return VCHR;
+	case kExt2IModeReg:
+		return VREG;
+	case kExt2IModeLnk:
+		return VLNK;
+	case kExt2IModeSock:
+		return VSOCK;
+	default:
+		kfatal("unexpected inode type\n");
+	}
+}
+
+/*! load an inode from disk. */
+static void
+load_inode(struct ext2fs_state *state, struct inode *inode, uint32_t inum)
+{
 	uint32_t inodes_per_group = le32_to_native(
 	    state->sb->s_inodes_per_group);
 	size_t cgnum = (inum - 1) / inodes_per_group;
@@ -185,12 +196,46 @@ fs_ino_size(struct ext2fs_state *state)
 	inoblock = le32_to_native(gd->bg_inode_table) +
 	    (offset * fs_ino_size(state)) / state->bufhead.block_size;
 	inooff = (offset * fs_ino_size(state)) % state->bufhead.block_size;
+	buf_release(cgbuf);
 
-	inode = kmem_alloc(sizeof(*inode));
 	inobuf = bread(&state->bufhead, inoblock);
 	memcpy(&inode->ic_large, inobuf->data + inooff, fs_ino_size(state));
+	ext2_i_mode_to_vtype(inode->ic_large.i_mode);
+	buf_release(inobuf);
+}
 
-	return inode;
+static vnode_t *
+vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
+{
+	struct inum_key key, *found_key;
+	struct inode *inode;
+
+	key.inum = inum;
+
+	ke_wait(&fs->queue_lock, "ext2_vnode_for_inum", false, false, -1);
+	found_key = RB_FIND(ext2_inode_rb, &fs->inode_rb, &key);
+	if (found_key != NULL) {
+		struct inode *inode = (void *)found_key;
+		vnode_t *vnode;
+		if (inode->busy)
+			kfatal("wait here\n");
+		vnode = obj_retain(inode->vnode);
+		ke_mutex_release(&fs->queue_lock);
+		return vnode;
+	}
+
+	inode = kmem_alloc(sizeof(*inode));
+	inode->key.inum = inum;
+	inode->busy = true;
+	RB_INSERT(ext2_inode_rb, &fs->inode_rb, &inode->key);
+	ke_mutex_release(&fs->queue_lock);
+
+	load_inode(fs, inode, inum);
+	inode->vnode = vnode_alloc();
+	inode->vnode->type = inode->busy = false;
+	inode->vnode->fs_data = (uintptr_t)inode;
+
+	return inode->vnode;
 }
 
 - (void)readdir:(vnode_t*)vnode from:(size_t)start
@@ -219,6 +264,38 @@ fs_ino_size(struct ext2fs_state *state)
 	}
 }
 
+- (vnode_t *)lookup:(const char *)path inDirectoryVNode:(vnode_t *)dvn
+{
+	struct inode *inode = VTOI(dvn);
+	buf_t *buf = NULL;
+	size_t off = 0;
+	size_t path_len = strlen(path);
+
+	while (off < le32_to_native(inode->ic.i_size)) {
+		struct ext2_dir_entry *de;
+
+		if (off % state->bufhead.block_size == 0) {
+			buf_release(buf);
+			buf = inode_bread(state, inode,
+			    off / state->bufhead.block_size);
+		}
+
+		de = (void *)(buf->data + (off % state->bufhead.block_size));
+
+		if (ext2fs_dirent_name_len(de) == path_len &&
+		    strncmp(de->name, path, path_len) == 0) {
+			buf_release(buf);
+			return vnode_for_inum(state, le32_to_native(de->inode));
+		}
+
+		off += le16_to_native(de->rec_len);
+	}
+
+	buf_release(buf);
+
+	return NULL;
+}
+
 - initWithVolume:(DKDevice *)volume
        blockSize:(size_t)blockSize
       blockCount:(io_blksize_t)blockCount
@@ -227,11 +304,21 @@ fs_ino_size(struct ext2fs_state *state)
 	self = [super initWithProvider:volume];
 	state = kmem_alloc(sizeof(struct ext2fs_state));
 	state->sb = sb;
+	ke_mutex_init(&state->fs_lock);
+	ke_mutex_init(&state->queue_lock);
 	bufhead_init(&state->bufhead, volume,
 	    1024 << le32_to_native(state->sb->s_log_block_size));
 	kmem_asprintf(obj_name_ptr(self), "ext2-%d", counter++);
 
-	[self readdir:0];
+	vnode_t *root_vn = vnode_for_inum(state, EXT2_ROOT_INO);
+	vnode_t *r1 = [self lookup:"lost+found" inDirectoryVNode:root_vn];
+	kprintf("VN: %p; in? %u\n", r1,
+	    r1 != NULL ? (VTOI(r1)->key.inum) : 8888);
+
+	//[self readdir:NULL from:0];
+
+	for (;;)
+		;
 
 	return self;
 }

@@ -21,7 +21,7 @@ if [ "$gpu" = "1" ]; then
         virtio_gpu_arg="-device virtio-gpu-device"
 fi
 
-#virtio_disk_arg="-drive id=mydrive,file=ext2.img -device virtio-blk-device,drive=mydrive"
+virtio_disk_arg="-drive id=mydrive,file=ext2.img -device virtio-blk-device,drive=mydrive"
 virtio_trace_arg=--trace "virtio_*"
 
 #gdb -nx --args \
