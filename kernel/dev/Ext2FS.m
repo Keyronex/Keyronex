@@ -205,7 +205,7 @@ load_inode(struct ext2fs_state *state, struct inode *inode, uint32_t inum)
 }
 
 static vnode_t *
-vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
+vnode_for_inum(struct ext2fs_state *fs, uint32_t inum, kmutex_t *to_release)
 {
 	struct inum_key key, *found_key;
 	struct inode *inode;
@@ -213,6 +213,8 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 	key.inum = inum;
 
 	ke_wait(&fs->queue_lock, "ext2_vnode_for_inum", false, false, -1);
+	if (to_release != NULL)
+		ke_mutex_release(to_release);
 	found_key = RB_FIND(ext2_inode_rb, &fs->inode_rb, &key);
 	if (found_key != NULL) {
 		struct inode *inode = (void *)found_key;
@@ -231,6 +233,7 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 	ke_mutex_release(&fs->queue_lock);
 
 	load_inode(fs, inode, inum);
+	ke_mutex_init(&inode->rwlock);
 	inode->vnode = vnode_alloc();
 	inode->vnode->type = inode->busy = false;
 	inode->vnode->fs_data = (uintptr_t)inode;
@@ -238,11 +241,104 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 	return inode->vnode;
 }
 
+/*!
+ * @pre fs->fs_lock locked
+ */
+#if 0
+static io_blkoff_t
+alloc_block(struct ext2fs_state *fs)
+{
+	for (size_t cgnum = 0; cgnum < le32_to_native(fs->sb->s_blocks_count);
+	     cgnum++) {
+		buf_t *cgbuf, *bitmap_buf;
+		struct ext2_group_desc *gd;
+
+		gd = cylgroup_load(fs, cgnum, &cgbuf);
+		if (gd->bg_free_blocks_count == 0) {
+			buf_release(cgbuf);
+			continue;
+		}
+
+		bitmap_buf = bread(&fs->bufhead, le32_to_native(gd->bg_block_bitmap) * fs->bufhead.block_size);
+
+	}
+
+	kfatal("failed to allocate block\n");
+}
+#endif
+
+static io_blkoff_t
+cg_alloc_block(struct ext2fs_state *fs, uint32_t cgnum)
+{
+	io_blkoff_t block_allocated = -1;
+	buf_t *cgbuf, *bitmap_buf;
+	struct ext2_group_desc *gd;
+	uint8_t *bitmap_data;
+	size_t bitmap_nbytes = le32_to_native(fs->sb->s_blocks_per_group) / 8;
+
+	kassert(bitmap_nbytes == fs->bufhead.block_size);
+
+	gd = cylgroup_load(fs, cgnum, &cgbuf);
+	if (le16_to_native(gd->bg_free_blocks_count) == 0) {
+		buf_release(cgbuf);
+		return -1;
+	}
+
+	bitmap_buf = bread(&fs->bufhead, le32_to_native(gd->bg_block_bitmap));
+	bitmap_data = (uint8_t *)bitmap_buf->data;
+
+	for (io_blkoff_t byte_off = 0; byte_off < bitmap_nbytes; byte_off++) {
+		uint8_t byte = bitmap_data[byte_off];
+
+		if (byte == 0xff)
+			continue;
+
+		for (int bit_off = 0; bit_off < 8; bit_off++) {
+			if ((byte & (1 << bit_off)))
+				continue;
+
+			io_blkoff_t block_num = cgnum *
+				le32_to_native(fs->sb->s_blocks_per_group) +
+			    byte_off * 8 + bit_off;
+
+			bitmap_data[byte_off] |= (1 << bit_off);
+
+			gd->bg_free_blocks_count = native_to_le16(
+			    le16_to_native(gd->bg_free_blocks_count) - 1);
+			fs->sb->s_free_blocks_count = native_to_le32(
+			    le32_to_native(fs->sb->s_free_blocks_count) - 1);
+
+			block_allocated = block_num;
+			goto finish;
+		}
+	}
+
+finish:
+	buf_release(bitmap_buf);
+	buf_release(cgbuf);
+	return block_allocated;
+}
+
+static io_blkoff_t
+alloc_block(struct ext2fs_state *fs)
+{
+	for (size_t cgnum = 0; cgnum < le32_to_native(fs->sb->s_blocks_count);
+	     cgnum++) {
+		io_blkoff_t block = cg_alloc_block(fs, cgnum);
+		if (block != -1)
+			return block;
+	}
+
+	return -1;
+}
+
 - (void)readdir:(vnode_t*)vnode from:(size_t)start
 {
-	struct inode *inode = [self loadInode:EXT2_ROOT_INO];
+	struct inode *inode = VTOI(vnode);
 	buf_t *buf = NULL;
 	size_t off;
+
+	ke_wait(&inode->rwlock, "lookup:inode->rwlock", false, false, -1);
 
 	off = ROUNDDOWN(start, state->bufhead.block_size);
 	while (off < le32_to_native(inode->ic.i_size)) {
@@ -257,11 +353,14 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 
 		de = (void *)(buf->data + (off % state->bufhead.block_size));
 		memcpy(name, de->name, ext2fs_dirent_name_len(de));
-		kprintf("<%s>: ino %d (type %d)\n", name,
+		kprintf("at %zu: <%s>: ino %d (type %d)\n", off, name,
 		    le32_to_native(de->inode), ext2fs_dirent_file_type(de));
 
 		off += le16_to_native(de->rec_len);
 	}
+
+	ke_mutex_release(&inode->rwlock);
+	buf_release(buf);
 }
 
 - (vnode_t *)lookup:(const char *)path inDirectoryVNode:(vnode_t *)dvn
@@ -270,6 +369,8 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 	buf_t *buf = NULL;
 	size_t off = 0;
 	size_t path_len = strlen(path);
+
+	ke_wait(&inode->rwlock, "lookup:inode->rwlock", false, false, -1);
 
 	while (off < le32_to_native(inode->ic.i_size)) {
 		struct ext2_dir_entry *de;
@@ -285,12 +386,14 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 		if (ext2fs_dirent_name_len(de) == path_len &&
 		    strncmp(de->name, path, path_len) == 0) {
 			buf_release(buf);
-			return vnode_for_inum(state, le32_to_native(de->inode));
+			return vnode_for_inum(state, le32_to_native(de->inode),
+			    &inode->rwlock);
 		}
 
 		off += le16_to_native(de->rec_len);
 	}
 
+	ke_mutex_release(&inode->rwlock);
 	buf_release(buf);
 
 	return NULL;
@@ -310,12 +413,18 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum)
 	    1024 << le32_to_native(state->sb->s_log_block_size));
 	kmem_asprintf(obj_name_ptr(self), "ext2-%d", counter++);
 
-	vnode_t *root_vn = vnode_for_inum(state, EXT2_ROOT_INO);
+	vnode_t *root_vn = vnode_for_inum(state, EXT2_ROOT_INO, NULL);
 	vnode_t *r1 = [self lookup:"lost+found" inDirectoryVNode:root_vn];
 	kprintf("VN: %p; in? %u\n", r1,
 	    r1 != NULL ? (VTOI(r1)->key.inum) : 8888);
 
-	//[self readdir:NULL from:0];
+	size_t block1 = alloc_block(state), block2 = alloc_block(state),
+	       block3 = alloc_block(state), block4 = alloc_block(state);
+
+	kprintf("Alloc blocks: %zu, %zu, %zu, %zu\n", block1, block2, block3,
+	    block4);
+
+	[self readdir:root_vn from:0];
 
 	for (;;)
 		;
