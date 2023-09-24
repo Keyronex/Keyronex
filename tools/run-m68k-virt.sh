@@ -21,15 +21,17 @@ if [ "$gpu" = "1" ]; then
         virtio_gpu_arg="-device virtio-gpu-device"
 fi
 
-virtio_disk_arg="-drive id=mydrive,file=ext2.img -device virtio-blk-device,drive=mydrive"
+virtio_disk_arg="-drive id=mydrive,file=vfat32.img -device virtio-blk-device,drive=mydrive"
 virtio_trace_arg=--trace "virtio_*"
 
 #gdb -nx --args \
-/ws/Projects/QemuBld/qemu-system-m68k -M virt \
+#/ws/Projects/QemuBld/
+qemu-system-m68k -M virt \
   -kernel build/m68k/pkg-builds/kernel/loader/m68k-virt-loader/keyronex-loader-m68k-virt \
   -initrd build/m68k/pkg-builds/kernel/platform/m68k-virt/keyronex \
   ${virtio_disk_arg} \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
-  -s  --trace "virtio_*" \
+  -s \
   ${qemu_args}
+#--trace "virtio_*" \

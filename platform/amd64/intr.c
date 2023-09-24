@@ -6,9 +6,6 @@
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
 
-#define MIN2(a, b) (((a) < (b)) ? (a) : (b))
-#define MAX2(a, b) (((a) > (b)) ? (a) : (b))
-
 typedef struct {
 	uint16_t isr_low;
 	uint16_t selector;

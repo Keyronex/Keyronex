@@ -4,6 +4,7 @@
 #include "VirtIODisk.h"
 #include "ddk/virtio_blk.h"
 #include "ddk/virtioreg.h"
+#include "dev/DOSFS.h"
 #include "kdk/dev.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
@@ -92,8 +93,8 @@ VirtIODisk (Private)
 
 	//vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);
 	//[self readWrite:NO blocks:8 atOffset:0 withMDL:mdl iop:NULL];
-	[Ext2FS probeWithVolume:self blockSize:512 blockCount:le64_to_native(cfg->capacity)];
-
+	//[Ext2FS probeWithVolume:self blockSize:512 blockCount:le64_to_native(cfg->capacity)];
+	[DOSFS probeWithVolume:self blockSize:512 blockCount:le64_to_native(cfg->capacity)];
 	return self;
 }
 

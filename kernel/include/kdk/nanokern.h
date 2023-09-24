@@ -18,6 +18,8 @@
 
 #define NS_PER_S 1000000000
 
+#define MIN2(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX2(a, b) (((a) > (b)) ? (a) : (b))
 #define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 #define ROUNDUP(ADDR, ALIGN) (((ADDR) + ALIGN - 1) & ~(ALIGN - 1))
 #define ROUNDDOWN(ADDR, ALIGN) ((((uintptr_t)ADDR)) & ~(ALIGN - 1))
