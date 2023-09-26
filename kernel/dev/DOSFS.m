@@ -86,7 +86,26 @@ dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
 		return bread(&fs->bufhead,
 		    fs->FirstRootDirSector + cluster * fs->bpb->BPB_SecPerClus);
 	}
-	kfatal("Implement me\n");
+	return bread(&fs->bufhead,
+	    fs->FirstDataSector +
+		(dosnode->first_cluster - 2) * fs->bpb->BPB_SecPerClus);
+}
+
+static vnode_t *
+dosfs_vnode_make(vnode_t *parent, const char *name, struct Dir *dir)
+{
+	struct dos_node *node = kmem_alloc(sizeof(*node));
+	if (name == NULL || parent == NULL) {
+		kassert(name == NULL && parent == NULL);
+		node->is_root = true;
+	}
+	node->vnode = vnode_alloc();
+	node->vnode->type = false;
+	node->vnode->fs_data = (uintptr_t)node;
+	if (dir != NULL) {
+		node->first_cluster = from_leu16(dir->DIR_FstClusLO);
+	}
+	return node->vnode;
 }
 
 size_t
@@ -111,12 +130,53 @@ ucs2_to_utf8(leu16_t *ucs2, char *utf8, size_t ucs2_len, bool *terminated)
 	return utf8_index;
 }
 
+static enum {
+	kDirentProcessingContinue,
+	kDirentProcessingStop,
+	kDirentProcessed
+} processDirent(struct Dir *dir, char *lfn_str, size_t *lfn_str_max)
+{
+	if ((uint8_t)dir->DIR_Name[0] == 0x0)
+		return kDirentProcessingStop;
+	else if ((uint8_t)dir->DIR_Name[0] == 0xe5)
+		return kDirentProcessingContinue;
+	else if (dir->DIR_Attr == ATTR_LONG_NAME) {
+		struct LongDir *ldir = (void *)dir;
+		io_off_t ldir_off = (ldir->LDIR_Ord & 0x3f) - 1;
+		io_off_t lfn_off = 0;
+		bool terminated = false;
+
+		lfn_off += ucs2_to_utf8(ldir->LDIR_Name1,
+		    lfn_str + ldir_off * 13,
+		    sizeof(ldir->LDIR_Name1) / sizeof(leu16_t), &terminated);
+		if (terminated)
+			goto finish_lfn;
+
+		lfn_off += ucs2_to_utf8(ldir->LDIR_Name2,
+		    lfn_str + lfn_off + ldir_off * 13,
+		    sizeof(ldir->LDIR_Name2) / sizeof(leu16_t), &terminated);
+		if (terminated)
+			goto finish_lfn;
+
+		lfn_off += ucs2_to_utf8(ldir->LDIR_Name3,
+		    lfn_str + lfn_off + ldir_off * 13,
+		    sizeof(ldir->LDIR_Name3) / sizeof(leu16_t), &terminated);
+		if (terminated)
+			goto finish_lfn;
+
+	finish_lfn:
+		*lfn_str_max = MAX2((io_off_t)lfn_str_max,
+		    lfn_off + ldir_off * 13);
+		return kDirentProcessingContinue;
+	}
+}
+
 void
 readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 {
 	char lfn_str[260] = { 0 };
 	size_t lfn_str_max = 0;
-	io_off_t disk_offset;
+	io_off_t disk_offset = offset;
 	buf_t *buf = NULL;
 	struct dos_node *dnode = VTOD(vn);
 
@@ -136,8 +196,63 @@ readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 
 		if (dnode->is_root)
 			disk_offset = offset - 64;
+		else
+			disk_offset = offset;
 
 		clus_dir = (disk_offset / sizeof(struct Dir)) %
+		    fs->bytes_per_cluster;
+
+		if (buf == NULL || clus_dir == 0) {
+			buf_release(buf);
+			buf = dosnode_bread(fs, dnode,
+			    disk_offset / fs->bytes_per_cluster);
+		}
+
+		dir = &((struct Dir *)buf->data)[clus_dir];
+		switch (processDirent(dir, lfn_str, &lfn_str_max)) {
+		case kDirentProcessingContinue:
+			offset += sizeof(struct Dir);
+			continue;
+
+		case kDirentProcessingStop:
+			goto out;
+
+		default:
+			/* epsilon */
+		}
+
+		lfn_str[lfn_str_max] = '\0';
+		kprintf(
+		    "Dirent: Name %s; LFN <%s>; Cluster %hu; Attributes %hu; 1st Char %u\n",
+		    dir->DIR_Name, lfn_str, from_leu16(dir->DIR_FstClusLO),
+		    dir->DIR_Attr, (uint8_t)dir->DIR_Name[0]);
+		lfn_str[0] = '\0';
+		lfn_str_max = 0;
+		offset += sizeof(struct Dir);
+	}
+
+out:
+	buf_release(buf);
+}
+
+vnode_t *
+lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
+{
+	char lfn_str[260] = { 0 };
+	size_t lfn_str_max = 0;
+	io_off_t offset = 0;
+	buf_t *buf = NULL;
+	struct dos_node *dnode = VTOD(dvn);
+
+	if (dnode->is_root && strcmp(name, "..") == 0) {
+		return dnode->parent;
+	}
+
+	while (true) {
+		size_t clus_dir;
+		struct Dir *dir;
+
+		clus_dir = (offset / sizeof(struct Dir)) %
 		    fs->bytes_per_cluster;
 
 		if (buf == NULL || clus_dir == 0) {
@@ -147,68 +262,31 @@ readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 		}
 
 		dir = &((struct Dir *)buf->data)[clus_dir];
-
-		if (dir->DIR_Name[0] == 0x0)
-			break;
-		else if (dir->DIR_Name[0] == 0xe5) {
+		dir = &((struct Dir *)buf->data)[clus_dir];
+		switch (processDirent(dir, lfn_str, &lfn_str_max)) {
+		case kDirentProcessingContinue:
 			offset += sizeof(struct Dir);
 			continue;
-		} else if (dir->DIR_Attr == ATTR_LONG_NAME) {
-			struct LongDir *ldir = (void *)dir;
-			io_off_t ldir_off = (ldir->LDIR_Ord & 0x3f) - 1;
-			io_off_t lfn_off = 0;
-			bool terminated = false;
 
-			lfn_off += ucs2_to_utf8(ldir->LDIR_Name1,
-			    lfn_str + ldir_off * 13,
-			    sizeof(ldir->LDIR_Name1) / sizeof(leu16_t),
-			    &terminated);
-			if (terminated)
-				goto finish_lfn;
+		case kDirentProcessingStop:
+			goto out;
 
-			lfn_off += ucs2_to_utf8(ldir->LDIR_Name2,
-			    lfn_str + lfn_off + ldir_off * 13,
-			    sizeof(ldir->LDIR_Name2) / sizeof(leu16_t),
-			    &terminated);
-			if (terminated)
-				goto finish_lfn;
-
-			lfn_off += ucs2_to_utf8(ldir->LDIR_Name3,
-			    lfn_str + lfn_off + ldir_off * 13,
-			    sizeof(ldir->LDIR_Name3) / sizeof(leu16_t),
-			    &terminated);
-			if (terminated)
-				goto finish_lfn;
-
-		finish_lfn:
-			lfn_str_max = MAX2(lfn_str_max,
-			    lfn_off + ldir_off * 13);
-			offset += sizeof(struct Dir);
-			continue;
+		default:
+			/* epsilon */
 		}
 
-		lfn_str[lfn_str_max] = '\0';
-		kprintf("Dirent: Name %s; LFN <%s>\n", dir->DIR_Name, lfn_str);
-		lfn_str[0] = '\0';
-		lfn_str_max = 0;
+		if (lfn_str[0] != '\0' && strcmp(lfn_str, name) == 0) {
+			return dosfs_vnode_make(dvn, lfn_str, dir);
+		}
+
+		/** test if dir->DIR_Name matches... return if so */
+
 		offset += sizeof(struct Dir);
 	}
 
+out:
 	buf_release(buf);
-}
-
-static vnode_t *
-dosfs_vnode_make(vnode_t *parent, const char *name)
-{
-	struct dos_node *node = kmem_alloc(sizeof(*node));
-	if (name == NULL || parent == NULL) {
-		kassert(name == NULL && parent == NULL);
-		node->is_root = true;
-	}
-	node->vnode = vnode_alloc();
-	node->vnode->type = false;
-	node->vnode->fs_data = (uintptr_t)node;
-	return node->vnode;
+	return NULL;
 }
 
 + (BOOL)probeWithVolume:(DKDevice *)volume
@@ -269,9 +347,13 @@ dosfs_vnode_make(vnode_t *parent, const char *name)
 	else
 		fs->type = kFAT32;
 
-	fs->root = dosfs_vnode_make(NULL, NULL);
+	fs->root = dosfs_vnode_make(NULL, NULL, NULL);
 
 	readDir(fs, fs->root, 0);
+
+	vnode_t *vn = lookup(fs, fs->root, "TestDir");
+	kprintf("VN: %p\n", vn);
+	readDir(fs, vn, 0);
 
 	for (;;)
 		;
