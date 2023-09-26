@@ -5,6 +5,12 @@
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/tree.h"
+#include "kdk/vfs.h"
+
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
+#define VTOD(VNODE) ((struct dos_node *)(VNODE)->fs_data)
 
 struct dosfs_state {
 	/*! buffer cache */
@@ -25,15 +31,49 @@ struct dosfs_state {
 	size_t FirstRootDirSector;
 	/*! first sector of the data region */
 	size_t FirstDataSector;
+	/*! bytes per cluster */
+	size_t bytes_per_cluster;
+	/*! root directory vnode */
+	vnode_t *root;
 #if 0
 	size_t TotSec;
 	size_t DataSec;
 #endif
 };
 
+RB_HEAD(dos_node_name_rb, dos_node_namekey);
+
+struct dos_node_namekey {
+	RB_ENTRY(dos_node_namekey) entry;
+	char *filename;
+	uint32_t hash;
+};
+
 struct dos_node {
+	/*! key for rb tree */
+	struct dos_node_namekey key;
+	/*! vnode counterpart */
+	vnode_t *vnode;
+	/*! the parent directory of this node (or NULL if root). retained */
+	vnode_t *parent;
+	/*! directory entries in this directory, if it is a dir */
+	struct dos_node_name_rb entries_rb;
+	io_blkoff_t first_cluster;
 	bool is_root;
 };
+
+static int
+dos_node_namecmp(struct dos_node_namekey *a, struct dos_node_namekey *b)
+{
+	if (a->hash < b->hash)
+		return -1;
+	else if (a->hash > b->hash)
+		return 1;
+	else
+		return strcmp(a->filename, b->filename);
+}
+
+RB_GENERATE_STATIC(dos_node_name_rb, dos_node_namekey, entry, dos_node_namecmp);
 
 @implementation DOSFS
 
@@ -72,56 +112,103 @@ ucs2_to_utf8(leu16_t *ucs2, char *utf8, size_t ucs2_len, bool *terminated)
 }
 
 void
-readDir(struct Dir *dirs, io_off_t offset)
+readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 {
-	char lfn_buf[260] = { 0 };
-	size_t lfn_buf_max = 0;
-	bool in_lfn = false;
+	char lfn_str[260] = { 0 };
+	size_t lfn_str_max = 0;
+	io_off_t disk_offset;
+	buf_t *buf = NULL;
+	struct dos_node *dnode = VTOD(vn);
 
-	for (size_t i = 0; i < INT32_MAX; i++) {
-		if (dirs[i].DIR_Name[0] == 0x0)
+	kassert(offset % 32 == 0x0);
+
+	if (dnode->is_root && offset < 64) {
+		/* fake up . and .. dirents */
+		kprintf(".\n..\n");
+		offset = 64;
+	}
+
+	/* if offset > size of the directory, return */
+
+	while (true) {
+		size_t clus_dir;
+		struct Dir *dir;
+
+		if (dnode->is_root)
+			disk_offset = offset - 64;
+
+		clus_dir = (disk_offset / sizeof(struct Dir)) %
+		    fs->bytes_per_cluster;
+
+		if (buf == NULL || clus_dir == 0) {
+			buf_release(buf);
+			buf = dosnode_bread(fs, dnode,
+			    offset / fs->bytes_per_cluster);
+		}
+
+		dir = &((struct Dir *)buf->data)[clus_dir];
+
+		if (dir->DIR_Name[0] == 0x0)
 			break;
-		else if (dirs[i].DIR_Name[0] == 0xe5)
+		else if (dir->DIR_Name[0] == 0xe5) {
+			offset += sizeof(struct Dir);
 			continue;
-		else if (dirs[i].DIR_Attr == ATTR_LONG_NAME) {
-			struct LongDir *ldir = (void *)&dirs[i];
+		} else if (dir->DIR_Attr == ATTR_LONG_NAME) {
+			struct LongDir *ldir = (void *)dir;
 			io_off_t ldir_off = (ldir->LDIR_Ord & 0x3f) - 1;
 			io_off_t lfn_off = 0;
 			bool terminated = false;
 
 			lfn_off += ucs2_to_utf8(ldir->LDIR_Name1,
-			    lfn_buf + ldir_off * 13,
+			    lfn_str + ldir_off * 13,
 			    sizeof(ldir->LDIR_Name1) / sizeof(leu16_t),
 			    &terminated);
 			if (terminated)
 				goto finish_lfn;
 
 			lfn_off += ucs2_to_utf8(ldir->LDIR_Name2,
-			    lfn_buf + lfn_off + ldir_off * 13,
+			    lfn_str + lfn_off + ldir_off * 13,
 			    sizeof(ldir->LDIR_Name2) / sizeof(leu16_t),
 			    &terminated);
 			if (terminated)
 				goto finish_lfn;
 
 			lfn_off += ucs2_to_utf8(ldir->LDIR_Name3,
-			    lfn_buf + lfn_off + ldir_off * 13,
+			    lfn_str + lfn_off + ldir_off * 13,
 			    sizeof(ldir->LDIR_Name3) / sizeof(leu16_t),
 			    &terminated);
 			if (terminated)
 				goto finish_lfn;
 
 		finish_lfn:
-			lfn_buf_max = MAX2(lfn_buf_max,
+			lfn_str_max = MAX2(lfn_str_max,
 			    lfn_off + ldir_off * 13);
+			offset += sizeof(struct Dir);
 			continue;
 		}
 
-		lfn_buf[lfn_buf_max] = '\0';
-		kprintf("Dirent: Name %s; LFN <%s>\n", dirs[i].DIR_Name,
-		    lfn_buf);
-		lfn_buf[0] = '\0';
-		lfn_buf_max = 0;
+		lfn_str[lfn_str_max] = '\0';
+		kprintf("Dirent: Name %s; LFN <%s>\n", dir->DIR_Name, lfn_str);
+		lfn_str[0] = '\0';
+		lfn_str_max = 0;
+		offset += sizeof(struct Dir);
 	}
+
+	buf_release(buf);
+}
+
+static vnode_t *
+dosfs_vnode_make(vnode_t *parent, const char *name)
+{
+	struct dos_node *node = kmem_alloc(sizeof(*node));
+	if (name == NULL || parent == NULL) {
+		kassert(name == NULL && parent == NULL);
+		node->is_root = true;
+	}
+	node->vnode = vnode_alloc();
+	node->vnode->type = false;
+	node->vnode->fs_data = (uintptr_t)node;
+	return node->vnode;
 }
 
 + (BOOL)probeWithVolume:(DKDevice *)volume
@@ -140,6 +227,8 @@ readDir(struct Dir *dirs, io_off_t offset)
 	fs = kmem_alloc(sizeof(*fs));
 
 	fs->bpb = bpb;
+	fs->bytes_per_cluster = (from_leu16(fs->bpb->BPB_BytsPerSec) *
+	    fs->bpb->BPB_SecPerClus);
 	fs->RootDirSectors = ((from_leu16(bpb->BPB_RootEntCnt) * 32) +
 				 (from_leu16(bpb->BPB_BytsPerSec) - 1)) /
 	    from_leu16(bpb->BPB_BytsPerSec);
@@ -180,12 +269,9 @@ readDir(struct Dir *dirs, io_off_t offset)
 	else
 		fs->type = kFAT32;
 
-	struct dos_node dnode = { .is_root = true };
-	buf_t *buf = dosnode_bread(fs, &dnode, 0);
-	struct Dir *dirs = buf->data;
-	struct LongDir *ldirs = buf->data;
+	fs->root = dosfs_vnode_make(NULL, NULL);
 
-	readDir(buf->data);
+	readDir(fs, fs->root, 0);
 
 	for (;;)
 		;
