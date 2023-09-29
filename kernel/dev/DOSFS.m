@@ -1,6 +1,9 @@
+#include <dirent.h>
+
 #include "DOSFS.h"
 #include "dev/buf.h"
 #include "dev/dosfs_var.h"
+#include "dev/fslib.h"
 #include "dev/safe_endian.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
@@ -54,6 +57,7 @@ struct dos_node {
 	struct dos_node_namekey key;
 	/*! vnode counterpart */
 	vnode_t *vnode;
+	kmutex_t rwlock;
 	/*! the parent directory of this node (or NULL if root). retained */
 	vnode_t *parent;
 	/*! directory entries in this directory, if it is a dir */
@@ -91,13 +95,25 @@ dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
 		(dosnode->first_cluster - 2) * fs->bpb->BPB_SecPerClus);
 }
 
+/*!
+ * create a vnode for some dirent in a dir vnode
+ * \p parent->rwlock held
+ */
 static vnode_t *
 dosfs_vnode_make(vnode_t *parent, const char *name, struct Dir *dir)
 {
-	struct dos_node *node = kmem_alloc(sizeof(*node));
+	struct dos_node *node = kmem_alloc(sizeof(*node)), *parent_node;
+	ke_mutex_init(&node->rwlock);
 	if (name == NULL || parent == NULL) {
 		kassert(name == NULL && parent == NULL);
 		node->is_root = true;
+	} else {
+		kassert(name != NULL && parent != NULL);
+		parent_node = VTOD(parent);
+		node->key.filename = strdup(name);
+		node->key.hash = strhash32(name, strlen(name));
+		RB_INSERT(dos_node_name_rb, &parent_node->entries_rb,
+		    &node->key);
 	}
 	node->vnode = vnode_alloc();
 	node->vnode->type = false;
@@ -179,10 +195,15 @@ readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 	io_off_t disk_offset = offset;
 	buf_t *buf = NULL;
 	struct dos_node *dnode = VTOD(vn);
+	size_t last_offset = offset;
 
 	kassert(offset % 32 == 0x0);
 
+	ke_wait(&dnode->rwlock, "dosfs::readdir::dnode->rwlock", false, false,
+	    -1);
+
 	if (dnode->is_root && offset < 64) {
+		kassert(offset == 0 || offset == 32);
 		/* fake up . and .. dirents */
 		kprintf(".\n..\n");
 		offset = 64;
@@ -228,11 +249,13 @@ readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 		    dir->DIR_Attr, (uint8_t)dir->DIR_Name[0]);
 		lfn_str[0] = '\0';
 		lfn_str_max = 0;
+		last_offset = offset;
 		offset += sizeof(struct Dir);
 	}
 
 out:
 	buf_release(buf);
+	ke_mutex_release(&dnode->rwlock);
 }
 
 vnode_t *
@@ -246,6 +269,20 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 
 	if (dnode->is_root && strcmp(name, "..") == 0) {
 		return dnode->parent;
+	}
+
+	ke_wait(&dnode->rwlock, "dosfs::lookup:inode->rwlock", false, false,
+	    -1);
+
+	struct dos_node_namekey key, *found;
+	key.hash = strhash32(name, strlen(name));
+	key.filename = (char *)name;
+	found = RB_FIND(dos_node_name_rb, &dnode->entries_rb, &key);
+	if (found != NULL) {
+		struct dos_node *found_node = (struct dos_node *)found;
+		vnode_t *vn = vn_retain(found_node->vnode);
+		ke_mutex_release(&dnode->rwlock);
+		return vn;
 	}
 
 	while (true) {
@@ -271,20 +308,22 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 		case kDirentProcessingStop:
 			goto out;
 
-		default:
+		default:;
 			/* epsilon */
 		}
 
 		if (lfn_str[0] != '\0' && strcmp(lfn_str, name) == 0) {
-			return dosfs_vnode_make(dvn, lfn_str, dir);
+			vnode_t *vnode = dosfs_vnode_make(dvn, lfn_str, dir);
+			ke_mutex_release(&dnode->rwlock);
+			buf_release(buf);
+			return vnode;
 		}
-
-		/** test if dir->DIR_Name matches... return if so */
 
 		offset += sizeof(struct Dir);
 	}
 
 out:
+	ke_mutex_release(&dnode->rwlock);
 	buf_release(buf);
 	return NULL;
 }
