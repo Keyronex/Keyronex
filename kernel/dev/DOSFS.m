@@ -5,6 +5,7 @@
 #include "dev/dosfs_var.h"
 #include "dev/fslib.h"
 #include "dev/safe_endian.h"
+#include "kdk/dev.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -81,6 +82,55 @@ RB_GENERATE_STATIC(dos_node_name_rb, dos_node_namekey, entry, dos_node_namecmp);
 
 @implementation DOSFS
 
+static uint32_t
+read_fat(struct dosfs_state *fs, io_blkoff_t N)
+{
+	io_blkoff_t FATOffset, ThisFATSecNum, ThisFATEntOffset, contents;
+	buf_t *buf;
+
+	if (fs->type == kFAT12)
+		FATOffset = N + (N / 2);
+	else if (fs->type == kFAT16)
+		FATOffset = N * 2;
+	else {
+		kassert(fs->type == kFAT32);
+		FATOffset = N * 4;
+	}
+
+	ThisFATSecNum = from_leu16(fs->bpb->BPB_RsvdSecCnt) +
+	    (FATOffset / from_leu16(fs->bpb->BPB_BytsPerSec));
+	ThisFATEntOffset = FATOffset % from_leu16(fs->bpb->BPB_BytsPerSec);
+	buf = bread(&fs->bufhead, ThisFATSecNum, 0);
+
+	switch (fs->type) {
+	case kFAT16:
+		kfatal("Impement me\n");
+
+	case kFAT32:
+		kfatal("Implement me\n");
+
+	case kFAT12:
+		if (ThisFATEntOffset ==
+		    (from_leu16(fs->bpb->BPB_BytsPerSec) - 1)) {
+			/* crossing a sector boundary! */
+			contents = (uint8_t)buf->data[ThisFATEntOffset];
+			buf_release(buf);
+			buf = bread(&fs->bufhead, ThisFATSecNum + 1, 0);
+			contents |= ((uint8_t)buf->data[0]) << 8;
+		} else {
+			contents = (uint8_t)buf->data[ThisFATEntOffset] +
+			    ((uint8_t)buf->data[ThisFATEntOffset + 1] << 8);
+		}
+
+		if (N & 0x0001)
+			contents = contents >> 4;
+		else
+			contents = contents & 0x0FFF;
+	}
+
+	return contents;
+}
+
 static buf_t *
 dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
     io_blkoff_t cluster)
@@ -90,10 +140,19 @@ dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
 		return bread(&fs->bufhead,
 		    fs->FirstRootDirSector + cluster * fs->bpb->BPB_SecPerClus,
 		    fs->bytes_per_cluster);
+	} else if (cluster == 0)
+		return bread(&fs->bufhead,
+		    fs->FirstDataSector +
+			(dosnode->first_cluster - 2) * fs->bpb->BPB_SecPerClus,
+		    fs->bytes_per_cluster);
+
+	io_blkoff_t last_cluster = dosnode->first_cluster;
+	for (size_t i = cluster; i != 0; i--) {
+		last_cluster = read_fat(fs, last_cluster);
 	}
+
 	return bread(&fs->bufhead,
-	    fs->FirstDataSector +
-		(dosnode->first_cluster - 2) * fs->bpb->BPB_SecPerClus,
+	    fs->FirstDataSector + (last_cluster - 2) * fs->bpb->BPB_SecPerClus,
 	    fs->bytes_per_cluster);
 }
 
@@ -121,7 +180,11 @@ dosfs_vnode_make(vnode_t *parent, const char *name, struct Dir *dir)
 	node->vnode->type = false;
 	node->vnode->fs_data = (uintptr_t)node;
 	if (dir != NULL) {
-		node->first_cluster = from_leu16(dir->DIR_FstClusLO);
+		node->first_cluster = (uint16_t)from_leu16(dir->DIR_FstClusLO);
+		DKLog("JDBHAIOHDIOSAHO",
+		    "FIRST KLUSTER FOR NODE %p %s: %llx; %x\n", node,
+		    dir->DIR_Name, node->first_cluster,
+		    from_leu16(dir->DIR_FstClusLO));
 	}
 	return node->vnode;
 }
@@ -392,9 +455,10 @@ out:
 
 	readDir(fs, fs->root, 0);
 
-	vnode_t *vn = lookup(fs, fs->root, "TestDir");
+	vnode_t *vn = lookup(fs, fs->root, "genesis.txt");
 	kprintf("VN: %p\n", vn);
-	readDir(fs, vn, 0);
+	buf_t *buf = dosnode_bread(fs, (struct dos_node *)vn->fs_data, 1);
+	// readDir(fs, vn, 0);
 
 	for (;;)
 		;

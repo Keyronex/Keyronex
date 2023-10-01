@@ -134,23 +134,32 @@ vm_mdl_create(void *address, size_t size)
 
 	mdl->nentries = nentries;
 
+#if DEBUG_MDL == 1
 	kprintf("-- mdl_create(%zu, %zu)\n", vaddr, size);
+#endif
 
 	for (size_t i = 0; i < nentries; ++i) {
 		paddr_t phys_addr = mdl_translate(vaddr, false);
 		size_t entry_bytes = MIN2(PGSIZE, size);
 
+#if DEBUG_MDL == 1
 		kprintf("entry_bytes is initially %zu - size is %zu\n",
 		    entry_bytes, size);
+#endif
 		if (i == 0 && entry_bytes == PGSIZE)
 			entry_bytes -= vaddr % PGSIZE;
 
+#if DEBUG_MDL == 1
 		kprintf("entry_bytes is now %zu\n", entry_bytes);
+#endif
 
 		mdl->entries[i].paddr = phys_addr;
 		mdl->entries[i].bytes = entry_bytes;
+
+#if DEBUG_MDL == 1
 		kprintf("entry_bytes is finally %zu\n", entry_bytes);
 		kprintf(" -- %d: %zu/%zu\n", i, phys_addr, entry_bytes);
+#endif
 
 		vaddr = vaddr + entry_bytes;
 		size -= entry_bytes;
