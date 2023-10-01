@@ -88,11 +88,13 @@ dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
 	if (fs->type != kFAT32 && dosnode->is_root) {
 		kassert(cluster < fs->RootDirSectors / fs->bpb->BPB_SecPerClus);
 		return bread(&fs->bufhead,
-		    fs->FirstRootDirSector + cluster * fs->bpb->BPB_SecPerClus);
+		    fs->FirstRootDirSector + cluster * fs->bpb->BPB_SecPerClus,
+		    fs->bytes_per_cluster);
 	}
 	return bread(&fs->bufhead,
 	    fs->FirstDataSector +
-		(dosnode->first_cluster - 2) * fs->bpb->BPB_SecPerClus);
+		(dosnode->first_cluster - 2) * fs->bpb->BPB_SecPerClus,
+	    fs->bytes_per_cluster);
 }
 
 /*!

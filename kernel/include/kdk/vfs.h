@@ -20,7 +20,11 @@ struct vnode_ops { };
  */
 vnode_t *vnode_alloc(void);
 
-vnode_t *vn_retain(vnode_t *vnode);
+static inline vnode_t *
+vn_retain(vnode_t *vnode)
+{
+	return vnode;
+}
 void vn_release(vnode_t *vnode);
 
 #endif /* KRX_KDK_VFS_H */

@@ -133,7 +133,8 @@ cylgroup_load(struct ext2fs_state *state, uint32_t cgnum, buf_t **buf_out)
 			     state->bufhead.block_size :
 			     state->bufhead.block_size * 2) +
 	    cgnum * sizeof(struct ext2_group_desc);
-	buf_t *buf = bread(&state->bufhead, loc / state->bufhead.block_size);
+	buf_t *buf = bread(&state->bufhead, loc / state->bufhead.block_size,
+	    state->bufhead.block_size);
 	*buf_out = buf;
 	return (void *)(buf->data + loc % state->bufhead.block_size);
 }
@@ -143,7 +144,8 @@ inode_bread(struct ext2fs_state *state, struct inode *inode, io_blkoff_t block)
 {
 	if (block < EXT2_NDIR_BLOCKS) {
 		return bread(&state->bufhead,
-		    le32_to_native(inode->ic.i_block[block]));
+		    le32_to_native(inode->ic.i_block[block]),
+		    state->bufhead.block_size);
 	} else {
 		kfatal("Implement me\n");
 	}
@@ -198,7 +200,7 @@ load_inode(struct ext2fs_state *state, struct inode *inode, uint32_t inum)
 	inooff = (offset * fs_ino_size(state)) % state->bufhead.block_size;
 	buf_release(cgbuf);
 
-	inobuf = bread(&state->bufhead, inoblock);
+	inobuf = bread(&state->bufhead, inoblock, state->bufhead.block_size);
 	memcpy(&inode->ic_large, inobuf->data + inooff, fs_ino_size(state));
 	ext2_i_mode_to_vtype(inode->ic_large.i_mode);
 	buf_release(inobuf);
@@ -259,7 +261,7 @@ alloc_block(struct ext2fs_state *fs)
 			continue;
 		}
 
-		bitmap_buf = bread(&fs->bufhead, le32_to_native(gd->bg_block_bitmap) * fs->bufhead.block_size);
+		bitmap_buf = bread(&fs->bufhead, le32_to_native(gd->bg_block_bitmap) * fs->bufhead.block_size, state->bufhead.block_size);
 
 	}
 
@@ -284,7 +286,8 @@ cg_alloc_block(struct ext2fs_state *fs, uint32_t cgnum)
 		return -1;
 	}
 
-	bitmap_buf = bread(&fs->bufhead, le32_to_native(gd->bg_block_bitmap));
+	bitmap_buf = bread(&fs->bufhead, le32_to_native(gd->bg_block_bitmap),
+	    fs->bufhead.block_size);
 	bitmap_data = (uint8_t *)bitmap_buf->data;
 
 	for (io_blkoff_t byte_off = 0; byte_off < bitmap_nbytes; byte_off++) {

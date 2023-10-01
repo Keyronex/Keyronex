@@ -23,9 +23,11 @@ bufhead_init(bufhead_t *head, DKDevice *device, size_t block_size)
 }
 
 buf_t *
-bread(bufhead_t *head, io_blkoff_t block)
+bread(bufhead_t *head, io_blkoff_t block, size_t size)
 {
 	buf_t *buf, key;
+
+	kassert (size < PGSIZE);
 
 	key.blkno = block;
 	if ((buf = RB_FIND(buftree, &head->tree, &key)) != NULL) {
@@ -37,14 +39,15 @@ bread(bufhead_t *head, io_blkoff_t block)
 	buf = kmem_alloc(sizeof(buf_t));
 	buf->blkno = block;
 	buf->head = head;
+	buf->size = size == 0? head->block_size : size;
 	ke_mutex_init(&buf->mutex);
 	ke_wait(&buf->mutex, "bread", false, false, -1);
-	buf->data = kmem_alloc(head->block_size);
+	buf->data = kmem_alloc(buf->size);
 	RB_INSERT(buftree, &head->tree, buf);
 
 	/*! now read */
-	vm_mdl_t *mdl = vm_mdl_create(buf->data, head->block_size);
-	iop_t *iop = iop_new_read(head->device, mdl, head->block_size,
+	vm_mdl_t *mdl = vm_mdl_create(buf->data, buf->size);
+	iop_t *iop = iop_new_read(head->device, mdl, buf->size,
 	    block * head->block_size);
 	iop_send_sync(iop);
 	iop_free(iop);
