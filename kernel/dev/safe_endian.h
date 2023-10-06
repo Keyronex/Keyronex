@@ -20,4 +20,6 @@ typedef struct leu64 {
 #define from_leu16(LEU16) le16_to_native((LEU16).value)
 #define from_leu32(LEU32) le32_to_native((LEU32).value)
 
+#define to_leu16(U16) ((leu16_t) { native_to_le16(U16) })
+
 #endif /* KRX_DEV_SAFE_ENDIAN_H */

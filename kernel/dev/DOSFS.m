@@ -85,7 +85,7 @@ RB_GENERATE_STATIC(dos_node_name_rb, dos_node_namekey, entry, dos_node_namecmp);
 static uint32_t
 read_fat(struct dosfs_state *fs, io_blkoff_t N)
 {
-	io_blkoff_t FATOffset, ThisFATSecNum, ThisFATEntOffset, contents;
+	io_blkoff_t FATOffset, ThisFATSecNum, ThisFATEntOffset, ClusEntryVal;
 	buf_t *buf;
 
 	if (fs->type == kFAT12)
@@ -103,32 +103,39 @@ read_fat(struct dosfs_state *fs, io_blkoff_t N)
 	buf = bread(&fs->bufhead, ThisFATSecNum, 0);
 
 	switch (fs->type) {
-	case kFAT16:
-		kfatal("Impement me\n");
+	case kFAT16: {
+		leu16_t *fat16 = (leu16_t *)buf->data;
+		ClusEntryVal = from_leu16(fat16[ThisFATEntOffset / 2]);
+		break;
+	}
 
-	case kFAT32:
-		kfatal("Implement me\n");
+	case kFAT32: {
+		leu32_t *fat32 = (leu32_t *)buf->data;
+		ClusEntryVal = (from_leu32(fat32[ThisFATEntOffset / 4])) &
+		    0x0FFFFFFF;
+		break;
+	}
 
 	case kFAT12:
 		if (ThisFATEntOffset ==
 		    (from_leu16(fs->bpb->BPB_BytsPerSec) - 1)) {
 			/* crossing a sector boundary! */
-			contents = (uint8_t)buf->data[ThisFATEntOffset];
+			ClusEntryVal = (uint8_t)buf->data[ThisFATEntOffset];
 			buf_release(buf);
 			buf = bread(&fs->bufhead, ThisFATSecNum + 1, 0);
-			contents |= ((uint8_t)buf->data[0]) << 8;
+			ClusEntryVal |= ((uint8_t)buf->data[0]) << 8;
 		} else {
-			contents = (uint8_t)buf->data[ThisFATEntOffset] +
+			ClusEntryVal = (uint8_t)buf->data[ThisFATEntOffset] +
 			    ((uint8_t)buf->data[ThisFATEntOffset + 1] << 8);
 		}
 
 		if (N & 0x0001)
-			contents = contents >> 4;
+			ClusEntryVal = ClusEntryVal >> 4;
 		else
-			contents = contents & 0x0FFF;
+			ClusEntryVal = ClusEntryVal & 0x0FFF;
 	}
 
-	return contents;
+	return ClusEntryVal;
 }
 
 static buf_t *
@@ -161,7 +168,8 @@ dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
  * \p parent->rwlock held
  */
 static vnode_t *
-dosfs_vnode_make(vnode_t *parent, const char *name, struct Dir *dir)
+dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
+    struct Dir *dir)
 {
 	struct dos_node *node = kmem_alloc(sizeof(*node)), *parent_node;
 	ke_mutex_init(&node->rwlock);
@@ -180,11 +188,18 @@ dosfs_vnode_make(vnode_t *parent, const char *name, struct Dir *dir)
 	node->vnode->type = false;
 	node->vnode->fs_data = (uintptr_t)node;
 	if (dir != NULL) {
-		node->first_cluster = (uint16_t)from_leu16(dir->DIR_FstClusLO);
+		if (fs->type == kFAT32) {
+			uint32_t rootCluster =
+			    ((uint32_t)from_leu16(dir->DIR_FstClusHI) << 16) |
+			    (uint32_t)from_leu16(dir->DIR_FstClusLO);
+			node->first_cluster = rootCluster;
+		} else {
+			node->first_cluster = from_leu16(dir->DIR_FstClusLO);
+		}
+
 		DKLog("JDBHAIOHDIOSAHO",
-		    "FIRST KLUSTER FOR NODE %p %s: %llx; %x\n", node,
-		    dir->DIR_Name, node->first_cluster,
-		    from_leu16(dir->DIR_FstClusLO));
+		    "FIRST KLUSTER FOR NODE %p %s: %llx;\n", node,
+		    dir->DIR_Name, node->first_cluster);
 	}
 	return node->vnode;
 }
@@ -223,31 +238,30 @@ static enum {
 		return kDirentProcessingContinue;
 	else if (dir->DIR_Attr == ATTR_LONG_NAME) {
 		struct LongDir *ldir = (void *)dir;
-		io_off_t ldir_off = (ldir->LDIR_Ord & 0x3f) - 1;
+		io_off_t ldir_off = 13 * ((ldir->LDIR_Ord & 0x3f) - 1);
 		io_off_t lfn_off = 0;
 		bool terminated = false;
 
-		lfn_off += ucs2_to_utf8(ldir->LDIR_Name1,
-		    lfn_str + ldir_off * 13,
+		lfn_off += ucs2_to_utf8(ldir->LDIR_Name1, lfn_str + ldir_off,
 		    sizeof(ldir->LDIR_Name1) / sizeof(leu16_t), &terminated);
 		if (terminated)
 			goto finish_lfn;
 
 		lfn_off += ucs2_to_utf8(ldir->LDIR_Name2,
-		    lfn_str + lfn_off + ldir_off * 13,
+		    lfn_str + lfn_off + ldir_off,
 		    sizeof(ldir->LDIR_Name2) / sizeof(leu16_t), &terminated);
 		if (terminated)
 			goto finish_lfn;
 
 		lfn_off += ucs2_to_utf8(ldir->LDIR_Name3,
-		    lfn_str + lfn_off + ldir_off * 13,
+		    lfn_str + lfn_off + ldir_off,
 		    sizeof(ldir->LDIR_Name3) / sizeof(leu16_t), &terminated);
 		if (terminated)
 			goto finish_lfn;
 
 	finish_lfn:
-		*lfn_str_max = MAX2((io_off_t)lfn_str_max,
-		    lfn_off + ldir_off * 13);
+		if ((lfn_off + ldir_off) > *lfn_str_max)
+			*lfn_str_max = lfn_off + ldir_off;
 		return kDirentProcessingContinue;
 	}
 }
@@ -295,6 +309,7 @@ readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 		}
 
 		dir = &((struct Dir *)buf->data)[clus_dir];
+
 		switch (processDirent(dir, lfn_str, &lfn_str_max)) {
 		case kDirentProcessingContinue:
 			offset += sizeof(struct Dir);
@@ -364,7 +379,6 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 		}
 
 		dir = &((struct Dir *)buf->data)[clus_dir];
-		dir = &((struct Dir *)buf->data)[clus_dir];
 		switch (processDirent(dir, lfn_str, &lfn_str_max)) {
 		case kDirentProcessingContinue:
 			offset += sizeof(struct Dir);
@@ -378,7 +392,8 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 		}
 
 		if (lfn_str[0] != '\0' && strcmp(lfn_str, name) == 0) {
-			vnode_t *vnode = dosfs_vnode_make(dvn, lfn_str, dir);
+			vnode_t *vnode = dosfs_vnode_make(fs, dvn, lfn_str,
+			    dir);
 			ke_mutex_release(&dnode->rwlock);
 			buf_release(buf);
 			return vnode;
@@ -451,7 +466,14 @@ out:
 	else
 		fs->type = kFAT32;
 
-	fs->root = dosfs_vnode_make(NULL, NULL, NULL);
+	if (fs->type == kFAT32) {
+		struct Dir dir;
+		uint32_t first_clus = from_leu32(bpb->bpb_32.BPB_RootClus);
+		dir.DIR_FstClusLO = to_leu16(first_clus & 0xffff);
+		dir.DIR_FstClusHI = to_leu16((first_clus >> 16) & 0xffff);
+		fs->root = dosfs_vnode_make(fs, NULL, NULL, &dir);
+	} else
+		fs->root = dosfs_vnode_make(fs, NULL, NULL, NULL);
 
 	readDir(fs, fs->root, 0);
 
