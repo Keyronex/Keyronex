@@ -463,8 +463,8 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	gicc = (void *)item;
 	kprintf("Found a GICC: GIC interface num %d, ACPI UID %d\n",
 	    gicc->cpu_interface_number, gicc->acpi_process_uid);
-	for (;;)
-		;
+	//for (;;)
+	//	;
 }
 #endif
 

@@ -34,6 +34,7 @@ typedef struct bufhead {
 
 void bufhead_init(bufhead_t *head, DKDevice *device, size_t block_size);
 buf_t *bread(bufhead_t *head, io_blkoff_t block, size_t size);
+void bwrite(buf_t *buf);
 void buf_release(buf_t *buf);
 
 #endif /* KRX_DEV_BUF_H */

@@ -108,17 +108,13 @@ VirtIODisk (Private)
 	size_t i = 0;
 	size_t ndatadescs;
 
-#if 1 // DEBUG_DISK == 1
+#if DEBUG_VIODISK == 1
 	DKDevLog(self, "Strategy(%d, block %llx, blocks %llu)\n", reqType,
 	    offset, blocks);
 #endif
 
 	ndatadescs = ROUNDUP(blocks * 512, PGSIZE) / PGSIZE;
-	kprintf("NDataDescs: %zu\n", ndatadescs);
 	kassert(ndatadescs <= 4);
-
-	kprintf("RW: %d Blocks: %llu offs: %llu mdl: %p iop: %p\n", reqType,
-	    blocks, offset, mdl, iop);
 
 	for (unsigned i = 0; i < 2 + ndatadescs; i++)
 		virtq_desc[i] = [PROVIDER allocateDescNumOnQueue:&m_ioQueue];
@@ -140,7 +136,9 @@ VirtIODisk (Private)
 	    sizeof(struct virtio_blk_outhdr));
 	m_ioQueue.desc[virtq_desc[i]].addr = native_to_le64(V2P(&req->hdr));
 	m_ioQueue.desc[virtq_desc[i]].flags = native_to_le16(VRING_DESC_F_NEXT);
+#if DEBUG_VIODISK == 1
 	kprintf("Initial Addr: 0x%zx\n", V2P(&req->hdr));
+#endif
 	m_ioQueue.desc[virtq_desc[i]].next = native_to_le16(virtq_desc[1]);
 
 	size_t nbytes = blocks * 512;
@@ -152,9 +150,11 @@ VirtIODisk (Private)
 		m_ioQueue.desc[virtq_desc[i]].addr = native_to_le64(
 		    vm_mdl_paddr(mdl, (i - 1) * PGSIZE));
 
+#if DEBUG_VIODISK == 1
 		kprintf("Another Addr: 0x%zx/bytes: %zu/len %zu / given: %zu\n",
 		    vm_mdl_paddr(mdl, (i - 1) * PGSIZE), nbytes, len,
 		    m_ioQueue.desc[virtq_desc[i]].len);
+#endif
 		m_ioQueue.desc[virtq_desc[i]].flags = native_to_le16(
 		    VRING_DESC_F_NEXT);
 		if (reqType == VIRTIO_BLK_T_IN)
@@ -167,7 +167,9 @@ VirtIODisk (Private)
 	m_ioQueue.desc[virtq_desc[i]].len = native_to_le32(1);
 	m_ioQueue.desc[virtq_desc[i]].addr = native_to_le64(V2P(&req->flags));
 
+#if DEBUG_VIODISK == 1
 	kprintf("Final Addr: 0x%zx\n", V2P(&req->flags));
+#endif
 	m_ioQueue.desc[virtq_desc[i]].flags = native_to_le16(
 	    VRING_DESC_F_WRITE);
 
@@ -271,7 +273,7 @@ void processVirtQueue(struct virtio_queue *queue, id delegate);
 		return;
 	}
 
-#if 1// DEBUG_VIODISK == 1
+#if DEBUG_VIODISK == 1
 	DKDevLog(self, "done req %p yielding %zu bytes\n", req, bytes);
 #endif
 	/* this might be better in a separate DPC */

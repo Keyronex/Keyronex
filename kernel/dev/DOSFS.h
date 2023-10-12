@@ -5,7 +5,7 @@
 #include "kdk/dev.h"
 
 @interface DOSFS : DKDevice {
-	struct dosfs_state *state;
+	struct dosfs_state *m_state;
 }
 
 + (BOOL)probeWithVolume:(DKDevice *)volume

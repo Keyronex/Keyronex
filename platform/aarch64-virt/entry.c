@@ -154,13 +154,15 @@ _start()
 	kmem_init();
 	obj_init();
 
+	void ddk_init(void), ddk_autoconf(void);
+	ddk_init();
+	ddk_autoconf();
+
 	struct id_aa64pfr0_el1 pfr = read_id_aa64pfr0_el1();
 	void intr_setup(void);
 	intr_setup();
 	*(char *)0xdeaddeafbeef = '\b';
-	void ddk_init(void), ddk_autoconf(void);
-	ddk_init();
-	ddk_autoconf();
+
 
 	for (;;)
 		;

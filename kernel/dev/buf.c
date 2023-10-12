@@ -56,6 +56,12 @@ bread(bufhead_t *head, io_blkoff_t block, size_t size)
 }
 
 void
+bwrite(buf_t *buf)
+{
+	kfatal("bwrite\n");
+}
+
+void
 buf_release(buf_t *buf)
 {
 	if (buf == NULL)

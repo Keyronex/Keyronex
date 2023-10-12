@@ -1,6 +1,7 @@
 #include <dirent.h>
 
 #include "DOSFS.h"
+#include "ddk/DKDevice.h"
 #include "dev/buf.h"
 #include "dev/dosfs_var.h"
 #include "dev/fslib.h"
@@ -9,6 +10,7 @@
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/object.h"
 #include "kdk/tree.h"
 #include "kdk/vfs.h"
 
@@ -17,6 +19,8 @@
 #define VTOD(VNODE) ((struct dos_node *)(VNODE)->fs_data)
 
 struct dosfs_state {
+	/*! *not* a holding pointer */
+	DOSFS *fsdev;
 	/*! buffer cache */
 	bufhead_t bufhead;
 	/*! in-memory bpb */
@@ -67,6 +71,8 @@ struct dos_node {
 	bool is_root;
 };
 
+static int counter = 0;
+
 static int
 dos_node_namecmp(struct dos_node_namekey *a, struct dos_node_namekey *b)
 {
@@ -81,6 +87,20 @@ dos_node_namecmp(struct dos_node_namekey *a, struct dos_node_namekey *b)
 RB_GENERATE_STATIC(dos_node_name_rb, dos_node_namekey, entry, dos_node_namecmp);
 
 @implementation DOSFS
+
+static inline bool
+cluster_value_is_eof(struct dosfs_state *state, uint32_t value)
+{
+	if (state->type == kFAT12) {
+		if (value >= 0x0FF8)
+			return true;
+	} else if (state->type == kFAT16) {
+		if (value >= 0xFFF8)
+			return true;
+	} else if (value >= 0x0FFFFFF8)
+		return true;
+	return false;
+}
 
 static uint32_t
 read_fat(struct dosfs_state *fs, io_blkoff_t N)
@@ -136,6 +156,92 @@ read_fat(struct dosfs_state *fs, io_blkoff_t N)
 	}
 
 	return ClusEntryVal;
+}
+
+void
+write_fat(struct dosfs_state *fs, io_blkoff_t N, uint32_t ClusEntryVal)
+{
+	io_blkoff_t FATOffset, ThisFATSecNum, ThisFATEntOffset;
+	buf_t *buf;
+
+	if (fs->type == kFAT12)
+		FATOffset = N + (N / 2);
+	else if (fs->type == kFAT16)
+		FATOffset = N * 2;
+	else {
+		kassert(fs->type == kFAT32);
+		FATOffset = N * 4;
+	}
+
+	ThisFATSecNum = from_leu16(fs->bpb->BPB_RsvdSecCnt) +
+	    (FATOffset / from_leu16(fs->bpb->BPB_BytsPerSec));
+	ThisFATEntOffset = FATOffset % from_leu16(fs->bpb->BPB_BytsPerSec);
+	buf = bread(&fs->bufhead, ThisFATSecNum, 0);
+
+	switch (fs->type) {
+	case kFAT16: {
+		leu16_t *fat16 = (leu16_t *)buf->data;
+		fat16[ThisFATEntOffset / 2] = to_leu16((uint16_t)ClusEntryVal);
+		break;
+	}
+
+	case kFAT32: {
+		leu32_t *fat32 = (leu32_t *)buf->data;
+		uint32_t current_val = from_leu32(fat32[ThisFATEntOffset / 4]);
+		uint32_t merged_val = (current_val & 0xF0000000) |
+		    (ClusEntryVal & 0x0FFFFFFF);
+		fat32[ThisFATEntOffset / 4] = to_leu32(merged_val);
+		break;
+	}
+
+	case kFAT12: {
+		uint16_t current_val, merged_val;
+
+		if (N & 0x0001)
+			merged_val = (ClusEntryVal << 4) & 0xFFF0;
+		else
+			merged_val = ClusEntryVal & 0x0FFF;
+
+		if (ThisFATEntOffset ==
+		    (from_leu16(fs->bpb->BPB_BytsPerSec) - 1)) {
+			/* crossing a sector boundary */
+			buf_t *buf2;
+			buf2 = bread(&fs->bufhead, ThisFATSecNum + 1, 0);
+			current_val = (buf->data[ThisFATEntOffset] & 0xFF) |
+			    ((buf2->data[0] & 0x0F) << 8);
+
+			if (N & 0x0001) {
+				merged_val |= (current_val & 0x000F);
+			} else {
+				merged_val |= (current_val & 0xF000);
+			}
+
+			buf->data[ThisFATEntOffset] = (uint8_t)(merged_val &
+			    0xFF);
+			buf2->data[0] = (uint8_t)((merged_val >> 8) & 0xFF);
+			bwrite(buf2);
+			buf_release(buf2);
+		} else {
+			/* not crossing a sector boundary */
+			current_val = (buf->data[ThisFATEntOffset] & 0xFF) |
+			    (buf->data[ThisFATEntOffset + 1] << 8);
+
+			if (N & 0x0001)
+				merged_val |= (current_val & 0x000F);
+			else
+				merged_val |= (current_val & 0xF000);
+
+			buf->data[ThisFATEntOffset] = (uint8_t)(merged_val &
+			    0xFF);
+			buf->data[ThisFATEntOffset + 1] =
+			    (uint8_t)((merged_val >> 8) & 0xFF);
+		}
+		break;
+	}
+	}
+
+	bwrite(buf);
+	buf_release(buf);
 }
 
 static buf_t *
@@ -197,9 +303,10 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 			node->first_cluster = from_leu16(dir->DIR_FstClusLO);
 		}
 
-		DKLog("JDBHAIOHDIOSAHO",
-		    "FIRST KLUSTER FOR NODE %p %s: %llx;\n", node,
-		    dir->DIR_Name, node->first_cluster);
+#if DEBUG_DOSFS > 0
+		DKDevLog(fs->fsdev, "FIRST KLUSTER FOR NODE %p %s: %llx;\n",
+		    node, dir->DIR_Name, node->first_cluster);
+#endif
 	}
 	return node->vnode;
 }
@@ -267,7 +374,7 @@ static enum {
 }
 
 void
-readDir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
+printdir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 {
 	char lfn_str[260] = { 0 };
 	size_t lfn_str_max = 0;
@@ -408,6 +515,18 @@ out:
 	return NULL;
 }
 
+vnode_t *
+create(vnode_t *dvn, const char *name, vattr_t attr)
+{
+}
+
+io_off_t
+dos_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t bytes_read,
+    io_off_t seqno)
+{
+	kfatal("Implement me\n");
+}
+
 + (BOOL)probeWithVolume:(DKDevice *)volume
 	      blockSize:(size_t)blockSize
 	     blockCount:(io_blksize_t)blockCount;
@@ -466,24 +585,45 @@ out:
 	else
 		fs->type = kFAT32;
 
-	if (fs->type == kFAT32) {
+	[[self alloc] initWithState:fs];
+	return YES;
+}
+
+- (instancetype)initWithState:(struct dosfs_state *)state
+{
+	self = [super initWithProvider:state->bufhead.device];
+	m_state = state;
+	state->fsdev = self;
+	kmem_asprintf(obj_name_ptr(self), "dosfs-%u", counter++);
+
+	if (m_state->type == kFAT32) {
 		struct Dir dir;
-		uint32_t first_clus = from_leu32(bpb->bpb_32.BPB_RootClus);
+		uint32_t first_clus = from_leu32(
+		    m_state->bpb->bpb_32.BPB_RootClus);
 		dir.DIR_FstClusLO = to_leu16(first_clus & 0xffff);
 		dir.DIR_FstClusHI = to_leu16((first_clus >> 16) & 0xffff);
-		fs->root = dosfs_vnode_make(fs, NULL, NULL, &dir);
+		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, &dir);
 	} else
-		fs->root = dosfs_vnode_make(fs, NULL, NULL, NULL);
+		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, NULL);
 
-	readDir(fs, fs->root, 0);
+	printdir(m_state, m_state->root, 0);
 
-	vnode_t *vn = lookup(fs, fs->root, "genesis.txt");
+	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
 	kprintf("VN: %p\n", vn);
-	buf_t *buf = dosnode_bread(fs, (struct dos_node *)vn->fs_data, 1);
-	// readDir(fs, vn, 0);
+	buf_t *buf = dosnode_bread(m_state, (struct dos_node *)vn->fs_data, 1);
+	// readDir(m_state, vn, 0);
 
-	for (;;)
-		;
+	[self registerDevice];
+	DKLogAttachExtra(self, "%d-bit\n",
+	    state->type == kFAT12     ? 12 :
+		state->type == kFAT16 ? 16 :
+					32);
+
+	return self;
 }
 
 @end
+
+struct vnode_ops dos_vnops = {
+	.readdir = dos_readdir,
+};
