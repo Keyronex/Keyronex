@@ -114,7 +114,7 @@ typedef struct vm_account {
 	size_t nwires;
 } vm_account_t;
 
-typedef struct vm_mdl_entry {
+typedef struct vm_mdl_view_entry {
 	paddr_t paddr;
 	size_t bytes;
 } vm_mdl_entry_t;
@@ -124,7 +124,8 @@ typedef struct vm_mdl_entry {
  */
 typedef struct vm_mdl {
 	size_t nentries;
-	vm_mdl_entry_t entries[0];
+	size_t offset;
+	vm_page_t *pages[0];
 } vm_mdl_t;
 
 extern struct vm_stat vmstat;

@@ -12,6 +12,8 @@
 	      blockSize:(size_t)blockSize
 	     blockCount:(io_blksize_t)blockCount;
 
+-(iop_return_t) dispatchIOP:(iop_t *)iop;
+
 @end
 
 #endif /* KRX_DEV_DOSFS_H */

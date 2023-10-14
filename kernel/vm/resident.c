@@ -85,36 +85,38 @@ vm_mdl_buffer_alloc(size_t npages)
 {
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->nentries = npages;
+	mdl->offset = 0;
 	for (unsigned i = 0; i < npages; i++) {
 		vm_page_t *page;
 		int r = vm_page_alloc(&page, 0, &general_account,
 		    kPageUseKWired, false);
 		kassert(r == 0);
-		mdl->entries[i].paddr = vm_page_paddr(page);
-		mdl->entries[i].bytes = PGSIZE;
+		mdl->pages[i] = page;
 	}
 	return mdl;
 }
 
-paddr_t
+vm_page_t *
 mdl_translate(vaddr_t vaddr, bool paged)
 {
+	vm_page_t *page;
 	if (vaddr >= HHDM_BASE && vaddr <= (HHDM_BASE + HHDM_SIZE)) {
 		paddr_t paddr;
 		kassert(!paged);
-		paddr = V2P(vaddr);
+		paddr = (paddr_t)V2P(vaddr);
 		/* vm_page_retain panics if page is NULL */
-		vm_page_retain(vm_paddr_to_page(PGROUNDDOWN(paddr)),
+		page = vm_page_retain(vm_paddr_to_page(PGROUNDDOWN(paddr)),
 		    &general_account);
-		return paddr;
+		return page;
 	} else {
 		ipl_t ipl = vmp_acquire_pfn_lock();
 		paddr_t paddr;
 		paddr = vmp_md_translate(vaddr);
-		vmp_page_retain_locked(vm_paddr_to_page(PGROUNDDOWN(paddr)),
+		page = vmp_page_retain_locked(vm_paddr_to_page(
+						  PGROUNDDOWN(paddr)),
 		    &general_account);
 		vmp_release_pfn_lock(ipl);
-		return paddr;
+		return page;
 	}
 }
 
@@ -132,34 +134,17 @@ vm_mdl_create(void *address, size_t size)
 	if (mdl == NULL)
 		return NULL;
 
+	mdl->offset = (uintptr_t)address % PGSIZE;
 	mdl->nentries = nentries;
 
-#if DEBUG_MDL == 1
-	kprintf("-- mdl_create(%zu, %zu)\n", vaddr, size);
-#endif
-
 	for (size_t i = 0; i < nentries; ++i) {
-		paddr_t phys_addr = mdl_translate(vaddr, false);
+		vm_page_t *page = mdl_translate(vaddr, false);
 		size_t entry_bytes = MIN2(PGSIZE, size);
 
-#if DEBUG_MDL == 1
-		kprintf("entry_bytes is initially %zu - size is %zu\n",
-		    entry_bytes, size);
-#endif
 		if (i == 0 && entry_bytes == PGSIZE)
 			entry_bytes -= vaddr % PGSIZE;
 
-#if DEBUG_MDL == 1
-		kprintf("entry_bytes is now %zu\n", entry_bytes);
-#endif
-
-		mdl->entries[i].paddr = phys_addr;
-		mdl->entries[i].bytes = entry_bytes;
-
-#if DEBUG_MDL == 1
-		kprintf("entry_bytes is finally %zu\n", entry_bytes);
-		kprintf(" -- %d: %zu/%zu\n", i, phys_addr, entry_bytes);
-#endif
+		mdl->pages[i] = page;
 
 		vaddr = vaddr + entry_bytes;
 		size -= entry_bytes;
@@ -171,17 +156,15 @@ vm_mdl_create(void *address, size_t size)
 paddr_t
 vm_mdl_paddr(vm_mdl_t *mdl, voff_t offset)
 {
-	size_t remaining = (size_t)offset;
+	size_t total_offset = mdl->offset + offset;
+	size_t page_idx = total_offset / PGSIZE;
 
-	for (size_t i = 0; i < mdl->nentries; ++i) {
-		if (remaining < mdl->entries[i].bytes) {
-			return mdl->entries[i].paddr + remaining;
-		} else {
-			remaining -= mdl->entries[i].bytes;
-		}
-	}
+	if (page_idx >= mdl->nentries)
+		return (paddr_t)-1;
 
-	kfatal("out of bounds");
+	paddr_t page_base_addr = vm_page_paddr(mdl->pages[page_idx]);
+	size_t intra_page_offset = total_offset % PGSIZE;
+	return page_base_addr + intra_page_offset;
 }
 
 void
