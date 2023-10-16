@@ -13,6 +13,7 @@
 #include "kdk/object.h"
 #include "kdk/tree.h"
 #include "kdk/vfs.h"
+#include "kdk/vm.h"
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 
@@ -39,6 +40,8 @@ struct dosfs_state {
 	size_t FirstRootDirSector;
 	/*! first sector of the data region */
 	size_t FirstDataSector;
+	/*! number of clusters */
+	size_t CountOfCusters;
 	/*! bytes per cluster */
 	size_t bytes_per_cluster;
 	/*! root directory vnode */
@@ -62,12 +65,19 @@ struct dos_node {
 	struct dos_node_namekey key;
 	/*! vnode counterpart */
 	vnode_t *vnode;
+	/*! rwlock for data contents, size, etc. */
 	kmutex_t rwlock;
 	/*! the parent directory of this node (or NULL if root). retained */
 	vnode_t *parent;
+	/*! disk address of containing short dirent */
+	io_blkoff_t dirent_daddr;
 	/*! directory entries in this directory, if it is a dir */
 	struct dos_node_name_rb entries_rb;
+	/*! first cluster of file, if not root dir on non-FAT32 */
 	io_blkoff_t first_cluster;
+	/*! size in bytes of the file */
+	uint32_t size;
+	/*! is it the root directory? */
 	bool is_root;
 };
 
@@ -246,6 +256,67 @@ write_fat(struct dosfs_state *fs, io_blkoff_t N, uint32_t ClusEntryVal)
 	buf_release(buf);
 }
 
+static void
+iterate_fat(struct dosfs_state *fs)
+{
+	io_blkoff_t FATSecNum = from_leu16(fs->bpb->BPB_RsvdSecCnt);
+	buf_t *buf = bread(&fs->bufhead, FATSecNum,
+	    0); // Start with first FAT sector
+	const uint8_t *data = (uint8_t *)buf->data;
+	size_t offset = 0;
+	io_blkoff_t N = 2;
+
+	while (N < fs->CountOfCusters) {
+		uint32_t val;
+
+		if (offset == from_leu16(fs->bpb->BPB_BytsPerSec)) {
+			buf_release(buf);
+			buf = bread(&fs->bufhead, ++FATSecNum, 0);
+			data = (uint8_t *)buf->data;
+			offset = 0;
+		}
+
+		switch (fs->type) {
+		case kFAT12: {
+			if (offset == from_leu16(fs->bpb->BPB_BytsPerSec) - 1) {
+				val = (uint8_t)data[offset];
+				buf_release(buf);
+				buf = bread(&fs->bufhead, ++FATSecNum, 0);
+				data = (const uint8_t *)buf->data;
+				val |= ((uint8_t)data[0]) << 8;
+				offset = 1;
+			} else {
+				val = (uint8_t)data[offset] |
+				    ((uint8_t)data[offset + 1] << 8);
+				offset += 1 + (N & 0x0001);
+			}
+			if (N & 0x0001)
+				val = val >> 4;
+			else
+				val &= 0x0FFF;
+
+			break;
+		}
+		case kFAT16: {
+			leu16_t *pval = (leu16_t *)(data + offset);
+			val = from_leu16(*pval);
+			offset += 2;
+			break;
+		}
+		case kFAT32: {
+			leu32_t *pval = (leu32_t *)(data + offset);
+			val = from_leu32(*pval);
+			offset += 4;
+			break;
+		}
+		}
+
+		kprintf("FAT %lld: %u/%x\n", N - 2, val, val);
+		N++;
+	}
+	buf_release(buf);
+}
+
 static buf_t *
 dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
     io_blkoff_t cluster)
@@ -264,6 +335,8 @@ dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
 	io_blkoff_t last_cluster = dosnode->first_cluster;
 	for (size_t i = cluster; i != 0; i--) {
 		last_cluster = read_fat(fs, last_cluster);
+		kassert(last_cluster >= 2 &&
+		    !cluster_value_is_eof(fs, last_cluster));
 	}
 
 	return bread(&fs->bufhead,
@@ -304,6 +377,7 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 		} else {
 			node->first_cluster = from_leu16(dir->DIR_FstClusLO);
 		}
+		node->size = from_leu32(dir->DIR_FileSize);
 
 #if DEBUG_DOSFS > 0
 		DKDevLog(fs->fsdev, "FIRST KLUSTER FOR NODE %p %s: %llx;\n",
@@ -531,9 +605,15 @@ dos_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t bytes_read,
 	kfatal("Implement me\n");
 }
 
+static void
+dos_extend_locked(struct dosfs_state *fs, vnode_t *vn, size_t size)
+{
+	kfatal("implement me\n");
+}
+
 void
-dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
-    vm_mdl_t *mdl)
+dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
+    vm_mdl_t *mdl, bool write)
 {
 	struct dos_node *dnode = VTOD(vn);
 	iop_t *biop = NULL;
@@ -542,9 +622,14 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 	ke_wait(&dnode->rwlock, "dosfs::read:inode->rwlock", false, false, -1);
 
+	if (dnode->size < offset + bytes)
+		dos_extend_locked(fs, vn, offset + bytes);
+
 	io_blkoff_t current_cluster = dnode->first_cluster;
 	for (size_t i = offset / fs->bytes_per_cluster; i != 0; i--) {
 		current_cluster = read_fat(fs, current_cluster);
+		kassert(current_cluster >= 2 &&
+		    !cluster_value_is_eof(fs, current_cluster));
 	}
 
 	io_off_t bytes_read = 0;
@@ -556,6 +641,9 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		io_blkoff_t next_cluster = read_fat(fs, current_cluster);
 		while (next_cluster == current_cluster + 1 &&
 		    bytes_read + contiguous_size < bytes) {
+
+			kassert(next_cluster >= 2 &&
+			    !cluster_value_is_eof(fs, next_cluster));
 			current_cluster = next_cluster;
 			contiguous_size += fs->bytes_per_cluster;
 			next_cluster = read_fat(fs, current_cluster);
@@ -566,19 +654,23 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 #else
 		io_off_t to_read = MIN2(bytes - bytes_read,
 		    fs->bytes_per_cluster);
-		io_off_t cluster_offset = current_cluster *
-		    fs->bytes_per_cluster;
+		io_off_t cluster_offset = fs->FirstDataSector *
+			from_leu16(fs->bpb->BPB_BytsPerSec) +
+		    (current_cluster - 2) * fs->bytes_per_cluster;
 		io_blkoff_t next_cluster = read_fat(fs, current_cluster);
+
+		kassert(next_cluster >= 2 &&
+		    !cluster_value_is_eof(fs, next_cluster));
 #endif
 
-		if (!biop) {
-			// biop = iop_new_read(fs->bufhead.device, vm_mdl_t
-			// *mdl, size_t size, io_off_t off)
-			kprintf(
-			    "Read Clusters %lld, Count %lld, MDL offset %lld\n",
-			    cluster_offset, to_read, bytes_read);
-		}
+		kprintf("Read Clusters %lld, Count %lld, MDL offset %lld\n",
+		    cluster_offset, to_read, bytes_read);
+		biop = iop_new_read(fs->bufhead.device, mdl, to_read,
+		    cluster_offset);
+		iop_send_sync(biop);
+		iop_free(biop);
 
+		mdl->offset += to_read;
 		bytes_read += to_read;
 		current_cluster = next_cluster;
 	}
@@ -630,19 +722,21 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	    (from_leu16(bpb->BPB_RsvdSecCnt) + (bpb->BPB_NumFATs * fs->FATSz) +
 		fs->RootDirSectors);
 
-	size_t CountOfClusters = DataSec / bpb->BPB_SecPerClus;
+	fs->CountOfCusters = DataSec / bpb->BPB_SecPerClus;
 
-	if (CountOfClusters < 4085)
+	if (fs->CountOfCusters < 4085)
 		fs->type = kFAT12;
-	else if (CountOfClusters < 65525)
+	else if (fs->CountOfCusters < 65525)
 		fs->type = kFAT16;
 	else
 		fs->type = kFAT32;
 
 	kprintf("Clusters: %zu; fatsz %lu; root en count %hu; "
 		"root dir secs %lu; first data sec %lu; fat type %d\n",
-	    CountOfClusters, fs->FATSz, from_leu16(bpb->BPB_RootEntCnt),
+	    fs->CountOfCusters, fs->FATSz, from_leu16(bpb->BPB_RootEntCnt),
 	    fs->RootDirSectors, fs->FirstDataSector, fs->type);
+
+	// iterate_fat(fs);
 
 	[[self alloc] initWithState:fs];
 	return YES;
@@ -665,17 +759,6 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	} else
 		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, NULL);
 
-#if 1
-	printdir(m_state, m_state->root, 0);
-
-	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
-	kprintf("VN: %p\n", vn);
-	dos_read(m_state, vn, 0, 2048 * 4, NULL);
-	// buf_t *buf = dosnode_bread(m_state, (struct dos_node *)vn->fs_data,
-	// 1);
-	//  readDir(m_state, vn, 0);
-#endif
-
 	[self registerDevice];
 	DKLogAttachExtra(self, "\"%.11s\": FAT%d",
 	    state->type == kFAT32 ? (char *)state->bpb->bpb_32.BS_VolLab :
@@ -684,6 +767,30 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		state->type == kFAT16 ? 16 :
 					32);
 
+#if 0
+	printdir(m_state, m_state->root, 0);
+
+	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
+	kprintf("VN: %p\n", vn);
+	dos_rw(m_state, vn, 0, 2048 * 4, NULL, false);
+	// buf_t *buf = dosnode_bread(m_state, (struct dos_node *)vn->fs_data,
+	// 1);
+	//  readDir(m_state, vn, 0);
+#endif
+
+	vm_mdl_t *mdl = vm_mdl_buffer_alloc(2);
+	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
+	kassert(vn != NULL);
+
+	kprintf("\n\n\n\nTesting Read\n");
+	dos_rw(m_state, vn, 0, 2048 * 4, mdl, false);
+
+	mdl->offset = 0;
+	char *vadd = (char *)P2V(vm_mdl_paddr(mdl, 0));
+	kprintf("VADD: %p\n", vadd);
+	for (;;)
+		;
+
 	return self;
 }
 
@@ -691,9 +798,10 @@ dos_read(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 {
 	iop_frame_t *frame = iop_stack_current(iop);
 	kassert(frame->function == kIOPTypeRead);
-	// dos_read(frame->vnode, frame->rw.offset, frame->rw.bytes,
-	// frame->mdl);
-	kfatal("Implement me\n");
+	kassert(frame->vnode != NULL);
+	dos_rw(m_state, frame->vnode, frame->rw.offset, frame->rw.bytes,
+	    frame->mdl, false);
+	return kIOPRetCompleted;
 }
 
 @end
