@@ -17,6 +17,7 @@ typedef struct vnode {
 	vtype_t type;
 	struct vnode_ops *ops;
 	uintptr_t fs_data;
+	struct vfs *vfs;
 } vnode_t;
 
 typedef struct vfs {

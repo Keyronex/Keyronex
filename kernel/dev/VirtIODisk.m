@@ -132,11 +132,14 @@ VirtIODisk (Private)
 	req->first_desc_id = virtq_desc[0];
 	req->iop = iop;
 
+#define DEBUG_VIODISK 0
+
 	m_ioQueue.desc[virtq_desc[i]].len = native_to_le32(
 	    sizeof(struct virtio_blk_outhdr));
 	m_ioQueue.desc[virtq_desc[i]].addr = native_to_le64(V2P(&req->hdr));
 	m_ioQueue.desc[virtq_desc[i]].flags = native_to_le16(VRING_DESC_F_NEXT);
 #if DEBUG_VIODISK == 1
+	kprintf("NBlocks: %llu\n", blocks);
 	kprintf("Initial Addr: 0x%zx\n", V2P(&req->hdr));
 #endif
 	m_ioQueue.desc[virtq_desc[i]].next = native_to_le16(virtq_desc[1]);
@@ -145,7 +148,7 @@ VirtIODisk (Private)
 
 	for (i = 1; i < 1 + ndatadescs; i++) {
 		size_t len = MIN2(nbytes, PGSIZE);
-		nbytes -= PGSIZE;
+		nbytes -= len;
 		m_ioQueue.desc[virtq_desc[i]].len = native_to_le32(len);
 		m_ioQueue.desc[virtq_desc[i]].addr = native_to_le64(
 		    vm_mdl_paddr(mdl, (i - 1) * PGSIZE));

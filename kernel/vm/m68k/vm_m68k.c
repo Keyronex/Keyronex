@@ -91,9 +91,9 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 		for (int i = 0; i < 8; i++) {
 			pml3_virt[l3i_base + i].addr = (pml2s_phys + i * 512) >>
 			    4;
-			pml3_virt[l3i_base].used = 0;
-			pml3_virt[l3i_base].writeprotect = 0;
-			pml3_virt[l3i_base].type = 3;
+			pml3_virt[l3i_base + i].used = 0;
+			pml3_virt[l3i_base + i].writeprotect = 0;
+			pml3_virt[l3i_base + i].type = 3;
 		}
 	}
 
@@ -226,6 +226,7 @@ vmp_md_unenter_kwired(vaddr_t virt)
 	return 0;
 }
 
+/* NOTE: please rewrite this */
 vm_fault_return_t
 vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 {
@@ -235,6 +236,9 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
 
 	addr.addr = state->addr;
+
+	kprintf("Wire PTE for %p: %d.%d.%d\n", addr.addr, addr.l3i, addr.l2i,
+	    addr.l1i);
 
 	if (state->pgtable_pages[kPTEWireStatePML1] != NULL)
 		goto fetch_pte;
@@ -260,9 +264,9 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 		for (int i = 0; i < 8; i++) {
 			pml3_virt[l3i_base + i].addr = (pml2s_phys + i * 512) >>
 			    4;
-			pml3_virt[l3i_base].used = 0;
-			pml3_virt[l3i_base].writeprotect = 0;
-			pml3_virt[l3i_base].type = 3;
+			pml3_virt[l3i_base + i].used = 0;
+			pml3_virt[l3i_base + i].writeprotect = 0;
+			pml3_virt[l3i_base + i].type = 3;
 		}
 
 		state->pgtable_pages[kPTEWireStatePML2] = pml2_page;
@@ -276,7 +280,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 
 fetch_pml1:
 	pml2_page = state->pgtable_pages[kPTEWireStatePML2];
-	pml2e_t *pml2_phys = (void *)vm_page_paddr(pml2_page),
+	pml2e_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4),
 		*pml2_virt = (void *)P2V(pml2_phys);
 
 	if (pml2_virt[addr.l2i].addr == 0) {
@@ -312,7 +316,7 @@ fetch_pml1:
 
 fetch_pte:
 	pml1_page = state->pgtable_pages[kPTEWireStatePML1];
-	pte_hw_t *pml1 = (void *)vm_page_paddr(pml1_page);
+	pte_hw_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
 	state->pte = (pte_t *)P2V(&pml1[addr.l1i]);
 
 	return kVMFaultRetOK;
@@ -329,10 +333,10 @@ vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *page)
 }
 
 void
-vmp_md_pagetable_pte_created(struct vmp_pte_wire_state *state)
+vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state, size_t count)
 {
-	state->pgtable_pages[1]->used_ptes++;
-	state->pgtable_pages[1]->refcnt++;
+	state->pgtable_pages[1]->used_ptes+= count;
+	state->pgtable_pages[1]->refcnt+= count;
 }
 
 paddr_t

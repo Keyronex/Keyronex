@@ -51,15 +51,15 @@ typedef struct vm_vad {
 		bool private : 1;
 		/*! (!private only) whether the mapping is copy-on-write */
 		bool cow : 1;
-		/*! if !private, page offset into section object (max 256tib) */
+		/*! if !private, page-unit offset into section (max 256tib) */
 		int64_t offset : 36;
 	} flags;
 	/*! Entry in vm_procstate::vad_rbtree */
-	RB_ENTRY(vm_vad) rbtree_entry;
+	RB_ENTRY(vm_vad) rb_entry;
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
 	/*! Section object; if flags.anonymous = false */
-	void *section;
+	vm_section_t *section;
 } vm_vad_t;
 
 struct vmp_wsl {
@@ -104,12 +104,20 @@ struct vmp_amap_l1 {
 	pte_t entries[512];
 };
 
+struct vmp_pager_state {
+	kevent_t event;
+	SLIST_ENTRY(vmp_pager_state) slist_entry;
+	pfn_t vpfn: PFN_BITS;
+	uint16_t length: 5;
+};
+
 struct vmp_forkpage {
 	pte_t pte;
 	uint32_t refcount;
 };
 
 struct vmp_filepage {
+	uint64_t offset;
 	vm_page_t *page;
 	RB_ENTRY(vmp_filepage) rb_entry;
 };
@@ -123,6 +131,7 @@ struct vm_section {
 	union {
 		struct {
 			RB_HEAD(vmp_file_page_tree, vm_page) page_tree;
+			struct vnode *vnode;
 		} file;
 		struct {
 			struct vmp_amap_l3 *l3;
@@ -150,8 +159,8 @@ void vmp_md_pte_wire_release(vm_procstate_t *vmps,
     struct vmp_pte_wire_state *state);
 /*! @brief Called when a PTE goes from used to zeroed. */
 void vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *pgtable_page);
-/*! @brief Called when a PTE in a pagetable page goes from unused to used. */
-void vmp_md_pagetable_pte_created(struct vmp_pte_wire_state *state);
+/*! @brief Called when PTE in a pagetable page go from unused to used. */
+void vmp_md_pagetable_pte_created(struct vmp_pte_wire_state *state, size_t count);
 /*! @brief Convert a virtual address to a physical. Must be mapped! */
 paddr_t vmp_md_translate(vaddr_t addr);
 

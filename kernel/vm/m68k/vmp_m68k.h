@@ -6,10 +6,12 @@
 #include "kdk/vm.h"
 #include "mmu.h"
 
+struct vmp_pager_state;
+
 enum software_pte_kind {
 	/*! this is not a software PTE */
 	kNotSoftware = 0x0,
-	/*! this is a PTE for a */
+	/*! this is a PTE for a page currently being paged in/out  */
 	kTransition = 0x1,
 };
 
@@ -20,8 +22,8 @@ struct vmp_md_procstate {
 
 typedef struct __attribute__((packed)) pte_sw {
 	enum software_pte_kind kind : 2;
-	uint32_t data : 28, /* pfn, swap descriptor, fork pointer */
-	    type : 2;		       /* must = 0*/
+	uint32_t data : 28; /* pfn, swap descriptor, fork pointer */
+	uint8_t type : 2; /* matches hardware; must = 0*/
 } pte_sw_t;
 
 typedef union pte {
@@ -41,14 +43,22 @@ vmp_md_pte_create_hw(pte_hw_t *pte, pfn_t pfn, bool writeable)
 	pte->type = 1; /* resident */
 }
 
+static inline void
+vmp_md_pte_create_busy(pte_t *pte, pfn_t pfn)
+{
+	pte->sw.type = 0;
+	pte->sw.data = pfn;
+	pte->sw.kind = kTransition;
+}
+
 static inline bool
-vmp_md_pte_is_empty(pte_hw_t *pte)
+vmp_md_pte_is_empty(pte_t *pte)
 {
 	return *(uint32_t*)pte == 0;
 }
 
 static inline bool
-vmp_md_pte_is_valid(pte_hw_t *pte)
+vmp_md_pte_is_valid(pte_t *pte)
 {
 	return (*(uint32_t*)pte & 0x3) != 0;
 }

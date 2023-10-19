@@ -68,6 +68,7 @@ update_page_use_stats(enum vm_page_use use, int value)
 	switch (use) {
 		CASE(kPageUseDeleted, ndeleted);
 		CASE(kPageUseAnonPrivate, nanonprivate);
+		CASE(kPageUseFileShared, nfileshared);
 		CASE(kPageUseKWired, nkwired);
 		CASE(kPageUsePML3, nprocpgtable);
 		CASE(kPageUsePML2, nprocpgtable);
@@ -80,20 +81,31 @@ update_page_use_stats(enum vm_page_use use, int value)
 
 #define MDL_SIZE(NPAGES) (sizeof(vm_mdl_t) + sizeof(vm_mdl_entry_t) * NPAGES)
 
-vm_mdl_t*
-vm_mdl_buffer_alloc(size_t npages)
+vm_mdl_t *
+vm_mdl_alloc_with_pages(size_t npages, enum vm_page_use use,
+    vm_account_t *account, bool pfnlock_held)
 {
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->nentries = npages;
 	mdl->offset = 0;
 	for (unsigned i = 0; i < npages; i++) {
 		vm_page_t *page;
-		int r = vm_page_alloc(&page, 0, &general_account,
-		    kPageUseKWired, false);
+		int r;
+
+		r = (pfnlock_held ?
+			vmp_pages_alloc_locked :
+			vm_page_alloc)(&page, 0, account, use, false);
 		kassert(r == 0);
 		mdl->pages[i] = page;
 	}
 	return mdl;
+}
+
+vm_mdl_t *
+vm_mdl_buffer_alloc(size_t npages)
+{
+	return vm_mdl_alloc_with_pages(npages, kPageUseKWired, &general_account,
+	    false);
 }
 
 vm_page_t *
@@ -368,7 +380,9 @@ vmp_page_free_locked(vm_page_t *page)
 	kassert(page->use == kPageUseDeleted);
 	kassert(page->refcnt == 0);
 
+#ifdef VM_TRACE_PAGE_ALLOC
 	kprintf("Freeing page %p\n", page);
+#endif
 
 	TAILQ_FOREACH (preg, &pregion_queue, queue_entry) {
 		if (preg->base <= vm_page_paddr(page) &&
@@ -507,6 +521,8 @@ vm_page_use_str(enum vm_page_use use)
 		return "pfndb";
 	case kPageUseAnonPrivate:
 		return "anon-private";
+	case kPageUseFileShared:
+		return "file-shared";
 	case kPageUsePML3:
 		return "PML3";
 	case kPageUsePML2:
@@ -529,7 +545,7 @@ vmp_pages_dump(void)
 	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "del", "priv",
 	    "fork", "file");
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu\n", vmstat.nfree, vmstat.ndeleted,
-	    vmstat.nanonprivate, vmstat.nanonfork, vmstat.nfile);
+	    vmstat.nanonprivate, vmstat.nanonfork, vmstat.nfileshared);
 	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s\033[m\n", "share", "pgtbl",
 	    "proto", "kwired", "pwired");
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu\n", vmstat.nanonshare,

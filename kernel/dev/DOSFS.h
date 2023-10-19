@@ -3,6 +3,7 @@
 
 #include "ddk/DKDevice.h"
 #include "kdk/dev.h"
+#include "kdk/vfs.h"
 
 @interface DOSFS : DKDevice {
 	struct dosfs_state *m_state;

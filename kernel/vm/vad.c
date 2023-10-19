@@ -1,10 +1,9 @@
 #include "kdk/kmem.h"
 #include "vmp.h"
 
-int
-vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
+int vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y);
 
-RB_GENERATE(vm_vad_rbtree, vm_vad, rbtree_entry, vmp_vad_cmp);
+RB_GENERATE(vm_vad_rbtree, vm_vad, rb_entry, vmp_vad_cmp);
 
 int
 vmp_vad_cmp(vm_vad_t *x, vm_vad_t *y)
@@ -40,17 +39,15 @@ vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size, bool exact)
 	    kVMAll, false, false, exact);
 }
 
-int vm_ps_map_section_view(vm_procstate_t *vmps, void *section,
-    vaddr_t *vaddrp, size_t size, uint64_t offset,
-    vm_protection_t initial_protection, vm_protection_t max_protection,
-    bool inherit_shared, bool cow, bool exact)
+int
+vm_ps_map_section_view(vm_procstate_t *vmps, void *section, vaddr_t *vaddrp,
+    size_t size, uint64_t offset, vm_protection_t initial_protection,
+    vm_protection_t max_protection, bool inherit_shared, bool cow, bool exact)
 {
 	int r;
 	kwaitstatus_t w;
 	vm_vad_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
-
-	kassert(section == NULL);
 
 	ke_wait(&vmps->mutex, "map_section_view:vmps->mutex", false, false, -1);
 
@@ -96,7 +93,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 			continue;
 		else if (entry->start >= start && entry->end <= end) {
 			int r;
-			//ipl_t ipl;
+			// ipl_t ipl;
 
 			r = vmem_xfree(&vmps->vmem, entry->start,
 			    entry->end - entry->start, 0);

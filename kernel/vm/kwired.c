@@ -19,13 +19,24 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		return r;
 	}
 
+#ifdef TRACE_KWIRED
+	kprintf("Entering from %p-%p (size %zu)\n", *out,
+	    (*out) + size, size);
+#endif
 	for (int i = 0; i < size - 1; i += PGSIZE) {
 		vm_page_t *page;
-		vmp_page_alloc_locked(&page, &general_account, kPageUseKWired, true);
+		vmp_page_alloc_locked(&page, &general_account, kPageUseKWired,
+		    true);
 		vmp_md_enter_kwired(*out + i, vm_page_paddr(page));
 	}
 
 	return 0;
+}
+
+void
+pmap_invlpg(vaddr_t addr)
+{
+	asm volatile ("pflush (%0)" : : "a"(addr));
 }
 
 void
@@ -41,10 +52,14 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 	}
 	r = size;
 
+#ifdef TRACE_KWIRED
+	kprintf("Unentering from %p-%p (size %zu)\n", addr, addr * size,
+	    size);
+#endif
 	for (int i = 0; i < r; i += PGSIZE) {
 		vm_page_t *page = vmp_md_unenter_kwired((vaddr_t)addr + i);
 		(void)page;
-		// pmap_invlpg(addr + i);
+		pmap_invlpg(addr + i);
 		// kassert(page->wirecnt == 1);
 		// page->wirecnt = 0;
 		// vmp_page_free_locked(kernel_process.map, page);
@@ -70,7 +85,8 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 	} else {
 		vm_page_t *page;
 
-		r = vmp_page_alloc_locked(&page, &general_account, kPageUseKWired, true);
+		r = vmp_page_alloc_locked(&page, &general_account,
+		    kPageUseKWired, true);
 		if (r != 0) /* xxx release pfn lock! */ {
 			kfatal("failed\n");
 			return 0;
@@ -94,8 +110,8 @@ vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 		ipl = vmp_acquire_pfn_lock();
 
 	if (npages > 1) {
-	//	vmem_xfree(&vmem_kern_nonpaged, (vmem_addr_t)addr,
-	//	    npages * PGSIZE, flags | kVMemPFNDBHeld);
+		vmem_xfree(&vmem_kern_nonpaged, (vmem_addr_t)addr,
+		    npages * PGSIZE, flags | kVMemPFNDBHeld);
 	} else {
 	}
 
@@ -111,8 +127,8 @@ vm_allocspace(size_t npages, size_t align, vaddr_t *out)
 	int r;
 
 	ipl = vmp_acquire_pfn_lock();
-	r = vmem_xalloc(&kernel_procstate.vmem, npages * PGSIZE, align, 0, 0, 0, 0,
-	    kVMemPFNDBHeld, out);
+	r = vmem_xalloc(&kernel_procstate.vmem, npages * PGSIZE, align, 0, 0, 0,
+	    0, kVMemPFNDBHeld, out);
 	vmp_release_pfn_lock(ipl);
 
 	return r;

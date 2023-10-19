@@ -1,8 +1,8 @@
 #ifndef KRX_KDK_M68K_H
 #define KRX_KDK_M68K_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #define BIG_ENDIAN 0
 #define LITTLE_ENDIAN 1
@@ -78,26 +78,28 @@ typedef struct __attribute__((packed)) md_intr_frame {
 	uint16_t vector_offset : 12;
 
 	/* Variable parts follow. */
-	/*! 68060 bus error */
-	struct __attribute__((packed)) format_4 {
-		uint32_t fa;
-		struct fslw_68060 fslw;
-	} format_4;
-	/*! 68040 bus error */
-	struct __attribute__((packed)) format_7 {
-		/*! effective address*/
-		uint32_t ea;
-		/*! special status word */
-		struct ssw_68040 ssw;
-		/*! write-back status */
-		uint16_t wb3s, wb2s, wb1s;
-		/*! fault address */
-		uint32_t fa;
-		/* write-back data/addresses (wb1wd can = pd0) */
-		uint32_t wb3a, wb3d, wb2a, fb2d, wb1a, wb1d;
-		/*! push data lw */
-		uint32_t pd1, pd2, pd3;
-	} format_7;
+	union {
+		/*! 68060 bus error */
+		struct __attribute__((packed)) format_4 {
+			uint32_t fa;
+			struct fslw_68060 fslw;
+		} format_4;
+		/*! 68040 bus error */
+		struct __attribute__((packed)) format_7 {
+			/*! effective address*/
+			uint32_t ea;
+			/*! special status word */
+			struct ssw_68040 ssw;
+			/*! write-back status */
+			uint16_t wb3s, wb2s, wb1s;
+			/*! fault address */
+			uint32_t fa;
+			/* write-back data/addresses (wb1wd can = pd0) */
+			uint32_t wb3a, wb3d, wb2a, fb2d, wb1a, wb1d;
+			/*! push data lw */
+			uint32_t pd1, pd2, pd3;
+		} format_7;
+	};
 } md_intr_frame_t;
 
 typedef struct md_pcb {

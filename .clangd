@@ -1,0 +1,2 @@
+CompileFlags:                     # Tweak the parse settings
+  Add: [--target=m68k-elf, -nostdinc, -I/ws/Projects/Keylite/build/m68k/tools/bootstrap-host-gcc/lib/gcc/m68k-keyronex/13.2.0/include]

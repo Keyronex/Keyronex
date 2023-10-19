@@ -63,7 +63,7 @@ c_exception(md_intr_frame_t *iframe)
 
 	switch (iframe->vector_offset) {
 	case 0x8: /* access error */
-		vmp_fault(iframe->format_7.ea, iframe->format_7.ssw.rw, NULL,
+		vmp_fault(iframe->format_7.ea, !iframe->format_7.ssw.rw, NULL,
 		    NULL);
 		break;
 

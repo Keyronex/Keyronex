@@ -25,6 +25,10 @@
 	"files.insertFinalNewline": true,
 	"files.trimTrailingWhitespace": true,
 	"files.trimFinalNewlines": true,
-	"editor.renderFinalNewline": "dimmed"
+	"editor.renderFinalNewline": "dimmed",
+	"files.associations": {
+		"*.inc": "c",
+		"format": "c"
+	}
 
 }

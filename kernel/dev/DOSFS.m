@@ -14,6 +14,7 @@
 #include "kdk/tree.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
+#include "vm/vmp.h"
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 
@@ -22,6 +23,8 @@
 struct dosfs_state {
 	/*! *not* a holding pointer */
 	DOSFS *fsdev;
+	/*! vfs */
+	vfs_t vfs;
 	/*! buffer cache */
 	bufhead_t bufhead;
 	/*! in-memory bpb */
@@ -368,6 +371,7 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 	node->vnode = vnode_alloc();
 	node->vnode->type = false;
 	node->vnode->fs_data = (uintptr_t)node;
+	node->vnode->vfs = &fs->vfs;
 	if (dir != NULL) {
 		if (fs->type == kFAT32) {
 			uint32_t rootCluster =
@@ -628,9 +632,14 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	io_blkoff_t current_cluster = dnode->first_cluster;
 	for (size_t i = offset / fs->bytes_per_cluster; i != 0; i--) {
 		current_cluster = read_fat(fs, current_cluster);
+		// kprintf("Current_cluster = %lld\n", current_cluster);
 		kassert(current_cluster >= 2 &&
 		    !cluster_value_is_eof(fs, current_cluster));
 	}
+
+#ifdef TRACE_DOSFS
+	kprintf("At starting, current_cluster = %lld\n", current_cluster);
+#endif
 
 	io_off_t bytes_read = 0;
 	while (bytes_read < bytes) {
@@ -663,8 +672,10 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		    !cluster_value_is_eof(fs, next_cluster));
 #endif
 
+#ifdef TRACE_DOSFS
 		kprintf("Read Clusters %lld, Count %lld, MDL offset %lld\n",
 		    cluster_offset, to_read, bytes_read);
+#endif
 		biop = iop_new_read(fs->bufhead.device, mdl, to_read,
 		    cluster_offset);
 		iop_send_sync(biop);
@@ -782,15 +793,31 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
 	kassert(vn != NULL);
 
-	kprintf("\n\n\n\nTesting Read\n");
+	kprintf("Testing unmapped read\n");
 	dos_rw(m_state, vn, 0, 2048 * 4, mdl, false);
 
 	mdl->offset = 0;
 	char *vadd = (char *)P2V(vm_mdl_paddr(mdl, 0));
-	kprintf("VADD: %p\n", vadd);
+
+	vm_section_t sect;
+	sect.kind = kFile;
+	sect.file.vnode = vn;
+	RB_INIT(&sect.file.page_tree);
+
+	state->vfs.device = self;
+
+	extern vm_procstate_t kernel_procstate;
+	vaddr_t mapaddr = 0;
+	vm_ps_map_section_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
+	    kVMAll, kVMAll, true, false, false);
+	kprintf("Testing mapped read (at 0x%zx)\n", mapaddr);
+	char str[150];
+	memcpy(str, (void *)(mapaddr + 0x1000), 149);
+	str[149] = '\0';
+	kprintf("Success. Extract: %s\n", str);
+
 	for (;;)
 		;
-
 	return self;
 }
 
@@ -799,6 +826,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	iop_frame_t *frame = iop_stack_current(iop);
 	kassert(frame->function == kIOPTypeRead);
 	kassert(frame->vnode != NULL);
+	DKDevLog(self, "Dispatching a read request - offset %lld length %zu\n",
+	    frame->rw.offset, frame->rw.bytes);
 	dos_rw(m_state, frame->vnode, frame->rw.offset, frame->rw.bytes,
 	    frame->mdl, false);
 	return kIOPRetCompleted;

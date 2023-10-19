@@ -1,7 +1,8 @@
-#include "kdk/dev.h"
 #include "ddk/DKDevice.h"
-#include "kdk/libkern.h"
+#include "kdk/dev.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
+#include "kdk/vfs.h"
 
 #define kdprintf kprintf
 #define IOP_SIZE(DEPTH) (sizeof(iop_t) + sizeof(iop_frame_t) * DEPTH)
@@ -59,6 +60,23 @@ iop_new_read(DKDevice *dev, vm_mdl_t *mdl, size_t size, io_off_t off)
 {
 	iop_t *iop = iop_new(dev);
 
+	iop->stack[0].dev = dev;
+	iop->stack[0].function = kIOPTypeRead;
+	iop->stack[0].mdl = mdl;
+	iop->stack[0].rw.bytes = size;
+	iop->stack[0].rw.offset = off;
+
+	return iop;
+}
+
+iop_t *
+iop_new_vnode_read(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
+    io_off_t off)
+{
+	DKDevice *dev = vnode->vfs->device;
+	iop_t *iop = iop_new(dev);
+
+	iop->stack[0].vnode = vnode;
 	iop->stack[0].dev = dev;
 	iop->stack[0].function = kIOPTypeRead;
 	iop->stack[0].mdl = mdl;

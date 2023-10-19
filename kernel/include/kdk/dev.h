@@ -11,6 +11,8 @@ typedef int64_t io_blkoff_t;
 /*! Byte offset. */
 typedef int64_t io_off_t;
 
+struct vnode;
+
 #ifdef __OBJC__
 @class DKDevice;
 #else
@@ -204,6 +206,16 @@ iop_t *iop_new_ioctl(DKDevice *dev, iop_ioctl_t ioctl, vm_mdl_t *mdl,
  * @param size Size in bytes to read.
  */
 iop_t *iop_new_read(DKDevice *dev, vm_mdl_t *mdl, size_t size, io_off_t off);
+
+/*!
+ * @brief Allocate & set up a read IOP on a vnode.
+ *
+ * @param dev Device the IOP is to be sent to.
+ * @param mdl MDL for the output buffer.
+ * @param size Size in bytes to read.
+ */
+iop_t *iop_new_vnode_read(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
+    io_off_t off);
 
 /*!
  * @brief Allocate & set up a write IOP.

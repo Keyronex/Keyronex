@@ -50,7 +50,7 @@ struct vm_stat {
 	size_t npwired, nactive, nfree, nmodified, nstandby;
 
 	/*! memory by use; nfree still counts free. */
-	size_t ndeleted, nanonprivate, nanonfork, nfile, nanonshare,
+	size_t ndeleted, nanonprivate, nanonfork, nfileshared, nanonshare,
 	    nprocpgtable, nprotopgtable, nkwired;
 };
 
@@ -61,6 +61,7 @@ enum vm_page_use {
 	kPageUseDeleted,
 	kPageUseKWired,
 	kPageUseAnonPrivate,
+	kPageUseFileShared,
 	/*! root pagetable */
 	kPageUsePML4,
 	/* upper middle pagetable */
@@ -99,7 +100,7 @@ typedef struct vm_page {
 	/* 4th, 5th words */
 	union {
 		TAILQ_ENTRY(vm_page)	  queue_link;
-		struct vmp_pager_request *pager_request;
+		struct vmp_pager_state *pager_request;
 	};
 
 	/* 6th word */
@@ -132,6 +133,10 @@ extern struct vm_stat vmstat;
 
 /*! @brief Allocate an MDL complete with pages. */
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);
+
+/*! @brief Allocate an MDL complete with pages. */
+vm_mdl_t *vm_mdl_alloc_with_pages(size_t npages, enum vm_page_use use,
+    vm_account_t *account, bool pfnlock_held);
 
 /*! @brief Create an MDL from the given address. */
 vm_mdl_t *vm_mdl_create(void *address, size_t size);
