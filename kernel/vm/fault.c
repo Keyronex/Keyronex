@@ -35,6 +35,18 @@ section_get_filepage(vm_section_t *section, size_t offset)
 	return RB_FIND(vmp_file_page_tree, &section->file.page_tree, &key);
 }
 
+static void
+vmp_unwire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
+{
+	vmp_md_pagetable_pte_zeroed(vmps, state->pgtable_pages[0]);
+	for (int i = 1; i < 5; i++) {
+		if (state->pgtable_pages[i] == NULL)
+			continue;
+		vmp_page_release_locked(state->pgtable_pages[i],
+		    &vmps->account);
+	}
+}
+
 /*!
  * \pre PFN lock held.
  */
@@ -71,6 +83,13 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 			}
 
 			/* write found_page into the PTE */
+			vmp_page_retain_locked(found_page->page,
+			    &state->vmps->account);
+			vmp_md_pte_create_hw(&(state->pte + cluster_idx)->hw,
+			    found_page->page->pfn, false);
+			vmp_md_pagetable_ptes_created(state, 1);
+			vmp_wsl_insert(state->vmps,
+			    vaddr + cluster_idx * PGSIZE, false);
 		} else {
 			if (!pages_uncached) {
 				/*
@@ -109,14 +128,15 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 		vm_mdl_t *mdl;
 		iop_t *iop;
 		struct vmp_pager_state *pgstate;
+		size_t file_offset_pgs = starting_offset + vad_pg_offset +
+		    vad->flags.offset;
+		io_off_t file_offset_bytes = file_offset_pgs * PGSIZE;
 
 		mdl = vm_mdl_alloc_with_pages(length, kPageUseFileShared,
 		    &general_account, true);
 		pgstate = kmem_alloc(sizeof(*pgstate));
 		iop = iop_new_vnode_read(vad->section->file.vnode, mdl,
-		    length * PGSIZE,
-		    (starting_offset + vad_pg_offset + vad->flags.offset) *
-			PGSIZE);
+		    length * PGSIZE, file_offset_bytes);
 
 		pgstate->vpfn = (vaddr / PGSIZE) + starting_offset;
 		pgstate->length = length;
@@ -126,11 +146,29 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 		TAILQ_INSERT_HEAD(&iop_list, iop, dev_queue_entry);
 
 		for (int i = 0; i < length; i++) {
+			struct vmp_filepage *filepage;
+			vm_page_t *page = mdl->pages[i];
+
+			filepage = kmem_alloc(sizeof(*filepage));
+			filepage->offset = file_offset_pgs + i;
+			filepage->page = page;
+
+			RB_INSERT(vmp_file_page_tree,
+			    &vad->section->file.page_tree, filepage);
+
 			vmp_md_pte_create_busy(state->pte + starting_offset + i,
-			    mdl->pages[i]->pfn);
-			vmp_md_pagetable_ptes_created(state, length);
-			mdl->pages[i]->pager_request = pgstate;
+			    page->pfn);
+
+			page->pager_request = pgstate;
+			page->owner = vad->section;
+			page->offset = file_offset_pgs;
+			page->dirty = false;
+
+			vmp_wsl_insert(state->vmps,
+			    vaddr + (starting_offset + i) * PGSIZE, false);
 		}
+
+		vmp_md_pagetable_ptes_created(state, length);
 	}
 
 	vmp_release_pfn_lock(kIPLAST);
@@ -148,7 +186,7 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 	    false, false, 0);
 	vmp_acquire_pfn_lock();
 
-	/* iterate through the */
+	/* iterate through the pager states and replace busy with hw PTEs */
 	struct vmp_pager_state *pgstate, *tmppgstate;
 	SLIST_FOREACH_SAFE (pgstate, &pager_state_list, slist_entry,
 	    tmppgstate) {
@@ -202,21 +240,31 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 
 	/*
 	 * Now that the wiring is done, the PFNDB lock remains held.
-	 * Let us characterise the PTE, and look for PTEs of the same character
-	 * and described by the same VAD (or lack thereof for private anonymous
-	 * memory) surrounding it, within the same page of PTEs,
-	 * so that we might be able to cluster.
+	 * Let us characterise the PTE first. If the PTE is not valid, then
+	 * we will need a new slot in the working set list.
+	 *
+	 * We can also look for PTEs of the same character and described by the
+	 * same VAD (or lack thereof for private anonymous memory) surrounding
+	 * it, within the same page of PTEs, so that we might be able to
+	 * cluster the pagefault..
 	 */
-	{
-		size_t maxcluster = (pte_t *)PGROUNDUP((uintptr_t)state->pte) -
+	if (!vmp_md_pte_is_valid(state->pte)) {
+		size_t maxcluster = (pte_t *)PGROUNDUP(
+					(uintptr_t)state->pte + 1) -
 		    state->pte;
 		maxcluster = MIN2(maxcluster, (vad->end - vaddr) / PGSIZE);
 		maxcluster = MIN2(maxcluster, 8);
 
-		/* characterise PTEs.... */
-		/* check expansibility of working set.... */
+		/* todo: characterise following PTEs.... */
+
+		/* todo: check expansibility of working set.... */
+		if (vmps->wsl.ws_current_count >= 8) {
+			maxcluster = 1;
+			wsl_evict_one(vmps);
+		}
 
 		ncluster = maxcluster;
+		kassert(maxcluster != 0);
 	}
 
 	/*
@@ -225,6 +273,8 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 	 */
 	if (vmp_md_pte_is_empty(state->pte)) {
 		if (vad->section == NULL) {
+			/*! demand paged zero */
+
 			vm_page_t *page;
 			int ret;
 
@@ -234,14 +284,8 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 
 			vmp_md_pte_create_hw(state->pte, page->pfn,
 			    vad->flags.protection & kVMWrite);
-			vmp_wsl_insert(state->vmps, state->addr);
+			vmp_wsl_insert(state->vmps, state->addr, false);
 			vmp_md_pagetable_ptes_created(state, 1);
-			/*
-			 * because PTE was zero, increment refcount of pagetable
-			 * page.
-			 * we only need to increment the terminal pagetable's
-			 * reference and used PTE count;
-			 */
 		} else {
 			do_file_read_fault(state, vaddr, vad, ncluster);
 		}
@@ -258,6 +302,8 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 	} else {
 		kfatal("unhandled case\n");
 	}
+
+	vmp_unwire_pte(vmps, state);
 
 	vmp_release_pfn_lock(ipl);
 	ke_mutex_release(&vmps->mutex);

@@ -240,7 +240,8 @@ vm_region_add(paddr_t base, size_t length)
 	}
 
 	vmstat.nfree += bm->npages - (used / PGSIZE);
-	// vmstat.ntotal += bm->npages;
+	vmstat.nreservedfree += bm->npages - (used / PGSIZE);
+	vmstat.ntotal += bm->npages;
 
 	TAILQ_INSERT_TAIL(&pregion_queue, bm, queue_entry);
 }
@@ -312,6 +313,7 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, vm_account_t *account,
 	page->used_ptes = 0;
 
 	vmstat.nfree -= npages;
+	vmstat.nreservedfree -= npages;
 	vmstat.nactive += npages;
 	account->nalloced += npages;
 	account->nwires += npages;
@@ -395,6 +397,7 @@ vmp_page_free_locked(vm_page_t *page)
 			page->used_ptes = 0;
 			deleted_account.nalloced -= npages;
 			vmstat.nfree += npages;
+			vmstat.nreservedfree += npages;
 			vmstat.ndeleted -= npages;
 			return page_free(preg, page);
 		}
@@ -488,6 +491,7 @@ vmp_page_release_locked(vm_page_t *page, vm_account_t *account)
 			return;
 
 		case kPageUseAnonPrivate:
+		case kPageUseFileShared:
 			/* continue with logic below */
 			break;
 
@@ -539,8 +543,10 @@ vmp_pages_dump(void)
 {
 	struct vmp_pregion *region;
 
-	kprintf("Active: %zu, modified: %zu, standby: %zu, free: %zu\n",
-	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
+	kprintf(
+	    "Active: %zu, modified: %zu, standby: %zu, free: %zu, free-res: %zd\n",
+	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree,
+	    vmstat.nreservedfree);
 
 	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "del", "priv",
 	    "fork", "file");
@@ -559,11 +565,17 @@ vmp_pages_dump(void)
 			if (page->use == kPageUseFree ||
 			    page->use == kPageUsePFNDB || page->use == kPageUseKWired)
 				continue;
-			kprintf("Page %d: Use %s, RC %d, Used-PTEs %d\n", i,
-			    vm_page_use_str(page->use), page->refcnt,
-			    page->used_ptes);
+			kprintf(
+			    "Page %d: Use %s, RC %d, Used-PTEs %d, Valid-PTES %d\n",
+			    i, vm_page_use_str(page->use), page->refcnt,
+			    page->used_ptes, page->valid_ptes);
 		}
 	}
+
+	extern vm_procstate_t kernel_procstate;
+	kprintf("Kernel working set: %zu entries (%zu locked)\n",
+	    kernel_procstate.wsl.ws_current_count,
+	    kernel_procstate.wsl.locked_count);
 }
 
 int

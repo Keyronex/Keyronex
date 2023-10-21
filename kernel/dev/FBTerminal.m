@@ -91,7 +91,7 @@ stat_putc(int ch, void *ctx)
 	pctx->x += pctx->gterm->font_width;
 }
 
-static void
+void
 fbterminal_printstats()
 {
 	struct fbterm_context *gterm = (void *)system_terminal->term;
@@ -104,6 +104,7 @@ fbterminal_printstats()
 	STPRINT(0, 0, "ACT: %zu MOD: %zu STBY: %zu FREE: %zu", vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
 	STPRINT(0, 16, "Console: %s", obj_name(system_terminal));
 }
+
 
 @implementation FBTerminal
 

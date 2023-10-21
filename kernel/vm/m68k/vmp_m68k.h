@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "mmu.h"
 
@@ -51,10 +52,22 @@ vmp_md_pte_create_busy(pte_t *pte, pfn_t pfn)
 	pte->sw.kind = kTransition;
 }
 
+static inline void
+vmp_md_pte_create_zero(pte_t *pte)
+{
+	memset(pte, 0x0, sizeof(pte_t));
+}
+
 static inline bool
 vmp_md_pte_is_empty(pte_t *pte)
 {
 	return *(uint32_t*)pte == 0;
+}
+
+static inline bool
+vmp_md_pte_hw_pfn(pte_hw_t *pte)
+{
+	return pte->pfn;
 }
 
 static inline bool
@@ -66,7 +79,7 @@ vmp_md_pte_is_valid(pte_t *pte)
 static inline bool
 vmp_md_hw_pte_is_writeable(pte_hw_t *pte)
 {
-	return pte->writeprotect == 1;
+	return pte->writeprotect == 0;
 }
 
 #endif /* KRX_M68K_VMP_M68K_H */

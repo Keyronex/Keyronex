@@ -49,6 +49,12 @@ struct vm_stat {
 	/*! memory by state */
 	size_t npwired, nactive, nfree, nmodified, nstandby;
 
+	/*! total pages */
+	size_t ntotal;
+
+	/*! free-reservation, may be below 0 */
+	intptr_t nreservedfree;
+
 	/*! memory by use; nfree still counts free. */
 	size_t ndeleted, nanonprivate, nanonfork, nfileshared, nanonshare,
 	    nprocpgtable, nprotopgtable, nkwired;
@@ -89,7 +95,12 @@ typedef struct vm_page {
 
 	/* second word */
 	union __attribute__((packed)) {
-		uint16_t used_ptes : 16;
+		/* pagetable pages */
+		struct __attribute__((packed)) {
+			uint16_t used_ptes;
+			uint16_t valid_ptes;
+		};
+		/* file/aonymous pages: offset into section */
 		uint64_t offset : 48;
 	};
 	uint16_t refcnt;
@@ -98,7 +109,7 @@ typedef struct vm_page {
 	paddr_t referent_pte;
 
 	/* 4th, 5th words */
-	union {
+	union __attribute__((packed)) {
 		TAILQ_ENTRY(vm_page)	  queue_link;
 		struct vmp_pager_state *pager_request;
 	};
@@ -217,6 +228,20 @@ int vm_ps_map_section_view(vm_procstate_t *vmps, void *section,
 
 /*! Dump the VAD tree of a process.*/
 int vm_ps_dump_vadtree(vm_procstate_t *vmps);
+
+/*! Test whether there are plenty of free pages. */
+static inline bool
+vm_plentiful_pages(void)
+{
+	return vmstat.nreservedfree >= 256;
+}
+
+/*! Test whether there are enough free pages to be worth allocate. */
+static inline bool
+vm_adequate_pages(void)
+{
+	return vmstat.nreservedfree >= 64;
+}
 
 static inline uint32_t
 log2(uint32_t val)

@@ -807,14 +807,28 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	state->vfs.device = self;
 
 	extern vm_procstate_t kernel_procstate;
-	vaddr_t mapaddr = 0;
+	vaddr_t mapaddr = 0xd0000000;
 	vm_ps_map_section_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
-	    kVMAll, kVMAll, true, false, false);
+	    kVMAll, kVMAll, true, false, true);
 	kprintf("Testing mapped read (at 0x%zx)\n", mapaddr);
-	char str[150];
-	memcpy(str, (void *)(mapaddr + 0x1000), 149);
-	str[149] = '\0';
-	kprintf("Success. Extract: %s\n", str);
+
+	for (int i = 0; i < 16; i++) {
+		char str[80];
+		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
+		str[79] = '\0';
+		kprintf("Success. Extract: %s\n", str);
+	}
+
+	kprintf("\n\n!!! Testing again\n");
+		for (int i = 0; i < 4; i++) {
+		char str[80];
+		kprintf("Testing %d\n", i);
+		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
+		str[79] = '\0';
+		kprintf("Success. Extract: %s\n", str);
+	}
+
+	vmp_pages_dump();
 
 	for (;;)
 		;

@@ -25,11 +25,10 @@ vmp_wsl_find(vm_procstate_t *ps, vaddr_t vaddr)
 }
 
 static void
-vm_page_evict(vm_procstate_t *ps, pte_t *pte)
+vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 {
-#if 0
-	bool dirty = vmp_md_pte_is_writeable(pte);
-	vm_page_t *page = vmp_md_pte_page(pte);
+	bool dirty = vmp_md_hw_pte_is_writeable(&pte->hw);
+	vm_page_t *page = vm_paddr_to_page(PFN_TO_PADDR(pte->hw.pfn));
 
 	page->dirty |= dirty;
 
@@ -39,24 +38,32 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte)
 		 * we need to replace this with a transition PTE then.
 		 * used_ptes count is as such unchanged.
 		 */
+		kfatal("Implement me\n");
+		pte_page->valid_ptes--;
 		page->referent_pte = V2P((vaddr_t)pte);
-		vmp_md_pte_make_trans(pte, page->pfn);
+		//vmp_md_pte_make_trans(pte, page->pfn);
 		vmp_page_release_locked(page, &ps->account);
 		break;
 	}
 
+	case kPageUseFileShared:
+		vmp_md_pte_create_zero(pte);
+		vmp_md_pagetable_pte_zeroed(ps, pte_page);
+		/* issue TLB shootdown.... */
+		vmp_page_release_locked(page, &ps->account);
+		break;
+
 	default:
 		kfatal("Unhandled page use in working set eviction\n");
 	}
-#endif
-	kfatal("implement\n");
 }
 
-static void
+void
 wsl_evict_one(vm_procstate_t *ps)
 {
-#if 0
+#if 1
 	struct vmp_wsle *wsle = TAILQ_FIRST(&ps->wsl.queue);
+	vm_page_t *pte_page;
 	pte_t *pte;
 	int r;
 
@@ -65,30 +72,31 @@ wsl_evict_one(vm_procstate_t *ps)
 	RB_REMOVE(vmp_wsle_tree, &ps->wsl.tree , wsle);
 
 	kprintf("Evicting 0x%zx\n", wsle->vaddr);
-	r = vmp_mp_fetch_pte(ps, wsle->vaddr, &pte, NULL);
+	r = pmap_get_pte_ptr(ps, wsle->vaddr, &pte, &pte_page);
 	kassert(r == 0);
 	kassert(vmp_md_pte_is_valid(pte));
 
 	kmem_free(wsle, sizeof(*wsle));
-	vm_page_evict(ps, pte);
+	vm_page_evict(ps, pte, pte_page);
+	ps->wsl.ws_current_count--;
 #endif
 }
 
 void
-vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr)
+vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked)
 {
 	struct vmp_wsle *wsle;
 
 	kassert(vmp_wsl_find(ps, vaddr) == NULL);
 
-	if ((ps->wsl.ws_current_count + 1) > 2)
-		wsl_evict_one(ps);
-	else
-		ps->wsl.ws_current_count++;
+	if (locked)
+		ps->wsl.locked_count++;
+	ps->wsl.ws_current_count++;
 
 	wsle = kmem_alloc(sizeof(*wsle));
 	wsle->vaddr = vaddr;
-	TAILQ_INSERT_TAIL(&ps->wsl.queue, wsle, queue_entry);
+	if (!locked)
+		TAILQ_INSERT_TAIL(&ps->wsl.queue, wsle, queue_entry);
 	RB_INSERT(vmp_wsle_tree, &ps->wsl.tree, wsle);
 }
 

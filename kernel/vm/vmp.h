@@ -69,6 +69,8 @@ struct vmp_wsl {
 	RB_HEAD(vmp_wsle_tree, vmp_wsle) tree;
 	/*! Count of pages in working set list. */
 	size_t ws_current_count;
+	/*! Count of pages locked into working set list. */
+	size_t locked_count;
 };
 
 /*!
@@ -160,9 +162,13 @@ void vmp_md_pte_wire_release(vm_procstate_t *vmps,
 /*! @brief Called when a PTE goes from used to zeroed. */
 void vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *pgtable_page);
 /*! @brief Called when PTE in a pagetable page go from unused to used. */
-void vmp_md_pagetable_pte_created(struct vmp_pte_wire_state *state, size_t count);
+void vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state,
+    size_t count);
 /*! @brief Convert a virtual address to a physical. Must be mapped! */
 paddr_t vmp_md_translate(vaddr_t addr);
+/*! @brief Quickly get a PTE pointer. */
+int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
+    vm_page_t **out_page);
 
 void vmp_pages_dump(void);
 
@@ -181,8 +187,10 @@ int vmp_fault(vaddr_t vaddr, bool write, vm_account_t *out_account,
 
 vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
-void vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr);
+void vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked);
 void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr);
+/*! @brief Evict one entry from a working set list @pre PFN HELD*/
+void wsl_evict_one(vm_procstate_t *ps);
 
 extern kspinlock_t vmp_pfn_lock;
 

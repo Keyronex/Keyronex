@@ -85,6 +85,7 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 
 		pml2_page->refcnt = 0;
 		pml2_page->used_ptes = 0;
+		pml2_page->valid_ptes = 0;
 		pml2_page->referent_pte = (paddr_t)&pml3_phys[l3i_base];
 
 		pml2s_phys = vm_page_paddr(pml2_page);
@@ -110,16 +111,18 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 		if (r != 0)
 			return r;
 
-#if VM_DEBUG_PAGETABLES
+#if 1 // VM_DEBUG_PAGETABLES
 		pac_printf("Allocated page (Paddr 0x%zx) for PML1s\n",
 		    vm_page_paddr(pml1_page));
 #endif
 
 		pml2_page->refcnt += 16;
 		pml2_page->used_ptes += 16;
+		pml2_page->valid_ptes += 16;
 
 		pml1_page->refcnt = 0;
 		pml1_page->used_ptes = 0;
+		pml1_page->valid_ptes = 0;
 		pml1_page->referent_pte = (paddr_t)&pml2_phys[l2i_base];
 
 		pml1s_phys = vm_page_paddr(pml1_page);
@@ -196,6 +199,7 @@ vmp_md_enter_kwired(vaddr_t virt, paddr_t phys)
 
 	ppagetablepage->refcnt += 1;
 	ppagetablepage->used_ptes += 1;
+	ppagetablepage->valid_ptes += 1;
 
 	ppte->pfn = (uintptr_t)phys >> 12;
 	ppte->cachemode = 1; /* cacheable, copyback */
@@ -257,6 +261,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 		if (r != 0)
 			return r;
 
+		pml2_page->valid_ptes = 0;
 		pml2_page->used_ptes = 0;
 		pml2_page->referent_pte = (paddr_t)&pml3_phys[l3i_base];
 
@@ -294,8 +299,11 @@ fetch_pml1:
 
 		pml2_page->refcnt += 16;
 		pml2_page->used_ptes += 16;
+		pml2_page->valid_ptes += 16;
 
 		pml1_page->referent_pte = (paddr_t)&pml2_phys[l2i_base];
+		pml1_page->valid_ptes = 0;
+		pml1_page->used_ptes = 0;
 
 		pml1s_phys = vm_page_paddr(pml1_page);
 		for (int i = 0; i < 16; i++) {
@@ -316,6 +324,8 @@ fetch_pml1:
 
 fetch_pte:
 	pml1_page = state->pgtable_pages[kPTEWireStatePML1];
+	pml1_page->used_ptes++;
+	pml1_page->valid_ptes++;
 	pte_hw_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
 	state->pte = (pte_t *)P2V(&pml1[addr.l1i]);
 
@@ -325,6 +335,7 @@ fetch_pte:
 void
 vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *page)
 {
+	page->valid_ptes--;
 	page->used_ptes--;
 	if (page->used_ptes == 0)
 		free_pagetable(vmps, page);
@@ -335,8 +346,9 @@ vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *page)
 void
 vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state, size_t count)
 {
-	state->pgtable_pages[1]->used_ptes+= count;
-	state->pgtable_pages[1]->refcnt+= count;
+	state->pgtable_pages[kPTEWireStatePML1]->valid_ptes += count;
+	state->pgtable_pages[kPTEWireStatePML1]->used_ptes += count;
+	state->pgtable_pages[kPTEWireStatePML1]->refcnt += count;
 }
 
 paddr_t

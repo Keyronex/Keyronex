@@ -340,6 +340,8 @@ processVirtQueue(struct virtio_queue *queue, id delegate)
 	       withResponse:m_FlushResponse
 		     ofSize:sizeof(*m_FlushResponse)
 		    request:m_flushReq];
+	void fbterminal_printstats(void);
+	fbterminal_printstats();
 }
 
 @end
