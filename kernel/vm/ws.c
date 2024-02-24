@@ -49,7 +49,7 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 	case kPageUseFileShared:
 		vmp_md_pte_create_zero(pte);
 		vmp_md_pagetable_pte_zeroed(ps, pte_page);
-		/* issue TLB shootdown.... */
+		//ke_tlb_flush_global();
 		vmp_page_release_locked(page, &ps->account);
 		break;
 

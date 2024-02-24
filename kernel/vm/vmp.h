@@ -38,8 +38,7 @@ typedef enum vm_fault_return {
 } vm_fault_return_t;
 
 /*!
- * Virtual Address Descriptor - a mapping of a section object. Note that
- * copy-on-write is done at the section object level, not here.
+ * Virtual Address Descriptor - a mapping of a section object.
  */
 typedef struct vm_vad {
 	struct vm_vad_flags {

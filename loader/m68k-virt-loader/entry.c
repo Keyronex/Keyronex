@@ -86,13 +86,13 @@ parse_bootinfo(void)
 		case 0x5: /* BI_MEMCHUNK */
 			assert(memory == 0);
 			memory = item->data[1];
-			printf("%lu.%luMiB main memory.\n",
+			printf("%zu.%zuMiB main memory.\n",
 			    memory / 1024 / 1024, memory / 1024 % 1024);
 			memory = PGROUNDDOWN(memory);
 			break;
 
 		case 0x6: /* BI_RAMDISK */
-			printf("kernel at 0x%lx (size 0x%lx)\n", item->data[0],
+			printf("kernel at 0x%x (size 0x%x)\n", item->data[0],
 			    item->data[1]);
 			kernel_base = (void *)item->data[0];
 			kernel_size = item->data[1];
