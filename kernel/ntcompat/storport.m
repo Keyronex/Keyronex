@@ -123,7 +123,6 @@ StorPortGetUncachedExtension(
 	r = vm_page_alloc(
 		&page,
 		vm_npages_to_order(npages),
-		&general_account,
 		kPageUseKWired,
 		true
 	);

@@ -25,8 +25,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 #endif
 	for (int i = 0; i < size - 1; i += PGSIZE) {
 		vm_page_t *page;
-		vmp_page_alloc_locked(&page, &general_account, kPageUseKWired,
-		    true);
+		vmp_page_alloc_locked(&page, kPageUseKWired, true);
 		vmp_md_enter_kwired(*out + i, vm_page_paddr(page));
 	}
 
@@ -84,8 +83,7 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 	} else {
 		vm_page_t *page;
 
-		r = vmp_page_alloc_locked(&page, &general_account,
-		    kPageUseKWired, true);
+		r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 		if (r != 0) /* xxx release pfn lock! */ {
 			kfatal("failed\n");
 			return 0;

@@ -42,7 +42,7 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 		pte_page->valid_ptes--;
 		page->referent_pte = V2P((vaddr_t)pte);
 		//vmp_md_pte_make_trans(pte, page->pfn);
-		vmp_page_release_locked(page, &ps->account);
+		vmp_page_release_locked(page);
 		break;
 	}
 
@@ -50,7 +50,7 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 		vmp_md_pte_create_zero(pte);
 		vmp_md_pagetable_pte_zeroed(ps, pte_page);
 		//ke_tlb_flush_global();
-		vmp_page_release_locked(page, &ps->account);
+		vmp_page_release_locked(page);
 		break;
 
 	default:

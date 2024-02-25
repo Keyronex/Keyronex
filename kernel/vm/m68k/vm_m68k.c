@@ -70,8 +70,7 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 
 	addr.addr = (uint32_t)vaddr;
 	if (pml3_virt[addr.l3i].addr == 0) {
-		int r = vmp_page_alloc_locked(&pml2_page, &general_account,
-		    kPageUsePML2, false);
+		int r = vmp_page_alloc_locked(&pml2_page, kPageUsePML2, false);
 		int l3i_base = ROUNDDOWN(addr.l3i, 8);
 		uintptr_t pml2s_phys;
 
@@ -84,7 +83,7 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 #endif
 
 		pml2_page->refcnt = 0;
-		pml2_page->used_ptes = 0;
+		pml2_page->nonzero_ptes = 0;
 		pml2_page->valid_ptes = 0;
 		pml2_page->referent_pte = (paddr_t)&pml3_phys[l3i_base];
 
@@ -103,8 +102,7 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 	pml2_page = vm_paddr_to_page((paddr_t)pml2_phys);
 
 	if (pml2_virt[addr.l2i].addr == 0) {
-		int r = vmp_page_alloc_locked(&pml1_page, &general_account,
-		    kPageUsePML1, false);
+		int r = vmp_page_alloc_locked(&pml1_page, kPageUsePML1, false);
 		int l2i_base = ROUNDDOWN(addr.l2i, 16);
 		uintptr_t pml1s_phys;
 
@@ -117,11 +115,11 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 #endif
 
 		pml2_page->refcnt += 16;
-		pml2_page->used_ptes += 16;
+		pml2_page->nonzero_ptes += 16;
 		pml2_page->valid_ptes += 16;
 
 		pml1_page->refcnt = 0;
-		pml1_page->used_ptes = 0;
+		pml1_page->nonzero_ptes = 0;
 		pml1_page->valid_ptes = 0;
 		pml1_page->referent_pte = (paddr_t)&pml2_phys[l2i_base];
 
@@ -177,7 +175,9 @@ free_pagetable(vm_procstate_t *vmps, vm_page_t *page)
 		kfatal("free_pagetable: Unexpected level %d\n", page->use);
 	}
 
+#if 0
 	vmp_page_delete_locked(page, &vmps->account, true);
+#endif
 }
 
 int
@@ -198,7 +198,7 @@ vmp_md_enter_kwired(vaddr_t virt, paddr_t phys)
 	}
 
 	ppagetablepage->refcnt += 1;
-	ppagetablepage->used_ptes += 1;
+	ppagetablepage->nonzero_ptes += 1;
 	ppagetablepage->valid_ptes += 1;
 
 	ppte->pfn = (uintptr_t)phys >> 12;
@@ -253,8 +253,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 		*pml3_virt = (void *)P2V(pml3_phys);
 
 	if (pml3_virt[addr.l3i].addr == 0) {
-		int r = vmp_page_alloc_locked(&pml2_page, &state->vmps->account,
-		    kPageUsePML2, false);
+		int r = vmp_page_alloc_locked(&pml2_page, kPageUsePML2, false);
 		int l3i_base = ROUNDDOWN(addr.l3i, 8);
 		uintptr_t pml2s_phys;
 
@@ -262,7 +261,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 			return r;
 
 		pml2_page->valid_ptes = 0;
-		pml2_page->used_ptes = 0;
+		pml2_page->nonzero_ptes = 0;
 		pml2_page->referent_pte = (paddr_t)&pml3_phys[l3i_base];
 
 		pml2s_phys = vm_page_paddr(pml2_page);
@@ -289,8 +288,7 @@ fetch_pml1:
 		*pml2_virt = (void *)P2V(pml2_phys);
 
 	if (pml2_virt[addr.l2i].addr == 0) {
-		int r = vmp_page_alloc_locked(&pml1_page, &state->vmps->account,
-		    kPageUsePML1, false);
+		int r = vmp_page_alloc_locked(&pml1_page, kPageUsePML1, false);
 		int l2i_base = ROUNDDOWN(addr.l2i, 16);
 		uintptr_t pml1s_phys;
 
@@ -298,12 +296,12 @@ fetch_pml1:
 			return r;
 
 		pml2_page->refcnt += 16;
-		pml2_page->used_ptes += 16;
+		pml2_page->nonzero_ptes += 16;
 		pml2_page->valid_ptes += 16;
 
 		pml1_page->referent_pte = (paddr_t)&pml2_phys[l2i_base];
 		pml1_page->valid_ptes = 0;
-		pml1_page->used_ptes = 0;
+		pml1_page->nonzero_ptes = 0;
 
 		pml1s_phys = vm_page_paddr(pml1_page);
 		for (int i = 0; i < 16; i++) {
@@ -324,7 +322,7 @@ fetch_pml1:
 
 fetch_pte:
 	pml1_page = state->pgtable_pages[kPTEWireStatePML1];
-	pml1_page->used_ptes++;
+	pml1_page->nonzero_ptes++;
 	pml1_page->valid_ptes++;
 	pte_hw_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
 	state->pte = (pte_t *)P2V(&pml1[addr.l1i]);
@@ -336,18 +334,18 @@ void
 vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *page)
 {
 	page->valid_ptes--;
-	page->used_ptes--;
-	if (page->used_ptes == 0)
+	page->nonzero_ptes--;
+	if (page->nonzero_ptes == 0)
 		free_pagetable(vmps, page);
 	else
-		vmp_page_release_locked(page, &vmps->account);
+		vmp_page_release_locked(page);
 }
 
 void
 vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state, size_t count)
 {
 	state->pgtable_pages[kPTEWireStatePML1]->valid_ptes += count;
-	state->pgtable_pages[kPTEWireStatePML1]->used_ptes += count;
+	state->pgtable_pages[kPTEWireStatePML1]->nonzero_ptes += count;
 	state->pgtable_pages[kPTEWireStatePML1]->refcnt += count;
 }
 

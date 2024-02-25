@@ -51,7 +51,7 @@ typedef union pte {
 } pte_t;
 
 static inline void
-vmp_md_pte_create_hw(pte_hw_t *pte, pfn_t pfn, bool writeable)
+vmp_md_pte_create_hw(pte_hw_t *pte, pfn_t pfn, bool writeable, bool cacheable)
 {
 	int flags = kMMUPresent;
 	if (writeable)

@@ -41,8 +41,7 @@ vmp_unwire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 	for (int i = 1; i < 5; i++) {
 		if (state->pgtable_pages[i] == NULL)
 			continue;
-		vmp_page_release_locked(state->pgtable_pages[i],
-		    &vmps->account);
+		vmp_page_release_locked(state->pgtable_pages[i]);
 	}
 }
 
@@ -82,10 +81,9 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 			}
 
 			/* write found_page into the PTE */
-			vmp_page_retain_locked(found_page->page,
-			    &state->vmps->account);
+			vmp_page_retain_locked(found_page->page);
 			vmp_md_pte_create_hw(&(state->pte + cluster_idx)->hw,
-			    found_page->page->pfn, false);
+			    found_page->page->pfn, false, true);
 			vmp_md_pagetable_ptes_created(state, 1);
 			vmp_wsl_insert(state->vmps,
 			    vaddr + cluster_idx * PGSIZE, false);
@@ -131,8 +129,7 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 		    vad->flags.offset;
 		io_off_t file_offset_bytes = file_offset_pgs * PGSIZE;
 
-		mdl = vm_mdl_alloc_with_pages(length, kPageUseFileShared,
-		    &general_account, true);
+		mdl = vm_mdl_alloc_with_pages(length, kPageUseFileShared, true);
 		pgstate = kmem_alloc(sizeof(*pgstate));
 		iop = iop_new_vnode_read(vad->section->file.vnode, mdl,
 		    length * PGSIZE, file_offset_bytes);
@@ -198,7 +195,8 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 			page = vm_paddr_to_page(PFN_TO_PADDR(pte->sw.data));
 			kassert(page != NULL);
 			kassert(page->pager_request == pgstate);
-			vmp_md_pte_create_hw(&pte->hw, pte->sw.data, false);
+			vmp_md_pte_create_hw(&pte->hw, pte->sw.data, false,
+			    true);
 		}
 	}
 }
@@ -277,12 +275,12 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 			vm_page_t *page;
 			int ret;
 
-			ret = vmp_page_alloc_locked(&page, &vmps->account,
-			    kPageUseAnonPrivate, false);
+			ret = vmp_page_alloc_locked(&page, kPageUseAnonPrivate,
+			    false);
 			kassert(ret == 0);
 
 			vmp_md_pte_create_hw(state->pte, page->pfn,
-			    vad->flags.protection & kVMWrite);
+			    vad->flags.protection & kVMWrite, true);
 			vmp_wsl_insert(state->vmps, state->addr, false);
 			vmp_md_pagetable_ptes_created(state, 1);
 		} else {
@@ -314,7 +312,7 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 }
 
 int
-vmp_fault(vaddr_t vaddr, bool write, vm_account_t *out_account, vm_page_t **out)
+vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out)
 {
 	struct vmp_pte_wire_state state;
 

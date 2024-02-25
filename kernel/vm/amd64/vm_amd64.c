@@ -73,8 +73,7 @@ pmap_descend(void *map, uint64_t *table, size_t index, bool alloc,
 		addr = pte_get_addr(*entry);
 	} else if (alloc) {
 		vm_page_t *page;
-		vmp_page_alloc_locked(&page, &kernel_procstate.account,
-		    kPageUsePML3, false);
+		vmp_page_alloc_locked(&page, kPageUsePML3, false);
 
 		addr = (uint64_t *)PFN_TO_PADDR(page->pfn);
 		pte_set(entry, (paddr_t)addr, mmuprot);

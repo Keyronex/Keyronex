@@ -52,8 +52,7 @@ DEFINE_PAGEQUEUE(vm_pagequeue_standby);
 static TAILQ_HEAD(, vmp_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
     pregion_queue);
 struct vm_stat vmstat;
-kspinlock_t    vmp_pfn_lock = KSPINLOCK_INITIALISER;
-vm_account_t   deleted_account, general_account;
+kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
 
 static inline void
 update_page_use_stats(enum vm_page_use use, int value)
@@ -82,8 +81,7 @@ update_page_use_stats(enum vm_page_use use, int value)
 #define MDL_SIZE(NPAGES) (sizeof(vm_mdl_t) + sizeof(vm_mdl_entry_t) * NPAGES)
 
 vm_mdl_t *
-vm_mdl_alloc_with_pages(size_t npages, enum vm_page_use use,
-    vm_account_t *account, bool pfnlock_held)
+vm_mdl_alloc_with_pages(size_t npages, enum vm_page_use use, bool pfnlock_held)
 {
 	vm_mdl_t *mdl = kmem_alloc(MDL_SIZE(npages));
 	mdl->nentries = npages;
@@ -92,9 +90,8 @@ vm_mdl_alloc_with_pages(size_t npages, enum vm_page_use use,
 		vm_page_t *page;
 		int r;
 
-		r = (pfnlock_held ?
-			vmp_pages_alloc_locked :
-			vm_page_alloc)(&page, 0, account, use, false);
+		r = (pfnlock_held ? vmp_pages_alloc_locked :
+				    vm_page_alloc)(&page, 0, use, false);
 		kassert(r == 0);
 		mdl->pages[i] = page;
 	}
@@ -104,8 +101,7 @@ vm_mdl_alloc_with_pages(size_t npages, enum vm_page_use use,
 vm_mdl_t *
 vm_mdl_buffer_alloc(size_t npages)
 {
-	return vm_mdl_alloc_with_pages(npages, kPageUseKWired, &general_account,
-	    false);
+	return vm_mdl_alloc_with_pages(npages, kPageUseKWired, false);
 }
 
 vm_page_t *
@@ -117,16 +113,14 @@ mdl_translate(vaddr_t vaddr, bool paged)
 		kassert(!paged);
 		paddr = (paddr_t)V2P(vaddr);
 		/* vm_page_retain panics if page is NULL */
-		page = vm_page_retain(vm_paddr_to_page(PGROUNDDOWN(paddr)),
-		    &general_account);
+		page = vm_page_retain(vm_paddr_to_page(PGROUNDDOWN(paddr)));
 		return page;
 	} else {
 		ipl_t ipl = vmp_acquire_pfn_lock();
 		paddr_t paddr;
 		paddr = vmp_md_translate(vaddr);
-		page = vmp_page_retain_locked(vm_paddr_to_page(
-						  PGROUNDDOWN(paddr)),
-		    &general_account);
+		page = vmp_page_retain_locked(
+		    vm_paddr_to_page(PGROUNDDOWN(paddr)));
 		vmp_release_pfn_lock(ipl);
 		return page;
 	}
@@ -225,7 +219,7 @@ vm_region_add(paddr_t base, size_t length)
 			    __builtin_ctz((limit - paddr) / PGSIZE));
 		page->order = order;
 		page->refcnt = 0;
-		page->used_ptes = 0;
+		page->nonzero_ptes = 0;
 		page->referent_pte = 0;
 		page->use = kPageUseFree;
 		page->on_freelist = false;
@@ -263,8 +257,8 @@ vm_paddr_to_page(paddr_t paddr)
 }
 
 int
-vmp_pages_alloc_locked(vm_page_t **out, size_t order, vm_account_t *account,
-    enum vm_page_use use, bool must)
+vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
+    bool must)
 {
 	size_t npages = vm_order_to_npages(order);
 	vm_page_t *page;
@@ -310,13 +304,11 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, vm_account_t *account,
 	page->referent_pte = 0;
 	page->owner = 0;
 	page->swap_descriptor = 0;
-	page->used_ptes = 0;
+	page->nonzero_ptes = 0;
 
 	vmstat.nfree -= npages;
 	vmstat.nreservedfree -= npages;
 	vmstat.nactive += npages;
-	account->nalloced += npages;
-	account->nwires += npages;
 	update_page_use_stats(use, npages);
 
 	memset((void *)vm_page_direct_map_addr(page), 0x0, PGSIZE * npages);
@@ -326,10 +318,9 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, vm_account_t *account,
 }
 
 int
-vmp_page_alloc_locked(vm_page_t **out, vm_account_t *account,
-    enum vm_page_use use, bool must)
+vmp_page_alloc_locked(vm_page_t **out, enum vm_page_use use, bool must)
 {
-	return vmp_pages_alloc_locked(out, 0, account, use, must);
+	return vmp_pages_alloc_locked(out, 0, use, must);
 }
 
 static void
@@ -394,8 +385,7 @@ vmp_page_free_locked(vm_page_t *page)
 			page->dirty = false;
 			page->referent_pte = 0;
 			page->use = kPageUseFree;
-			page->used_ptes = 0;
-			deleted_account.nalloced -= npages;
+			page->nonzero_ptes = 0;
 			vmstat.nfree += npages;
 			vmstat.nreservedfree += npages;
 			vmstat.ndeleted -= npages;
@@ -405,7 +395,7 @@ vmp_page_free_locked(vm_page_t *page)
 }
 
 void
-vmp_page_delete_locked(vm_page_t *page, vm_account_t *account, bool release)
+vmp_page_delete_locked(vm_page_t *page)
 {
 	size_t npages = vm_order_to_npages(page->order);
 
@@ -417,33 +407,23 @@ vmp_page_delete_locked(vm_page_t *page, vm_account_t *account, bool release)
 	vmstat.ndeleted += npages;
 	page->use = kPageUseDeleted;
 
-	account->nalloced -= npages;
-	deleted_account.nalloced += npages;
-
-	if (release) {
-		kassert(page->refcnt > 0);
-		vmp_page_release_locked(page, account);
-	} else {
-		if (page->refcnt == 0 && page->dirty) {
-			TAILQ_REMOVE(&vm_pagequeue_modified, page, queue_link);
-			vmstat.nmodified -= npages;
-			vmp_page_free_locked(page);
-		} else if (page->refcnt == 0) {
-			TAILQ_REMOVE(&vm_pagequeue_standby, page, queue_link);
-			vmstat.nstandby -= npages;
-			vmp_page_free_locked(page);
-		}
+	if (page->refcnt == 0 && page->dirty) {
+		TAILQ_REMOVE(&vm_pagequeue_modified, page, queue_link);
+		vmstat.nmodified -= npages;
+		vmp_page_free_locked(page);
+	} else if (page->refcnt == 0) {
+		TAILQ_REMOVE(&vm_pagequeue_standby, page, queue_link);
+		vmstat.nstandby -= npages;
+		vmp_page_free_locked(page);
 	}
 }
 
 vm_page_t *
-vmp_page_retain_locked(vm_page_t *page, vm_account_t *account)
+vmp_page_retain_locked(vm_page_t *page)
 {
 	size_t npages = vm_order_to_npages(page->order);
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
-
-	account->nwires += npages;
 
 	if (page->refcnt++ == 0) {
 		/* going from inactive to active state */
@@ -463,23 +443,21 @@ vmp_page_retain_locked(vm_page_t *page, vm_account_t *account)
 }
 
 vm_page_t *
-vm_page_retain(vm_page_t *page, vm_account_t *account)
+vm_page_retain(vm_page_t *page)
 {
 	ipl_t ipl = vmp_acquire_pfn_lock();
-	vm_page_t *ret = vmp_page_retain_locked(page, account);
+	vm_page_t *ret = vmp_page_retain_locked(page);
 	vmp_release_pfn_lock(ipl);
 	return ret;
 }
 
 void
-vmp_page_release_locked(vm_page_t *page, vm_account_t *account)
+vmp_page_release_locked(vm_page_t *page)
 {
 	size_t npages = vm_order_to_npages(page->order);
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
 	kassert(page->refcnt > 0);
-
-	account->nwires -= npages;
 
 	if (page->refcnt-- == 1) {
 		/* going from active to inactive state */
@@ -553,7 +531,7 @@ vmp_pages_dump(void)
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu\n", vmstat.nfree, vmstat.ndeleted,
 	    vmstat.nanonprivate, vmstat.nanonfork, vmstat.nfileshared);
 	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s\033[m\n", "share", "pgtbl",
-	    "proto", "kwired", "pwired");
+	    "proto", "kwired", "pagedb");
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu\n", vmstat.nanonshare,
 	    vmstat.nprocpgtable, vmstat.nprotopgtable, vmstat.nkwired,
 	    vmstat.npwired);
@@ -568,7 +546,7 @@ vmp_pages_dump(void)
 			kprintf(
 			    "Page %d: Use %s, RC %d, Used-PTEs %d, Valid-PTES %d\n",
 			    i, vm_page_use_str(page->use), page->refcnt,
-			    page->used_ptes, page->valid_ptes);
+			    page->nonzero_ptes, page->valid_ptes);
 		}
 	}
 
@@ -579,11 +557,10 @@ vmp_pages_dump(void)
 }
 
 int
-vm_page_alloc(vm_page_t **out, size_t order, vm_account_t *account,
-    enum vm_page_use use, bool must)
+vm_page_alloc(vm_page_t **out, size_t order, enum vm_page_use use, bool must)
 {
 	ipl_t ipl = vmp_acquire_pfn_lock();
-	int r = vmp_pages_alloc_locked(out, order, account, use, must);
+	int r = vmp_pages_alloc_locked(out, order, use, must);
 	vmp_release_pfn_lock(ipl);
 	return r;
 }

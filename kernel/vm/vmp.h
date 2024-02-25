@@ -82,8 +82,6 @@ typedef struct vm_procstate {
 	vmem_t vmem;
 	/*! Working set list. */
 	struct vmp_wsl wsl;
-	/*! Account. */
-	vm_account_t account;
 	/*! VAD tree. */
 	RB_HEAD(vm_vad_rbtree, vm_vad) vad_queue;
 	/*! Per-arch stuff. */
@@ -171,18 +169,15 @@ int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 
 void vmp_pages_dump(void);
 
-int vmp_page_alloc_locked(vm_page_t **out, vm_account_t *account,
-    enum vm_page_use use, bool must);
-int vmp_pages_alloc_locked(vm_page_t **out, size_t order, vm_account_t *account,
-    enum vm_page_use use, bool must);
+int vmp_page_alloc_locked(vm_page_t **out, enum vm_page_use use, bool must);
+int vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
+    bool must);
 void vmp_page_free_locked(vm_page_t *page);
-void vmp_page_delete_locked(vm_page_t *page, vm_account_t *account,
-    bool release);
-vm_page_t *vmp_page_retain_locked(vm_page_t *page, vm_account_t *account);
-void vmp_page_release_locked(vm_page_t *page, vm_account_t *account);
+void vmp_page_delete_locked(vm_page_t *page);
+vm_page_t *vmp_page_retain_locked(vm_page_t *page);
+void vmp_page_release_locked(vm_page_t *page);
 
-int vmp_fault(vaddr_t vaddr, bool write, vm_account_t *out_account,
-    vm_page_t **out);
+int vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out);
 
 vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 

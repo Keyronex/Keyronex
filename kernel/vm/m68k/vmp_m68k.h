@@ -27,21 +27,25 @@ typedef struct __attribute__((packed)) pte_sw {
 	uint8_t type : 2; /* matches hardware; must = 0*/
 } pte_sw_t;
 
-typedef union pte {
+typedef union __attribute__((packed)) pte {
 	pte_hw_t hw;
 	pte_sw_t sw;
+	uint32_t value;
 } pte_t;
 
 static inline void
-vmp_md_pte_create_hw(pte_hw_t *pte, pfn_t pfn, bool writeable)
+vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool cacheable)
 {
-	pte->pfn = pfn;
-	pte->cachemode = 1; /* cacheable, copyback */
-	pte->supervisor = 1;
-	pte->type = 3;
-	pte->global = (pfn << 12) >= HIGHER_HALF;
-	pte->writeprotect = writeable ? 0 : 1;
-	pte->type = 1; /* resident */
+	pte_t newpte;
+	newpte.hw.pfn = pfn;
+	/* 1 = cached/copyback; 3 = uncached. (2 = uncached/serialised) */
+	newpte.hw.cachemode = cacheable ? 1 : 3;
+	newpte.hw.supervisor = 1;
+	newpte.hw.type = 3;
+	newpte.hw.global = (pfn << 12) >= HIGHER_HALF;
+	newpte.hw.writeprotect = writeable ? 0 : 1;
+	newpte.hw.type = 1; /* resident */
+	pte->value = newpte.value;
 }
 
 static inline void

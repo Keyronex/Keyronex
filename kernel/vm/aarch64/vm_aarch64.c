@@ -88,14 +88,14 @@ $1 = {valid = 1, reserved_must_be_1 = 1, attrindx = 0, ns = 0, ap = 2, sh = 3, a
 
 	if (l0[addr.l0].valid == 0) {
 		vm_page_t *l1_page;
-		int r = vmp_page_alloc_locked(&l1_page, &kernel_procstate.account, kPageUsePML3, false);
+		int r = vmp_page_alloc_locked(&l1_page, kPageUsePML3, false);
 		uintptr_t l1_phys;
 
 		if (r != 0)
 			return r;
 
 		l1_page->refcnt = 0;
-		l1_page->used_ptes = 0;
+		l1_page->nonzero_ptes = 0;
 
 		l0[addr.l0].valid = 1;
 		l0[addr.l0].is_table = 1;
@@ -108,14 +108,14 @@ $1 = {valid = 1, reserved_must_be_1 = 1, attrindx = 0, ns = 0, ap = 2, sh = 3, a
 
 	if (l1[addr.l1].valid == 0) {
 		vm_page_t *l2_page;
-		int r = vmp_page_alloc_locked(&l2_page, &kernel_procstate.account, kPageUsePML2, false);
+		int r = vmp_page_alloc_locked(&l2_page, kPageUsePML2, false);
 		uintptr_t l2_phys;
 
 		if (r != 0)
 			return r;
 
 		l2_page->refcnt = 0;
-		l2_page->used_ptes = 0;
+		l2_page->nonzero_ptes = 0;
 
 		l1[addr.l1].valid = 1;
 		l1[addr.l1].is_table = 1;
@@ -128,14 +128,14 @@ $1 = {valid = 1, reserved_must_be_1 = 1, attrindx = 0, ns = 0, ap = 2, sh = 3, a
 
 	if (l2[addr.l2].valid == 0) {
 		vm_page_t *l3_page;
-		int r = vmp_page_alloc_locked(&l3_page, &kernel_procstate.account, kPageUsePML1, false);
+		int r = vmp_page_alloc_locked(&l3_page, kPageUsePML1, false);
 		uintptr_t l3_phys;
 
 		if (r != 0)
 			return r;
 
 		l3_page->refcnt = 0;
-		l3_page->used_ptes = 0;
+		l3_page->nonzero_ptes = 0;
 
 		l2[addr.l2].valid = 1;
 		l2[addr.l2].is_table = 1;
