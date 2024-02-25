@@ -196,7 +196,7 @@ dpc_handler(void *arg)
 	vaddr_t addr;
 	vaddr_t offs;
 
-	r = vm_page_alloc(&queue->page, 0, &general_account, kPageUseKWired,
+	r = vm_page_alloc(&queue->page, 0,  kPageUseKWired,
 	    true);
 	kassert(r == 0);
 	addr = (vaddr_t)vm_page_direct_map_addr(queue->page);

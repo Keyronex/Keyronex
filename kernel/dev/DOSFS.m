@@ -453,7 +453,7 @@ static enum {
 			*lfn_str_max = lfn_off + ldir_off;
 		return kDirentProcessingContinue;
 	} else
-		kfatal("Unexpected sort of directory\n");
+		return kDirentProcessed;
 }
 
 void
@@ -696,6 +696,91 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	ke_mutex_release(&dnode->rwlock);
 }
 
+- (instancetype)initWithState:(struct dosfs_state *)state
+{
+	self = [super initWithProvider:state->bufhead.device];
+	m_state = state;
+	state->fsdev = self;
+	kmem_asprintf(obj_name_ptr(self), "dosfs-%u", counter++);
+
+	if (m_state->type == kFAT32) {
+		struct Dir dir;
+		uint32_t first_clus = from_leu32(
+		    m_state->bpb->bpb_32.BPB_RootClus);
+		dir.DIR_FstClusLO = to_leu16(first_clus & 0xffff);
+		dir.DIR_FstClusHI = to_leu16((first_clus >> 16) & 0xffff);
+		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, &dir);
+	} else
+		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, NULL);
+
+	[self registerDevice];
+	DKLogAttachExtra(self, "\"%.11s\": FAT%d",
+	    state->type == kFAT32 ? (char *)state->bpb->bpb_32.BS_VolLab :
+				    state->bpb->bpb_16.BS_VolLab,
+	    state->type == kFAT12     ? 12 :
+		state->type == kFAT16 ? 16 :
+					32);
+
+#if 0
+	printdir(m_state, m_state->root, 0);
+
+	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
+	kprintf("VN: %p\n", vn);
+	dos_rw(m_state, vn, 0, 2048 * 4, NULL, false);
+	// buf_t *buf = dosnode_bread(m_state, (struct dos_node *)vn->fs_data,
+	// 1);
+	//  readDir(m_state, vn, 0);
+
+	vm_mdl_t *mdl = vm_mdl_buffer_alloc(2);
+#endif
+	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
+	kassert(vn != NULL);
+
+#if 0
+	kprintf("Testing unmapped read\n");
+	dos_rw(m_state, vn, 0, 2048 * 4, mdl, false);
+
+	mdl->offset = 0;
+	char *vadd = (char *)P2V(vm_mdl_paddr(mdl, 0));
+	(void) vadd;
+#endif
+
+	vm_section_t sect;
+	sect.kind = kFile;
+	sect.file.vnode = vn;
+	RB_INIT(&sect.file.page_tree);
+
+	state->vfs.device = self;
+
+	extern vm_procstate_t kernel_procstate;
+	vaddr_t mapaddr = 0xd0000000;
+	vm_ps_map_section_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
+	    kVMAll, kVMAll, true, false, true);
+	kprintf("Testing mapped read (at 0x%zx)\n", mapaddr);
+
+	for (int i = 0; i < 16; i++) {
+		char str[80];
+		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
+		str[79] = '\0';
+		kprintf("Success. Extract: %s\n", str);
+	}
+
+	kprintf("\n\n!!! Testing again\n");
+		for (int i = 0; i < 4; i++) {
+		char str[80];
+		kprintf("Testing %d\n", i);
+		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
+		str[79] = '\0';
+		kprintf("Success. Extract: %s\n", str);
+	}
+
+	vmp_pages_dump();
+
+	for (;;)
+		;
+	return self;
+}
+
 + (BOOL)probeWithVolume:(DKDevice *)volume
 	      blockSize:(size_t)blockSize
 	     blockCount:(io_blksize_t)blockCount;
@@ -758,91 +843,6 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 	[[self alloc] initWithState:fs];
 	return YES;
-}
-
-- (instancetype)initWithState:(struct dosfs_state *)state
-{
-	self = [super initWithProvider:state->bufhead.device];
-	m_state = state;
-	state->fsdev = self;
-	kmem_asprintf(obj_name_ptr(self), "dosfs-%u", counter++);
-
-	if (m_state->type == kFAT32) {
-		struct Dir dir;
-		uint32_t first_clus = from_leu32(
-		    m_state->bpb->bpb_32.BPB_RootClus);
-		dir.DIR_FstClusLO = to_leu16(first_clus & 0xffff);
-		dir.DIR_FstClusHI = to_leu16((first_clus >> 16) & 0xffff);
-		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, &dir);
-	} else
-		m_state->root = dosfs_vnode_make(m_state, NULL, NULL, NULL);
-
-	[self registerDevice];
-	DKLogAttachExtra(self, "\"%.11s\": FAT%d",
-	    state->type == kFAT32 ? (char *)state->bpb->bpb_32.BS_VolLab :
-				    state->bpb->bpb_16.BS_VolLab,
-	    state->type == kFAT12     ? 12 :
-		state->type == kFAT16 ? 16 :
-					32);
-
-#if 0
-	printdir(m_state, m_state->root, 0);
-
-	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
-	kprintf("VN: %p\n", vn);
-	dos_rw(m_state, vn, 0, 2048 * 4, NULL, false);
-	// buf_t *buf = dosnode_bread(m_state, (struct dos_node *)vn->fs_data,
-	// 1);
-	//  readDir(m_state, vn, 0);
-#endif
-
-	vm_mdl_t *mdl = vm_mdl_buffer_alloc(2);
-	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
-	kassert(vn != NULL);
-
-#if 0
-	kprintf("Testing unmapped read\n");
-	dos_rw(m_state, vn, 0, 2048 * 4, mdl, false);
-
-	mdl->offset = 0;
-	char *vadd = (char *)P2V(vm_mdl_paddr(mdl, 0));
-	(void) vadd;
-#endif
-
-	vm_section_t sect;
-	sect.kind = kFile;
-	sect.file.vnode = vn;
-	RB_INIT(&sect.file.page_tree);
-
-	state->vfs.device = self;
-
-	extern vm_procstate_t kernel_procstate;
-	vaddr_t mapaddr = 0xd0000000;
-	vm_ps_map_section_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
-	    kVMAll, kVMAll, true, false, true);
-	kprintf("Testing mapped read (at 0x%zx)\n", mapaddr);
-
-	for (int i = 0; i < 16; i++) {
-		char str[80];
-		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
-		str[79] = '\0';
-		kprintf("Success. Extract: %s\n", str);
-	}
-
-	kprintf("\n\n!!! Testing again\n");
-		for (int i = 0; i < 4; i++) {
-		char str[80];
-		kprintf("Testing %d\n", i);
-		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
-		str[79] = '\0';
-		kprintf("Success. Extract: %s\n", str);
-	}
-
-	vmp_pages_dump();
-
-	for (;;)
-		;
-	return self;
 }
 
 - (iop_return_t)dispatchIOP:(iop_t *)iop
