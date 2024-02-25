@@ -118,7 +118,7 @@ flush_timer_dpc_handler(void *arg)
 	for (int i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; i++) {
 		if (!resp->pmodes[i].enabled)
 			continue;
-		DKDevLog(self, "Scanout %u: %lux%lu (flags 0x%lx))\n", i,
+		DKDevLog(self, "Scanout %u: %ux%u (flags 0x%x))\n", i,
 		    le32_to_native(resp->pmodes[i].r.width),
 		    le32_to_native(resp->pmodes[i].r.height),
 		    le32_to_native(resp->pmodes[i].flags));
@@ -284,7 +284,7 @@ flush_timer_dpc_handler(void *arg)
 
 	if (!req || req->first_desc_id != le32_to_native(e->id))
 		kfatal("viogpu completion without a request:"
-		       "\n\tdescriptor id: %lu\n",
+		       "\n\tdescriptor id: %u\n",
 		    le32_to_native(e->id));
 
 	TAILQ_REMOVE(&in_flight_reqs, req, queue_link);

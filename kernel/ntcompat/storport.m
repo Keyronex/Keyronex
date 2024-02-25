@@ -3,7 +3,9 @@
 #include "storportcompat.h"
 #include "vm/vmp.h"
 
-extern void*wegot;
+extern void *wegot;
+void unpackPci(uint32_t SystemIoBusNumber, uint32_t SlotNumber, uint16_t *seg,
+    uint8_t *bus, uint8_t *slot, uint8_t *fun);
 
 static void
 dpc_callback(void *arg)
@@ -471,26 +473,26 @@ StorPortExtendedFunction(
 
 /* clang-format off */
 image_export_t storport_exports[] = {
-	EXPORT_FUNC(StorPortInitialize),
-	EXPORT_FUNC(StorPortDebugPrint),
-	EXPORT_FUNC(StorPortBusy),
-	EXPORT_FUNC(StorPortGetBusData),
-	EXPORT_FUNC(StorPortGetDeviceBase),
-	EXPORT_FUNC(StorPortGetUncachedExtension),
-	EXPORT_FUNC(StorPortLogError),
-	EXPORT_FUNC(StorPortStallExecution),
-	EXPORT_FUNC(StorPortSynchronizeAccess),
-	EXPORT_FUNC(StorPortGetPhysicalAddress),
-	EXPORT_FUNC(StorPortGetScatterGatherList),
-	EXPORT_FUNC(StorPortQuerySystemTime),
-	EXPORT_FUNC(StorPortMoveMemory),
-	EXPORT_FUNC(StorPortResume),
-	EXPORT_FUNC(StorPortReadRegisterUlong),
-	EXPORT_FUNC(StorPortWriteRegisterUlong),
-	EXPORT_FUNC(StorPortNotification),
-	EXPORT_FUNC(StorPortExtendedFunction),
-	EXPORT_FUNC(StorPortPause),
-	EXPORT_FUNC(StorPortDeviceBusy),
-	EXPORT_FUNC(StorPortSetDeviceQueueDepth),
+	EXPORT_NT_FUNC(StorPortInitialize),
+	EXPORT_NT_FUNC(StorPortDebugPrint),
+	EXPORT_NT_FUNC(StorPortBusy),
+	EXPORT_NT_FUNC(StorPortGetBusData),
+	EXPORT_NT_FUNC(StorPortGetDeviceBase),
+	EXPORT_NT_FUNC(StorPortGetUncachedExtension),
+	EXPORT_NT_FUNC(StorPortLogError),
+	EXPORT_NT_FUNC(StorPortStallExecution),
+	EXPORT_NT_FUNC(StorPortSynchronizeAccess),
+	EXPORT_NT_FUNC(StorPortGetPhysicalAddress),
+	EXPORT_NT_FUNC(StorPortGetScatterGatherList),
+	EXPORT_NT_FUNC(StorPortQuerySystemTime),
+	EXPORT_NT_FUNC(StorPortMoveMemory),
+	EXPORT_NT_FUNC(StorPortResume),
+	EXPORT_NT_FUNC(StorPortReadRegisterUlong),
+	EXPORT_NT_FUNC(StorPortWriteRegisterUlong),
+	EXPORT_NT_FUNC(StorPortNotification),
+	EXPORT_NT_FUNC(StorPortExtendedFunction),
+	EXPORT_NT_FUNC(StorPortPause),
+	EXPORT_NT_FUNC(StorPortDeviceBusy),
+	EXPORT_NT_FUNC(StorPortSetDeviceQueueDepth),
 	{NULL, NULL}
 };

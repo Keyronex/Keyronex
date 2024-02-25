@@ -24,8 +24,25 @@ typedef struct __attribute__((packed)) pte_sw {
 	    type : 2;		       /* must = 0*/
 } pte_sw_t;
 
-typedef struct pte_hw {
-	uint64_t value;
+typedef struct __attribute__((packed)) pte_hw {
+	union __attribute__((packed)) {
+		uint64_t value;
+		struct __attribute__((packed)) {
+			bool valid : 1;
+			bool writeable : 1;
+			bool user : 1;
+			bool writethrough : 1;
+			bool nocache : 1;
+			bool accessed : 1;
+			bool dirty : 1;
+			bool pat : 1;
+			bool global : 1;
+			uint64_t available1 : 3;
+			uintptr_t pfn : 40;
+			uint64_t available2 : 11;
+			bool nx : 1;
+		};
+	};
 } pte_hw_t;
 
 typedef union pte {
@@ -41,6 +58,18 @@ vmp_md_pte_create_hw(pte_hw_t *pte, pfn_t pfn, bool writeable)
 		flags |= kMMUWrite;
 
 	amd64_pte_set((uint64_t*)pte, PFN_TO_PADDR(pfn), flags);
+}
+
+static inline void
+vmp_md_pte_create_busy(pte_t *pte, pfn_t pfn)
+{
+	kfatal("Unimplemented\n");
+}
+
+static inline void
+vmp_md_pte_create_zero(pte_t *pte)
+{
+	kfatal("Unimplemented\n");
 }
 
 static inline bool

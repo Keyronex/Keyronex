@@ -24,10 +24,9 @@ typedef struct nt_driver_object {
 void ntcompat_init(void);
 void pe_load(const char *path, void *addr);
 
-#define EXPORT_FUNC(NAME)   \
-	{                   \
-		#NAME, NAME \
-	}
+#define EXPORT_NT_FUNC(NAME) {	\
+	#NAME, NAME		\
+}
 
 extern image_export_t ntoskrnl_exports[], storport_exports[];
 

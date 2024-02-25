@@ -241,7 +241,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 
 	addr.addr = state->addr;
 
-	kprintf("Wire PTE for %p: %d.%d.%d\n", addr.addr, addr.l3i, addr.l2i,
+	kprintf("Wire PTE for 0x%x: %d.%d.%d\n", addr.addr, addr.l3i, addr.l2i,
 	    addr.l1i);
 
 	if (state->pgtable_pages[kPTEWireStatePML1] != NULL)
@@ -372,4 +372,9 @@ vmp_md_translate(vaddr_t addr)
 	stuff.val = mmusr;
 	kassert(!stuff.buserr);
 	return PFN_TO_PADDR(stuff.phys) + addr % PGSIZE;
+}
+
+void pmap_invlpg(vaddr_t addr)
+{
+	asm volatile ("pflush (%0)" : : "a"(addr));
 }

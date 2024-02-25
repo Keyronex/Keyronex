@@ -618,7 +618,7 @@ vmem_dump(const vmem_t *vmem)
 
 	pac_printf("VMem arena <%s> segment queue:\n", vmem->name);
 	TAILQ_FOREACH (span, &vmem->segqueue, segqueue) {
-		pac_printf("[%s:0x%lx-0x%lx]\n", vmem_seg_type_str[span->type],
+		pac_printf("[%s:0x%zx-0x%zx]\n", vmem_seg_type_str[span->type],
 		    span->base, span->base + span->size);
 	}
 }

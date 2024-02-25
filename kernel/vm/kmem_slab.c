@@ -482,7 +482,7 @@ kmem_dump()
 			totalFree += slab->nfree;
 		}
 
-		pac_printf("%-24s%-6zu%-6lu%-6lu%-6lu\n", zone->name, zone->size,
+		pac_printf("%-24s%-6zu%-6zu%-6zu%-6zu\n", zone->name, zone->size,
 		    nSlabs, cap * nSlabs - totalFree, totalFree);
 
 		ke_spinlock_release(&zone->lock, ipl);

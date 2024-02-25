@@ -33,17 +33,15 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 	return 0;
 }
 
-void
-pmap_invlpg(vaddr_t addr)
-{
-	asm volatile ("pflush (%0)" : : "a"(addr));
-}
+void pmap_invlpg(vaddr_t addr);
 
 void
 internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
     vmem_flag_t flags)
 {
 	int r;
+
+#if 0
 
 	r = vmem_xfree(vmem, addr, size, flags | kVMemPFNDBHeld);
 	if (r < 0) {
@@ -64,6 +62,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		// page->wirecnt = 0;
 		// vmp_page_free_locked(kernel_process.map, page);
 	}
+#endif
 }
 
 vaddr_t

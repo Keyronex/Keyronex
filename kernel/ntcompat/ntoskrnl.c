@@ -4,6 +4,8 @@
 #include "ntcompat/ntcompat.h"
 #include "ntcompat/win_types.h"
 
+#define UNIMPLEMENTED() kfatal("%s: unimplemented\n", __PRETTY_FUNCTION__);
+
 NTAPI
 ULONG
 NTAPI
@@ -224,6 +226,7 @@ NTKERNELAPI
 VOID NTAPI
 ExFreePoolWithTag(IN PVOID P, IN ULONG Tag)
 {
+	UNIMPLEMENTED();
 }
 
 NTOSAPI
@@ -235,7 +238,7 @@ MmAllocateContiguousMemorySpecifyCache(IN SIZE_T NumberOfBytes,
     IN PHYSICAL_ADDRESS BoundaryAddressMultiple /*OPTIONAL*/,
     IN MEMORY_CACHING_TYPE CacheType)
 {
-	kfatal("contigmem\n");
+	UNIMPLEMENTED();
 }
 
 NTOSAPI
@@ -245,18 +248,27 @@ MmFreeContiguousMemorySpecifyCache(
     /*IN*/ SIZE_T NumberOfBytes,
     /*IN*/ MEMORY_CACHING_TYPE CacheType)
 {
+	UNIMPLEMENTED();
 }
 
-image_export_t ntoskrnl_exports[] = { { "strlen", nt_strlen },
-	EXPORT_FUNC(RtlAssert), EXPORT_FUNC(DbgPrint), EXPORT_FUNC(vDbgPrintEx),
-	EXPORT_FUNC(KeBugCheck), EXPORT_FUNC(KeBugCheckEx),
-	EXPORT_FUNC(ExInterlockedInsertHeadList),
-	EXPORT_FUNC(ExInterlockedInsertTailList),
-	EXPORT_FUNC(ExInterlockedRemoveHeadList),
-	EXPORT_FUNC(KeQueryActiveProcessorCount),
-	EXPORT_FUNC(KeQueryMaximumProcessorCount),
-	EXPORT_FUNC(KeQueryActiveProcessorCountEx),
-	EXPORT_FUNC(KeQueryMaximumProcessorCountEx),
-	EXPORT_FUNC(ExAllocatePoolWithTag), EXPORT_FUNC(ExFreePoolWithTag),
-	EXPORT_FUNC(MmAllocateContiguousMemorySpecifyCache),
-	EXPORT_FUNC(MmFreeContiguousMemorySpecifyCache), { NULL, NULL } };
+/* clang-format off */
+image_export_t ntoskrnl_exports[] = {
+	{ "strlen", nt_strlen },
+	EXPORT_NT_FUNC(RtlAssert),
+	EXPORT_NT_FUNC(DbgPrint),
+	EXPORT_NT_FUNC(vDbgPrintEx),
+	EXPORT_NT_FUNC(KeBugCheck),
+	EXPORT_NT_FUNC(KeBugCheckEx),
+	EXPORT_NT_FUNC(ExInterlockedInsertHeadList),
+	EXPORT_NT_FUNC(ExInterlockedInsertTailList),
+	EXPORT_NT_FUNC(ExInterlockedRemoveHeadList),
+	EXPORT_NT_FUNC(KeQueryActiveProcessorCount),
+	EXPORT_NT_FUNC(KeQueryMaximumProcessorCount),
+	EXPORT_NT_FUNC(KeQueryActiveProcessorCountEx),
+	EXPORT_NT_FUNC(KeQueryMaximumProcessorCountEx),
+	EXPORT_NT_FUNC(ExAllocatePoolWithTag),
+	EXPORT_NT_FUNC(ExFreePoolWithTag),
+	EXPORT_NT_FUNC(MmAllocateContiguousMemorySpecifyCache),
+	EXPORT_NT_FUNC(MmFreeContiguousMemorySpecifyCache),
+	{ NULL, NULL }
+};

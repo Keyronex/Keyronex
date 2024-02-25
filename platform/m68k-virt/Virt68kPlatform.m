@@ -3,6 +3,7 @@
 #include "ddk/virtio_mmio.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
+#include "kdk/object.h"
 #include "kdk/nanokern.h"
 #include "bootinfo.h"
 

@@ -151,3 +151,26 @@ vmp_md_translate(vaddr_t addr)
 
 	return ((paddr_t)pte_get_addr(pti_virt->hw.value)) + off;
 }
+
+void
+pmap_invlpg(vaddr_t addr)
+{
+	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
+}
+
+void
+vmp_md_pagetable_pte_zeroed(vm_procstate_t *vmps, vm_page_t *page)
+{
+}
+
+void
+vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state, size_t count)
+{
+}
+
+int
+pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
+    vm_page_t **out_page)
+{
+	kfatal("Kindly implement\n");
+}

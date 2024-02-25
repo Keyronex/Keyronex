@@ -377,7 +377,7 @@ trimstr(char *str, size_t length)
 				    sizeof(data->ProductRevisionLevel));
 
 				DKDevLog(self,
-				    "<%.8s %.16s %.4s> at bus %zu target %zu lun %lu\n",
+				    "<%.8s %.16s %.4s> at bus %zu target %zu lun %llu\n",
 				    data->VendorId, data->ProductId,
 				    data->ProductRevisionLevel, path, target,
 				    lun);

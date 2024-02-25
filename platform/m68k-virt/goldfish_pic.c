@@ -40,7 +40,7 @@ gfpic_write(unsigned int pic, enum gfpic_reg reg, uint32_t val)
 static void
 dump_pic(unsigned int i)
 {
-	kprintf("PIC %d: status %lu pending %lx\n", i,
+	kprintf("PIC %d: status %u pending %x\n", i,
 	    gfpic_read(i, kGFPICRegStatus), gfpic_read(i, kGFPICRegPending));
 }
 

@@ -3,7 +3,6 @@
 #include "kdk/libkern.h"
 #include "kdk/queue.h"
 #include "kdk/vm.h"
-#include "vm/m68k/vmp_m68k.h"
 #include "vmp.h"
 
 extern vm_procstate_t kernel_procstate;
@@ -50,7 +49,7 @@ vmp_unwire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 /*!
  * \pre PFN lock held.
  */
-static int
+static void
 do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
     vm_vad_t *vad, size_t ncluster)
 {
@@ -116,7 +115,7 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 	if (pages_uncached) {
 		/* now handle remaining uncached pages after the loop */
 		kprintf("do clustered read (offset: %lld, length: %zu)\n",
-		    starting_offset + vad->flags.offset + vad_pg_offset,
+		    starting_offset + (int64_t)vad->flags.offset + vad_pg_offset,
 		    length);
 
 		/*

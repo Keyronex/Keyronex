@@ -131,7 +131,7 @@ struct vm_section {
 	} kind;
 	union {
 		struct {
-			RB_HEAD(vmp_file_page_tree, vm_page) page_tree;
+			RB_HEAD(vmp_file_page_tree, vmp_filepage) page_tree;
 			struct vnode *vnode;
 		} file;
 		struct {

@@ -259,6 +259,7 @@ write_fat(struct dosfs_state *fs, io_blkoff_t N, uint32_t ClusEntryVal)
 	buf_release(buf);
 }
 
+#if 0
 static void
 iterate_fat(struct dosfs_state *fs)
 {
@@ -319,6 +320,7 @@ iterate_fat(struct dosfs_state *fs)
 	}
 	buf_release(buf);
 }
+#endif
 
 static buf_t *
 dosnode_bread(struct dosfs_state *fs, struct dos_node *dosnode,
@@ -450,7 +452,8 @@ static enum {
 		if ((lfn_off + ldir_off) > *lfn_str_max)
 			*lfn_str_max = lfn_off + ldir_off;
 		return kDirentProcessingContinue;
-	}
+	} else
+		kfatal("Unexpected sort of directory\n");
 }
 
 void
@@ -519,6 +522,9 @@ printdir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 		last_offset = offset;
 		offset += sizeof(struct Dir);
 	}
+
+	/* TODO: find out what this is there for */
+	(void)last_offset;
 
 out:
 	buf_release(buf);
@@ -598,6 +604,7 @@ out:
 vnode_t *
 create(vnode_t *dvn, const char *name, vattr_t attr)
 {
+	kfatal("Unimplemented\n");
 }
 
 io_off_t
@@ -605,7 +612,7 @@ dos_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t bytes_read,
     io_off_t seqno)
 {
 	struct dos_node *dnode = VTOD(dvn);
-
+	(void)dnode;
 	kfatal("Implement me\n");
 }
 
@@ -742,8 +749,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	else
 		fs->type = kFAT32;
 
-	kprintf("Clusters: %zu; fatsz %lu; root en count %hu; "
-		"root dir secs %lu; first data sec %lu; fat type %d\n",
+	kprintf("Clusters: %zu; fatsz %zu; root en count %hu; "
+		"root dir secs %zu; first data sec %zu; fat type %d\n",
 	    fs->CountOfCusters, fs->FATSz, from_leu16(bpb->BPB_RootEntCnt),
 	    fs->RootDirSectors, fs->FirstDataSector, fs->type);
 
@@ -793,11 +800,14 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
 	kassert(vn != NULL);
 
+#if 0
 	kprintf("Testing unmapped read\n");
 	dos_rw(m_state, vn, 0, 2048 * 4, mdl, false);
 
 	mdl->offset = 0;
 	char *vadd = (char *)P2V(vm_mdl_paddr(mdl, 0));
+	(void) vadd;
+#endif
 
 	vm_section_t sect;
 	sect.kind = kFile;

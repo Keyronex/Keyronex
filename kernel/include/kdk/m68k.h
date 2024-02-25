@@ -27,8 +27,8 @@
 #define V2P(addr) ((((paddr_t)(addr)) - HHDM_BASE))
 
 /* This stuff belongs in inttypes.h, but let's define it temporarily... */
-#define PRIu32 "lu"
-#define PRIb32 "lb"
+#define PRIu32 "u"
+#define PRIb32 "b"
 
 typedef enum ipl {
 	kIPL0 = 0,
