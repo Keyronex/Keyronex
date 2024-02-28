@@ -32,8 +32,6 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 	return 0;
 }
 
-void pmap_invlpg(vaddr_t addr);
-
 void
 internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
     vmem_flag_t flags)

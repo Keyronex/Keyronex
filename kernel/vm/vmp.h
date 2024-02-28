@@ -166,6 +166,8 @@ paddr_t vmp_md_translate(vaddr_t addr);
 /*! @brief Quickly get a PTE pointer. */
 int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
     vm_page_t **out_page);
+/*! @brief Locally invalidate a page. */
+void pmap_invlpg(vaddr_t addr);
 
 void vmp_pages_dump(void);
 
