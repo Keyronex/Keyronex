@@ -5,18 +5,11 @@
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
 #include "kdk/vmem_impl.h"
-#include "mmu.h"
+#include "mmu_040.h"
 #include "vm/vmp.h"
 
 #define kPTEWireStatePML2 1
 #define kPTEWireStatePML1 0
-
-union m68040_addr {
-	struct {
-		uint32_t l3i : 7, l2i : 7, l1i : 6, pgi : 12;
-	};
-	uint32_t addr;
-};
 
 void vmem_earlyinit(void);
 int internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
@@ -60,12 +53,12 @@ vmp_kernel_init(void)
  * \pre PFN DB locked.
  */
 int
-pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
+pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_t **out,
     vm_page_t **out_page)
 {
-	union m68040_addr addr;
+	union vaddr_040 addr;
 
-	pml3e_t *pml3_phys = (void *)fetch_urp(),
+	pml3e_040_t *pml3_phys = (void *)fetch_urp(),
 		*pml3_virt = (void *)P2V(pml3_phys);
 	vm_page_t *pml2_page, *pml1_page;
 
@@ -100,7 +93,7 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 		}
 	}
 
-	pml2e_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4),
+	pml2e_040_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4),
 		*pml2_virt = (void *)P2V(pml2_phys);
 	pml2_page = vm_paddr_to_page((paddr_t)pml2_phys);
 
@@ -136,8 +129,8 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
 		}
 	}
 
-	pte_hw_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
-	*out = (pte_hw_t*)P2V(&pml1[addr.l1i]);
+	pml1e_040_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
+	*out = (pml1e_040_t*)P2V(&pml1[addr.l1i]);
 	*out_page = vm_paddr_to_page(PGROUNDDOWN(pml1));
 
 	return 0;
@@ -186,7 +179,7 @@ free_pagetable(vm_procstate_t *vmps, vm_page_t *page)
 int
 vmp_md_enter_kwired(vaddr_t virt, paddr_t phys)
 {
-	pte_hw_t *ppte;
+	pml1e_040_t *ppte;
 	vm_page_t *ppagetablepage;
 	int r;
 
@@ -217,7 +210,7 @@ vmp_md_enter_kwired(vaddr_t virt, paddr_t phys)
 int
 vmp_md_unenter_kwired(vaddr_t virt)
 {
-	pte_hw_t *ppte;
+	pte_t *ppte;
 	vm_page_t *ppagetablepage;
 	int r;
 
@@ -225,9 +218,11 @@ vmp_md_unenter_kwired(vaddr_t virt)
 	if (r < 0)
 		return r;
 
+#if REMOVED
 	kassert(ppte->type == 3);
+#endif
 
-	memset(ppte, 0x0, sizeof(pte_hw_t));
+	memset(ppte, 0x0, sizeof(pte_t));
 	vmp_md_pagetable_pte_zeroed(&kernel_procstate, ppagetablepage);
 
 	return 0;
@@ -237,7 +232,7 @@ vmp_md_unenter_kwired(vaddr_t virt)
 vm_fault_return_t
 vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 {
-	union m68040_addr addr;
+	union vaddr_040 addr;
 	vm_page_t *pml2_page, *pml1_page;
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
@@ -252,7 +247,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 	else if (state->pgtable_pages[kPTEWireStatePML2] != NULL)
 		goto fetch_pml1;
 
-	pml3e_t *pml3_phys = (void *)vmps->md.table,
+	pml3e_040_t *pml3_phys = (void *)vmps->md.table,
 		*pml3_virt = (void *)P2V(pml3_phys);
 
 	if (pml3_virt[addr.l3i].addr == 0) {
@@ -279,7 +274,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 		state->pgtable_pages[kPTEWireStatePML2] = pml2_page;
 	} else {
 		/* assuming it's valid... */
-		pml2e_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4);
+		pml2e_040_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4);
 		pml2_page = vm_paddr_to_page((paddr_t)pml2_phys);
 		pml2_page->refcnt++;
 		state->pgtable_pages[kPTEWireStatePML2] = pml2_page;
@@ -287,7 +282,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
 
 fetch_pml1:
 	pml2_page = state->pgtable_pages[kPTEWireStatePML2];
-	pml2e_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4),
+	pml2e_040_t *pml2_phys = (void *)(pml3_virt[addr.l3i].addr << 4),
 		*pml2_virt = (void *)P2V(pml2_phys);
 
 	if (pml2_virt[addr.l2i].addr == 0) {
@@ -317,7 +312,7 @@ fetch_pml1:
 		state->pgtable_pages[kPTEWireStatePML1] = pml1_page;
 	} else {
 		/* assuming it's valid... */
-		pte_hw_t *pml1_phys = (void *)(pml2_virt[addr.l2i].addr << 4);
+		pml1e_040_t *pml1_phys = (void *)(pml2_virt[addr.l2i].addr << 4);
 		pml1_page = vm_paddr_to_page((paddr_t)pml1_phys);
 		pml1_page->refcnt++;
 		state->pgtable_pages[kPTEWireStatePML1] = pml1_page;
@@ -327,7 +322,7 @@ fetch_pte:
 	pml1_page = state->pgtable_pages[kPTEWireStatePML1];
 	pml1_page->nonzero_ptes++;
 	pml1_page->valid_ptes++;
-	pte_hw_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
+	pml1e_040_t *pml1 = (void *)(pml2_virt[addr.l2i].addr << 4);
 	state->pte = (pte_t *)P2V(&pml1[addr.l1i]);
 
 	return kVMFaultRetOK;
@@ -379,3 +374,16 @@ void pmap_invlpg(vaddr_t addr)
 {
 	asm volatile ("pflush (%0)" : : "a"(addr));
 }
+
+
+/*
+
+
+
+
+NEW
+
+
+
+
+*/

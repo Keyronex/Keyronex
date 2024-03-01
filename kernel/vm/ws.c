@@ -27,8 +27,8 @@ vmp_wsl_find(vm_procstate_t *ps, vaddr_t vaddr)
 static void
 vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 {
-	bool dirty = vmp_md_hw_pte_is_writeable(&pte->hw);
-	vm_page_t *page = vm_paddr_to_page(PFN_TO_PADDR(pte->hw.pfn));
+	bool dirty = vmp_md_hw_pte_is_writeable(pte);
+	vm_page_t *page = vmp_pte_hw_page(pte, 1);
 
 	page->dirty |= dirty;
 

@@ -144,6 +144,21 @@ struct vm_section {
 /*! @brief Release the PFN database lock. */
 #define vmp_release_pfn_lock(IPL) ke_spinlock_release(&vmp_pfn_lock, IPL)
 
+/* paddr_t vmp_page_paddr(vm_page_t *page) */
+#define vmp_page_paddr(PAGE) ((paddr_t)(PAGE)->pfn << VMP_PAGE_SHIFT)
+
+/* paddr_t vmp_pfn_to_paddr(pfn_t pfn) */
+#define vmp_pfn_to_paddr(PFN) ((paddr_t)PFN << VMP_PAGE_SHIFT)
+
+/* paddr_t vmp_pte_hw_paddr(pte_t *pte, int level) */
+#define vmp_pte_hw_paddr(PTE, LVL) vmp_pfn_to_paddr(vmp_md_pte_hw_pfn(PTE, LVL))
+
+/* NOTE: we require that we can always get to the *page* this way, regardless of
+ * level, even though on e.g. 68040 the root and 2nd levels have a more specific
+ * pointer in their PTEs */
+/* vm_page_t *vmp_pte_hw_page(pte_t *pte, int level) */
+#define vmp_pte_hw_page(PTE, LVL) vm_paddr_to_page(vmp_pte_hw_paddr(PTE, LVL))
+
 /*! Initialise kernel virtual memory. */
 void vmp_kernel_init(void);
 
@@ -164,7 +179,7 @@ void vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state,
 /*! @brief Convert a virtual address to a physical. Must be mapped! */
 paddr_t vmp_md_translate(vaddr_t addr);
 /*! @brief Quickly get a PTE pointer. */
-int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
+int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_t **out,
     vm_page_t **out_page);
 /*! @brief Locally invalidate a page. */
 void pmap_invlpg(vaddr_t addr);

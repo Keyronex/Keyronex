@@ -10,7 +10,7 @@ enum software_pte_kind {
 	/*! this is not a software PTE */
 	kNotSoftware = 0x0,
 	/*! this is a PTE for a */
-	kTransition = 0x1,
+	kSoftPteKindBusy = 0x1,
 };
 
 struct vmp_md_procstate {

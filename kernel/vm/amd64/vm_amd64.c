@@ -168,7 +168,7 @@ vmp_md_pagetable_ptes_created(struct vmp_pte_wire_state *state, size_t count)
 }
 
 int
-pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_hw_t **out,
+pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_t **out,
     vm_page_t **out_page)
 {
 	kfatal("Kindly implement\n");

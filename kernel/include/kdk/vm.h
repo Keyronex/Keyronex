@@ -137,6 +137,14 @@ typedef struct vm_mdl {
 	vm_page_t *pages[0];
 } vm_mdl_t;
 
+enum vmp_pte_kind {
+	kPTEKindZero,
+	kPTEKindTrans,
+	kPTEKindSwap,
+	kPTEKindBusy,
+	kPTEKindValid,
+};
+
 /*! @brief Allocated kernel wired pages and address space. */
 vaddr_t vm_kalloc(size_t npages, enum vmem_flag flags);
 

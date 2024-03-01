@@ -82,7 +82,7 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 
 			/* write found_page into the PTE */
 			vmp_page_retain_locked(found_page->page);
-			vmp_md_pte_create_hw(&(state->pte + cluster_idx)->hw,
+			vmp_md_pte_create_hw(state->pte + cluster_idx,
 			    found_page->page->pfn, false, true);
 			vmp_md_pagetable_ptes_created(state, 1);
 			vmp_wsl_insert(state->vmps,
@@ -191,11 +191,11 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 		for (size_t i = 0; i < pgstate->length; i++) {
 			pte_t *pte = pte_base + i;
 			vm_page_t *page;
-			kassert(pte->sw.kind == kTransition);
+			kassert(pte->sw.kind == kSoftPteKindBusy);
 			page = vm_paddr_to_page(PFN_TO_PADDR(pte->sw.data));
 			kassert(page != NULL);
 			kassert(page->pager_request == pgstate);
-			vmp_md_pte_create_hw(&pte->hw, pte->sw.data, false,
+			vmp_md_pte_create_hw(pte, pte->sw.data, false,
 			    true);
 		}
 	}

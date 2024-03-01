@@ -232,7 +232,7 @@ typedef struct kprocess {
 	/*! (D) threads of process */
 	LIST_HEAD(, kthread) thread_list;
 	/*! (~) virtual memory state */
-	struct vmps_procstate *vm;
+	struct vm_procstate *vm;
 } kprocess_t;
 
 /*! @brief Get kprocess of this core's currently-running thread. */
