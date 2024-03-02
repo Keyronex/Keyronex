@@ -229,7 +229,7 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 		kfatal("Write fault at 0x%zx in nonwriteable vad\n", vaddr);
 
 	ipl = vmp_acquire_pfn_lock();
-	r = vmp_md_wire_pte(vmps, state);
+	r = vmp_md_wire_pte(vmps, vaddr, state);
 	if (r != kVMFaultRetOK) {
 		/* map mutex unlocked, PFNDB unlocked, and at IPL 0 */
 		return r;
@@ -281,7 +281,7 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 
 			vmp_md_pte_create_hw(state->pte, page->pfn,
 			    vad->flags.protection & kVMWrite, true);
-			vmp_wsl_insert(state->vmps, state->addr, false);
+			vmp_wsl_insert(state->vmps, vaddr, false);
 			vmp_md_pagetable_ptes_created(state, 1);
 		} else {
 			do_file_read_fault(state, vaddr, vad, ncluster);

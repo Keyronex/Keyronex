@@ -166,7 +166,7 @@ void vmp_kernel_init(void);
  * @post If kVMFaultRetOK, reference held to each pagetable level and used PTE
  * count incremented on leaf table.
  */
-vm_fault_return_t vmp_md_wire_pte(vm_procstate_t *vmps,
+vm_fault_return_t vmp_md_wire_pte(vm_procstate_t *vmps, vaddr_t vaddr,
     struct vmp_pte_wire_state *state);
 /*! @brief Release the wires made by vmp_md_wire_pte(). */
 void vmp_md_pte_wire_release(vm_procstate_t *vmps,

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #include "../../platform/m68k-virt/handover.h"
-#include "../../kernel/vm/m68k/mmu.h"
+#include "../../kernel/vm/m68k/mmu_040.h"
 #include "../../vendor/include/kdk/elf.h"
 
 #define printf(...) npf_pprintf(gftty_putc, NULL, __VA_ARGS__)
@@ -32,7 +32,7 @@ size_t memory = 0;
 size_t bump_base, bump_original;
 void *kernel_base = 0;
 size_t kernel_size = 0;
-pml3e_t *pml3;
+pml3e_040_t *pml3;
 
 struct bootinfo_item {
 	uint16_t tag;
@@ -177,7 +177,7 @@ map_page(uint32_t virt, uint32_t phys, bool writeable)
 		pml3[addr.l3i].writeprotect = 0;
 		pml3[addr.l3i].type = 3;
 	}
-	pml2e_t *pml2 = (void *)(pml3[addr.l3i].addr << 4);
+	pml2e_040_t *pml2 = (void *)(pml3[addr.l3i].addr << 4);
 
 	if (pml2[addr.l2i].addr == 0) {
 		uint32_t pml1 = (uint32_t)aligned_alloc(sizeof(pml1_t), 512);
@@ -186,8 +186,8 @@ map_page(uint32_t virt, uint32_t phys, bool writeable)
 		pml2[addr.l2i].writeprotect = 0;
 		pml2[addr.l2i].type = 3;
 	}
-	pte_hw_t *pml1 = (void *)(pml2[addr.l2i].addr << 4);
-	pte_hw_t *pml1e = &pml1[addr.l1i];
+	pml1e_040_t *pml1 = (void *)(pml2[addr.l2i].addr << 4);
+	pml1e_040_t *pml1e = &pml1[addr.l1i];
 
 	pml1e->pfn = (uintptr_t)phys >> 12;
 	pml1e->cachemode = 1; /* cacheable, copyback */
@@ -259,9 +259,9 @@ pmap_trans(void *virt)
 	printf("L3i %d, l2i %d, l1i %d, pgi %d\n", addr.l3i, addr.l2i,
 	    addr.l1i);
 
-	pml2e_t *pml2 = (void *)(pml3[addr.l3i].addr << 4);
-	pml1e_t *pml1 = (void *)(pml2[addr.l2i].addr << 4);
-	pml1e_t *pml1e = &pml1[addr.l1i];
+	pml2e_040_t *pml2 = (void *)(pml3[addr.l3i].addr << 4);
+	pml1e_040_t *pml1 = (void *)(pml2[addr.l2i].addr << 4);
+	pml1e_040_t *pml1e = &pml1[addr.l1i];
 	return (void *)(pml1e->pfn << 12);
 }
 

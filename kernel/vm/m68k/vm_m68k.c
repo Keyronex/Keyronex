@@ -230,14 +230,15 @@ vmp_md_unenter_kwired(vaddr_t virt)
 
 /* NOTE: please rewrite this */
 vm_fault_return_t
-vmp_md_wire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
+vmp_md_wire_pte(vm_procstate_t *vmps, vaddr_t vaddr,
+    struct vmp_pte_wire_state *state)
 {
 	union vaddr_040 addr;
 	vm_page_t *pml2_page, *pml1_page;
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
 
-	addr.addr = state->addr;
+	addr.addr = vaddr;
 
 	kprintf("Wire PTE for 0x%x: %d.%d.%d\n", addr.addr, addr.l3i, addr.l2i,
 	    addr.l1i);

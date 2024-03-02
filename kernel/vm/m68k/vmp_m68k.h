@@ -95,14 +95,14 @@ vmp_md_pte_is_valid(pte_t *pte)
 static inline pfn_t
 vmp_md_pte_hw_pfn(pte_t *pte, int level)
 {
-	switch (level){
-		case 1:
+	switch (level) {
+	case 1:
 		return pte->hw_pml1_040.pfn;
-		case 2:
+	case 2:
 		return pte->hw_pml2_040.addr;
-		case 3:
+	case 3:
 		return pte->hw_pml3_040.addr;
-		default:
+	default:
 		kfatal("unexpected level");
 	}
 }
