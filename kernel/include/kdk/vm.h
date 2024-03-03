@@ -117,7 +117,10 @@ typedef struct vm_page {
 	};
 
 	/* 32-bit: word 7, 64-bit: word 6 */
-	void *owner;
+	union {
+		void *owner;
+		kprocess_t *process;
+	};
 
 	/* 32-bit: word 8; 64-bit: word 7 */
 	uintptr_t swap_descriptor;

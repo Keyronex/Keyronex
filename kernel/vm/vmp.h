@@ -183,6 +183,8 @@ int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_t **out,
     vm_page_t **out_page);
 /*! @brief Locally invalidate a page. */
 void pmap_invlpg(vaddr_t addr);
+void vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+    vm_page_t *tablepage, pte_t *dirpte, bool is_new);
 
 void vmp_pages_dump(void);
 

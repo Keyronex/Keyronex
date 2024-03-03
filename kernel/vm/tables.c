@@ -1,9 +1,33 @@
+#include "kdk/nanokern.h"
 #include "vmp.h"
 
-#if 0
+static bool
+page_is_root_table(vm_page_t *page)
+{
+	return page->use == (kPageUsePML1 + (VMP_TABLE_LEVELS - 1));
+}
+
+void
+vmp_pagetable_page_valid_pte_created(kprocess_t *ps, vm_page_t *page,
+    bool is_new)
+{
+	vmp_page_retain_locked(page);
+	if (is_new)
+		page->nonzero_ptes++;
+	if (page->valid_ptes++ == 0 && !page_is_root_table(page)) {
+#if PAGETABLE_PAGING
+		vmp_wsl_lock_entry(ps, P2V(vmp_page_paddr(page)));
+#else
+		(void)0;
+#endif
+	}
+}
+
 /*!
  * Note: WS lock and PFN lock will be locked and unlocked regularly here.
  * \pre VAD list mutex held
+ * \pre WS mutex held
+ * \pre PFN database lock held
  */
 int
 vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
@@ -14,7 +38,6 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 	pte_t *table;
 
 	vmp_addr_unpack(vaddr, indexes);
-	state->ps = ps;
 
 	ipl = vmp_acquire_pfn_lock();
 
@@ -30,7 +53,8 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 	 */
 	table = (pte_t*)P2V(ps->vm->md.table);;
 	pages[VMP_TABLE_LEVELS - 1] = vm_paddr_to_page(ps->vm->md.table);
-	vmp_pagetable_page_nonswap_pte_created(ps, pages[VMP_TABLE_LEVELS - 1], true);
+	vmp_pagetable_page_valid_pte_created(ps, pages[VMP_TABLE_LEVELS - 1],
+	    true);
 
 	for (int level = VMP_TABLE_LEVELS; level > 0; level--) {
 		pte_t *pte = &table[indexes[level]];
@@ -54,21 +78,53 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 		case kPTEKindValid: {
 			vm_page_t *page = vmp_pte_hw_page(pte, level);
 			pages[level - 2] = page;
-			vmp_pagetable_page_nonswap_pte_created(ps, page, true);
+			/* pin this next level */
+			vmp_pagetable_page_valid_pte_created(ps, page, true);
 			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, level));
 			break;
 		}
 
+		case kPTEKindZero: {
+			vm_page_t *page;
+			int r;
+
+			/* newly-allocated page is retained */
+			r = vmp_page_alloc_locked(&page,
+			    kPageUsePML1 + (level - 2), false);
+			kassert(r == 0);
+
+			pages[level - 2] = page;
+
+			/* manually adjust the new page, includes our pinning */
+			vmp_page_retain_locked(page);
+			page->process = ps;
+			page->nonzero_ptes++;
+			page->valid_ptes++;
+			page->referent_pte = V2P(pte);
+
+#if PAGETABLE_PAGING
+			vmp_wsl_insert(ps, P2V(vmp_page_paddr(page)), true,
+			    true);
+#endif
+
+			vmp_md_setup_table_pointers(ps, pages[level - 1], page,
+			    pte, true);
+
+			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, level));
+			break;
+		}
+
+#if PAGETABLE_PAGING
 		case kPTEKindTrans: {
 			paddr_t next_table_p = vmp_pfn_to_paddr(pte->trans.pfn);
-			vm_page_t *page = vmp_paddr_to_page(next_table_p);
+			vm_page_t *page = vm_paddr_to_page(next_table_p);
 			/* retain for our wiring purposes */
 			pages[level - 2] = vmp_page_retain_locked(page);
 
 			/* manually adjust the page */
 			vmp_page_retain_locked(page);
 			page->nonzero_ptes++;
-			page->nonswap_ptes++;
+			page->valid_ptes++;
 			vmp_wsl_insert(ps, P2V(next_table_p), true, true);
 
 			vmp_md_setup_table_pointers(ps, pages[level - 1], page,
@@ -95,42 +151,18 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 		case kPTEKindSwap:
 			kfatal("swap page back in\n");
 			break;
+#endif
 
-		case kPTEKindZero: {
-			vm_page_t *page;
-			int r;
-
-			/* newly-allocated page is retained */
-			r = vmp_page_alloc_locked(&page,
-			    kPageUsePML1 + (level - 2), false);
-			kassert(r == 0);
-
-			pages[level - 2] = page;
-
-			/* manually adjust the new page */
-			vmp_page_retain_locked(page);
-			page->process = ps;
-			page->nonzero_ptes++;
-			page->nonswap_ptes++;
-			page->referent_pte = V2P(pte);
-			vmp_wsl_insert(ps, P2V(vmp_page_paddr(page)), true, true);
-
-			vmp_md_setup_table_pointers(ps, pages[level - 1], page,
-			    pte, true);
-
-			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, level));
-			break;
-		}
+		default:
+			kfatal("Unexpected page table PTE state!\n");
 		}
 	}
 	kfatal("unreached\n");
 }
-#endif
 
 int
 vmp_fetch_pte(kprocess_t *ps, vaddr_t vaddr, bool create, pte_t **pte_out)
 {
-	ipl_t ipl;
 	int indexes[VMP_TABLE_LEVELS + 1];
 	pte_t *table;
 

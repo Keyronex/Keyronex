@@ -6,6 +6,7 @@
 #include "kdk/vmem.h"
 #include "kdk/vmem_impl.h"
 #include "mmu_040.h"
+#include "vm/m68k/vmp_m68k.h"
 #include "vm/vmp.h"
 
 #define kPTEWireStatePML2 1
@@ -263,6 +264,7 @@ vmp_md_wire_pte(vm_procstate_t *vmps, vaddr_t vaddr,
 		pml2_page->nonzero_ptes = 0;
 		pml2_page->referent_pte = (paddr_t)&pml3_phys[l3i_base];
 
+#if 1
 		pml2s_phys = vm_page_paddr(pml2_page);
 		for (int i = 0; i < 8; i++) {
 			pml3_virt[l3i_base + i].addr = (pml2s_phys + i * 512) >>
@@ -271,6 +273,15 @@ vmp_md_wire_pte(vm_procstate_t *vmps, vaddr_t vaddr,
 			pml3_virt[l3i_base + i].writeprotect = 0;
 			pml3_virt[l3i_base + i].type = 3;
 		}
+#else
+		/*
+		 * we have the problem that there is no vm_page_t describing the
+		 * PML3
+		 */
+		vmp_md_setup_table_pointers(NULL,
+		    vm_paddr_to_page((paddr_t)pml3_phys), pml2_page,
+		    (pte_t *)&pml3_virt[addr.l3i], true);
+#endif
 
 		state->pgtable_pages[kPTEWireStatePML2] = pml2_page;
 	} else {
@@ -302,6 +313,7 @@ fetch_pml1:
 		pml1_page->valid_ptes = 0;
 		pml1_page->nonzero_ptes = 0;
 
+#if 0
 		pml1s_phys = vm_page_paddr(pml1_page);
 		for (int i = 0; i < 16; i++) {
 			pml2_virt[l2i_base + i].addr = (pml1s_phys + i * 256) >>
@@ -310,6 +322,9 @@ fetch_pml1:
 			pml2_virt[l2i_base + i].writeprotect = 0;
 			pml2_virt[l2i_base + i].type = 3;
 		}
+#endif
+		vmp_md_setup_table_pointers(NULL, pml2_page, pml1_page,
+		    (pte_t *)&pml2_virt[addr.l2i], true);
 		state->pgtable_pages[kPTEWireStatePML1] = pml1_page;
 	} else {
 		/* assuming it's valid... */
@@ -388,3 +403,29 @@ NEW
 
 
 */
+
+void
+vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+    vm_page_t *tablepage, pte_t *dirpte, bool is_new)
+{
+	int npages;
+	paddr_t phys = vm_page_paddr(tablepage);
+
+	if (dirpage->use == kPageUsePML3)
+		npages = 8;
+	else if (dirpage->use == kPageUsePML2)
+		npages = 16;
+	else
+		kfatal("unexpected page directory use\n");
+
+	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
+
+	for (int i = 0; i < npages; i++) {
+		pte_t pte;
+		pte.hw_pml2_040.addr = (phys + i * PGSIZE / npages) >> 4;
+		pte.hw_pml2_040.used = 0;
+		pte.hw_pml2_040.writeprotect = 0;
+		pte.hw_pml2_040.type = 3;
+		dirpte[i].value = pte.value;
+	}
+}
