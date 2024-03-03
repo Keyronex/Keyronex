@@ -150,9 +150,6 @@ struct vm_section {
 /* paddr_t vmp_pfn_to_paddr(pfn_t pfn) */
 #define vmp_pfn_to_paddr(PFN) ((paddr_t)PFN << VMP_PAGE_SHIFT)
 
-/* paddr_t vmp_pte_hw_paddr(pte_t *pte, int level) */
-#define vmp_pte_hw_paddr(PTE, LVL) vmp_pfn_to_paddr(vmp_md_pte_hw_pfn(PTE, LVL))
-
 /* NOTE: we require that we can always get to the *page* this way, regardless of
  * level, even though on e.g. 68040 the root and 2nd levels have a more specific
  * pointer in their PTEs */

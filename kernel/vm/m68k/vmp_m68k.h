@@ -99,9 +99,24 @@ vmp_md_pte_hw_pfn(pte_t *pte, int level)
 	case 1:
 		return pte->hw_pml1_040.pfn;
 	case 2:
-		return pte->hw_pml2_040.addr;
+		return pte->hw_pml2_040.addr << 8;
 	case 3:
-		return pte->hw_pml3_040.addr;
+		return pte->hw_pml3_040.addr << 8;
+	default:
+		kfatal("unexpected level");
+	}
+}
+
+static inline paddr_t
+vmp_pte_hw_paddr(pte_t *pte, int level)
+{
+	switch (level) {
+	case 1:
+		return pte->hw_pml1_040.pfn << 12;
+	case 2:
+		return pte->hw_pml2_040.addr << 4;
+	case 3:
+		return pte->hw_pml3_040.addr << 4;
 	default:
 		kfatal("unexpected level");
 	}
