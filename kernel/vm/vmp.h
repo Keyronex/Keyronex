@@ -202,6 +202,15 @@ void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr);
 /*! @brief Evict one entry from a working set list @pre PFN HELD*/
 void wsl_evict_one(vm_procstate_t *ps);
 
+/*!
+ * Note: WS lock and PFN lock will be locked and unlocked regularly here.
+ * \pre VAD list mutex held
+ * \pre WS mutex held
+ * \pre PFN database lock held
+ */
+int vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr,
+    struct vmp_pte_wire_state *state);
+
 extern kspinlock_t vmp_pfn_lock;
 
 extern struct vmem vmem_kern_nonpaged;

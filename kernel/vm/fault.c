@@ -229,7 +229,12 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 		kfatal("Write fault at 0x%zx in nonwriteable vad\n", vaddr);
 
 	ipl = vmp_acquire_pfn_lock();
+#if 0
 	r = vmp_md_wire_pte(vmps, vaddr, state);
+#else
+	vmp_release_pfn_lock(ipl);
+	r = vmp_wire_pte(vmps, vaddr, state);
+#endif
 	if (r != kVMFaultRetOK) {
 		/* map mutex unlocked, PFNDB unlocked, and at IPL 0 */
 		return r;

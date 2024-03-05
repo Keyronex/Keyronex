@@ -24,6 +24,72 @@ vmp_pagetable_page_valid_pte_created(kprocess_t *ps, vm_page_t *page,
 }
 
 /*!
+ * @brief Update pagetable page after PTE(s) made zero within it.
+ *
+ * This will amend the PFNDB entry's nonswap and nonzero PTE count, and if the
+ * new nonzero PTE count is zero, delete the page. If the new nonswap PTE count
+ * is zero, the page will be unlocked from its owning process' working set.
+ *
+ * @pre ps->ws_lock held
+ */
+static void
+vmp_pagetable_page_pte_deleted(kprocess_t *ps, vm_page_t *page, bool was_swap)
+{
+	if (page->nonzero_ptes-- == 1 && !page_is_root_table(page)) {
+		vm_page_t *dirpage;
+
+		page->use = kPageUseDeleted;
+
+#if PAGETABLE_PAGING
+		if (page->nonswap_ptes == 1) {
+			vmp_wsl_unlock_entry(ps, P2V(vmp_page_paddr(page)));
+			vmp_wsl_remove(ps, P2V(vmp_page_paddr(page)));
+		} else if (page->nonswap_ptes == 0)
+			vmp_wsl_remove(ps, P2V(vmp_page_paddr(page)));
+		else
+			kfatal("expectex nonswap_ptes to be 0 or 1\n");
+#endif
+
+		dirpage = vm_paddr_to_page(page->referent_pte);
+#if 0
+		vmp_md_delete_table_pointers(ps, dirpage,
+		    (pte_t *)P2V(page->referent_pte));
+#endif
+
+		page->valid_ptes = 0;
+		page->referent_pte = 0;
+
+#if PAGETABLE_PAGING
+		/*! once for the working set removal.... */
+		vmp_page_release_locked(page);
+#endif
+		/*! and once for the PTE zeroing; this will free the page. */
+		vmp_page_release_locked(page);
+
+		return;
+	}
+	if (!was_swap && page->valid_ptes-- == 1 && !page_is_root_table(page)) {
+#if PAGETABLE_PAGING
+		vmp_wsl_unlock_entry(ps, P2V(vmp_page_paddr(page)));
+#else
+		(void)0;
+#endif
+	}
+	vmp_page_release_locked(page);
+}
+
+void
+vmp_pte_wire_state_release(struct vmp_pte_wire_state *state)
+{
+	for (int i = 0; i < VMP_TABLE_LEVELS; i++) {
+		if (state->pgtable_pages[i] == NULL)
+			continue;
+		vmp_pagetable_page_pte_deleted(state->pgtable_pages[i]->process,
+		    state->pgtable_pages[i], false);
+	}
+}
+
+/*!
  * Note: WS lock and PFN lock will be locked and unlocked regularly here.
  * \pre VAD list mutex held
  * \pre WS mutex held
