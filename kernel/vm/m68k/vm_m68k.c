@@ -22,6 +22,15 @@ vm_procstate_t kernel_procstate;
 vmem_t vmem_kern_nonpaged_va;
 vmem_t vmem_kern_nonpaged;
 
+static void
+store_urp_and_srp(paddr_t val)
+{
+	asm volatile("movec %0, %%urp\n\t"
+		     "movec %0, %%srp"
+		     :
+		     : "r"(val));
+}
+
 static paddr_t
 fetch_urp(void)
 {
@@ -44,10 +53,17 @@ vmp_kernel_init(void)
 	    kVMemBootstrap, kIPL0);
 
 	ke_mutex_init(&kernel_procstate.mutex);
-	kernel_procstate.md.table = fetch_urp();
 	RB_INIT(&kernel_procstate.vad_queue);
 	RB_INIT(&kernel_procstate.wsl.tree);
 	TAILQ_INIT(&kernel_procstate.wsl.queue);
+
+	vm_page_t *kernel_table;
+	paddr_t kernel_addr;
+	vm_page_alloc(&kernel_table, 0, kPageUsePML3, true);
+	kernel_addr = vmp_page_paddr(kernel_table);
+	kernel_procstate.md.table = kernel_addr;
+	memcpy((void *)P2V(kernel_addr), (void *)P2V(fetch_urp()), PGSIZE);
+	store_urp_and_srp(kernel_addr);
 }
 
 /*!

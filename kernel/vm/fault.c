@@ -240,6 +240,8 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 		return r;
 	}
 
+	ipl = vmp_acquire_pfn_lock();
+
 	/*
 	 * Now that the wiring is done, the PFNDB lock remains held.
 	 * Let us characterise the PTE first. If the PTE is not valid, then
