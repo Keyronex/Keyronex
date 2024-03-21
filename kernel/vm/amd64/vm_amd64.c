@@ -173,3 +173,13 @@ pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_t **out,
 {
 	kfatal("Kindly implement\n");
 }
+
+
+/* new stuff */
+
+void
+vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+    vm_page_t *tablepage, pte_t *dirpte, bool is_new)
+{
+	kfatal("Implement me\n");
+}

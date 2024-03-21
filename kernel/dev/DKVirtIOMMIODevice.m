@@ -259,7 +259,7 @@ dpc_handler(void *arg)
 		return -1;
 	}
 
-#if PORT == virt68k
+#ifdef __m68k__
 	gfpic_handle_irq(m_interrupt, vitrio_handler, self);
 	gfpic_unmask_irq(m_interrupt);
 #endif

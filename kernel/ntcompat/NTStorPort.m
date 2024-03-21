@@ -312,9 +312,9 @@ trimstr(char *str, size_t length)
 	iop = iop_new(self);
 
 	for (size_t path = 0;
-	     path < m_deviceExtension->portConfig->NumberOfBuses; path++) {
-		for (size_t target = 0; target <
-		     m_deviceExtension->portConfig->MaximumNumberOfTargets;
+	     path <  1/* m_deviceExtension->portConfig->NumberOfBuses */; path++) {
+		for (size_t target = 0; target < 1
+		     /*m_deviceExtension->portConfig->MaximumNumberOfTargets */;
 		     target++) {
 			srb_init_execute_scsi(srb, SRB_FLAGS_DATA_IN, path,
 			    target, 0, sizeof(struct _REPORT_LUNS), buffer,

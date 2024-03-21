@@ -6,11 +6,16 @@
 #include "kdk/vm.h"
 #include "mmu_regs.h"
 
+#define VMP_TABLE_LEVELS 4
+#define VMP_PAGE_SHIFT 12
+
 enum software_pte_kind {
-	/*! this is not a software PTE */
-	kNotSoftware = 0x0,
-	/*! this is a PTE for a */
-	kSoftPteKindBusy = 0x1,
+	/*! PTE represents an address in swap. */
+	kSoftPteKindSwap,
+	/*! PTE represents a page being read-in from disk. */
+	kSoftPteKindBusy,
+	/*! PTE is transitional between memory and disk; not in working set. */
+	kSoftPteKindTrans,
 };
 
 struct vmp_md_procstate {
@@ -88,6 +93,41 @@ static inline bool
 vmp_md_hw_pte_is_writeable(pte_hw_t *pte)
 {
 	return pte->value & kMMUWrite;
+}
+
+/* new stuff */
+
+static inline enum vmp_pte_kind
+vmp_pte_characterise(pte_t *pte)
+{
+	if (vmp_md_pte_is_empty(pte))
+		return kPTEKindZero;
+	else if (vmp_md_pte_is_valid(pte))
+		return kPTEKindValid;
+	else if (pte->sw.kind == kSoftPteKindBusy)
+		return kPTEKindBusy;
+	else if (pte->sw.kind == kSoftPteKindTrans)
+		return kPTEKindTrans;
+	else {
+		kassert(pte->sw.kind == kSoftPteKindSwap);
+		return kPTEKindSwap;
+	}
+}
+
+static inline paddr_t
+vmp_pte_hw_paddr(pte_t *pte, int level)
+{
+	return pte->hw.pfn >> VMP_PAGE_SHIFT;
+}
+
+static inline void
+vmp_addr_unpack(vaddr_t vaddr, int unpacked[VMP_TABLE_LEVELS + 1])
+{
+	uintptr_t virta = (uintptr_t)vaddr;
+	unpacked[4] = ((virta >> 39) & 0x1FF);
+	unpacked[3] = ((virta >> 30) & 0x1FF);
+	unpacked[2] = ((virta >> 21) & 0x1FF);
+	unpacked[1] = ((virta >> 12) & 0x1FF);
 }
 
 
