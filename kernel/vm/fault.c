@@ -34,17 +34,6 @@ section_get_filepage(vm_section_t *section, size_t offset)
 	return RB_FIND(vmp_file_page_tree, &section->file.page_tree, &key);
 }
 
-static void
-vmp_unwire_pte(vm_procstate_t *vmps, struct vmp_pte_wire_state *state)
-{
-	vmp_md_pagetable_pte_zeroed(vmps, state->pgtable_pages[0]);
-	for (int i = 1; i < 5; i++) {
-		if (state->pgtable_pages[i] == NULL)
-			continue;
-		vmp_page_release_locked(state->pgtable_pages[i]);
-	}
-}
-
 /*!
  * \pre PFN lock held.
  */
@@ -60,6 +49,7 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 	size_t vad_pg_offset = (vaddr - vad->start) / PGSIZE;
 	SLIST_HEAD(, vmp_pager_state) pager_state_list;
 	TAILQ_HEAD(, iop) iop_list;
+	vm_page_t *table_page = state->pgtable_pages[0];
 
 	TAILQ_INIT(&iop_list);
 	SLIST_INIT(&pager_state_list);
@@ -87,6 +77,8 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 			vmp_md_pagetable_ptes_created(state, 1);
 			vmp_wsl_insert(state->vmps,
 			    vaddr + cluster_idx * PGSIZE, false);
+			table_page->valid_ptes++;
+			table_page->nonzero_ptes++;
 		} else {
 			if (!pages_uncached) {
 				/*
@@ -162,6 +154,8 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 
 			vmp_wsl_insert(state->vmps,
 			    vaddr + (starting_offset + i) * PGSIZE, false);
+
+			table_page->nonzero_ptes++;
 		}
 
 		vmp_md_pagetable_ptes_created(state, length);
@@ -197,6 +191,7 @@ do_file_read_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr,
 			kassert(page->pager_request == pgstate);
 			vmp_md_pte_create_hw(pte, pte->sw.data, false,
 			    true);
+			table_page->valid_ptes++;
 		}
 	}
 }
@@ -290,6 +285,8 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 			    vad->flags.protection & kVMWrite, true);
 			vmp_wsl_insert(state->vmps, vaddr, false);
 			vmp_md_pagetable_ptes_created(state, 1);
+
+			kfatal("Anonymous fault not yet tested\n");
 		} else {
 			do_file_read_fault(state, vaddr, vad, ncluster);
 		}
@@ -307,7 +304,7 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 		kfatal("unhandled case\n");
 	}
 
-	vmp_unwire_pte(vmps, state);
+	vmp_pte_wire_state_release(state);
 
 	vmp_release_pfn_lock(ipl);
 	ke_mutex_release(&vmps->mutex);

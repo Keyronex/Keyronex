@@ -491,7 +491,7 @@ vmp_page_release_locked(vm_page_t *page)
 	}
 }
 
-static const char *
+const char *
 vm_page_use_str(enum vm_page_use use)
 {
 	switch (use) {

@@ -173,6 +173,11 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 			    true);
 #endif
 
+			/*
+			 * this function also amends the directory's vm_page_t
+			 * to add to its valid and nonzero PTE counts the
+			 * needful
+			 */
 			vmp_md_setup_table_pointers(ps, pages[level - 1], page,
 			    pte, true);
 

@@ -210,6 +210,7 @@ void wsl_evict_one(vm_procstate_t *ps);
  */
 int vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr,
     struct vmp_pte_wire_state *state);
+void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state);
 
 extern kspinlock_t vmp_pfn_lock;
 

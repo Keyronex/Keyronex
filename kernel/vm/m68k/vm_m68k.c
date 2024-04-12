@@ -420,6 +420,8 @@ NEW
 
 */
 
+const char *vm_page_use_str(enum vm_page_use use);
+
 void
 vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, bool is_new)
@@ -433,6 +435,11 @@ vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
 		npages = 16;
 	else
 		kfatal("unexpected page directory use\n");
+
+	/* retain the page directory, and update its PTE counts accordingly... */
+	vmp_page_retain_locked(dirpage);
+	dirpage->valid_ptes += npages;
+	dirpage->nonzero_ptes += npages;
 
 	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
 

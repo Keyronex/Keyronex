@@ -71,10 +71,12 @@ wsl_evict_one(vm_procstate_t *ps)
 	TAILQ_REMOVE(&ps->wsl.queue, wsle, queue_entry);
 	RB_REMOVE(vmp_wsle_tree, &ps->wsl.tree , wsle);
 
-	kprintf("Evicting 0x%zx\n", wsle->vaddr);
 	r = pmap_get_pte_ptr(ps, wsle->vaddr, &pte, &pte_page);
 	kassert(r == 0);
 	kassert(vmp_md_pte_is_valid(pte));
+
+	kprintf("Evicting 0x%zx\n", wsle->vaddr);
+
 
 	kmem_free(wsle, sizeof(*wsle));
 	vm_page_evict(ps, pte, pte_page);

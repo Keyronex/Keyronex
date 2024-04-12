@@ -126,10 +126,11 @@ cstart(struct handover *handover)
 
 	vmp_kernel_init();
 	kmem_init();
-
+#if 0
 	vaddr_t fun = vm_kalloc(1024, 0);
 	vmp_pages_dump();
 	vm_kfree(fun, 1024, 0);
+#endif
 
 #if 0
 	vaddr_t addr;
