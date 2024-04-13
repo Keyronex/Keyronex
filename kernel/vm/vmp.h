@@ -159,6 +159,9 @@ struct vm_section {
 /*! Initialise kernel virtual memory. */
 void vmp_kernel_init(void);
 
+
+/*! Initialise kernel virtual memory, platform-specific part. */
+void vmp_md_kernel_init(void);
 /*!
  * @post If kVMFaultRetOK, reference held to each pagetable level and used PTE
  * count incremented on leaf table.

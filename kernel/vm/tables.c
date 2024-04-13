@@ -105,7 +105,9 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 
 	vmp_addr_unpack(vaddr, indexes);
 
+#if 0
 	ipl = vmp_acquire_pfn_lock();
+#endif
 
 	/*
 	 * start by pinning root table with a valid-pte reference, to keep it
@@ -130,7 +132,9 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 		if (level == 1) {
 			memcpy(state->pgtable_pages, pages, sizeof(pages));
 			state->pte = pte;
+#if 0
 			vmp_release_pfn_lock(ipl);
+#endif
 			return 0;
 		}
 

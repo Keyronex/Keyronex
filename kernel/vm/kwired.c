@@ -1,3 +1,4 @@
+#include "kdk/executive.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
 #include "vmp.h"
@@ -5,29 +6,76 @@
 int vmp_md_enter_kwired(vaddr_t virt, paddr_t phys);
 vm_page_t *vmp_md_unenter_kwired(vaddr_t virt);
 
-extern vm_procstate_t kernel_procstate;
+void vmem_earlyinit(void);
+int internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
+    vmem_addr_t *out);
+void internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
+    vmem_flag_t flags);
+
+vm_procstate_t kernel_procstate;
+vmem_t vmem_kern_nonpaged_va;
+vmem_t vmem_kern_nonpaged;
+
+void
+vmp_kernel_init(void)
+{
+	vmem_earlyinit();
+	vmem_init(&kernel_procstate.vmem, "kernel-dynamic-va", KVM_DYNAMIC_BASE,
+	    KVM_DYNAMIC_SIZE, PGSIZE, NULL, NULL, NULL, 0, kVMemBootstrap,
+	    kIPL0);
+	vmem_init(&vmem_kern_nonpaged_va, "kernel-nonpaged-va", KVM_WIRED_BASE,
+	    KVM_WIRED_SIZE, PGSIZE, NULL, NULL, NULL, 0, kVMemBootstrap, kIPL0);
+	vmem_init(&vmem_kern_nonpaged, "kernel-nonpaged", 0, 0, PGSIZE,
+	    internal_allocwired, internal_freewired, &vmem_kern_nonpaged_va, 0,
+	    kVMemBootstrap, kIPL0);
+
+	ke_mutex_init(&kernel_procstate.mutex);
+	RB_INIT(&kernel_procstate.vad_queue);
+	RB_INIT(&kernel_procstate.wsl.tree);
+	TAILQ_INIT(&kernel_procstate.wsl.queue);
+
+	vmp_md_kernel_init();
+}
 
 int
 internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
     vmem_addr_t *out)
 {
 	int r;
+	pte_t *pte = NULL;
+	struct vmp_pte_wire_state pte_wire;
+	vmem_addr_t addr;
 
-	r = vmem_xalloc(vmem, size, 0, 0, 0, 0, 0, flags | kVMemPFNDBHeld, out);
+	r = vmem_xalloc(vmem, size, 0, 0, 0, 0, 0, flags | kVMemPFNDBHeld,
+	    &addr);
 	if (r < 0) {
 		kfatal("vmem_xalloc returned %d\n", r);
 		return r;
 	}
 
+	*out = addr;
+
 #ifdef TRACE_KWIRED
-	kprintf("Entering from %p-%p (size %zu)\n", *out,
-	    (*out) + size, size);
+	kprintf("Entering from %p-%p (size %zu)\n", *out, (*out) + size, size);
 #endif
-	for (int i = 0; i < size - 1; i += PGSIZE) {
+	for (int i = 0; i < size - 1; i += PGSIZE, addr += PGSIZE) {
 		vm_page_t *page;
-		vmp_page_alloc_locked(&page, kPageUseKWired, true);
-		vmp_md_enter_kwired(*out + i, vm_page_paddr(page));
+
+		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+			if (pte)
+				vmp_pte_wire_state_release(&pte_wire);
+			r = vmp_wire_pte(&kernel_process, addr, &pte_wire);
+			kassert (r == 0);
+			pte = pte_wire.pte;
+		}
+
+		r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
+		kassert(r == 0);
+		vmp_md_pte_create_hw(pte, page->pfn, true, true);
+		vmp_md_pagetable_ptes_created(&pte_wire, 1);
 	}
+
+	vmp_pte_wire_state_release(&pte_wire);
 
 	return 0;
 }

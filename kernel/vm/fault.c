@@ -1,5 +1,6 @@
 #include "kdk/dev.h"
 #include "kdk/kmem.h"
+#include "kdk/executive.h"
 #include "kdk/libkern.h"
 #include "kdk/queue.h"
 #include "kdk/vm.h"
@@ -34,6 +35,7 @@ section_get_filepage(vm_section_t *section, size_t offset)
 	return RB_FIND(vmp_file_page_tree, &section->file.page_tree, &key);
 }
 
+#if 0
 /*!
  * \pre PFN lock held.
  */
@@ -200,6 +202,7 @@ int
 vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 {
 #ifdef __m68k__
+	kprocess_t *process = kernel_process;
 	vm_procstate_t *vmps = CURMAP;
 	vm_vad_t *vad;
 	vm_fault_return_t r;
@@ -314,6 +317,7 @@ vmp_do_fault(struct vmp_pte_wire_state *state, vaddr_t vaddr, bool write)
 	kfatal("VM_FAULT\n");
 #endif
 }
+#endif
 
 int
 vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out)
@@ -325,5 +329,6 @@ vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out)
 	state.vmps = CURMAP;
 	memset(state.pgtable_pages, 0x0, sizeof(state.pgtable_pages));
 
-	vmp_do_fault(&state, vaddr, write);
+	kfatal("Fault\n");
+	//vmp_do_fault(&state, vaddr, write);
 }

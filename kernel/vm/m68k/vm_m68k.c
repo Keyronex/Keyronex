@@ -12,15 +12,7 @@
 #define kPTEWireStatePML2 1
 #define kPTEWireStatePML1 0
 
-void vmem_earlyinit(void);
-int internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
-    vmem_addr_t *out);
-void internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
-    vmem_flag_t flags);
-
-vm_procstate_t kernel_procstate;
-vmem_t vmem_kern_nonpaged_va;
-vmem_t vmem_kern_nonpaged;
+extern vm_procstate_t kernel_procstate;
 
 static void
 store_urp_and_srp(paddr_t val)
@@ -40,23 +32,8 @@ fetch_urp(void)
 }
 
 void
-vmp_kernel_init(void)
+vmp_md_kernel_init(void)
 {
-	vmem_earlyinit();
-	vmem_init(&kernel_procstate.vmem, "kernel-dynamic-va", KVM_DYNAMIC_BASE,
-	    KVM_DYNAMIC_SIZE, PGSIZE, NULL, NULL, NULL, 0, kVMemBootstrap,
-	    kIPL0);
-	vmem_init(&vmem_kern_nonpaged_va, "kernel-nonpaged-va", KVM_WIRED_BASE,
-	    KVM_WIRED_SIZE, PGSIZE, NULL, NULL, NULL, 0, kVMemBootstrap, kIPL0);
-	vmem_init(&vmem_kern_nonpaged, "kernel-nonpaged", 0, 0, PGSIZE,
-	    internal_allocwired, internal_freewired, &vmem_kern_nonpaged_va, 0,
-	    kVMemBootstrap, kIPL0);
-
-	ke_mutex_init(&kernel_procstate.mutex);
-	RB_INIT(&kernel_procstate.vad_queue);
-	RB_INIT(&kernel_procstate.wsl.tree);
-	TAILQ_INIT(&kernel_procstate.wsl.queue);
-
 	vm_page_t *kernel_table;
 	paddr_t kernel_addr;
 	vm_page_alloc(&kernel_table, 0, kPageUsePML3, true);

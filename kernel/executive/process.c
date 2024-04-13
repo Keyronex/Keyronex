@@ -2,6 +2,9 @@
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
 
+extern vm_procstate_t kernel_procstate;
+kprocess_t kernel_process = { .vm = &kernel_procstate };
+
 int
 ps_create_kernel_thread(kthread_t **out, const char *name, void (*fn)(void *),
     void *arg)
