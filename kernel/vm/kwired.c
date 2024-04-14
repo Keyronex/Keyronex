@@ -58,6 +58,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 #ifdef TRACE_KWIRED
 	kprintf("Entering from %p-%p (size %zu)\n", *out, (*out) + size, size);
 #endif
+
 	for (int i = 0; i < size - 1; i += PGSIZE, addr += PGSIZE) {
 		vm_page_t *page;
 
@@ -65,7 +66,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 			if (pte)
 				vmp_pte_wire_state_release(&pte_wire);
 			r = vmp_wire_pte(&kernel_process, addr, &pte_wire);
-			kassert (r == 0);
+			kassert(r == 0);
 			pte = pte_wire.pte;
 		}
 
@@ -85,8 +86,8 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
     vmem_flag_t flags)
 {
 	int r;
-
-#if 0
+	pte_t *pte = NULL;
+	struct vmp_pte_wire_state pte_wire;
 
 	r = vmem_xfree(vmem, addr, size, flags | kVMemPFNDBHeld);
 	if (r < 0) {
@@ -96,18 +97,27 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 	r = size;
 
 #ifdef TRACE_KWIRED
-	kprintf("Unentering from %p-%p (size %zu)\n", addr, addr * size,
-	    size);
+	kprintf("Unentering from %p-%p (size %zu)\n", addr, addr * size, size);
 #endif
-	for (int i = 0; i < r; i += PGSIZE) {
-		vm_page_t *page = vmp_md_unenter_kwired((vaddr_t)addr + i);
-		(void)page;
-		pmap_invlpg(addr + i);
-		// kassert(page->wirecnt == 1);
-		// page->wirecnt = 0;
-		// vmp_page_free_locked(kernel_process.map, page);
+	for (int i = 0; i < size - 1; i += PGSIZE, addr += PGSIZE) {
+		vm_page_t *page;
+
+		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+			if (pte)
+				vmp_pte_wire_state_release(&pte_wire);
+			r = vmp_wire_pte(&kernel_process, addr, &pte_wire);
+			kassert(r == 0);
+			pte = pte_wire.pte;
+		}
+
+		page = vmp_pte_hw_page(pte, 1);
+		pte->value = 0x0;
+		vmp_pagetable_page_pte_deleted(&kernel_process,
+		    pte_wire.pgtable_pages[0], false);
+		vmp_page_delete_locked(page);
+		vmp_page_release_locked(page);
 	}
-#endif
+	vmp_pte_wire_state_release(&pte_wire);
 }
 
 vaddr_t
@@ -146,7 +156,6 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 void
 vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 {
-#if 1
 	ipl_t ipl;
 
 	if (!(flags & kVMemPFNDBHeld))
@@ -160,7 +169,6 @@ vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 
 	if (!(flags & kVMemPFNDBHeld))
 		vmp_release_pfn_lock(ipl);
-#endif
 }
 
 int
