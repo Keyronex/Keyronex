@@ -415,6 +415,8 @@ vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
 
 	/* retain the page directory, and update its PTE counts accordingly... */
 	vmp_page_retain_locked(dirpage);
+	/* add remainder of refcount... */
+	dirpage->refcnt += npages - 1;
 	dirpage->valid_ptes += npages;
 	dirpage->nonzero_ptes += npages;
 
@@ -428,4 +430,29 @@ vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
 		pte.hw_pml2_040.type = 3;
 		dirpte[i].value = pte.value;
 	}
+}
+
+void vmp_md_delete_table_pointers(kprocess_t *ps, vm_page_t *dirpage, pte_t *dirpte)
+{
+	int npages;
+
+	if (dirpage->use == kPageUsePML3)
+		npages = 8;
+	else if (dirpage->use == kPageUsePML2)
+		npages = 16;
+	else
+		kfatal("unexpected page directory use\n");
+
+	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
+
+	for (int i = 0; i < npages; i++)
+		dirpte[i].value = 0x0;
+
+	/* TODO: update pagetable_page_pte_deleted to take a count */
+	dirpage->refcnt -= npages - 1;
+	dirpage->valid_ptes -= npages - 1;
+	dirpage->nonzero_ptes -= npages - 1;
+
+	/* carry out the final deletion */
+	vmp_pagetable_page_pte_deleted(ps, dirpage, false);
 }

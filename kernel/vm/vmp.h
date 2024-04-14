@@ -106,8 +106,8 @@ struct vmp_amap_l1 {
 struct vmp_pager_state {
 	kevent_t event;
 	SLIST_ENTRY(vmp_pager_state) slist_entry;
-	pfn_t vpfn: PFN_BITS;
-	uint16_t length: 5;
+	pfn_t vpfn : PFN_BITS;
+	uint16_t length : 5;
 };
 
 struct vmp_forkpage {
@@ -159,7 +159,6 @@ struct vm_section {
 /*! Initialise kernel virtual memory. */
 void vmp_kernel_init(void);
 
-
 /*! Initialise kernel virtual memory, platform-specific part. */
 void vmp_md_kernel_init(void);
 /*!
@@ -185,6 +184,11 @@ int pmap_get_pte_ptr(void *pmap, vaddr_t vaddr, pte_t **out,
 void pmap_invlpg(vaddr_t addr);
 void vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, bool is_new);
+void vmp_md_delete_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+    pte_t *pte);
+
+void vmp_pagetable_page_pte_deleted(kprocess_t *ps, vm_page_t *page,
+    bool was_swap);
 
 void vmp_pages_dump(void);
 

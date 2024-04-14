@@ -61,7 +61,7 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 void
 wsl_evict_one(vm_procstate_t *ps)
 {
-#if 1
+#if 0
 	struct vmp_wsle *wsle = TAILQ_FIRST(&ps->wsl.queue);
 	vm_page_t *pte_page;
 	pte_t *pte;

@@ -7,6 +7,9 @@ page_is_root_table(vm_page_t *page)
 	return page->use == (kPageUsePML1 + (VMP_TABLE_LEVELS - 1));
 }
 
+/*!
+ * @brief Pagetable page is retained, and nonzero and valid PTEs incremented
+ */
 void
 vmp_pagetable_page_valid_pte_created(kprocess_t *ps, vm_page_t *page,
     bool is_new)
@@ -32,13 +35,13 @@ vmp_pagetable_page_valid_pte_created(kprocess_t *ps, vm_page_t *page,
  *
  * @pre ps->ws_lock held
  */
-static void
+void
 vmp_pagetable_page_pte_deleted(kprocess_t *ps, vm_page_t *page, bool was_swap)
 {
 	if (page->nonzero_ptes-- == 1 && !page_is_root_table(page)) {
 		vm_page_t *dirpage;
 
-		page->use = kPageUseDeleted;
+		vmp_page_delete_locked(page);
 
 #if PAGETABLE_PAGING
 		if (page->nonswap_ptes == 1) {
@@ -51,10 +54,8 @@ vmp_pagetable_page_pte_deleted(kprocess_t *ps, vm_page_t *page, bool was_swap)
 #endif
 
 		dirpage = vm_paddr_to_page(page->referent_pte);
-#if 0
 		vmp_md_delete_table_pointers(ps, dirpage,
 		    (pte_t *)P2V(page->referent_pte));
-#endif
 
 		page->valid_ptes = 0;
 		page->referent_pte = 0;
@@ -166,7 +167,10 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 			pages[level - 2] = page;
 
 			/* manually adjust the new page, includes our pinning */
+#if PAGETABLE_PAGING
+			/* for working set list insertion */
 			vmp_page_retain_locked(page);
+#endif
 			page->process = ps;
 			page->nonzero_ptes++;
 			page->valid_ptes++;

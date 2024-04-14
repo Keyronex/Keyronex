@@ -511,6 +511,8 @@ vm_page_use_str(enum vm_page_use use)
 		return "PML2";
 	case kPageUsePML1:
 		return "PML1";
+	case kPageUseDeleted:
+		return "deleted";
 	default:
 		return "BAD";
 	}
