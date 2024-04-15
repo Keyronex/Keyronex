@@ -17,7 +17,8 @@ vmp_pagetable_page_valid_pte_created(kprocess_t *ps, vm_page_t *page,
 	vmp_page_retain_locked(page);
 	if (is_new)
 		page->nonzero_ptes++;
-	if (page->valid_ptes++ == 0 && !page_is_root_table(page)) {
+	page->valid_ptes++;
+	if (page->valid_ptes == 1 && !page_is_root_table(page)) {
 #if PAGETABLE_PAGING
 		vmp_wsl_lock_entry(ps, P2V(vmp_page_paddr(page)));
 #else

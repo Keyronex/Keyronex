@@ -50,9 +50,10 @@ typedef struct __attribute__((packed)) pte_hw {
 	};
 } pte_hw_t;
 
-typedef union pte {
+typedef union __attribute__((packed)) pte {
 	pte_hw_t hw;
 	pte_sw_t sw;
+	uintptr_t value;
 } pte_t;
 
 static inline void

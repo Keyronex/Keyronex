@@ -13,8 +13,8 @@ while getopts "knr:spq:9" optchar; do
 	*) usage ;;
 esac done
 
-#QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
-QEMU_EXE=/opt/qemusept/bin/qemu-system-x86_64
+QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
+#QEMU_EXE=/opt/qemusept/bin/qemu-system-x86_64
 if [ "$serial_stdio" = "1" ]; then
 	qemu_args="${qemu_args} -serial stdio"
 fi
@@ -41,5 +41,4 @@ ${QEMU_EXE} -smp 4 -hda test.img -M q35 \
   ${virtio_disk_arg} \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
-  -s --trace "virtio_*"   \
   ${qemu_args}

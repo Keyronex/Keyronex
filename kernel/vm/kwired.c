@@ -73,7 +73,8 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 		kassert(r == 0);
 		vmp_md_pte_create_hw(pte, page->pfn, true, true);
-		vmp_md_pagetable_ptes_created(&pte_wire, 1);
+		vmp_pagetable_page_valid_pte_created(&kernel_process,
+		    pte_wire.pgtable_pages[0], true);
 	}
 
 	vmp_pte_wire_state_release(&pte_wire);
