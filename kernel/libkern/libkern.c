@@ -204,6 +204,17 @@ strlen(const char *str)
 	return (s - str);
 }
 
+size_t
+strnlen(const char *str, size_t maxlen)
+{
+	const char *cp;
+
+	for (cp = str; maxlen != 0 && *cp != '\0'; cp++, maxlen--)
+		;
+
+	return (size_t)(cp - str);
+}
+
 char *
 strchr(const char *p, int ch)
 {
@@ -228,4 +239,15 @@ strrchr(const char *str, int c)
 			return p;
 	}
 	kfatal("strrchr");
+}
+
+int
+snprintf(char *str, size_t size, const char *format, ...)
+{
+	int r;
+	va_list ap;
+	va_start(ap, format);
+	r = npf_vsnprintf(str, size, format, ap);
+	va_end(ap);
+	return r;
 }

@@ -1,6 +1,6 @@
 #include "ddk/DKDevice.h"
 #include "kdk/kmem.h"
-#include "dev/DKAACPIPlatform.h"
+#include "dev/acpi/DKAACPIPlatform.h"
 #include "limine.h"
 
 @interface VirtAArch64Platform : DKDevice <DKPlatformDevice>

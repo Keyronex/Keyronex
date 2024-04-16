@@ -79,13 +79,13 @@ vmp_md_pte_create_zero(pte_t *pte)
 }
 
 static inline bool
-vmp_md_pte_is_empty(pte_hw_t *pte)
+vmp_md_pte_is_empty(pte_t *pte)
 {
 	return pte->value == 0;
 }
 
 static inline bool
-vmp_md_pte_is_valid(pte_hw_t *pte)
+vmp_md_pte_is_valid(pte_t *pte)
 {
 	return pte->value & kMMUPresent;
 }

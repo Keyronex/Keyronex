@@ -6,5 +6,5 @@
 	url = https://github.com/limine-bootloader/limine.git
 	branch = v5.x-branch-binary
 [submodule "vendor/uacpi"]
-	path = vendor/uacpi
+	path = subprojects/uacpi
 	url = https://github.com/UltraOS/uACPI.git

@@ -109,10 +109,8 @@ cstart(struct handover *handover)
 
 	ki_thread_common_init(&thread0, &bootstrap_cpu, NULL, "idle0");
 
-
 	kassert(memory_size != 0);
-	vm_region_add(handover->bumped_end,
-	    memory_size - handover->bumped_end);
+	vm_region_add(handover->bumped_end, memory_size - handover->bumped_end);
 
 	gfrtc_init();
 	char datestr[40];
@@ -126,6 +124,20 @@ cstart(struct handover *handover)
 
 	vmp_kernel_init();
 	kmem_init();
+
+	vaddr_t fun = vm_kalloc(4, 0);
+	vmp_pages_dump();
+	*(int *)fun = 0xdeadbeef;
+	*(int *)(fun + PGSIZE) = 0xdeadbeef;
+	*(int *)(fun + PGSIZE) = 0xdeadbeef;
+	*(int *)(fun + PGSIZE) = 0xdeadbeef;
+
+	vm_kfree(fun, 4, 0);
+
+	kprintf("\n\nAfter kfree:\n");
+
+	vmp_pages_dump();
+
 #if 0
 	vaddr_t fun = vm_kalloc(1024, 0);
 	vmp_pages_dump();
@@ -137,7 +149,6 @@ cstart(struct handover *handover)
 	extern vm_procstate_t kernel_procstate;
 	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 4, false);
 	kassert(r == 0);
-#endif
 
 	vmp_pages_dump();
 
@@ -151,4 +162,5 @@ cstart(struct handover *handover)
 	for (;;) {
 		asm("stop #0x2000");
 	}
+#endif
 }

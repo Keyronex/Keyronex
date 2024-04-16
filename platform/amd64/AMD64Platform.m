@@ -1,5 +1,5 @@
 #include "ddk/DKDevice.h"
-#include "dev/DKAACPIPlatform.h"
+#include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/SimpleFB.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"

@@ -17,7 +17,9 @@
 #include "vm/vmp.h"
 
 #if defined(__arch64__) || defined (__amd64__)
+#if 0
 #include "lai/host.h"
+#endif
 #endif
 
 #define INFO_ARGS(PINFO) (PINFO)->seg, (PINFO)->bus, (PINFO)->slot, (PINFO)->fun
@@ -312,9 +314,9 @@ trimstr(char *str, size_t length)
 	iop = iop_new(self);
 
 	for (size_t path = 0;
-	     path <  1/* m_deviceExtension->portConfig->NumberOfBuses */; path++) {
-		for (size_t target = 0; target < 1
-		     /*m_deviceExtension->portConfig->MaximumNumberOfTargets */;
+	     path <   m_deviceExtension->portConfig->NumberOfBuses ; path++) {
+		for (size_t target = 0; target <
+		     m_deviceExtension->portConfig->MaximumNumberOfTargets ;
 		     target++) {
 			srb_init_execute_scsi(srb, SRB_FLAGS_DATA_IN, path,
 			    target, 0, sizeof(struct _REPORT_LUNS), buffer,
@@ -326,15 +328,17 @@ trimstr(char *str, size_t length)
 
 			*(uint32_t *)list->LunListLength = 0x0;
 
+			kprintf("Send off an IOP\n");
 			iop_init_scsi(iop, self, srb);
 			ret = iop_send_sync(iop);
+			kprintf("IOP returned\n");
 			kassert(ret == kIOPRetCompleted);
 
 			if (srb->SrbStatus != SRB_STATUS_SUCCESS &&
 			    !(srb->SrbStatus == SRB_STATUS_DATA_OVERRUN &&
 				srb->DataTransferLength >=
 				    sizeof(struct _LUN_LIST))) {
-				 kfatal(
+				 kprintf(
 				     "Target %zu: SRB status is %x\n", target,
 				     srb->SrbStatus
 				);

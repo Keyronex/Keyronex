@@ -87,8 +87,11 @@ if not headers_only
 		arguments : [ '-i', '@INPUT@', '-o', '@OUTPUT@', '-s', '@BASENAME@'  ]
 	)
 
+	uacpi = subproject('uacpi')
+	uacpi_sources = uacpi.get_variable('sources')
+	uacpi_includes = uacpi.get_variable('includes')
+
 	subdir('vendor/objfwrt')
-	subdir('vendor/lai')
 	subdir('kernel')
 	if (arch == 'amd64')
 		subdir('platform/amd64')

@@ -2,6 +2,8 @@
 #define KRX_DEV_PCIBUS_H
 
 #include "ddk/DKDevice.h"
+#include "uacpi/types.h"
+#include "uacpi/uacpi.h"
 
 struct pci_dev_info {
 	uint16_t seg;
@@ -22,9 +24,12 @@ struct pci_dev_info {
 	bool edge;
 };
 
-@interface PCIBus : DKDevice
+@interface PCIBus : DKDevice {
+	uacpi_namespace_node *acpiNode;
+}
 
 - (instancetype)initWithProvider:(DKDevice *)provider
+			acpiNode:(uacpi_namespace_node *)node
 			 segment:(uint16_t)seg
 			     bus:(uint8_t)bus;
 

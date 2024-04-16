@@ -2,10 +2,14 @@
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "ntcompat/NTStorPort.h"
+#include "uacpi/resources.h"
+#include "uacpi/utilities.h"
 
 #if defined(__arch64__) || defined (__amd64__)
+#if 0
 #include "lai/helpers/pci.h"
 #include "lai/host.h"
+#endif
 #endif
 
 enum {
@@ -26,6 +30,74 @@ enum {
 };
 
 @implementation PCIBus
+
+- (int)routePinForInfo:(struct pci_dev_info *)info
+{
+	uacpi_pci_routing_table pci_routes;
+	int r = uacpi_get_pci_routing_table(acpiNode, &pci_routes);
+
+	kassert(r == UACPI_STATUS_OK);
+
+	for (size_t i = 0; i < pci_routes.num_entries; i++) {
+		uacpi_pci_routing_table_entry *entry;
+		int entry_slot, entry_fun;
+
+		entry = &pci_routes.entries[i];
+		entry_slot = (entry->address >> 16) & 0xffff;
+		entry_fun = entry->address & 0xffff;
+
+		if (entry->pin != info->pin - 1 || entry_slot != info->slot ||
+		    (entry_fun != 0xffff && entry_fun != info->fun))
+			continue;
+
+		info->edge = false;
+		info->lopol = true;
+		info->gsi = entry->index;
+
+		if (entry->source != NULL) {
+			uacpi_resources resources;
+			r = uacpi_get_current_resources(entry->source,
+			    &resources);
+			kassert(r == UACPI_STATUS_OK);
+
+			switch (resources.head->type) {
+			case UACPI_RESOURCE_TYPE_IRQ: {
+				uacpi_resource_irq *irq = &resources.head->irq;
+
+				kassert(irq->num_irqs >= 1);
+				info->gsi = irq->irqs[0];
+
+				if (irq->triggering == UACPI_TRIGGERING_EDGE)
+					info->edge = true;
+				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
+					info->lopol = false;
+
+				break;
+			}
+			case UACPI_RESOURCE_TYPE_EXTENDED_IRQ: {
+				uacpi_resource_extended_irq *irq =
+				    &resources.head->extended_irq;
+
+				kassert(irq->num_irqs >= 1);
+				info->gsi = irq->irqs[0];
+
+				if (irq->triggering == UACPI_TRIGGERING_EDGE)
+					info->edge = true;
+				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
+					info->lopol = false;
+
+				break;
+			}
+			default:
+				kfatal("unexpected\n");
+			}
+
+			uacpi_kernel_free(resources.head);
+		}
+	}
+
+	return 0;
+}
 
 - (void)doSegment:(uint16_t)seg
 	      bus:(uint8_t)bus
@@ -52,22 +124,13 @@ enum {
 	info.pin = CFG_READ(b, kInterruptPin);
 
 	if (info.pin != 0) {
-		int r;
-		acpi_resource_t res;
-
-		r = lai_pci_route_pin(&res, info.seg, info.bus, info.slot, info.fun, info.pin);
-		if (r != LAI_ERROR_NONE) {
-			kfatal("failed to route pin!\n");
-		} else {
-			info.gsi = res.base;
-			info.lopol = res.irq_flags & ACPI_SMALL_IRQ_ACTIVE_LOW;
-			info.edge = res.irq_flags &
-			    ACPI_SMALL_IRQ_EDGE_TRIGGERED;
-		}
+		int r = [self routePinForInfo:&info];
+		kassert(r == 0);
 	}
+
 #endif
 
-#if 0
+#if 1
 	kprintf("%x:%x (klass %x subclass %x)\n", info.vendorId, info.deviceId,
 	    info.klass, info.subClass);
 #endif
@@ -77,11 +140,13 @@ enum {
 }
 
 - (instancetype)initWithProvider:(DKDevice *)provider
+			acpiNode:(uacpi_namespace_node *)node
 			 segment:(uint16_t)seg
 			     bus:(uint8_t)bus
 
 {
 	self = [super initWithProvider:provider];
+	acpiNode = node;
 
 	kmem_asprintf(obj_name_ptr(self), "pcibus-%d-%d", seg, bus);
 

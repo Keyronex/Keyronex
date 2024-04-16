@@ -1,6 +1,6 @@
 
 #include "IOAPIC.h"
-#include "dev/DKAACPIPlatform.h"
+#include "dev/acpi/DKAACPIPlatform.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 

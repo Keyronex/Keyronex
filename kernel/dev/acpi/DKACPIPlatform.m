@@ -1,4 +1,229 @@
 #include <limine.h>
+#include <string.h>
+
+#include "dev/PCIBus.h"
+#include "dev/acpi/DKAACPIPlatform.h"
+#include "dev/acpi/tables.h"
+#include "kdk/kmem.h"
+#include "kdk/nanokern.h"
+#include "kdk/object.h"
+#include "uacpi/internal/namespace.h"
+#include "uacpi/kernel_api.h"
+#include "uacpi/namespace.h"
+#include "uacpi/status.h"
+#include "uacpi/types.h"
+#include "uacpi/uacpi.h"
+#include "uacpi/utilities.h"
+
+#ifdef AMD64
+#include "dev/amd64/IOAPIC.h"
+#include "kdk/amd64/portio.h"
+#endif
+
+struct pcie_ecam {
+	paddr_t phys;
+	vaddr_t virt;
+	uint64_t seg;
+	uint8_t start_bus, end_bus;
+};
+
+acpi_rsdt_t *rsdt = NULL;
+acpi_xsdt_t *xsdt = NULL;
+mcfg_t *mcfg = NULL;
+static DKACPIPlatform *acpiplatform = NULL;
+struct pcie_ecam *ecam;
+
+#define ACPI_PCI_ROOT_BUS_PNP_ID "PNP0A03"
+#define ACPI_PCIE_ROOT_BUS_PNP_ID "PNP0A08"
+
+void *
+laihost_scan(const char *sig, size_t index)
+{
+	acpi_header_t *header;
+	size_t cur = 0;
+
+	if (memcmp(sig, "DSDT", 4) == 0) {
+		acpi_fadt_t *fadt = laihost_scan("FACP", 0);
+		kassert(fadt != NULL);
+		return (void *)(xsdt == NULL ? P2V((uintptr_t)fadt->dsdt) :
+					       P2V(fadt->x_dsdt));
+	}
+
+	if (xsdt) {
+		size_t ntables = (xsdt->header.length - sizeof(acpi_header_t)) /
+		    sizeof(uint64_t);
+		for (size_t i = 0; i < ntables; i++) {
+			header = (acpi_header_t *)P2V(xsdt->tables[i]);
+
+			if (memcmp(header->signature, sig, 4) != 0)
+				continue;
+
+			if (cur++ == index)
+				return header;
+		}
+	} else {
+		size_t ntables = (rsdt->header.length - sizeof(acpi_header_t)) /
+		    sizeof(uint32_t);
+		for (size_t i = 0; i < ntables; i++) {
+			header = (acpi_header_t *)P2V(
+			    (uintptr_t)rsdt->tables[i]);
+
+			if (memcmp(header->signature, sig, 4) != 0)
+				continue;
+
+			if (cur++ == index)
+				return header;
+		}
+	}
+
+	return NULL;
+}
+
+@implementation DKACPIPlatform
+
+- (void)makePCIBusFromNode:(uacpi_namespace_node *)node
+{
+	uint64_t seg = 0, bus = 0;
+	PCIBus *pcibus;
+	int r;
+	uacpi_object *obj;
+
+	r = uacpi_eval_integer(node, "_SEG", NULL, &seg);
+	if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND) {
+		DKDevLog(self, "failed to evaluate _SEG: %d\n", r);
+		return;
+	}
+
+	r = uacpi_eval_integer(node, "_BBN", NULL, &bus);
+	if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND) {
+		DKDevLog(self, "failed to evaluate _BBN: %d\n", r);
+		return;
+	}
+
+	pcibus = [[PCIBus alloc] initWithProvider:self acpiNode:node segment:seg bus:bus];
+	(void)pcibus;
+}
+
+static uacpi_ns_iteration_decision
+iteration_callback(void *user, uacpi_namespace_node *node)
+{
+	const char *pci_list[] = { ACPI_PCI_ROOT_BUS_PNP_ID,
+		ACPI_PCIE_ROOT_BUS_PNP_ID, NULL };
+	DKACPIPlatform *self = user;
+
+	size_t depth = 0;
+	// for (uacpi_namespace_node *parent = node; parent != NULL; parent =
+	// parent->parent) 	kputc(' ', NULL); kprintf(" - %s\n",
+	// node->name.text);
+
+	if (uacpi_device_matches_pnp_id(node, pci_list))
+		[self makePCIBusFromNode:node];
+
+	return UACPI_NS_ITERATION_DECISION_CONTINUE;
+}
+
+static void
+madt_walk(acpi_madt_t *madt,
+    void (*callback)(acpi_madt_entry_header_t *item, void *arg), void *arg)
+{
+	for (uint8_t *item = &madt->entries[0]; item <
+	     (madt->entries + (madt->header.length - sizeof(acpi_madt_t)));) {
+		acpi_madt_entry_header_t *header = (acpi_madt_entry_header_t *)
+		    item;
+		callback(header, arg);
+		item += header->length;
+	}
+}
+
+#ifdef __amd64
+static void
+parse_ioapics(acpi_madt_entry_header_t *item, void *arg)
+{
+	acpi_madt_ioapic_t *ioapic;
+
+	if (item->type != 1)
+		return;
+
+	ioapic = (acpi_madt_ioapic_t *)item;
+	[[IOApic alloc] initWithProvider:arg
+				      id:ioapic->ioapic_id
+				 address:(paddr_t)ioapic->ioapic_addr
+				 gsiBase:ioapic->gsi_base];
+}
+#elif defined(__aarch64__)
+static void
+parse_giccs(acpi_madt_entry_header_t *item, void *arg)
+{
+	acpi_madt_gicc_t *gicc;
+
+	if (item->type != 0xb)
+		return;
+
+	gicc = (void *)item;
+	kprintf("Found a GICC: GIC interface num %d, ACPI UID %d\n",
+	    gicc->cpu_interface_number, gicc->acpi_process_uid);
+}
+#endif
+
++ (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
+{
+	if (rsdp->Revision > 0)
+		xsdt = (acpi_xsdt_t *)P2V(((rsdp_desc2_t *)rsdp)->XsdtAddress);
+	else
+		rsdt = (acpi_rsdt_t *)P2V((uintptr_t)rsdp->RsdtAddress);
+
+	[[self alloc] initWithProvider:provider rsdp:rsdp];
+
+	return YES;
+}
+
+- (instancetype)initWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
+{
+	struct uacpi_init_params params = {
+		.rsdp = V2P(rsdp),
+		.rt_params = {
+			.log_level = UACPI_LOG_TRACE,
+			.flags = 0,
+		},
+		.no_acpi_mode = 0,
+	};
+	uacpi_namespace_node *sb;
+	int r;
+
+	self = [super initWithProvider:provider];
+	kmem_asprintf(obj_name_ptr(self), "acpi-platform");
+	acpiplatform = self;
+	[self registerDevice];
+	DKLogAttach(self);
+
+	acpi_madt_t *madt;
+	madt = laihost_scan("APIC", 0);
+	kassert(madt != NULL);
+#if defined(__amd64__)
+	madt_walk(madt, parse_ioapics, self);
+#elif defined(__aarch64__)
+	madt_walk(madt, parse_giccs, NULL);
+#endif
+	r = uacpi_initialize(&params);
+	kassert(r == UACPI_STATUS_OK);
+	r = uacpi_namespace_load();
+	kassert(r == UACPI_STATUS_OK);
+	r = uacpi_namespace_initialize();
+	kassert(r == UACPI_STATUS_OK);
+	r = uacpi_set_interrupt_model(UACPI_INTERRUPT_MODEL_IOAPIC);
+	kassert(r == UACPI_STATUS_OK);
+
+	sb = uacpi_namespace_node_find(uacpi_namespace_root(), "_SB_");
+	kassert(sb != NULL);
+
+	uacpi_namespace_for_each_node_depth_first(sb, iteration_callback, self);
+
+	return self;
+}
+
+@end
+
+#if 0
 
 #include "DKAACPIPlatform.h"
 #include "PCIBus.h"
@@ -14,57 +239,6 @@
 #include "kdk/amd64/portio.h"
 #endif
 
-typedef struct {
-	acpi_header_t header;
-	uint32_t lapic_addr;
-	uint32_t flags;
-	uint8_t entries[0];
-} __attribute__((packed)) acpi_madt_t;
-
-typedef struct {
-	uint8_t type;
-	uint8_t length;
-} __attribute__((packed)) acpi_madt_entry_header_t;
-
-/* MADT entry type 1 */
-typedef struct {
-	acpi_madt_entry_header_t header;
-	uint8_t ioapic_id;
-	uint8_t reserved;
-	uint32_t ioapic_addr;
-	uint32_t gsi_base;
-} __attribute__((packed)) acpi_madt_ioapic_t;
-
-/* MADT entry type 2 */
-typedef struct {
-	acpi_madt_entry_header_t header;
-	uint8_t bus_source;
-	uint8_t irq_source;
-	uint32_t gsi;
-	uint16_t flags;
-} __attribute__((packed)) acpi_madt_int_override_t;
-
-/* MADT entry type 0xb */
-typedef struct {
-	acpi_madt_entry_header_t header;
-	uint16_t reserved;
-	uint32_t cpu_interface_number;
-	uint32_t acpi_process_uid;
-	uint32_t flags;
-	uint32_t parking_protocol_version;
-	uint32_t performance_interrupt_gsiv;
-	uint64_t parked_address;
-	uint64_t physical_base_addr;
-	uint64_t gicv;
-	uint64_t gich;
-	uint32_t vgic_maintenance_intr;
-	uint64_t gicr_base_addr;
-	uint64_t mpidr;
-	uint8_t processor_power_efficiency_class;
-	uint8_t reserved_0; /* must bezero */
-	uint16_t spe_overflow_interrupt;
-	uint16_t trbe_interrupt;
-} __attribute__((packed)) acpi_madt_gicc_t;
 
 struct pcie_ecam {
 	paddr_t phys;
@@ -119,49 +293,6 @@ void
 laihost_unmap(void *pointer, size_t count)
 {
 	/* nop */
-}
-
-void *
-laihost_scan(const char *sig, size_t index)
-{
-	acpi_header_t *header;
-	size_t cur = 0;
-
-	if (memcmp(sig, "DSDT", 4) == 0) {
-		acpi_fadt_t *fadt = laihost_scan("FACP", 0);
-		kassert(fadt != NULL);
-		return (void *)(xsdt == NULL ? P2V((uintptr_t)fadt->dsdt) :
-					       P2V(fadt->x_dsdt));
-	}
-
-	if (xsdt) {
-		size_t ntables = (xsdt->header.length - sizeof(acpi_header_t)) /
-		    sizeof(uint64_t);
-		for (size_t i = 0; i < ntables; i++) {
-			header = (acpi_header_t *)P2V(xsdt->tables[i]);
-
-			if (memcmp(header->signature, sig, 4) != 0)
-				continue;
-
-			if (cur++ == index)
-				return header;
-		}
-	} else {
-		size_t ntables = (rsdt->header.length - sizeof(acpi_header_t)) /
-		    sizeof(uint32_t);
-		for (size_t i = 0; i < ntables; i++) {
-			header = (acpi_header_t *)P2V(
-			    (uintptr_t)rsdt->tables[i]);
-
-			if (memcmp(header->signature, sig, 4) != 0)
-				continue;
-
-			if (cur++ == index)
-				return header;
-		}
-	}
-
-	return NULL;
 }
 
 #ifdef AMD64
@@ -509,7 +640,7 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 		}
 	}
 
-	pcibus = [[PCIBus alloc] initWithProvider:self segment:seg bus:bus];
+	pcibus = [[PCIBus alloc] initWithProvider:self  segment:seg bus:bus];
 	(void)pcibus;
 }
 
@@ -622,3 +753,4 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 }
 
 @end
+#endif
