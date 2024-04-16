@@ -334,10 +334,10 @@ trimstr(char *str, size_t length)
 			    !(srb->SrbStatus == SRB_STATUS_DATA_OVERRUN &&
 				srb->DataTransferLength >=
 				    sizeof(struct _LUN_LIST))) {
-				// kfatal(
-				//     "Target %zu: SRB status is %x\n", target,
-				//     srb->SrbStatus
-				//);
+				 kfatal(
+				     "Target %zu: SRB status is %x\n", target,
+				     srb->SrbStatus
+				);
 				continue;
 			}
 

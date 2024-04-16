@@ -205,7 +205,7 @@ pe_load(const char *path, void *addr)
 	entry(driver, (void *)0x1);
 }
 
-int vmp_md_enter_kwired(vaddr_t virt, paddr_t phys);
+int vmp_enter_kwired(vaddr_t virt, paddr_t phys);
 
 void
 ntcompat_init(void)
@@ -215,6 +215,6 @@ ntcompat_init(void)
 
 	vm_page_alloc(&user_page, 0, kPageUseKWired, 1);
 	ipl = vmp_acquire_pfn_lock();
-	vmp_md_enter_kwired(0xfffff78000000000, PFN_TO_PADDR(user_page->pfn));
+	vmp_enter_kwired(0xfffff78000000000, PFN_TO_PADDR(user_page->pfn));
 	vmp_release_pfn_lock(ipl);
 }

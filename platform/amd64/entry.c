@@ -158,6 +158,8 @@ ap_init(struct limine_smp_info *smpi)
 {
 	kcpu_t *cpu = (kcpu_t *)smpi->extra_argument;
 
+	write_cr3(kernel_process.vm->md.table);
+
 	/* set it up immediately to avoid problems */
 	wrmsr(kAMD64MSRGSBase, (uintptr_t)&cpus[cpu->num]);
 

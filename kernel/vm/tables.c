@@ -241,7 +241,7 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 }
 
 int
-vmp_fetch_pte(kprocess_t *ps, vaddr_t vaddr, bool create, pte_t **pte_out)
+vmp_fetch_pte(kprocess_t *ps, vaddr_t vaddr, pte_t **pte_out)
 {
 	int indexes[VMP_TABLE_LEVELS + 1];
 	pte_t *table;

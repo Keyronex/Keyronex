@@ -118,7 +118,7 @@ vmp_pte_characterise(pte_t *pte)
 static inline paddr_t
 vmp_pte_hw_paddr(pte_t *pte, int level)
 {
-	return pte->hw.pfn >> VMP_PAGE_SHIFT;
+	return (paddr_t)pte->hw.pfn << VMP_PAGE_SHIFT;
 }
 
 static inline void

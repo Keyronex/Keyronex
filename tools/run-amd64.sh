@@ -14,6 +14,7 @@ while getopts "knr:spq:9" optchar; do
 esac done
 
 QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
+qemu_args="$qemu_args -s"
 #QEMU_EXE=/opt/qemusept/bin/qemu-system-x86_64
 if [ "$serial_stdio" = "1" ]; then
 	qemu_args="${qemu_args} -serial stdio"

@@ -37,6 +37,23 @@ vmp_kernel_init(void)
 	vmp_md_kernel_init();
 }
 
+int vmp_enter_kwired(vaddr_t virt, paddr_t phys)
+{
+	int r;
+	struct vmp_pte_wire_state pte_wire;
+
+	r = vmp_wire_pte(&kernel_process, virt, &pte_wire);
+	kassert(r == 0);
+
+	vmp_md_pte_create_hw(pte_wire.pte, phys >> VMP_PAGE_SHIFT, true, true);
+	vmp_pagetable_page_valid_pte_created(&kernel_process,
+		    pte_wire.pgtable_pages[0], true);
+	vmp_pte_wire_state_release(&pte_wire);
+
+	return 0;
+}
+
+
 int
 internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
     vmem_addr_t *out)
@@ -86,15 +103,18 @@ void
 internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
     vmem_flag_t flags)
 {
+#if 1
 	int r;
 	pte_t *pte = NULL;
 	struct vmp_pte_wire_state pte_wire;
 
+#if 0
 	r = vmem_xfree(vmem, addr, size, flags | kVMemPFNDBHeld);
 	if (r < 0) {
 		kfatal("internal_freewired: vmem returned %d\n", r);
 		return;
 	}
+#endif
 	r = size;
 
 #ifdef TRACE_KWIRED
@@ -119,6 +139,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		vmp_page_release_locked(page);
 	}
 	vmp_pte_wire_state_release(&pte_wire);
+#endif
 }
 
 vaddr_t

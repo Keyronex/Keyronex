@@ -69,6 +69,7 @@ update_page_use_stats(enum vm_page_use use, int value)
 		CASE(kPageUseAnonPrivate, nanonprivate);
 		CASE(kPageUseFileShared, nfileshared);
 		CASE(kPageUseKWired, nkwired);
+		CASE(kPageUsePML4, nprocpgtable);
 		CASE(kPageUsePML3, nprocpgtable);
 		CASE(kPageUsePML2, nprocpgtable);
 		CASE(kPageUsePML1, nprocpgtable);
@@ -505,6 +506,8 @@ vm_page_use_str(enum vm_page_use use)
 		return "anon-private";
 	case kPageUseFileShared:
 		return "file-shared";
+	case kPageUsePML4:
+		return "PML4";
 	case kPageUsePML3:
 		return "PML3";
 	case kPageUsePML2:

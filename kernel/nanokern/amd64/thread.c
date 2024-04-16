@@ -1,5 +1,7 @@
+#include "kdk/amd64/regs.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
+#include "vm/vmp.h"
 
 void
 md_cpu_init(kcpu_t *cpu)
@@ -9,8 +11,9 @@ md_cpu_init(kcpu_t *cpu)
 void
 md_switch(kthread_t *old_thread)
 {
-	 extern void asm_swtch(void * old, void * new);
-	 asm_swtch(&old_thread->pcb, &curthread()->pcb);
+	extern void asm_swtch(void * old, void * new);
+	//write_cr3(curthread()->process->vm->md.table);
+	asm_swtch(&old_thread->pcb, &curthread()->pcb);
 }
 
 static void

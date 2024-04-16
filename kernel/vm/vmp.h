@@ -204,6 +204,8 @@ int vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr,
     struct vmp_pte_wire_state *state);
 void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state);
 
+int vmp_fetch_pte(kprocess_t *ps, vaddr_t vaddr, pte_t **pte_out);
+
 extern kspinlock_t vmp_pfn_lock;
 
 extern struct vmem vmem_kern_nonpaged;
