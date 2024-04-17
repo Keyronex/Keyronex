@@ -25,7 +25,6 @@
 #define INFO_ARGS(PINFO) (PINFO)->seg, (PINFO)->bus, (PINFO)->slot, (PINFO)->fun
 
 struct storport_driver_queue drivers = TAILQ_HEAD_INITIALIZER(drivers);
-void *wegot;
 
 static inline void
 packPci(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fun,
@@ -117,6 +116,28 @@ NTStorPort (Implementation)
 @end
 
 @implementation NTStorPort
+
+void
+srb_deferred_completion_callback(void *arg)
+{
+	NTStorPort *self = arg;
+
+	while (true) {
+		PSCSI_REQUEST_BLOCK srb;
+		ipl_t ipl = ke_spinlock_acquire_at(
+		    &self->srb_deferred_completion_lock, kIPLHigh);
+		srb = self->srb_deferred_completion_queue;
+		if (!srb) {
+			ke_spinlock_release(
+			    &self->srb_deferred_completion_lock, ipl);
+			break;
+		}
+		self->srb_deferred_completion_queue = srb->NextSrb;
+		ke_spinlock_release(&self->srb_deferred_completion_lock, ipl);
+
+		[self completeSrb:srb];
+	}
+}
 
 + (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info
 {
@@ -223,11 +244,14 @@ intx_handler(md_intr_frame_t *frame, void *arg)
 	m_deviceExtension = devExt;
 	m_HwDeviceExtension = &devExt->hw_dev_ext[0];
 
-	// for (;;)
-	//     ;
-
 	kmem_asprintf(obj_name_ptr(self), "%s-%lu",
 	    driver->nt_driver_object->name, driver->counter);
+
+	ke_spinlock_init(&srb_deferred_completion_lock);
+	srb_deferred_completion_dpc.cpu = NULL;
+	srb_deferred_completion_dpc.callback = srb_deferred_completion_callback;
+	srb_deferred_completion_dpc.arg = self;
+	srb_deferred_completion_queue = NULL;
 
 	m_deviceExtension->device = self;
 
@@ -314,9 +338,10 @@ trimstr(char *str, size_t length)
 	iop = iop_new(self);
 
 	for (size_t path = 0;
-	     path <   m_deviceExtension->portConfig->NumberOfBuses ; path++) {
-		for (size_t target = 0; target <
-		     m_deviceExtension->portConfig->MaximumNumberOfTargets ;
+	     path < 1 /* m_deviceExtension->portConfig->NumberOfBuses*/;
+	     path++) {
+		for (size_t target = 0; target < 1
+		     /*m_deviceExtension->portConfig->MaximumNumberOfTargets*/;
 		     target++) {
 			srb_init_execute_scsi(srb, SRB_FLAGS_DATA_IN, path,
 			    target, 0, sizeof(struct _REPORT_LUNS), buffer,
@@ -328,10 +353,8 @@ trimstr(char *str, size_t length)
 
 			*(uint32_t *)list->LunListLength = 0x0;
 
-			kprintf("Send off an IOP\n");
 			iop_init_scsi(iop, self, srb);
 			ret = iop_send_sync(iop);
-			kprintf("IOP returned\n");
 			kassert(ret == kIOPRetCompleted);
 
 			if (srb->SrbStatus != SRB_STATUS_SUCCESS &&
@@ -419,8 +442,17 @@ trimstr(char *str, size_t length)
 - (void)completeSrb:(PSCSI_REQUEST_BLOCK)Srb
 {
 	struct storport_driver *drv = m_deviceExtension->driver;
-	kmem_free(Srb->SrbExtension, drv->hwinit.SrbExtensionSize);
-	iop_continue(Srb->OriginalRequest, kIOPRetCompleted);
+	ipl_t ipl = splget();
+	if (ipl > kIPLDPC) {
+		ke_spinlock_acquire_nospl(&srb_deferred_completion_lock);
+		Srb->NextSrb = srb_deferred_completion_queue;
+		srb_deferred_completion_queue = Srb;
+		ke_spinlock_release_nospl(&srb_deferred_completion_lock);
+		ke_dpc_enqueue(&srb_deferred_completion_dpc);
+	} else {
+		kmem_free(Srb->SrbExtension, drv->hwinit.SrbExtensionSize);
+		iop_continue(Srb->OriginalRequest, kIOPRetCompleted);
+	}
 }
 
 @end

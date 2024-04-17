@@ -203,9 +203,10 @@ uacpi_kernel_vlog(enum uacpi_log_level lvl, const char *msg, uacpi_va_list va)
 		lvlStr = "<invalid>";
 	}
 
-	kprintf("uacpi %s: ", lvlStr);
-	;
-	kvpprintf(msg, va);
+	if (lvl <= UACPI_LOG_INFO) {
+		kprintf("uacpi %s: ", lvlStr);
+		kvpprintf(msg, va);
+	}
 }
 
 void

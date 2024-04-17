@@ -130,7 +130,7 @@ enum {
 
 #endif
 
-#if 1
+#if 0
 	kprintf("%x:%x (klass %x subclass %x)\n", info.vendorId, info.deviceId,
 	    info.klass, info.subClass);
 #endif

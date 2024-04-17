@@ -10,6 +10,10 @@
 	struct sp_dev_ext *m_deviceExtension;
 	/*! points into m_deviceExtension */
 	void *m_HwDeviceExtension;
+
+	kspinlock_t srb_deferred_completion_lock;
+	struct _SCSI_REQUEST_BLOCK * srb_deferred_completion_queue;
+	kdpc_t srb_deferred_completion_dpc;
 }
 
 + (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info;

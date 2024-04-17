@@ -29,9 +29,12 @@ vmp_md_translate(vaddr_t addr)
 	if (addr >= HHDM_BASE && addr <= HHDM_BASE + HHDM_SIZE)
 		paddr = V2P(addr);
 	else {
-		int r = vmp_fetch_pte(&kernel_process, addr, &pte);
+		int r;
+
+		r = vmp_fetch_pte(&kernel_process, PGROUNDDOWN(addr), &pte);
 		kassert(r == 0);
 		paddr = vmp_pte_hw_paddr(pte, 1);
+		paddr += addr % PGSIZE;
 	}
 
 	return paddr;

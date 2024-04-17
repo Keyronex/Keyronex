@@ -3,7 +3,6 @@
 #include "storportcompat.h"
 #include "vm/vmp.h"
 
-extern void *wegot;
 void unpackPci(uint32_t SystemIoBusNumber, uint32_t SlotNumber, uint16_t *seg,
     uint8_t *bus, uint8_t *slot, uint8_t *fun);
 
@@ -205,7 +204,6 @@ StorPortGetScatterGatherList(
 	PSTOR_SCATTER_GATHER_LIST sglist = kmem_alloc(
 		sizeof(STOR_SCATTER_GATHER_LIST) + sizeof(STOR_SCATTER_GATHER_ELEMENT)
 	);
-	kprintf("StorPortGetScatterGatherList\n");
 	sglist->NumberOfElements = 1;
 	sglist->List[0].PhysicalAddress.QuadPart =
 		vmp_md_translate((paddr_t)Srb->DataBuffer);
@@ -273,6 +271,52 @@ StorPortPause(
 {
 	kfatal("Implement me!\n");
 }
+
+STORPORT_API
+PUCHAR
+NTAPI
+StorPortAllocateRegistryBuffer(
+    _In_ PVOID HwDeviceExtension,
+    _In_ PULONG Length)
+{
+	kprintf("StorPortAllocateRegistryBuffer\n");
+	return NULL;
+}
+
+
+STORPORT_API
+VOID
+NTAPI
+StorPortFreeRegistryBuffer(
+    _In_ PVOID HwDeviceExtension,
+    _In_ PUCHAR Buffer)
+{
+	kfatal("Implement me!\n");
+}
+
+STORPORT_API
+BOOLEAN
+NTAPI
+StorPortRegistryRead(
+    _In_ PVOID HwDeviceExtension,
+    _In_ PUCHAR ValueName,
+    _In_ ULONG Global,
+    _In_ ULONG Type,
+    _In_ PUCHAR Buffer,
+    _In_ PULONG BufferLength)
+{
+	kfatal("Implement me!\n");
+}
+
+struct virtio_scsi_req_cmd {
+        // Device-readable part
+        uint8_t lun[8];
+        uint64_t id;
+        uint8_t task_attr;
+        uint8_t prio;
+        uint8_t crn;
+        uint8_t cdb[32];
+};
 
 NTAPI
 STORPORT_API
@@ -493,5 +537,8 @@ image_export_t storport_exports[] = {
 	EXPORT_NT_FUNC(StorPortPause),
 	EXPORT_NT_FUNC(StorPortDeviceBusy),
 	EXPORT_NT_FUNC(StorPortSetDeviceQueueDepth),
+	EXPORT_NT_FUNC(StorPortAllocateRegistryBuffer),
+	EXPORT_NT_FUNC(StorPortFreeRegistryBuffer),
+	EXPORT_NT_FUNC(StorPortRegistryRead),
 	{NULL, NULL}
 };

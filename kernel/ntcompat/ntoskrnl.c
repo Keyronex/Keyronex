@@ -56,6 +56,12 @@ KeBugCheckEx(IN ULONG BugCheckCode, IN ULONG_PTR BugCheckParameter1,
 	    BugCheckParameter4);
 }
 
+NTKERNELAPI
+uint8_t NTAPI KeGetCurrentIrql(void)
+{
+	return splget();
+}
+
 typedef void *PKSPIN_LOCK;
 typedef struct _LIST_ENTRY {
 	struct _LIST_ENTRY *Flink;
@@ -259,6 +265,7 @@ image_export_t ntoskrnl_exports[] = {
 	EXPORT_NT_FUNC(vDbgPrintEx),
 	EXPORT_NT_FUNC(KeBugCheck),
 	EXPORT_NT_FUNC(KeBugCheckEx),
+	EXPORT_NT_FUNC(KeGetCurrentIrql),
 	EXPORT_NT_FUNC(ExInterlockedInsertHeadList),
 	EXPORT_NT_FUNC(ExInterlockedInsertTailList),
 	EXPORT_NT_FUNC(ExInterlockedRemoveHeadList),
