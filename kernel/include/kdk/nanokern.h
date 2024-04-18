@@ -17,6 +17,7 @@
 #define kNThreadWaitBlocks 4
 
 #define NS_PER_S 1000000000
+#define NS_PER_MS 1000000
 
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))
@@ -134,11 +135,17 @@ typedef struct ktimer {
 
 TAILQ_HEAD(kthread_queue, kthread);
 
+struct runqueue {
+	kspinlock_t lock;
+	struct kthread_queue queue;
+};
+
 /*!
  * Locking:
  * (~) = invariant
  * (d) = IPL high + kcpu_t::dpc_lock
  * (D) = dispatcher_lock
+ * (r) = runqueue->lock
  * (!) = atomic
  */
 typedef struct kcpu {
@@ -146,6 +153,9 @@ typedef struct kcpu {
 
 	/*! (~) */
 	int num;
+
+	/*! (r) ready threads queues */
+	struct runqueue runqueue;
 
 	/*! (d) current thread */
 	struct kthread *curthread;
@@ -423,6 +433,12 @@ void ke_mutex_release(kmutex_t *mutex);
  * \p count Initial count.
  */
 void ke_semaphore_init(ksemaphore_t *sem, unsigned count);
+
+/*!
+ * @brief Reset a semaphore to a given count.
+ * \p count Count to which to reset the semaphore.
+ */
+void ke_semaphore_reset(ksemaphore_t *sem, unsigned count);
 
 /*!
  * Release a kernel semaphore.

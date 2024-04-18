@@ -55,6 +55,7 @@ typedef struct {
 
 } __attribute__((packed)) mcfg_t;
 
+
 @interface DKACPIPlatform : DKDevice
 
 + (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp;

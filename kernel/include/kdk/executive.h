@@ -3,6 +3,17 @@
 
 #include "kdk/nanokern.h"
 
+/*!
+ * Work to be carried out by a worker queue.
+ */
+typedef struct ex_work {
+	TAILQ_ENTRY(ex_work) entry;
+	void (*callback)(void *);
+	void *parameter;
+} ex_work_t;
+
+int ex_work_enqueue(ex_work_t *work);
+
 int
 ps_create_kernel_thread(kthread_t **out, const char *name, void (*fn)(void *),
     void *arg);

@@ -16,6 +16,14 @@ ke_semaphore_init(ksemaphore_t *sem, unsigned count)
 }
 
 void
+ke_semaphore_reset(ksemaphore_t *sem, unsigned count)
+{
+	ipl_t ipl = ke_acquire_dispatcher_lock();
+	sem->hdr.signalled = count;
+	ke_release_dispatcher_lock(ipl);
+}
+
+void
 ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 {
 	ipl_t ipl = ke_acquire_dispatcher_lock();

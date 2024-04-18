@@ -127,7 +127,7 @@ srb_deferred_completion_callback(void *arg)
 		ipl_t ipl = ke_spinlock_acquire_at(
 		    &self->srb_deferred_completion_lock, kIPLHigh);
 		srb = self->srb_deferred_completion_queue;
-		if (!srb) {
+		if (srb == NULL) {
 			ke_spinlock_release(
 			    &self->srb_deferred_completion_lock, ipl);
 			break;

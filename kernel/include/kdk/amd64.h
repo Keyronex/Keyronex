@@ -2,6 +2,7 @@
 #define KRX_KDK_AMD64_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "kdk/queue.h"
 

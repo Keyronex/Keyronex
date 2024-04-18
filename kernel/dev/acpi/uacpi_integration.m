@@ -1,10 +1,16 @@
 
+#include "kdk/amd64.h"
 #include "kdk/amd64/portio.h"
 #include "kdk/kmem.h"
 #include "kdk/nanokern.h"
 #include "kdk/vm.h"
 #include "uacpi/kernel_api.h"
 #include "uacpi/status.h"
+#include "uacpi/types.h"
+
+#ifdef AMD64
+#include "dev/amd64/IOAPIC.h"
+#endif
 
 #ifdef AMD64
 void
@@ -184,7 +190,6 @@ void
 uacpi_kernel_vlog(enum uacpi_log_level lvl, const char *msg, uacpi_va_list va)
 {
 	const char *lvlStr;
-	char buf[128];
 
 	switch (lvl) {
 	case UACPI_LOG_TRACE:
@@ -389,18 +394,18 @@ uacpi_kernel_pci_write(uacpi_pci_address *address, uacpi_size offset,
 {
 	switch (byte_width) {
 	case 1:
-		pci_writeb(address->bus, address->device,
-		    address->function, offset, value);
+		pci_writeb(address->bus, address->device, address->function,
+		    offset, value);
 		break;
 
 	case 2:
-		pci_writew(address->bus, address->device,
-		    address->function, offset, value);
+		pci_writew(address->bus, address->device, address->function,
+		    offset, value);
 		break;
 
 	case 4:
-		pci_writel(address->bus, address->device,
-		    address->function, offset, value);
+		pci_writel(address->bus, address->device, address->function,
+		    offset, value);
 		break;
 
 	default:
@@ -428,11 +433,43 @@ uacpi_kernel_sleep(uacpi_u64 msec)
 	kfatal("Implement me\n");
 }
 
+struct uacpi_interrupt {
+	struct intr_entry entry;
+	uacpi_interrupt_handler handler;
+	uacpi_handle ctx;
+};
+
+static bool
+uacpi_intr_handler(md_intr_frame_t *frame, void *context)
+{
+	struct uacpi_interrupt *intr = context;
+	return intr->handler(intr->ctx);
+}
+
 uacpi_status
 uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
     uacpi_interrupt_handler handler, uacpi_handle ctx,
     uacpi_handle *out_irq_handle)
 {
+	int r;
+	struct uacpi_interrupt *entry;
+
+	entry = kmem_alloc(sizeof(*entry));
+	entry->handler = handler;
+	entry->ctx = ctx;
+
+	r = [IOApic handleGSI:isa_intr_overrides[irq].gsi
+		  withHandler:uacpi_intr_handler
+		     argument:entry
+		isLowPolarity:isa_intr_overrides[irq].lopol
+	      isEdgeTriggered:isa_intr_overrides[irq].edge
+		   atPriority:kIPLHigh
+			entry:&entry->entry];
+
+	kassert (r == 0);
+
+	*out_irq_handle = ctx;
+
 	return UACPI_STATUS_OK;
 }
 
@@ -441,6 +478,10 @@ uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler, uacpi_handle)
 {
 	kfatal("Implement me\n");
 }
+
+typedef struct alloc_cache {
+	void *objects[16];
+} alloc_cache_t;
 
 uacpi_status
 uacpi_kernel_schedule_work(uacpi_work_type type, uacpi_work_handler handler,
@@ -480,7 +521,7 @@ uacpi_kernel_acquire_mutex(uacpi_handle opaque, uacpi_u16 timeout)
 {
 	kmutex_t *mutex = opaque;
 	kwaitstatus_t w = ke_wait(mutex, "uacpi_kernel_acquire_mutex", false,
-	    false, timeout == 0xffff ? -1 : timeout);
+	    false, timeout == 0xffff ? -1 : (nanosecs_t)timeout * NS_PER_S);
 	kassert(w == kKernWaitStatusOK || w == kKernWaitStatusTimedOut);
 	return w == kKernWaitStatusOK ? true : false;
 }
@@ -495,27 +536,37 @@ uacpi_kernel_release_mutex(uacpi_handle opaque)
 uacpi_handle
 uacpi_kernel_create_event(void)
 {
-	kfatal("Implement me\n");
+	ksemaphore_t *semaphore = kmem_alloc(sizeof(ksemaphore_t));
+	ke_semaphore_init(semaphore, 0);
+	return semaphore;
 }
 void
 uacpi_kernel_free_event(uacpi_handle opaque)
 {
-	kfatal("Implement me\n");
+	kmem_free(opaque, sizeof(ksemaphore_t));
 }
 
 uacpi_bool
 uacpi_kernel_wait_for_event(uacpi_handle opaque, uacpi_u16 timeout)
 {
-	kfatal("Implement me\n");
+	ksemaphore_t *semaphore = opaque;
+	kwaitstatus_t w = ke_wait(semaphore, "uacpi_kernel_wait_for_event",
+	    false, false,
+	    timeout == 0xffff ? -1 : (nanosecs_t)timeout * NS_PER_S);
+	kassert(w == kKernWaitStatusOK || w == kKernWaitStatusTimedOut);
+	return w == kKernWaitStatusOK ? true : false;
 }
 
 void
 uacpi_kernel_signal_event(uacpi_handle opaque)
 {
-	kfatal("Implement me\n");
+	ksemaphore_t *semaphore = opaque;
+	ke_semaphore_release(semaphore, 1);
 }
+
 void
 uacpi_kernel_reset_event(uacpi_handle opaque)
 {
-	kfatal("Implement me\n");
+	ksemaphore_t *semaphore = opaque;
+	ke_semaphore_reset(semaphore, 0);
 }

@@ -3,6 +3,12 @@
 
 #include "ddk/DKDevice.h"
 
+struct isa_intr_override {
+	uint8_t gsi;
+	uint8_t lopol;
+	uint8_t edge;
+};
+
 @interface IOApic : DKDevice {
 	uint32_t _id;
 	vaddr_t _vaddr;
@@ -38,5 +44,7 @@
 	   gsiBase:(uint32_t)gsiBase;
 
 @end
+
+extern struct isa_intr_override isa_intr_overrides[16];
 
 #endif /* KRX_AMD64_IOAPIC_H */

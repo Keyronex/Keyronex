@@ -25,6 +25,8 @@ enum {
 	kRegisterRedirectionEntriesBase = 0x10,
 };
 
+struct isa_intr_override isa_intr_overrides[16];
+
 static inline uint32_t
 redirection_register(uint32_t entry)
 {
