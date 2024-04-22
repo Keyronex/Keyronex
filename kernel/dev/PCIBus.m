@@ -33,16 +33,16 @@ enum {
 
 - (int)routePinForInfo:(struct pci_dev_info *)info
 {
-	uacpi_pci_routing_table pci_routes;
+	uacpi_pci_routing_table *pci_routes;
 	int r = uacpi_get_pci_routing_table(acpiNode, &pci_routes);
 
 	kassert(r == UACPI_STATUS_OK);
 
-	for (size_t i = 0; i < pci_routes.num_entries; i++) {
+	for (size_t i = 0; i < pci_routes->num_entries; i++) {
 		uacpi_pci_routing_table_entry *entry;
 		int entry_slot, entry_fun;
 
-		entry = &pci_routes.entries[i];
+		entry = &pci_routes->entries[i];
 		entry_slot = (entry->address >> 16) & 0xffff;
 		entry_fun = entry->address & 0xffff;
 
@@ -55,14 +55,17 @@ enum {
 		info->gsi = entry->index;
 
 		if (entry->source != NULL) {
-			uacpi_resources resources;
+			uacpi_resources *resources;
+			uacpi_resource *resource;
 			r = uacpi_get_current_resources(entry->source,
 			    &resources);
 			kassert(r == UACPI_STATUS_OK);
 
-			switch (resources.head->type) {
+			resource = &resources->entries[0];
+
+			switch (resource->type) {
 			case UACPI_RESOURCE_TYPE_IRQ: {
-				uacpi_resource_irq *irq = &resources.head->irq;
+				uacpi_resource_irq *irq = &resource->irq;
 
 				kassert(irq->num_irqs >= 1);
 				info->gsi = irq->irqs[0];
@@ -76,7 +79,7 @@ enum {
 			}
 			case UACPI_RESOURCE_TYPE_EXTENDED_IRQ: {
 				uacpi_resource_extended_irq *irq =
-				    &resources.head->extended_irq;
+				    &resource->extended_irq;
 
 				kassert(irq->num_irqs >= 1);
 				info->gsi = irq->irqs[0];
@@ -92,9 +95,11 @@ enum {
 				kfatal("unexpected\n");
 			}
 
-			uacpi_kernel_free(resources.head);
+			uacpi_free_resources(resources);
 		}
 	}
+
+	uacpi_free_pci_routing_table(pci_routes);
 
 	return 0;
 }
