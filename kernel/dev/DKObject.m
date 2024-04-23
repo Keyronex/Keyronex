@@ -134,10 +134,15 @@ ob_object_alloc(Class class, obj_class_t obclass)
 	       "of the proper object manager class.\n");
 }
 
+
 - (void)dealloc
 {
 	objc_destructInstance(self);
 	// obj_object_delete(object);
+
+	/* silence GCC warning */
+	if (false)
+		[super dealloc];
 }
 
 - (instancetype)retain

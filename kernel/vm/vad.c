@@ -45,7 +45,6 @@ vm_ps_map_section_view(vm_procstate_t *vmps, void *section, vaddr_t *vaddrp,
     vm_protection_t max_protection, bool inherit_shared, bool cow, bool exact)
 {
 	int r;
-	kwaitstatus_t w;
 	vm_vad_t *vad;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 

@@ -262,6 +262,8 @@ dpc_handler(void *arg)
 #ifdef __m68k__
 	gfpic_handle_irq(m_interrupt, vitrio_handler, self);
 	gfpic_unmask_irq(m_interrupt);
+#else
+	(void)vitrio_handler;
 #endif
 	return 0;
 }

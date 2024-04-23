@@ -5,7 +5,7 @@
 
 #include "ntcompat/win_types.h"
 
-typedef __attribute__((ms_abi)) ULONG (*driver_entry_fn_t)(void *, void *);
+typedef NTAPI ULONG (*driver_entry_fn_t)(void *, void *);
 
 typedef struct image_export {
 	const char *name;

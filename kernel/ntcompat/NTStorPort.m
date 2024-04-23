@@ -58,7 +58,7 @@ getAccessRanges(struct pci_dev_info *info)
 		size_t len;
 		uint32_t bar;
 
-		bar = laihost_pci_readd(INFO_ARGS(info), off);
+		bar = pci_readl(INFO_ARGS(info), off);
 
 		if ((bar & 1) == 1) {
 			accessranges[i].RangeStart.QuadPart = bar & 0xFFFFFFFC;
@@ -67,9 +67,9 @@ getAccessRanges(struct pci_dev_info *info)
 		} else if (((bar >> 1) & 3) == 0) {
 			uint32_t size_mask;
 
-			laihost_pci_writed(INFO_ARGS(info), off, 0xffffffff);
-			size_mask = laihost_pci_readd(INFO_ARGS(info), off);
-			laihost_pci_writed(INFO_ARGS(info), off, bar);
+			pci_writel(INFO_ARGS(info), off, 0xffffffff);
+			size_mask = pci_readl(INFO_ARGS(info), off);
+			pci_writel(INFO_ARGS(info), off, bar);
 
 			base = bar & 0xffffffF0;
 			len = (size_t)1
@@ -83,17 +83,17 @@ getAccessRanges(struct pci_dev_info *info)
 
 			kassert(((bar >> 1) & 3) == 2);
 
-			bar_high = laihost_pci_readd(INFO_ARGS(info), off + 4);
+			bar_high = pci_readl(INFO_ARGS(info), off + 4);
 			base = (bar & 0xffffffF0) | (bar_high << 32);
 
-			laihost_pci_writed(INFO_ARGS(info), off, 0xffffffff);
-			laihost_pci_writed(INFO_ARGS(info), off + 4,
+			pci_writel(INFO_ARGS(info), off, 0xffffffff);
+			pci_writel(INFO_ARGS(info), off + 4,
 			    0xffffffff);
-			size_mask = laihost_pci_readd(INFO_ARGS(info), off);
-			size_mask_high = laihost_pci_readd(INFO_ARGS(info),
+			size_mask = pci_readl(INFO_ARGS(info), off);
+			size_mask_high = pci_readl(INFO_ARGS(info),
 			    off + 4);
-			laihost_pci_writed(INFO_ARGS(info), off, bar);
-			laihost_pci_writed(INFO_ARGS(info), off + 4, bar_high);
+			pci_writel(INFO_ARGS(info), off, bar);
+			pci_writel(INFO_ARGS(info), off + 4, bar_high);
 
 			size_mask |= size_mask_high << 32;
 			len = (size_t)1
@@ -164,8 +164,8 @@ srb_deferred_completion_callback(void *arg)
 			continue;
 
 #if defined(__arch64__) || defined (__amd64__)
-		laihost_pci_writew(INFO_ARGS(info), kCommand,
-		    laihost_pci_readw(INFO_ARGS(info), kCommand) &
+		pci_writew(INFO_ARGS(info), kCommand,
+		    pci_readw(INFO_ARGS(info), kCommand) &
 			~(0x1 | 0x2));
 #endif
 
@@ -184,8 +184,8 @@ srb_deferred_completion_callback(void *arg)
 		    &pcfg->SystemIoBusNumber, &pcfg->SlotNumber);
 
 #if defined(__arch64__) || defined (__amd64__)
-		laihost_pci_writew(INFO_ARGS(info), kCommand,
-		    laihost_pci_readw(INFO_ARGS(info), kCommand) | (0x1 | 0x2));
+		pci_writew(INFO_ARGS(info), kCommand,
+		    pci_readw(INFO_ARGS(info), kCommand) | (0x1 | 0x2));
 #endif
 
 		deviceExtension = kmem_alloc(
@@ -404,7 +404,7 @@ trimstr(char *str, size_t length)
 				    sizeof(data->ProductRevisionLevel));
 
 				DKDevLog(self,
-				    "<%.8s %.16s %.4s> at bus %zu target %zu lun %llu\n",
+				    "<%.8s %.16s %.4s> at bus %zu target %zu lun %"PRIu64"\n",
 				    data->VendorId, data->ProductId,
 				    data->ProductRevisionLevel, path, target,
 				    lun);

@@ -24,6 +24,7 @@ vmp_filepage_cmp(struct vmp_filepage *x, struct vmp_filepage *y)
 		return 0;
 }
 
+#if 0
 /*!
  * \pre PFN lock held.
  */
@@ -35,7 +36,6 @@ section_get_filepage(vm_section_t *section, size_t offset)
 	return RB_FIND(vmp_file_page_tree, &section->file.page_tree, &key);
 }
 
-#if 0
 /*!
  * \pre PFN lock held.
  */

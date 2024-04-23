@@ -52,7 +52,8 @@ laihost_ind(uint16_t port)
 }
 
 uint8_t
-pci_readb(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
+pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset)
 {
 	uint32_t address = (bus << 16) | (slot << 11) | (function << 8) |
 	    (offset & ~(uint32_t)(3)) | 0x80000000;
@@ -61,7 +62,8 @@ pci_readb(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
 }
 
 uint16_t
-pci_readw(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
+pci_readw(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset)
 {
 	uint32_t address = (bus << 16) | (slot << 11) | (function << 8) |
 	    (offset & ~(uint32_t)(3)) | 0x80000000;
@@ -70,7 +72,8 @@ pci_readw(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
 }
 
 uint32_t
-pci_readl(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
+pci_readl(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset)
 {
 	uint32_t address = (bus << 16) | (slot << 11) | (function << 8) |
 	    (offset & ~(uint32_t)(3)) | 0x80000000;
@@ -79,8 +82,8 @@ pci_readl(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
 }
 
 void
-pci_writeb(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
-    uint8_t value)
+pci_writeb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint8_t value)
 {
 	uint32_t address = (bus << 16) | (slot << 11) | (function << 8) |
 	    (offset & ~(uint32_t)(3)) | 0x80000000;
@@ -89,8 +92,8 @@ pci_writeb(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
 }
 
 void
-pci_writew(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
-    uint16_t value)
+pci_writew(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint16_t value)
 {
 	uint32_t address = (bus << 16) | (slot << 11) | (function << 8) |
 	    (offset & ~(uint32_t)(3)) | 0x80000000;
@@ -99,8 +102,8 @@ pci_writew(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
 }
 
 void
-pci_writel(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
-    uint32_t value)
+pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint32_t value)
 {
 	uint32_t address = (bus << 16) | (slot << 11) | (function << 8) |
 	    (offset & ~(uint32_t)(3)) | 0x80000000;
@@ -109,82 +112,41 @@ pci_writel(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
 }
 #elif 0
 uint8_t
-pci_readb(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
+pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset)
 {
 }
 
 uint16_t
-pci_readw(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
+pci_readw(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset)
 {
 }
 
 uint32_t
-pci_readl(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset)
+pci_readl(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset)
 {
 }
 
 void
-pci_writeb(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
-    uint8_t value)
+pci_writeb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint8_t value)
 {
 }
 
 void
-pci_writew(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
-    uint16_t value)
+pci_writew(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint16_t value)
 {
 }
 
 void
-pci_writel(uint32_t bus, uint32_t slot, uint32_t function, uint32_t offset,
-    uint32_t value)
+pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint32_t value)
 {
 }
 #endif
-
-void
-laihost_pci_writeb(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fn,
-    uint16_t offset, uint8_t v)
-{
-	kassert(seg == 0);
-	return pci_writeb(bus, slot, fn, offset, v);
-}
-void
-laihost_pci_writew(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fn,
-    uint16_t offset, uint16_t v)
-{
-	kassert(seg == 0);
-	return pci_writew(bus, slot, fn, offset, v);
-}
-void
-laihost_pci_writed(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fn,
-    uint16_t offset, uint32_t v)
-{
-	kassert(seg == 0);
-	return pci_writel(bus, slot, fn, offset, v);
-}
-
-uint8_t
-laihost_pci_readb(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fn,
-    uint16_t offset)
-{
-	kassert(seg == 0);
-	return pci_readb(bus, slot, fn, offset);
-}
-uint16_t
-laihost_pci_readw(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fn,
-    uint16_t offset)
-{
-	kassert(seg == 0);
-	return pci_readw(bus, slot, fn, offset);
-}
-uint32_t
-laihost_pci_readd(uint16_t seg, uint8_t bus, uint8_t slot, uint8_t fn,
-    uint16_t offset)
-{
-	kassert(seg == 0);
-	return pci_readl(bus, slot, fn, offset);
-}
 
 void
 uacpi_kernel_vlog(enum uacpi_log_level lvl, const char *msg, uacpi_va_list va)
@@ -367,18 +329,18 @@ uacpi_kernel_pci_read(uacpi_pci_address *address, uacpi_size offset,
 {
 	switch (byte_width) {
 	case 1:
-		*value = pci_readb(address->bus, address->device,
-		    address->function, offset);
+		*value = pci_readb(address->segment, address->bus,
+		    address->device, address->function, offset);
 		break;
 
 	case 2:
-		*value = pci_readw(address->bus, address->device,
-		    address->function, offset);
+		*value = pci_readw(address->segment, address->bus,
+		    address->device, address->function, offset);
 		break;
 
 	case 4:
-		*value = pci_readl(address->bus, address->device,
-		    address->function, offset);
+		*value = pci_readl(address->segment, address->bus,
+		    address->device, address->function, offset);
 		break;
 
 	default:
@@ -394,18 +356,18 @@ uacpi_kernel_pci_write(uacpi_pci_address *address, uacpi_size offset,
 {
 	switch (byte_width) {
 	case 1:
-		pci_writeb(address->bus, address->device, address->function,
-		    offset, value);
+		pci_writeb(address->segment, address->bus, address->device,
+		    address->function, offset, value);
 		break;
 
 	case 2:
-		pci_writew(address->bus, address->device, address->function,
-		    offset, value);
+		pci_writew(address->segment, address->bus, address->device,
+		    address->function, offset, value);
 		break;
 
 	case 4:
-		pci_writel(address->bus, address->device, address->function,
-		    offset, value);
+		pci_writel(address->segment, address->bus, address->device,
+		    address->function, offset, value);
 		break;
 
 	default:

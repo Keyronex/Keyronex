@@ -1,3 +1,4 @@
+#include "dev/PCIBus.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "storportcompat.h"
@@ -87,7 +88,10 @@ StorPortGetBusData(
 	unpackPci(SystemIoBusNumber, SlotNumber, &seg, &bus, &slot, &fun);
 #if defined(__arch64__) || defined (__amd64__)
 	for (int i = 0; i < Length; i++)
-		out[i] = laihost_pci_readb(seg, bus, slot, fun, i);
+		out[i] = pci_readb(seg, bus, slot, fun, i);
+#else
+	(void)out;
+	kfatal("Implement me\n");
 #endif
 	return Length;
 }

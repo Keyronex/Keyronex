@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 #include "kdk/vm.h"
-#include "mmu_regs.h"
 
 #define VMP_TABLE_LEVELS 4
 #define VMP_PAGE_SHIFT 12
@@ -57,13 +56,17 @@ typedef union __attribute__((packed)) pte {
 } pte_t;
 
 static inline void
-vmp_md_pte_create_hw(pte_hw_t *pte, pfn_t pfn, bool writeable, bool cacheable)
+vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool cacheable)
 {
-	int flags = kMMUPresent;
-	if (writeable)
-		flags |= kMMUWrite;
+	pte_t pte;
 
-	amd64_pte_set((uint64_t*)pte, PFN_TO_PADDR(pfn), flags);
+	pte.value = 0x0;
+	pte.hw.pfn = pfn;
+	pte.hw.valid = 1;
+	pte.hw.writeable = writeable;
+	pte.hw.nocache = !cacheable;
+
+	ppte->value = pte.value;
 }
 
 static inline void
@@ -87,13 +90,13 @@ vmp_md_pte_is_empty(pte_t *pte)
 static inline bool
 vmp_md_pte_is_valid(pte_t *pte)
 {
-	return pte->value & kMMUPresent;
+	return pte->hw.valid;
 }
 
 static inline bool
-vmp_md_hw_pte_is_writeable(pte_hw_t *pte)
+vmp_md_hw_pte_is_writeable(pte_t *pte)
 {
-	return pte->value & kMMUWrite;
+	return pte->hw.writeable;
 }
 
 /* new stuff */

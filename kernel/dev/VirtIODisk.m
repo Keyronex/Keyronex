@@ -88,7 +88,7 @@ VirtIODisk (Private)
 		TAILQ_INSERT_TAIL(&free_reqs, &m_requests[i], queue_entry);
 
 	[self registerDevice];
-	DKLogAttachExtra(self, "%lluKiB\n",
+	DKLogAttachExtra(self, "%" PRIu64 "KiB\n",
 	    le64_to_native(cfg->capacity) * 512 / 1024);
 
 	//vm_mdl_t *mdl = vm_mdl_buffer_alloc(1);

@@ -1,6 +1,7 @@
 #include "kdk/amd64.h"
 #include "kdk/amd64/regs.h"
 #include "kdk/executive.h"
+#include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "vm/vmp.h"
 

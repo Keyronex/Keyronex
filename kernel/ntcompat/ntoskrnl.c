@@ -32,8 +32,8 @@ VOID NTAPI
 RtlAssert(_In_ PVOID FailedAssertion, _In_ PVOID FileName,
     _In_ ULONG LineNumber, _In_opt_ PSTR Message)
 {
-	kfatal("Failed assertion at <%s:%lu>: %s\n", (const char *)FileName,
-	    (const char *)LineNumber, Message);
+	kfatal("Failed assertion at <%s:%u>: %s\n", (const char *)FileName,
+	   LineNumber, Message);
 }
 
 NTKERNELAPI
@@ -51,7 +51,7 @@ KeBugCheckEx(IN ULONG BugCheckCode, IN ULONG_PTR BugCheckParameter1,
     IN ULONG_PTR BugCheckParameter2, IN ULONG_PTR BugCheckParameter3,
     IN ULONG_PTR BugCheckParameter4)
 {
-	kfatal("KeBugCheckEx(%u, 0x%lx, 0x%lx, 0x%lx, 0x%lx)", BugCheckCode,
+	kfatal("KeBugCheckEx(%u, 0x%zx, 0x%zx, 0x%zx, 0x%zx)", BugCheckCode,
 	    BugCheckParameter1, BugCheckParameter2, BugCheckParameter3,
 	    BugCheckParameter4);
 }

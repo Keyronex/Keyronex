@@ -5,7 +5,7 @@
 #include "ntcompat/win_image.h"
 #include "vm/vmp.h"
 
-static void __attribute__((ms_abi)) unresolved_shim(...)
+static void NTAPI unresolved_shim(...)
 {
 	kfatal("Unresolved import\n");
 }

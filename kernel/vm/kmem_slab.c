@@ -178,6 +178,7 @@ kmem_zone_init(struct kmem_zone *zone, const char *name, size_t size)
 void
 kmem_init(void)
 {
+	(void)alloc_log_lock;
 	kmem_zone_init(&kmem_slab, "kmem_slab",
 	    sizeof(struct kmem_slab) + sizeof(void *));
 	kmem_zone_init(&kmem_bufctl, "kmem_bufctl", sizeof(struct kmem_bufctl));

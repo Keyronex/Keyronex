@@ -2,8 +2,11 @@
 #define KRX_DEV_PCIBUS_H
 
 #include "ddk/DKDevice.h"
+
+#if defined(__arch64__) || defined (__amd64__)
 #include "uacpi/types.h"
 #include "uacpi/uacpi.h"
+#endif
 
 struct pci_dev_info {
 	uint16_t seg;
@@ -24,6 +27,8 @@ struct pci_dev_info {
 	bool edge;
 };
 
+
+#if defined(__arch64__) || defined (__amd64__)
 @interface PCIBus : DKDevice {
 	uacpi_namespace_node *acpiNode;
 }
@@ -34,5 +39,21 @@ struct pci_dev_info {
 			     bus:(uint8_t)bus;
 
 @end
+#else
+@class PCIBus;
+#endif
+
+uint8_t pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset);
+uint16_t pci_readw(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset);
+uint32_t pci_readl(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset);
+void pci_writeb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint8_t value);
+void pci_writew(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint16_t value);
+void pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
+    uint32_t offset, uint32_t value);
 
 #endif /* KRX_DEV_PCIBUS_H */

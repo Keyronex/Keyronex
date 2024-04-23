@@ -1,4 +1,5 @@
 #include "kdk/nanokern.h"
+#include "kdk/libkern.h"
 #include "vmp.h"
 
 static bool
@@ -100,7 +101,9 @@ vmp_pte_wire_state_release(struct vmp_pte_wire_state *state)
 int
 vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 {
+#if PAGETABLE_PAGING
 	ipl_t ipl;
+#endif
 	int indexes[VMP_TABLE_LEVELS + 1];
 	vm_page_t *pages[VMP_TABLE_LEVELS] = { 0 };
 	pte_t *table;
@@ -145,7 +148,9 @@ vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, struct vmp_pte_wire_state *state)
 		    level, pte, pages[level - 1]);
 #endif
 
+#if PAGETABLE_PAGING
 	restart_level:
+#endif
 		switch (vmp_pte_characterise(pte)) {
 		case kPTEKindValid: {
 			vm_page_t *page = vmp_pte_hw_page(pte, level);

@@ -135,18 +135,6 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 }
 #endif
 
-+ (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
-{
-	if (rsdp->Revision > 0)
-		xsdt = (acpi_xsdt_t *)P2V(((rsdp_desc2_t *)rsdp)->XsdtAddress);
-	else
-		rsdt = (acpi_rsdt_t *)P2V((uintptr_t)rsdp->RsdtAddress);
-
-	[[self alloc] initWithProvider:provider rsdp:rsdp];
-
-	return YES;
-}
-
 - (void)handleMADTEntry:(acpi_madt_entry_header_t *)entry
 {
 }
@@ -205,6 +193,19 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	uacpi_namespace_for_each_node_depth_first(sb, iteration_callback, self);
 
 	return self;
+}
+
+
++ (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
+{
+	if (rsdp->Revision > 0)
+		xsdt = (acpi_xsdt_t *)P2V(((rsdp_desc2_t *)rsdp)->XsdtAddress);
+	else
+		rsdt = (acpi_rsdt_t *)P2V((uintptr_t)rsdp->RsdtAddress);
+
+	[[self alloc] initWithProvider:provider rsdp:rsdp];
+
+	return YES;
 }
 
 @end

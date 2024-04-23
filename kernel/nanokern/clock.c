@@ -147,8 +147,9 @@ ke_format_time(nanosecs_t nanosecs, char *out, size_t size)
 
 	civil_from_days(days_since_epoch, &year, &month, &day);
 
-	npf_snprintf(out, size, "%02d-%s-%d %02llu:%02llu:%02llu.%2llu", day,
-	    month_names[month - 1], year, unix_time / 60 / 60 % 24,
+	npf_snprintf(out, size,
+	    "%02d-%s-%d %02" PRIu64 ":%02" PRIu64 ":%02" PRIu64 ".%2" PRIu64,
+	    day, month_names[month - 1], year, unix_time / 60 / 60 % 24,
 	    unix_time / 60 % 60, unix_time % 60,
 	    (nanosecs % NS_PER_S) / 1000000);
 }

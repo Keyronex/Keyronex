@@ -850,7 +850,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	iop_frame_t *frame = iop_stack_current(iop);
 	kassert(frame->function == kIOPTypeRead);
 	kassert(frame->vnode != NULL);
-	DKDevLog(self, "Dispatching a read request - offset %lld length %zu\n",
+	DKDevLog(self,
+	    "Dispatching a read request - offset %" PRId64 " length %zu\n",
 	    frame->rw.offset, frame->rw.bytes);
 	dos_rw(m_state, frame->vnode, frame->rw.offset, frame->rw.bytes,
 	    frame->mdl, false);

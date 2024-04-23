@@ -2,15 +2,11 @@
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "ntcompat/NTStorPort.h"
-#include "uacpi/resources.h"
-#include "uacpi/utilities.h"
 
 #if defined(__arch64__) || defined (__amd64__)
-#if 0
-#include "lai/helpers/pci.h"
-#include "lai/host.h"
-#endif
-#endif
+#include "uacpi/resources.h"
+#include "uacpi/utilities.h"
+#include "uacpi/kernel_api.h"
 
 enum {
 	kVendorID = 0x0, /* u16 */
@@ -113,7 +109,7 @@ enum {
 
 #if defined(__arch64__) || defined (__amd64__)
 #define CFG_READ(WIDTH, OFFSET) \
-	laihost_pci_read##WIDTH(seg, bus, slot, fun, OFFSET)
+	pci_read##WIDTH(seg, bus, slot, fun, OFFSET)
 
 	info.vendorId = CFG_READ(w, kVendorID);
 	if (info.vendorId == 0xffff)
@@ -162,10 +158,10 @@ enum {
 	for (unsigned slot = 0; slot < 32; slot++) {
 		size_t nFun = 1;
 
-		if (laihost_pci_readw(seg, bus, slot, 0, kVendorID) == 0xffff)
+		if (pci_readw(seg, bus, slot, 0, kVendorID) == 0xffff)
 			continue;
 
-		if (laihost_pci_readb(seg, bus, slot, 0, kHeaderType) &
+		if (pci_readb(seg, bus, slot, 0, kHeaderType) &
 		    (1 << 7))
 			nFun = 8;
 
@@ -178,3 +174,5 @@ enum {
 }
 
 @end
+
+#endif

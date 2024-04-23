@@ -24,6 +24,7 @@ vmp_wsl_find(vm_procstate_t *ps, vaddr_t vaddr)
 	return RB_FIND(vmp_wsle_tree, &ps->wsl.tree, &key);
 }
 
+#if 0
 static void
 vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 {
@@ -57,6 +58,7 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 		kfatal("Unhandled page use in working set eviction\n");
 	}
 }
+#endif
 
 void
 wsl_evict_one(vm_procstate_t *ps)
@@ -104,10 +106,7 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked)
 
 void vmp_wsl_remove(vm_procstate_t*ps, vaddr_t vaddr)
 {
-	struct vmp_wsle *wsle;
-
 	kassert(vmp_wsl_find(ps, vaddr) == NULL);
 
 	kfatal("Implement this function\n");
-
 }

@@ -24,8 +24,8 @@ typedef size_t SIZE_T;
 
 typedef uint16_t PWSTR;
 
-typedef int64_t LONG_PTR;
-typedef uint64_t ULONG_PTR;
+typedef intptr_t LONG_PTR;
+typedef uintptr_t ULONG_PTR;
 
 typedef ULONG_PTR KAFFINITY;
 

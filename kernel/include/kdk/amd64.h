@@ -33,6 +33,9 @@
 /* This stuff belongs in inttypes.h, but let's define it temporarily... */
 #define PRIu32 "u"
 #define PRIb32 "b"
+#define PRId64 "ld"
+#define PRIu64 "lu"
+#define PRIb64 "lb"
 
 typedef enum ipl {
 	kIPL0 = 0,
