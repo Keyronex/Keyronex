@@ -12,51 +12,48 @@ ke_semaphore_init(ksemaphore_t *sem, unsigned count)
 {
 	sem->hdr.type = kDispatchSemaphore;
 	sem->hdr.signalled = count;
+	ke_spinlock_init(&sem->hdr.spinlock);
 	TAILQ_INIT(&sem->hdr.waitblock_queue);
 }
 
 void
 ke_semaphore_reset(ksemaphore_t *sem, unsigned count)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	ipl_t ipl = ke_spinlock_acquire(&sem->hdr.spinlock);
 	sem->hdr.signalled = count;
-	ke_release_dispatcher_lock(ipl);
+	ke_spinlock_release(&sem->hdr.spinlock, ipl);
 }
 
 void
 ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	kwaitblock_queue_t queue = TAILQ_HEAD_INITIALIZER(queue);
+	ipl_t ipl = ke_spinlock_acquire(&sem->hdr.spinlock);
 
 	/* low: test for overflow; implement semaphore limits? */
 	sem->hdr.signalled += adjustment;
+	ki_signal(&sem->hdr, &queue);
+	ke_spinlock_release_nospl(&sem->hdr.spinlock);
 
-	if (sem->hdr.signalled > 0) {
-		kwaitblock_t *block = TAILQ_FIRST(&sem->hdr.waitblock_queue);
-		while ((block) != NULL && ((sem->hdr.signalled) > 0)) {
-			kwaitblock_t *next = TAILQ_NEXT(block, queue_entry);
-			int i = ki_waiter_maybe_wakeup(block->thread,
-			    &sem->hdr);
-			(void)i;
-			block = next;
-		}
-	}
-
-	ke_release_dispatcher_lock(ipl);
+	ke_acquire_scheduler_lock();
+	ki_wake_waiters(&queue);
+	ke_release_scheduler_lock(ipl);
 }
 
+#if 0
 void
 ke_semaphore_release_maxone(ksemaphore_t *sem)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	kwaitblock_queue_t queue = TAILQ_HEAD_INITIALIZER(queue);
+	ipl_t ipl = ke_spinlock_acquire(&sem->hdr.spinlock);
 
-	if (sem->hdr.signalled == 0) {
-		kwaitblock_t *block = TAILQ_FIRST(&sem->hdr.waitblock_queue);
-		sem->hdr.signalled = 1;
-		if (block != NULL)
-			ki_waiter_maybe_wakeup(block->thread, &sem->hdr);
-	} else
-		kassert(sem->hdr.signalled == 1);
+	/* low: test for overflow; implement semaphore limits? */
+	sem->hdr.signalled += adjustment;
+	ki_signal(&sem->hdr, &queue, semaphore_acquire);
+	ke_spinlock_release_nospl(&sem->hdr.spinlock);
 
-	ke_release_dispatcher_lock(ipl);
+	ke_acquire_scheduler_lock();
+	ki_wake_waiters(&queue);
+	ke_release_scheduler_lock(ipl);
 }
+#endif

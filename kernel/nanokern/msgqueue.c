@@ -3,8 +3,9 @@
  * Created on Tue Jan 14 2023.
  */
 
-#include "kdk/nanokern.h"
 #include "kdk/kmem.h"
+#include "kdk/nanokern.h"
+#include "kdk/queue.h"
 #include "ki.h"
 
 void
@@ -12,37 +13,32 @@ ke_event_init(kevent_t *ev, bool signalled)
 {
 	ev->hdr.type = kDispatchEvent;
 	ev->hdr.signalled = signalled;
+	ke_spinlock_init(&ev->hdr.spinlock);
 	TAILQ_INIT(&ev->hdr.waitblock_queue);
 }
 
 void
 ke_event_signal(kevent_t *ev)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	kwaitblock_queue_t queue = TAILQ_HEAD_INITIALIZER(queue);
+	ipl_t ipl = ke_spinlock_acquire(&ev->hdr.spinlock);
+	ev->hdr.signalled = 1;
+	ki_signal(&ev->hdr, &queue);
+	ke_spinlock_release_nospl(&ev->hdr.spinlock);
 
-	ev->hdr.signalled = true;
-
-	kwaitblock_t *block = TAILQ_FIRST(&ev->hdr.waitblock_queue);
-	while ((block) != NULL) {
-		kwaitblock_t *next = TAILQ_NEXT(block, queue_entry);
-		if (ki_waiter_maybe_wakeup(block->thread, &ev->hdr))
-			break;
-		block = next;
-	}
-
-	ke_release_dispatcher_lock(ipl);
+	ke_acquire_scheduler_lock();
+	ki_wake_waiters(&queue);
+	ke_release_scheduler_lock(ipl);
 }
 
 bool
 ke_event_clear(kevent_t *ev)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	ipl_t ipl = ke_spinlock_acquire(&ev->hdr.spinlock);
 	bool signalled;
-
 	signalled = ev->hdr.signalled;
 	ev->hdr.signalled = false;
-	ke_release_dispatcher_lock(ipl);
-
+	ke_spinlock_release(&ev->hdr.spinlock, ipl);
 	return signalled;
 }
 
@@ -63,7 +59,7 @@ ke_msgqueue_init(kmsgqueue_t *msgq, unsigned count)
 void
 ke_msgq_post(kmsgqueue_t *queue, void *msg)
 {
-	kwaitstatus_t wait = ke_wait(&queue->sem, "msgqueue_wait", false, false,
+	kwaitresult_t wait = ke_wait(&queue->sem, "msgqueue_wait", false, false,
 	    -1);
 	kassert(wait == kKernWaitStatusOK);
 

@@ -11,7 +11,7 @@ kcpu_t *cpus[1] = { &bootstrap_cpu };
 #endif
 size_t ncpus;
 
-kspinlock_t dispatcher_lock = KSPINLOCK_INITIALISER,
+kspinlock_t scheduler_lock = KSPINLOCK_INITIALISER,
 	    done_lock = KSPINLOCK_INITIALISER;
 struct kthread_queue ready_queue = TAILQ_HEAD_INITIALIZER(ready_queue),
 		     done_queue = TAILQ_HEAD_INITIALIZER(done_queue);
@@ -99,9 +99,9 @@ ki_dispatch_dpcs(kcpu_t *cpu)
 		}
 
 		if (cpu->reschedule_reason != kRescheduleReasonNone) {
-			ipl_t ipl = ke_acquire_dispatcher_lock();
+			ipl_t ipl = ke_acquire_scheduler_lock();
 			ki_reschedule();
-			/* IPL remains at dpc but dispatcher lock was dropped */
+			/* IPL remains at dpc but scheduler lock was dropped */
 			splx(ipl);
 		}
 	}
@@ -135,7 +135,7 @@ ki_reschedule(void)
 	bool drop = false;
 
 	kassert(splget() == kIPLDPC);
-	kassert(ke_spinlock_held(&dispatcher_lock));
+	kassert(ke_spinlock_held(&scheduler_lock));
 
 	if (old_thread == cpu->idle_thread) {
 		/*! idle thread must never wait, try to exit, whatever */
@@ -168,12 +168,12 @@ ki_reschedule(void)
 	(void)drop;
 
 	if (old_thread == next) {
-		ke_spinlock_release_nospl(&dispatcher_lock);
+		ke_spinlock_release_nospl(&scheduler_lock);
 		return;
 	}
 
 	/* activate VM map... */
-	ke_spinlock_release_nospl(&dispatcher_lock);
+	ke_spinlock_release_nospl(&scheduler_lock);
 	md_switch(old_thread);
 }
 
@@ -188,9 +188,9 @@ ki_thread_resume_locked(kthread_t *thread)
 void
 ke_thread_resume(kthread_t *thread)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	ipl_t ipl = ke_acquire_scheduler_lock();
 	ki_thread_resume_locked(thread);
-	ke_release_dispatcher_lock(ipl);
+	ke_release_scheduler_lock(ipl);
 }
 
 void
@@ -204,6 +204,6 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, void *proc,
 	thread->timeslice = 5;
 	ke_timer_init(&thread->wait_timer);
 	thread->wait_result = kKernWaitStatusOK;
-	ipl = ke_acquire_dispatcher_lock();
-	ke_release_dispatcher_lock(ipl);
+	ipl = ke_acquire_scheduler_lock();
+	ke_release_scheduler_lock(ipl);
 }

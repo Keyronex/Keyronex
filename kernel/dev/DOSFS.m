@@ -752,6 +752,7 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 	state->vfs.device = self;
 
+#if 0
 	extern vm_procstate_t kernel_procstate;
 	vaddr_t mapaddr = 0xd0000000;
 	vm_ps_map_section_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
@@ -778,6 +779,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 	for (;;)
 		;
+#endif
+
 	return self;
 }
 
