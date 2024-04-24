@@ -214,9 +214,11 @@ flush_timer_dpc_handler(void *arg)
 	m_flushRequest->r.height = native_to_le32(768);
 
 	ke_timer_init(&m_flushTimer);
-	m_flushTimer.dpc.callback = flush_timer_dpc_handler;
-	m_flushTimer.dpc.arg = self;
-	m_flushTimer.dpc.cpu = NULL;
+
+	m_flushTimer.dpc = &m_flushDpc;
+	m_flushDpc.callback = flush_timer_dpc_handler;
+	m_flushDpc.arg = self;
+	m_flushDpc.cpu = NULL;
 	ke_timer_set(&m_flushTimer, NS_PER_S / 4);
 
 	[FBTerminal probeWithFramebuffer:self];

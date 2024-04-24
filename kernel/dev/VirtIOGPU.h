@@ -11,6 +11,7 @@
 	struct virtio_queue m_commandQueue;
 	struct virtio_queue m_cursorQueue;
 	ktimer_t m_flushTimer;
+	kdpc_t m_flushDpc;
 
 	struct virtio_gpu_req *m_transferReq;
 	struct virtio_gpu_transfer_to_host_2d *m_transferRequest;

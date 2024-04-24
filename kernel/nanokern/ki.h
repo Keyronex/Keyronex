@@ -41,8 +41,8 @@ void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, void *proc,
  */
 void ki_thread_resume_locked(kthread_t *thread);
 
-void ki_timer_enqueue(ktimer_t *callout);
-void ki_timer_dequeue(ktimer_t *callout);
+void ki_timer_enqueue_locked(ktimer_t *callout);
+bool ki_timer_dequeue_locked(ktimer_t *callout);
 
 void md_raise_dpc_interrupt(void);
 void md_cpu_init(kcpu_t *cpu);

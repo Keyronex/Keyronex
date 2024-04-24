@@ -1,4 +1,5 @@
 #include "kdk/nanokern.h"
+#include "kdk/queue.h"
 #include "ki.h"
 
 typedef int64_t time_t;
@@ -14,7 +15,7 @@ ke_get_local_nanos(kcpu_t *cpu)
 }
 
 void
-ki_timer_enqueue(ktimer_t *callout)
+ki_timer_enqueue_locked(ktimer_t *callout)
 {
 	ktimer_t *existing;
 	kcpu_t *cpu;
@@ -23,10 +24,8 @@ ki_timer_enqueue(ktimer_t *callout)
 	ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock, kIPLHigh);
 	cpu = curcpu();
 
-	kassert(callout->pending == false);
-	kassert(callout->dpc.cpu == NULL);
-	kassert(callout->nanosecs > 0);
-	callout->deadline = callout->nanosecs + cpu->nanos;
+	callout->cpu = cpu;
+	__atomic_store_n(&callout->state, kTimerInQueue, __ATOMIC_RELEASE);
 
 	TAILQ_FOREACH (existing, &cpu->timer_queue, queue_entry) {
 		if (existing->deadline > callout->deadline) {
@@ -38,28 +37,46 @@ ki_timer_enqueue(ktimer_t *callout)
 	TAILQ_INSERT_TAIL(&cpu->timer_queue, callout, queue_entry);
 
 next:
-	callout->pending = true;
-	callout->cpu = cpu;
-
 	ke_spinlock_release(&cpu->dpc_lock, ipl);
 }
 
-void
-ki_timer_dequeue(ktimer_t *callout)
+bool
+ki_timer_dequeue_locked(ktimer_t *callout)
 {
 	kcpu_t *cpu;
 	ipl_t ipl;
 
-	ipl = ke_spinlock_acquire_at(&callout->cpu->dpc_lock, kIPLHigh);
+	if (__atomic_load_n(&callout->state, __ATOMIC_ACQUIRE) ==
+	    kTimerDisabled)
+		return true;
+
+	/*
+	 * we are at IPL = kDPC already, and callout->cpu will stay stable while
+	 * we have the DPC lock held
+	 */
+
 	cpu = callout->cpu;
+	ipl = ke_spinlock_acquire_at(&cpu->dpc_lock, kIPLHigh);
 
-	kassert(cpu != NULL);
-	kassert(callout->pending);
+	if (__atomic_load_n(&callout->state, __ATOMIC_ACQUIRE) ==
+	    kTimerExecuting) {
+		ke_spinlock_release(&cpu->dpc_lock, ipl);
+		return false;
+	} else if (__atomic_load_n(&callout->state, __ATOMIC_ACQUIRE) ==
+	    kTimerDisabled) {
+		ke_spinlock_release(&cpu->dpc_lock, ipl);
+		return true;
+	}
 
-	callout->pending = false;
+	kassert(__atomic_load_n(&callout->state, __ATOMIC_ACQUIRE) ==
+	    kTimerInQueue);
+	kassert(callout->cpu == cpu);
 	TAILQ_REMOVE(&cpu->timer_queue, callout, queue_entry);
+	__atomic_store_n(&callout->state, kTimerDisabled, __ATOMIC_RELEASE);
 
-	ke_spinlock_release(&callout->cpu->dpc_lock, ipl);
+	ke_spinlock_release(&cpu->dpc_lock, ipl);
+
+	return true;
 }
 
 bool
@@ -69,6 +86,7 @@ ki_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 	nanosecs_t nanos;
 	kcpu_t *cpu;
 	ipl_t ipl;
+	bool want_timers = false;
 
 	/* in principle we should already be at IPL=high */
 	ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock, kIPLHigh);
@@ -85,24 +103,62 @@ ki_cpu_hardclock(md_intr_frame_t *frame, void *arg)
 		md_raise_dpc_interrupt();
 	}
 
-	while (true) {
-		co = TAILQ_FIRST(&cpu->timer_queue);
+	co = TAILQ_FIRST(&cpu->timer_queue);
 
-		if (co == NULL || co->deadline > nanos)
-			goto next;
+	if (co != NULL && co->deadline <= nanos)
+		want_timers = true;
 
-		TAILQ_REMOVE(&cpu->timer_queue, co, queue_entry);
-		/* ! do we want kCalloutElapsed? Do we need it? */
-		co->pending = false;
-
-		TAILQ_INSERT_TAIL(&cpu->dpc_queue, &co->dpc, queue_entry);
-		co->dpc.cpu = cpu;
-	}
-
-next:
 	ke_spinlock_release(&cpu->dpc_lock, ipl);
 
+	if (want_timers)
+		ke_dpc_enqueue(&cpu->timer_expiry_dpc);
+
 	return true;
+}
+
+void
+timer_expiry_dpc(void *arg)
+{
+	kcpu_t *cpu = arg;
+	while (true) {
+		ipl_t ipl = ke_spinlock_acquire_at(&cpu->dpc_lock, kIPLHigh);
+		ktimer_t *timer = TAILQ_FIRST(&cpu->timer_queue);
+
+		if (timer == NULL || timer->deadline >= cpu->nanos) {
+			ke_spinlock_release(&cpu->dpc_lock, ipl);
+			break;
+		}
+
+		enum ktimer_state expected = kTimerInQueue;
+
+		if (!__atomic_compare_exchange_n(&timer->state, &expected,
+			false, kTimerExecuting, __ATOMIC_ACQ_REL,
+			__ATOMIC_RELAXED)) {
+			/* timer cancelled */
+			ke_spinlock_release(&cpu->dpc_lock, ipl);
+			continue;
+		}
+
+		TAILQ_REMOVE(&cpu->timer_queue, timer, queue_entry);
+		ke_spinlock_release(&cpu->dpc_lock, ipl);
+
+		kwaitblock_queue_t waiters_queue = TAILQ_HEAD_INITIALIZER(
+		    waiters_queue);
+
+		ke_spinlock_acquire_nospl(&timer->hdr.spinlock);
+		timer->hdr.signalled = 1;
+		ki_signal(&timer->hdr, &waiters_queue);
+		timer->hdr.signalled = 0;
+		__atomic_store_n(&timer->state, kTimerDisabled,
+		    __ATOMIC_RELEASE);
+		if (timer->dpc != NULL)
+			ke_dpc_enqueue(timer->dpc);
+		ke_spinlock_release_nospl(&timer->hdr.spinlock);
+
+		ke_spinlock_acquire_nospl(&scheduler_lock);
+		ki_wake_waiters(&waiters_queue);
+		ke_spinlock_release_nospl(&scheduler_lock);
+	}
 }
 
 /*

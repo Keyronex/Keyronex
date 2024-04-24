@@ -139,18 +139,20 @@ typedef struct kdpc {
  */
 typedef struct ktimer {
 	kdispatchheader_t hdr;
+	/*! Current state of timer. Atomically manipulated. */
+	enum ktimer_state {
+		kTimerDisabled,
+		kTimerInQueue,
+		kTimerExecuting
+	} state;
 	/*! Linkage in kcpu_t::timer_queue */
 	TAILQ_ENTRY(ktimer) queue_entry;
-	/*! DPC to be enqueued on its elapsing */
-	kdpc_t dpc;
-	/*! Relative time till expiry. */
-	nanosecs_t nanosecs;
 	/*! Absolute time (in terms of cpu->ticks) of expiry. */
 	nanosecs_t deadline;
-	/*! Is it pending? */
-	bool pending;
 	/*! If it's pending, on which CPU? */
 	struct kcpu *cpu;
+	/*! Optional DPC to enqueue on timer expiry */
+	kdpc_t *dpc;
 } ktimer_t;
 
 TAILQ_HEAD(kthread_queue, kthread);
@@ -188,10 +190,12 @@ typedef struct kcpu {
 	bool dpc_int;
 	/*! Lock on dpc_queue. */
 	kspinlock_t dpc_lock;
-	/*! (D) DPCs awaiting execution */
+	/*! (d) DPCs awaiting execution */
 	TAILQ_HEAD(, kdpc) dpc_queue;
-	/*! (D) Timers awaiting expiry */
+	/*! (d) Timers awaiting expiry */
 	TAILQ_HEAD(, ktimer) timer_queue;
+	/*! Timer expiration processing DPC */
+	kdpc_t timer_expiry_dpc;
 
 	/*! (a) Nanoseconds since CPU start */
 	nanosecs_t nanos;

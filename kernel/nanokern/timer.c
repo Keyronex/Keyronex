@@ -3,6 +3,7 @@
  * Created on Wed Jan 17 2023.
  */
 
+#include "kdk/nanokern.h"
 #include "ki.h"
 
 void
@@ -27,25 +28,38 @@ ke_timer_init(ktimer_t *timer)
 	timer->hdr.type = kDispatchTimer;
 	timer->hdr.signalled = 0;
 	ke_spinlock_init(&timer->hdr.spinlock);
-	timer->pending = false;
+	timer->state = kTimerDisabled;
 	timer->cpu = NULL;
-	timer->dpc.arg = timer;
-	timer->dpc.callback = timer_dpc;
-	timer->dpc.cpu = NULL;
 	TAILQ_INIT(&timer->hdr.waitblock_queue);
 }
 
 void
 ke_timer_set(ktimer_t *timer, uint64_t nanosecs)
 {
-	ipl_t ipl = ke_spinlock_acquire(&timer->hdr.spinlock);
+	ipl_t ipl = spldpc();
 
-	if (timer->pending)
-		ki_timer_dequeue(timer);
+	ke_spinlock_acquire_nospl(&timer->hdr.spinlock);
 
-	timer->nanosecs = nanosecs;
-	timer->hdr.signalled = 0;
-	ki_timer_enqueue(timer);
+retry:
+	if (__atomic_load_n(&timer->state, __ATOMIC_ACQUIRE) ==
+	    kTimerExecuting) {
+		ke_spinlock_release_nospl(&timer->hdr.spinlock);
+#ifdef AMD64
+		asm("pause");
+#endif
+		ke_spinlock_acquire_nospl(&timer->hdr.spinlock);
+		goto retry;
+	} else if (__atomic_load_n(&timer->state, __ATOMIC_ACQUIRE) ==
+	    kTimerInQueue) {
+		if (!ki_timer_dequeue_locked(timer))
+			goto retry;
+	}
+
+	kassert(
+	    __atomic_load_n(&timer->state, __ATOMIC_ACQUIRE) == kTimerDisabled);
+	timer->cpu = curcpu();
+	timer->deadline = curcpu()->nanos + nanosecs;
+	ki_timer_enqueue_locked(timer);
 
 	ke_spinlock_release(&timer->hdr.spinlock, ipl);
 }
@@ -55,12 +69,18 @@ ke_timer_cancel(ktimer_t *timer)
 {
 	ipl_t ipl = ke_spinlock_acquire(&timer->hdr.spinlock);
 
-	/* todo: no attempt is made to wait for or cancel the associated DPC */
-
-	if (timer->pending)
-		ki_timer_dequeue(timer);
-
-	kassert(timer->dpc.cpu == NULL);
+retry:
+	if (__atomic_load_n(&timer->state, __ATOMIC_ACQUIRE) ==
+	    kTimerExecuting) {
+		asm("nop");
+		goto retry;
+	} else if (__atomic_load_n(&timer->state, __ATOMIC_ACQUIRE) ==
+	    kTimerInQueue) {
+		if (!ki_timer_dequeue_locked(timer))
+			goto retry;
+	}
+	kassert(
+	    __atomic_load_n(&timer->state, __ATOMIC_ACQUIRE) == kTimerDisabled);
 
 	ke_spinlock_release(&timer->hdr.spinlock, ipl);
 }

@@ -17,6 +17,7 @@ struct kthread_queue ready_queue = TAILQ_HEAD_INITIALIZER(ready_queue),
 		     done_queue = TAILQ_HEAD_INITIALIZER(done_queue);
 
 void md_raise_dpc_interrupt(void);
+void timer_expiry_dpc(void*);
 
 void
 done_thread_dpc(void *)
@@ -49,6 +50,9 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 	curcpu()->done_thread_dpc.cpu = NULL;
 	curcpu()->done_thread_dpc.arg = curcpu();
 	curcpu()->done_thread_dpc.callback = done_thread_dpc;
+	curcpu()->timer_expiry_dpc.cpu = NULL;
+	curcpu()->timer_expiry_dpc.arg = curcpu();
+	curcpu()->timer_expiry_dpc.callback = timer_expiry_dpc;
 }
 
 void
