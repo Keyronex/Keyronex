@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 NetaScale Object Solutions.
+ * Copyright (c) 2023-2024 NetaScale Object Solutions.
  * Created on Wed Jan 17 2023.
  */
 
@@ -8,20 +8,22 @@
 #include "kdk/vm.h"
 #include "ki.h"
 
-/*! @pre dispatcher_lock held */
-static void
-waiter_wake(kthread_t *thread, kwaitstatus_t result)
+void
+ki_wake_waiters(kwaitblock_queue_t *queue)
 {
-	kassert(thread->state == kThreadStateWaiting);
-	//thread->stats.total_wait_time += MAX(
-	//    (ke_get_ticks(thread->cpu) - thread->stats.last_start_time), 1);
-	thread->wait_result = result;
-	thread->state = kThreadStateRunnable;
-	ki_thread_resume_locked(thread);
+	kwaitblock_t *wb;
+
+	TAILQ_FOREACH (wb, queue, queue_entry) {
+		kthread_t *thread = wb->thread;
+
+		kassert(thread->state == kThreadStateWaiting);
+		thread->state = kThreadStateRunnable;
+		ki_thread_resume_locked(thread);
+	}
 }
 
 void
-ki_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
+ki_object_acquire(kdispatchheader_t *hdr, kthread_t *thread)
 {
 	switch (hdr->type) {
 	case kDispatchSemaphore: {
@@ -45,195 +47,195 @@ ki_object_acquire(kthread_t *thread, kdispatchheader_t *hdr)
 	}
 }
 
-static void
-wait_timeout_callback(void *arg)
+void
+ki_signal(kdispatchheader_t *hdr, kwaitblock_queue_t *wakeQueue)
 {
-	kthread_t *thread = arg;
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	while (!TAILQ_EMPTY(&hdr->waitblock_queue) && hdr->signalled > 0) {
+		kinternalwaitstatus_t expectPreparing, expectWaiting;
+		kthread_t *thread;
+		kwaitblock_t *wb;
 
-	kassert(thread->state == kThreadStateWaiting &&
-	    thread->wait_result == kKernWaitStatusWaiting);
+		wb = TAILQ_FIRST(&hdr->waitblock_queue);
+		TAILQ_REMOVE(&hdr->waitblock_queue, wb, queue_entry);
+		thread = wb->thread;
 
-	for (unsigned i = 0; i < thread->nwaits; i++) {
-		TAILQ_REMOVE(&thread->waitblocks[i].object->waitblock_queue,
-		    &thread->waitblocks[i], queue_entry);
-	}
+		while (true) {
+			expectPreparing = kInternalWaitStatusPreparing;
+			expectWaiting = kInternalWaitStatusWaiting;
 
-	waiter_wake(thread, kKernWaitStatusTimedOut);
+			if (__atomic_compare_exchange_n(wb->waiter_status,
+				&expectPreparing, kInternalWaitStatusSatisfied,
+				false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+				/* satisfied a wait pre-wait */
 
-	ke_release_dispatcher_lock(ipl);
-}
+				wb->block_status = kWaitBlockStatusAcquired;
+				// if (!wb->isWaitAll)
+				ki_object_acquire(hdr, thread);
+				break;
+			} else if (__atomic_compare_exchange_n(
+				       wb->waiter_status, &expectWaiting,
+				       kInternalWaitStatusSatisfied, false,
+				       __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+				/* satisfied a wait mid-wait */
 
-/*! dispatcher lock held */
-bool
-ki_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr)
-{
-	if (thread->iswaitall) {
-		bool acquirable = true;
-
-		for (unsigned i = 0; i < thread->nwaits; i++) {
-			if (thread->waitblocks[i].object->signalled <= 0)
-				acquirable = false;
-		}
-
-		if (acquirable) {
-			/* all acquirable, so remove thread from all
-			 * waitblock queues and acquire each waited
-			 * object. and dequeue any wait. */
-			if (thread->wait_timer.pending)
-				ki_timer_dequeue(&thread->wait_timer);
-			for (unsigned i = 0; i < thread->nwaits; i++) {
-				TAILQ_REMOVE(&thread->waitblocks[i]
-						  .object->waitblock_queue,
-				    &thread->waitblocks[i], queue_entry);
-				ki_object_acquire(thread,
-				    thread->waitblocks[i].object);
+				/* thread is for waking */
+				TAILQ_INSERT_TAIL(wakeQueue, wb, queue_entry);
+				wb->block_status = kWaitBlockStatusAcquired;
+				ki_object_acquire(hdr, thread);
+				break;
+			} else if (__atomic_load_n(wb->waiter_status,
+				       __ATOMIC_ACQUIRE) ==
+			    kInternalWaitStatusSatisfied) {
+				/* wait already satisfied by someone else */
+				wb->block_status = kWaitBlockStatusDeactivated;
+				break;
 			}
-			waiter_wake(thread, kKernWaitStatusOK);
-			return true;
-		} else {
-			return false;
 		}
-	} else {
-		/* waiting for any, so remove thread from all waitblock
-		 * queues
-		 */
-		if (thread->wait_timer.pending)
-			ki_timer_dequeue(&thread->wait_timer);
-
-		for (unsigned i = 0; i < thread->nwaits; i++) {
-			TAILQ_REMOVE(
-			    &thread->waitblocks[i].object->waitblock_queue,
-			    &thread->waitblocks[i], queue_entry);
-		}
-		ki_object_acquire(thread, hdr);
-		waiter_wake(thread, kKernWaitStatusOK);
-		return true;
 	}
 }
 
-kwaitstatus_t
+kwaitresult_t
 ke_wait(void *object, const char *reason, bool isuserwait, bool alertable,
     nanosecs_t timeout)
 {
-	return ke_wait_multi(1, &object, reason, true, isuserwait, alertable,
+	return ke_wait_multi(1, &object, reason, false, isuserwait, alertable,
 	    timeout, NULL);
 }
 
-kwaitstatus_t
+#define OBJECT(I__) ((I__ == orignobjects) ? &timer : objects[i])
+#define WAIT_BLOCK(I__) ((I__ == orignobjects) ? &timer_wb : &waitblocks[i])
+
+kwaitresult_t
 ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
     bool isWaitall, bool isUserwait, bool isAlertable, nanosecs_t timeout,
-      kwaitblock_t *waitblocks)
+    kwaitblock_t *waitblocks)
 {
+	ipl_t ipl = spldpc();
 	kthread_t *thread = curthread();
-	ipl_t ipl;
-	bool satisfied = true;
+	kinternalwaitstatus_t *status = &thread->wait_status;
+	int satisfier = -1;
+	size_t orignobjects = nobjects;
+	ktimer_t timer;
+	kwaitblock_t timer_wb;
 
-	if (nobjects > kNThreadWaitBlocks && waitblocks == NULL)
-		return kKernWaitStatusInvalidArgument;
+	kassert(!isWaitall);
 
-	if (waitblocks == NULL)
+	if (timeout != 0 && timeout != -1) {
+		ke_timer_init(&timer);
+		nobjects++;
+	}
+
+	if (waitblocks == NULL) {
+		kassert(nobjects <= 4);
 		waitblocks = thread->integral_waitblocks;
+	}
 
-	memset(waitblocks, 0, sizeof(kwaitblock_t) * nobjects);
+	__atomic_store_n(status, kInternalWaitStatusPreparing,
+	    __ATOMIC_RELEASE);
 
-	ipl = ke_acquire_dispatcher_lock();
+	for (unsigned i = 0; i < nobjects; i++) {
+		kwaitblock_t *wb = WAIT_BLOCK(i);
+		kdispatchheader_t *obj = OBJECT(i);
 
-	/*
-	 * do an initial loop of the objects to determine whether any
-	 * are signalled, and if so and we are not isWaitall, then
-	 * acquire and break.
-	 *
-	 * we do not enqueue the waitblock on the object's queue yet,
-	 * since we may break early, or only be polling (timeout=0). we
-	 * do set the other fields of the waitblock appropriately
-	 * because why not.
-	 */
-	for (int i = 0; i < nobjects; i++) {
-		kwaitblock_t *wb = &waitblocks[i];
-		kdispatchheader_t *hdr = objects[i];
+		ke_spinlock_acquire_nospl(&obj->spinlock);
 
-		wb->object = hdr;
+		if (obj->signalled > 0) {
+			kinternalwaitstatus_t expected =
+			    kInternalWaitStatusPreparing;
+			if (__atomic_compare_exchange_n(status, &expected,
+				kInternalWaitStatusSatisfied, false,
+				__ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+				satisfier = i;
+				ki_object_acquire(obj, thread);
+				ke_spinlock_release_nospl(&obj->spinlock);
+				break;
+			} else {
+				kassert(
+				    __atomic_load_n(status, __ATOMIC_ACQUIRE) ==
+				    kInternalWaitStatusSatisfied);
+				ke_spinlock_release_nospl(&obj->spinlock);
+				break;
+			}
+		}
+
+		wb->object = obj;
+		wb->waiter_status = &thread->wait_status;
 		wb->thread = thread;
+		wb->block_status = kWaitBlockStatusActive;
 
-		if (hdr->signalled > 0 && !isWaitall) {
-			satisfied = true;
-			wb->acquired = true;
-			ki_object_acquire(thread, hdr);
+		TAILQ_INSERT_TAIL(&obj->waitblock_queue, wb, queue_entry);
+
+		ke_spinlock_release_nospl(&obj->spinlock);
+	}
+
+	if (satisfier != -1 || timeout == 0) {
+		for (int i = 0; i < satisfier; i++) {
+			kwaitblock_t *wb;
+			kdispatchheader_t *obj;
+
+			wb = &waitblocks[i];
+			obj = objects[i];
+
+			ke_spinlock_acquire_nospl(&obj->spinlock);
+			wb->block_status = kWaitBlockStatusDeactivated;
+			TAILQ_REMOVE(&obj->waitblock_queue, wb, queue_entry);
+			ke_spinlock_release_nospl(&obj->spinlock);
+		}
+
+		splx(ipl);
+		return satisfier == -1 ? kKernWaitStatusTimedOut : satisfier;
+	}
+
+	kinternalwaitstatus_t expected = kInternalWaitStatusPreparing;
+
+	if (timeout != 0 && timeout != -1)
+		ke_timer_set(&timer, timeout);
+
+	ke_acquire_scheduler_lock();
+	if (__atomic_compare_exchange_n(status, &expected,
+		kInternalWaitStatusWaiting, false, __ATOMIC_ACQ_REL,
+		__ATOMIC_ACQUIRE)) {
+		kassert(ipl < kIPLDPC);
+		thread->state = kThreadStateWaiting;
+		ki_reschedule();
+	} else {
+		/* wait was terminated early. check what happened */
+		ke_release_scheduler_lock(kIPLDPC);
+	}
+
+	if (timeout != 0 && timeout != -1)
+		ke_timer_cancel(&timer);
+
+	kassert(__atomic_load_n(status, __ATOMIC_ACQUIRE) ==
+	    kInternalWaitStatusSatisfied);
+
+	for (unsigned i = 0; i < nobjects; i++) {
+		kwaitblock_t *wb = WAIT_BLOCK(i);
+		kdispatchheader_t *obj = OBJECT(i);
+
+		ke_spinlock_acquire_nospl(&obj->spinlock);
+
+		switch (wb->block_status) {
+		case kWaitBlockStatusActive:
+			TAILQ_REMOVE(&obj->waitblock_queue, wb, queue_entry);
 			break;
-		} else if (!hdr->signalled) {
-			satisfied = false;
+
+		case kWaitBlockStatusAcquired:
+			kassert(satisfier == -1);
+			satisfier = i;
+			/* fallthrough */
+		case kWaitBlockStatusDeactivated:
+			break;
 		}
+
+		ke_spinlock_release_nospl(&obj->spinlock);
 	}
 
-	if (satisfied && !isWaitall) {
-		/* we have acquired at least one */
-		ke_release_dispatcher_lock(ipl);
-		return kKernWaitStatusOK;
-	} else if (satisfied && isWaitall) {
-		/* all of them are acquirable, so acquire them all */
-		for (int i = 0; i < nobjects; i++) {
-			kdispatchheader_t *hdr = objects[i];
-			ki_object_acquire(thread, hdr);
-		}
-		ke_release_dispatcher_lock(ipl);
-		return kKernWaitStatusOK;
-
-	} else if (timeout == 0) {
-		/* only a poll */
-		ke_release_dispatcher_lock(ipl);
-		return kKernWaitStatusTimedOut;
-	}
-
-	for (int i = 0; i < nobjects; i++) {
-		kwaitblock_t *wb = &waitblocks[i];
-		kdispatchheader_t *hdr = objects[i];
-
-		TAILQ_INSERT_TAIL(&hdr->waitblock_queue, wb, queue_entry);
-	}
-
-	thread->state = kThreadStateWaiting;
-	thread->wait_reason = reason;
-	thread->wait_result = kKernWaitStatusWaiting;
-	thread->nwaits = nobjects;
-	thread->iswaitall = isWaitall;
-	thread->waitblocks = waitblocks;
-	/* enqueue the timeout callout if needed */
-	if (timeout != -1 && timeout > 1000) {
-		thread->wait_timer.dpc.arg = thread;
-		thread->wait_timer.dpc.callback = wait_timeout_callback;
-		thread->wait_timer.nanosecs = timeout;
-		ki_timer_enqueue(&thread->wait_timer);
-	}
-
-#if DEBUG_SCHED == 1
-	kdprintf("ke_wait_multi: thread %p going to sleep on %s\n", thread,
-	    reason);
-#endif
-
-	/* ki_reschedule() will release the dispatcher lock at needful time */
-	kassert (ipl < kIPLDPC);
-	ki_reschedule();
-
+	kassert(satisfier != -1);
 	splx(ipl);
 
-#if DEBUG_SCHED == 1
-	kdprintf("ke_wait_multi: thread %p woke on %s\n", thread, reason);
-#endif
-
-	return thread->wait_result;
-}
-
-void
-ke_cancel_wait(kthread_t *thread)
-{
-	kassert(thread->state == kThreadStateWaiting &&
-	    thread->wait_result == kKernWaitStatusWaiting);
-
-	for (unsigned i = 0; i < thread->nwaits; i++) {
-		TAILQ_REMOVE(&thread->waitblocks[i].object->waitblock_queue,
-		    &thread->waitblocks[i], queue_entry);
-	}
-
-	waiter_wake(thread, kKernWaitStatusSignalled);
+	if (timeout != 0 && timeout != -1 && satisfier == orignobjects)
+		return kKernWaitStatusTimedOut;
+	else
+		return satisfier;
 }

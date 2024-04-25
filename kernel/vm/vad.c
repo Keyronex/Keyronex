@@ -80,7 +80,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 {
 	vm_vad_t *entry, *tmp;
 	vaddr_t end = start + size;
-	kwaitstatus_t w;
+	kwaitresult_t w;
 
 	w = ke_wait(&vmps->mutex, "vm_ps_deallocate:vmps->mutex", false, false,
 	    -1);

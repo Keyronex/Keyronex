@@ -1,6 +1,6 @@
 /*
  * Lock hierarchy - acquire in this order:
- *  - dispatcher_lock
+ *  - scheduler_lock
  *  - kcpugroup_t::lock
  *  - kcpu_t::dpc_lock
  */
@@ -44,23 +44,41 @@ enum kreschedule_reason {
 	kRescheduleReasonTimesliceEnd,
 };
 
-typedef enum kwaitstatus {
+typedef enum kwaitresult {
 	/*! the wait condition was met */
-	kKernWaitStatusOK,
+	kKernWaitStatusOK = 0,
 	/*! the wait timed out */
-	kKernWaitStatusTimedOut,
+	kKernWaitStatusTimedOut = -1,
 	/*! invalid argument */
-	kKernWaitStatusInvalidArgument,
+	kKernWaitStatusInvalidArgument = -2,
 	/*! thread signalled */
-	kKernWaitStatusSignalled,
+	kKernWaitStatusSignalled = -3,
 	/*! internal status - wait is currently underway */
-	kKernWaitStatusWaiting,
-} kwaitstatus_t;
+	kKernWaitStatusWaiting = -4,
+} kwaitresult_t;
+
+typedef enum kinternalwaitstatus {
+	kInternalWaitStatusPreparing,
+	kInternalWaitStatusWaiting,
+	kInternalWaitStatusSatisfied,
+} kinternalwaitstatus_t;
+
+typedef enum kwaitblockstatus {
+	kWaitBlockStatusActive,
+	kWaitBlockStatusDeactivated,
+	kWaitBlockStatusAcquired,
+} kwaitblockstatus_t;
+
+typedef TAILQ_HEAD(, kwaitblock) kwaitblock_queue_t;
 
 typedef struct kwaitblock {
 	/*! link in kdispatchheader_t::waitblock_queue  */
 	TAILQ_ENTRY(kwaitblock) queue_entry;
 
+	/*! status of the wait block */
+	kwaitblockstatus_t block_status;
+	/*! status of the waiter - atomically accessed */
+	kinternalwaitstatus_t *waiter_status;
 	/*! object being waited on */
 	struct kdispatchheader *object;
 	/*! thread waiting */
@@ -79,11 +97,13 @@ typedef enum kdispatchobjecttype {
 
 typedef struct kdispatchheader {
 	/*! blocks waiting on this thing */
-	TAILQ_HEAD(, kwaitblock) waitblock_queue;
+	kwaitblock_queue_t waitblock_queue;
 
+	/*! state spinlock */
+	kspinlock_t spinlock;
 	/*! dispatch object type */
 	kdispatchobjecttype_t type : 3;
-	/*! signalled status */
+	/*! signalled status; >= 1 means currently signaled */
 	int signalled;
 } kdispatchheader_t;
 
@@ -119,18 +139,20 @@ typedef struct kdpc {
  */
 typedef struct ktimer {
 	kdispatchheader_t hdr;
+	/*! Current state of timer. Atomically manipulated. */
+	enum ktimer_state {
+		kTimerDisabled,
+		kTimerInQueue,
+		kTimerExecuting
+	} state;
 	/*! Linkage in kcpu_t::timer_queue */
 	TAILQ_ENTRY(ktimer) queue_entry;
-	/*! DPC to be enqueued on its elapsing */
-	kdpc_t dpc;
-	/*! Relative time till expiry. */
-	nanosecs_t nanosecs;
 	/*! Absolute time (in terms of cpu->ticks) of expiry. */
 	nanosecs_t deadline;
-	/*! Is it pending? */
-	bool pending;
 	/*! If it's pending, on which CPU? */
 	struct kcpu *cpu;
+	/*! Optional DPC to enqueue on timer expiry */
+	kdpc_t *dpc;
 } ktimer_t;
 
 TAILQ_HEAD(kthread_queue, kthread);
@@ -168,10 +190,12 @@ typedef struct kcpu {
 	bool dpc_int;
 	/*! Lock on dpc_queue. */
 	kspinlock_t dpc_lock;
-	/*! (D) DPCs awaiting execution */
+	/*! (d) DPCs awaiting execution */
 	TAILQ_HEAD(, kdpc) dpc_queue;
-	/*! (D) Timers awaiting expiry */
+	/*! (d) Timers awaiting expiry */
 	TAILQ_HEAD(, ktimer) timer_queue;
+	/*! Timer expiration processing DPC */
+	kdpc_t timer_expiry_dpc;
 
 	/*! (a) Nanoseconds since CPU start */
 	nanosecs_t nanos;
@@ -225,13 +249,14 @@ typedef struct kthread {
 	/* number of objects being waited on */
 	size_t nwaits;
 	/*! proximate cause of wakeup (only OK or Timeout used) */
-	kwaitstatus_t wait_result;
+	kwaitresult_t wait_result;
 	/*! wait timeout timer */
 	ktimer_t wait_timer;
 	/*! name */
 	const char *name;
 	/*! wait reason */
 	const char *wait_reason;
+	kinternalwaitstatus_t wait_status;
 } kthread_t;
 
 /*!
@@ -378,6 +403,13 @@ ke_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 #define ke_release_dispatcher_lock(IPL) \
 	ke_spinlock_release(&dispatcher_lock, IPL)
 
+/*! @brief Acquire the scheduler lock. */
+#define ke_acquire_scheduler_lock() ke_spinlock_acquire(&scheduler_lock)
+
+/*! @brief Release the scheduler  lock. */
+#define ke_release_scheduler_lock(IPL) \
+	ke_spinlock_release(&scheduler_lock, IPL)
+
 void ke_dpc_enqueue(kdpc_t *dpc);
 
 /*!
@@ -466,13 +498,18 @@ void ke_timer_init(ktimer_t *timer);
  */
 void ke_timer_set(ktimer_t *timer, uint64_t nanosecs);
 
+/*!
+ * @brief Cancel a pending timer or wait until it has completed.
+ */
+void ke_timer_cancel(ktimer_t *timer);
+
 void ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg);
 
 void ke_thread_resume(kthread_t *thread);
 
-kwaitstatus_t ke_wait(void *object, const char *reason, bool isuserwait,
+kwaitresult_t ke_wait(void *object, const char *reason, bool isuserwait,
     bool alertable, nanosecs_t timeout);
-kwaitstatus_t ke_wait_multi(size_t nobjects, void *objects[],
+kwaitresult_t ke_wait_multi(size_t nobjects, void *objects[],
     const char *reason, bool isWaitall, bool isUserwait, bool isAlertable,
     nanosecs_t timeout, kwaitblock_t *waitblocks);
 
@@ -532,7 +569,7 @@ extern kcpu_t *cpus[1];
 /*! NUmber of CPUs in system. */
 extern size_t ncpus;
 
-extern kspinlock_t dispatcher_lock;
+extern kspinlock_t scheduler_lock;
 extern kspinlock_t pac_console_lock;
 
 #endif /* KRX_PAC_PAC_H */

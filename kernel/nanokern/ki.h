@@ -21,22 +21,28 @@ bool ki_cpu_hardclock(md_intr_frame_t *frame, void *arg);
 void ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread);
 
 /*!
- * @brief Wake up a thread waiting on a waitblock if appropriate.
- * @pre Dispatcher lock held.
+ * @brief Wake waiters previously queued up by ki_signal()
+ * \pre Scheduler lock held
  */
-bool ki_waiter_maybe_wakeup(kthread_t *thread, kdispatchheader_t *hdr);
+void ki_wake_waiters(kwaitblock_queue_t *queue);
+
+/*!
+ * @brief Signal an object; satisfies waiters and places them on @p wakeQueue.
+ * \pre Object lock held
+ */
+void ki_signal(kdispatchheader_t *hdr, kwaitblock_queue_t *wakeQueue);
 
 void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, void *proc,
     const char *name);
 
 /*!
  * @brief Resume a thread.
- * @pre Dispatcher lock held.
+ * @pre Scheduler lock held.
  */
 void ki_thread_resume_locked(kthread_t *thread);
 
-void ki_timer_enqueue(ktimer_t *callout);
-void ki_timer_dequeue(ktimer_t *callout);
+void ki_timer_enqueue_locked(ktimer_t *callout);
+bool ki_timer_dequeue_locked(ktimer_t *callout);
 
 void md_raise_dpc_interrupt(void);
 void md_cpu_init(kcpu_t *cpu);

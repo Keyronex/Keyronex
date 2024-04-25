@@ -482,7 +482,7 @@ uacpi_bool
 uacpi_kernel_acquire_mutex(uacpi_handle opaque, uacpi_u16 timeout)
 {
 	kmutex_t *mutex = opaque;
-	kwaitstatus_t w = ke_wait(mutex, "uacpi_kernel_acquire_mutex", false,
+	kwaitresult_t w = ke_wait(mutex, "uacpi_kernel_acquire_mutex", false,
 	    false, timeout == 0xffff ? -1 : (nanosecs_t)timeout * NS_PER_S);
 	kassert(w == kKernWaitStatusOK || w == kKernWaitStatusTimedOut);
 	return w == kKernWaitStatusOK ? true : false;
@@ -512,7 +512,7 @@ uacpi_bool
 uacpi_kernel_wait_for_event(uacpi_handle opaque, uacpi_u16 timeout)
 {
 	ksemaphore_t *semaphore = opaque;
-	kwaitstatus_t w = ke_wait(semaphore, "uacpi_kernel_wait_for_event",
+	kwaitresult_t w = ke_wait(semaphore, "uacpi_kernel_wait_for_event",
 	    false, false,
 	    timeout == 0xffff ? -1 : (nanosecs_t)timeout * NS_PER_S);
 	kassert(w == kKernWaitStatusOK || w == kKernWaitStatusTimedOut);
