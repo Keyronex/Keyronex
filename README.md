@@ -20,8 +20,8 @@ itself). The virtual memory system has been given special attention.
 
 Several logically distinct components run in kernel mode. These include:
 
-- The kernel: providing multiprocessor scheduling, time management,
-  synchronisation, waiting, and a simple message-passing mechanism.
+- The kernel: providing multiprocessor scheduling, time management, interrupt
+  management synchronisation, waiting, and remote-copy-update (RCU).
 - The executive: higher-level services including virtual memory, the virtual
   filesystem switch, and the device manager.
 - The drivers: run hardware and virtual devices and carry out I/O on behalf of
@@ -105,7 +105,8 @@ Several third-party components are used. These are some of them:
   which is used as a library to provide Keyronex's FBConsole graphical console.
  - **mlibc**: A portable C standard library. Provides the libc.
  - **nanoprintf**: Printf implementation; provides `kprintf` and family.
- - **LAI**: The LUX ACPI Implementation from Managarm. Used by the ACPI drivers.
+ - **uACPI**: The UltraOS ACPI Implementation from UltraOS. Used by the ACPI
+   drivers.
  - Various headers (mostly BSDs, some Linux): BSD-licenced headers for device
    registers definitions.
 <!--

@@ -53,6 +53,8 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 	curcpu()->timer_expiry_dpc.cpu = NULL;
 	curcpu()->timer_expiry_dpc.arg = curcpu();
 	curcpu()->timer_expiry_dpc.callback = timer_expiry_dpc;
+
+	ki_rcu_per_cpu_init(&cpu->rcu_cpustate);
 }
 
 void
@@ -170,6 +172,7 @@ ki_reschedule(void)
 	cpu->reschedule_reason = kRescheduleReasonNone;
 
 	(void)drop;
+	ki_rcu_quiet();
 
 	if (old_thread == next) {
 		ke_spinlock_release_nospl(&scheduler_lock);
@@ -184,6 +187,7 @@ ki_reschedule(void)
 void
 ki_thread_resume_locked(kthread_t *thread)
 {
+	kassert(ke_spinlock_held(&scheduler_lock));
 	TAILQ_INSERT_HEAD(&ready_queue, thread, queue_link);
 	curcpu()->reschedule_reason = kRescheduleReasonPreempted;
 	md_raise_dpc_interrupt();

@@ -162,6 +162,23 @@ struct runqueue {
 	struct kthread_queue queue;
 };
 
+typedef void (*krcu_callback_t)(void *);
+TAILQ_HEAD(ki_krcu_head_queue, krcu_head);
+
+typedef struct krcu_head {
+	TAILQ_ENTRY(krcu_head) queue_entry;
+	krcu_callback_t callback;
+	void *arg;
+} krcu_head_t;
+
+struct ki_rcu_per_cpu_data {
+	/*! Both members accessed only at IPL >= DPC and only by one core. */
+	uintptr_t generation;
+	struct ki_krcu_head_queue past_callbacks, current_callbacks,
+	    next_callbacks;
+	kdpc_t past_callbacks_dpc;
+};
+
 /*!
  * Locking:
  * (~) = invariant
@@ -202,6 +219,9 @@ typedef struct kcpu {
 
 	/*! DPC for thread deletion. */
 	kdpc_t done_thread_dpc;
+
+	/*! RCU state */
+	struct ki_rcu_per_cpu_data rcu_cpustate;
 } kcpu_t;
 
 typedef enum kthread_state {
@@ -517,6 +537,11 @@ kwaitresult_t ke_wait_multi(size_t nobjects, void *objects[],
 #define KE_WAIT(OBJ, USER, ALERTABLE, TIMEOUT)                               \
 	ke_wait(OBJ, #OBJ "(at " __FILE__ ":" STRINGIFY(__LINE__) ")", USER, \
 	    ALERTABLE, TIMEOUT)
+
+void ke_rcu_call(krcu_head_t *head, krcu_callback_t callback, void *arg);
+void ke_rcu_synchronise(void);
+#define ke_rcu_read_lock() spldpc()
+#define ke_rcu_read_unlock(IPL_) splx(IPL_)
 
 /* Kernel putc. */
 void kputc(int ch, void *unused);
