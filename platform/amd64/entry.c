@@ -13,6 +13,7 @@
 #include "nanokern/ki.h"
 #include "vm/vmp.h"
 #include "ntcompat/ntcompat.h"
+#include "executive/exp.h"
 
 enum { kPortCOM1 = 0x3f8 };
 
@@ -89,19 +90,6 @@ pac_putc(int ch, void *ctx)
 	while (!(inb(kPortCOM1 + 5) & 0x20))
 		;
 	outb(kPortCOM1, ch);
-}
-
-static void
-threaded_init(void *)
-{
-	ddk_init();
-	pe_load(module_request.response->modules[3]->path,module_request.response->modules[3]->address);
-	ddk_autoconf();
-
-	//vmp_pages_dump();
-	//obj_dump();
-
-	ps_exit_this_thread();
 }
 
 /* can't rely on mutexes until scheduling is up (and in any case not in idle
@@ -203,8 +191,6 @@ smp_init()
 		__asm__("pause");
 }
 
-struct kthread *init_thread;
-
 // The following will be our kernel's entry point.
 // If renaming _start() to something else, make sure to change the
 // linker script accordingly.
@@ -247,10 +233,8 @@ _start(void)
 	smp_init();
 	ntcompat_init();
 
-	ps_create_kernel_thread(&init_thread, "init", threaded_init, NULL);
-	ke_thread_resume(init_thread);
-
-	// kprintf("Hello from main thread again.\n");
+	ps_create_kernel_thread(&ex_init_thread, "ex_init", ex_init, NULL);
+	ke_thread_resume(ex_init_thread);
 
 	/* idle loop */
 	for (;;) {

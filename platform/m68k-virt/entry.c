@@ -8,6 +8,7 @@
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "nanokern/ki.h"
+#include "executive/exp.h"
 #include "vm/vmp.h"
 
 static size_t memory_size = 0;
@@ -70,32 +71,18 @@ parse_bootinfo(uint8_t *ptr)
 	}
 }
 
-static void
-threaded_init(void *)
-{
-	void ddk_init(void), ddk_autoconf(void);
-	ddk_init();
-	ddk_autoconf();
-
-	vmp_pages_dump();
-	obj_dump();
-
-	ps_exit_this_thread();
-}
-
 extern void *fb_base;
 
 void
 cstart(struct handover *handover)
 {
-	kthread_t *init_thread;
-
 	gftty_init();
 	kprintf("Keyronex-lite/virt68k: " __DATE__ " " __TIME__ "\n");
 
 	fb_base = (void *)handover->fb_base;
 
 	/* set up initial threading structures */
+	ncpus = 1;
 	ki_cpu_init(curcpu(), &thread0);
 	thread0.last_cpu = &bootstrap_cpu;
 	thread0.state = kThreadStateRunning;
@@ -124,43 +111,13 @@ cstart(struct handover *handover)
 
 	vmp_kernel_init();
 	kmem_init();
-
-	vaddr_t fun = vm_kalloc(4, 0);
-	vmp_pages_dump();
-	*(int *)fun = 0xdeadbeef;
-	*(int *)(fun + PGSIZE) = 0xdeadbeef;
-	*(int *)(fun + PGSIZE) = 0xdeadbeef;
-	*(int *)(fun + PGSIZE) = 0xdeadbeef;
-
-	vm_kfree(fun, 4, 0);
-
-	kprintf("\n\nAfter kfree:\n");
-
-	vmp_pages_dump();
-
-#if 0
-	vaddr_t fun = vm_kalloc(1024, 0);
-	vmp_pages_dump();
-	vm_kfree(fun, 1024, 0);
-#endif
-
-#if 0
-	vaddr_t addr;
-	extern vm_procstate_t kernel_procstate;
-	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 4, false);
-	kassert(r == 0);
-
-	vmp_pages_dump();
-
 	obj_init();
-	obj_dump();
 
-	ps_create_kernel_thread(&init_thread, "init", threaded_init, NULL);
-	ke_thread_resume(init_thread);
+	ps_create_kernel_thread(&ex_init_thread, "ex_init", ex_init, NULL);
+	ke_thread_resume(ex_init_thread);
 
 	/* this is now the idle thread */
 	for (;;) {
 		asm("stop #0x2000");
 	}
-#endif
 }

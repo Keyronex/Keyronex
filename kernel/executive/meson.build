@@ -1,1 +1,1 @@
-kernel_sources += files('process.c', 'worker.c')
+kernel_sources += files('ex.c', 'process.c', 'worker.c')
