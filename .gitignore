@@ -1,5 +1,6 @@
 .cache/*
 build/
+gdb-pt-dump/
 sources/
 compile_commands.json
 *.xbstrap
