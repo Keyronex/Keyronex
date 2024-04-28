@@ -1,6 +1,7 @@
 #include "kdk/vm.h"
 #include "kdk/kmem.h"
 #include "vmp.h"
+#include "nanokern/ki.h"
 
 struct vmp_wsle {
 	TAILQ_ENTRY(vmp_wsle) queue_entry;
@@ -24,9 +25,8 @@ vmp_wsl_find(vm_procstate_t *ps, vaddr_t vaddr)
 	return RB_FIND(vmp_wsle_tree, &ps->wsl.tree, &key);
 }
 
-#if 0
 static void
-vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
+page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page, vaddr_t vaddr)
 {
 	bool dirty = vmp_md_hw_pte_is_writeable(pte);
 	vm_page_t *page = vmp_pte_hw_page(pte, 1);
@@ -37,20 +37,19 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 	case kPageUseAnonPrivate: {
 		/*
 		 * we need to replace this with a transition PTE then.
-		 * used_ptes count is as such unchanged.
+		 * used_ptes and noswap_ptes count is as such unchanged.
 		 */
-		kfatal("Implement me\n");
-		pte_page->valid_ptes--;
 		page->referent_pte = V2P((vaddr_t)pte);
-		//vmp_md_pte_make_trans(pte, page->pfn);
+		vmp_md_pte_create_trans(pte, page->pfn);
+		ki_tlb_flush_vaddr_globally(vaddr);
 		vmp_page_release_locked(page);
 		break;
 	}
 
 	case kPageUseFileShared:
 		vmp_md_pte_create_zero(pte);
-		vmp_pagetable_page_pte_deleted(ps, pte_page, false);
-		//ke_tlb_flush_global();
+		vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
+		ki_tlb_flush_vaddr_globally(vaddr);
 		vmp_page_release_locked(page);
 		break;
 
@@ -58,40 +57,45 @@ vm_page_evict(vm_procstate_t *ps, pte_t *pte, vm_page_t *pte_page)
 		kfatal("Unhandled page use in working set eviction\n");
 	}
 }
-#endif
 
 void
-wsl_evict_one(vm_procstate_t *ps)
+wsl_evict_one(vm_procstate_t *vmps)
 {
-#if 0
-	struct vmp_wsle *wsle = TAILQ_FIRST(&ps->wsl.queue);
+	struct vmp_wsle *wsle = TAILQ_FIRST(&vmps->wsl.queue);
 	vm_page_t *pte_page;
 	pte_t *pte;
 	int r;
+	ipl_t ipl;
 
 	kassert(wsle != NULL);
-	TAILQ_REMOVE(&ps->wsl.queue, wsle, queue_entry);
-	RB_REMOVE(vmp_wsle_tree, &ps->wsl.tree , wsle);
+	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);
+	RB_REMOVE(vmp_wsle_tree, &vmps->wsl.tree, wsle);
 
-	r = pmap_get_pte_ptr(ps, wsle->vaddr, &pte, &pte_page);
+	ipl = vmp_acquire_pfn_lock();
+	r = vmp_fetch_pte(vmps, wsle->vaddr, &pte);
 	kassert(r == 0);
 	kassert(vmp_md_pte_is_valid(pte));
 
 	kprintf("Evicting 0x%zx\n", wsle->vaddr);
+	pte_page = vm_paddr_to_page(PGROUNDDOWN(V2P(pte)));
 
+	page_evict(vmps, pte, pte_page, wsle->vaddr);
+	vmp_release_pfn_lock(ipl);
 
 	kmem_free(wsle, sizeof(*wsle));
-	vm_page_evict(ps, pte, pte_page);
-	ps->wsl.ws_current_count--;
-#endif
+	vmps->wsl.ws_current_count--;
 }
 
-void
+int
 vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked)
 {
 	struct vmp_wsle *wsle;
 
 	kassert(vmp_wsl_find(ps, vaddr) == NULL);
+
+	if (ps->wsl.ws_current_count >= ps->wsl.max) {
+		wsl_evict_one(ps);
+	}
 
 	if (locked)
 		ps->wsl.locked_count++;
@@ -102,6 +106,8 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked)
 	if (!locked)
 		TAILQ_INSERT_TAIL(&ps->wsl.queue, wsle, queue_entry);
 	RB_INSERT(vmp_wsle_tree, &ps->wsl.tree, wsle);
+
+	return 0;
 }
 
 void vmp_wsl_remove(vm_procstate_t*ps, vaddr_t vaddr)
@@ -109,4 +115,20 @@ void vmp_wsl_remove(vm_procstate_t*ps, vaddr_t vaddr)
 	kassert(vmp_wsl_find(ps, vaddr) == NULL);
 
 	kfatal("Implement this function\n");
+}
+
+void
+vmp_wsl_dump(vm_procstate_t *ps)
+{
+	struct vmp_wsle *wsle;
+	kprintf("WSL: %zu entries, %zu locked enties, %zu max\n",
+	    ps->wsl.ws_current_count, ps->wsl.locked_count, ps->wsl.max);
+	kprintf("All entries:\n");
+	RB_FOREACH (wsle, vmp_wsle_tree, &ps->wsl.tree) {
+		kprintf("- 0x%zx\n", (size_t)wsle->vaddr);
+	}
+	kprintf("Dynamic Entries:\n");
+	TAILQ_FOREACH (wsle, &ps->wsl.queue, queue_entry) {
+		kprintf("- 0x%zx\n", (size_t)wsle->vaddr);
+	}
 }

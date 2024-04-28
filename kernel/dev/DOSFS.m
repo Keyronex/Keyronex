@@ -745,17 +745,19 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	(void) vadd;
 #endif
 
-	vm_section_t sect;
+	vm_object_t sect;
+	vm_page_t *vpml4;
 	sect.kind = kFile;
 	sect.file.vnode = vn;
-	RB_INIT(&sect.file.page_tree);
+	vm_page_alloc(&vpml4, 0, kPageUseVPML4, false);
+	sect.vpml4 = vmp_page_paddr(vpml4);
 
 	state->vfs.device = self;
 
-#if 0
+#if 1
 	extern vm_procstate_t kernel_procstate;
 	vaddr_t mapaddr = 0xd0000000;
-	vm_ps_map_section_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
+	vm_ps_map_object_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
 	    kVMAll, kVMAll, true, false, true);
 	kprintf("Testing mapped read (at 0x%zx)\n", mapaddr);
 

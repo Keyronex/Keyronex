@@ -34,3 +34,9 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 	thread->pcb.genregs.sp = (uint32_t)sp;
 	thread->pcb.genregs.sr = 0x2000;
 }
+
+void
+ki_tlb_flush_vaddr_globally(uintptr_t vaddr)
+{
+	asm volatile("pflush (%0)" : : "a"(vaddr));
+}

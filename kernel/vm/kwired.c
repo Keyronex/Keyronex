@@ -33,6 +33,7 @@ vmp_kernel_init(void)
 	RB_INIT(&kernel_procstate.vad_queue);
 	RB_INIT(&kernel_procstate.wsl.tree);
 	TAILQ_INIT(&kernel_procstate.wsl.queue);
+	kernel_procstate.wsl.max = 2;
 
 	vmp_md_kernel_init();
 }
@@ -42,13 +43,13 @@ int vmp_enter_kwired(vaddr_t virt, paddr_t phys)
 	int r;
 	struct vmp_pte_wire_state pte_wire;
 
-	r = vmp_wire_pte(&kernel_process, virt, &pte_wire);
+	r = vmp_wire_pte(&kernel_process, virt, 0, &pte_wire);
 	kassert(r == 0);
 
 	vmp_md_pte_create_hw(pte_wire.pte, phys >> VMP_PAGE_SHIFT, true, true);
-	vmp_pagetable_page_valid_pte_created(&kernel_process,
+	vmp_pagetable_page_noswap_pte_created(kernel_process.vm,
 		    pte_wire.pgtable_pages[0], true);
-	vmp_pte_wire_state_release(&pte_wire);
+	vmp_pte_wire_state_release(&pte_wire, false);
 
 	return 0;
 }
@@ -81,8 +82,8 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
 			if (pte)
-				vmp_pte_wire_state_release(&pte_wire);
-			r = vmp_wire_pte(&kernel_process, addr, &pte_wire);
+				vmp_pte_wire_state_release(&pte_wire, false);
+			r = vmp_wire_pte(&kernel_process, addr, 0, &pte_wire);
 			kassert(r == 0);
 			pte = pte_wire.pte;
 		}
@@ -90,11 +91,11 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 		kassert(r == 0);
 		vmp_md_pte_create_hw(pte, page->pfn, true, true);
-		vmp_pagetable_page_valid_pte_created(&kernel_process,
+		vmp_pagetable_page_noswap_pte_created(kernel_process.vm,
 		    pte_wire.pgtable_pages[0], true);
 	}
 
-	vmp_pte_wire_state_release(&pte_wire);
+	vmp_pte_wire_state_release(&pte_wire, false);
 
 	return 0;
 }
@@ -125,20 +126,20 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 
 		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
 			if (pte)
-				vmp_pte_wire_state_release(&pte_wire);
-			r = vmp_wire_pte(&kernel_process, addr, &pte_wire);
+				vmp_pte_wire_state_release(&pte_wire, false);
+			r = vmp_wire_pte(&kernel_process, addr, 0, &pte_wire);
 			kassert(r == 0);
 			pte = pte_wire.pte;
 		}
 
 		page = vmp_pte_hw_page(pte, 1);
 		pte->value = 0x0;
-		vmp_pagetable_page_pte_deleted(&kernel_process,
+		vmp_pagetable_page_pte_deleted(&kernel_procstate,
 		    pte_wire.pgtable_pages[0], false);
 		vmp_page_delete_locked(page);
 		vmp_page_release_locked(page);
 	}
-	vmp_pte_wire_state_release(&pte_wire);
+	vmp_pte_wire_state_release(&pte_wire, false);
 #endif
 }
 
@@ -147,7 +148,7 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 {
 	vmem_addr_t addr;
 	int r;
-	ipl_t ipl;
+	ipl_t ipl = kIPL0; /* only to silence  -Wmaybe-uninitialized */
 
 	if (!(flags & kVMemPFNDBHeld))
 		ipl = vmp_acquire_pfn_lock();

@@ -51,6 +51,35 @@ typedef union __attribute__((packed)) pte {
 	uint32_t value;
 } pte_t;
 
+static inline bool
+vmp_md_pte_is_empty(pte_t *pte)
+{
+	return *(uint32_t*)pte == 0;
+}
+
+static inline bool
+vmp_md_pte_is_valid(pte_t *pte)
+{
+	return (pte->value & 0x3) != 0;
+}
+
+static inline enum vmp_pte_kind
+vmp_pte_characterise(pte_t *pte)
+{
+	if (vmp_md_pte_is_empty(pte))
+		return kPTEKindZero;
+	else if (vmp_md_pte_is_valid(pte))
+		return kPTEKindValid;
+	else if (pte->sw.kind == kSoftPteKindBusy)
+		return kPTEKindBusy;
+	else if (pte->sw.kind == kSoftPteKindTrans)
+		return kPTEKindTrans;
+	else {
+		kassert(pte->sw.kind == kSoftPteKindSwap);
+		return kPTEKindSwap;
+	}
+}
+
 static inline void
 vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool cacheable)
 {
@@ -75,21 +104,17 @@ vmp_md_pte_create_busy(pte_t *pte, pfn_t pfn)
 }
 
 static inline void
+vmp_md_pte_create_trans(pte_t *pte, pfn_t pfn)
+{
+	pte->sw.type = 0;
+	pte->sw.data = pfn;
+	pte->sw.kind = kSoftPteKindTrans;
+}
+
+static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	memset(pte, 0x0, sizeof(pte_t));
-}
-
-static inline bool
-vmp_md_pte_is_empty(pte_t *pte)
-{
-	return *(uint32_t*)pte == 0;
-}
-
-static inline bool
-vmp_md_pte_is_valid(pte_t *pte)
-{
-	return (pte->value & 0x3) != 0;
 }
 
 static inline pfn_t
@@ -128,21 +153,11 @@ vmp_md_hw_pte_is_writeable(pte_t *pte)
 	return pte->hw_pml1_040.writeprotect == 0;
 }
 
-static inline enum vmp_pte_kind
-vmp_pte_characterise(pte_t *pte)
+static inline pfn_t
+vmp_md_soft_pte_pfn(pte_t *pte)
 {
-	if (vmp_md_pte_is_empty(pte))
-		return kPTEKindZero;
-	else if (vmp_md_pte_is_valid(pte))
-		return kPTEKindValid;
-	else if (pte->sw.kind == kSoftPteKindBusy)
-		return kPTEKindBusy;
-	else if (pte->sw.kind == kSoftPteKindTrans)
-		return kPTEKindTrans;
-	else {
-		kassert(pte->sw.kind == kSoftPteKindSwap);
-		return kPTEKindSwap;
-	}
+	kassert(vmp_pte_characterise(pte) == kPTEKindBusy || vmp_pte_characterise(pte) == kPTEKindTrans);
+	return pte->sw.data;
 }
 
 static inline void

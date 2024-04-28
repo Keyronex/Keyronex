@@ -5,6 +5,7 @@
 #include "kdk/nanokern.h"
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
+#include "vm/vmp.h"
 
 typedef struct {
 	uint16_t isr_low;
@@ -89,16 +90,21 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	ipl_t ipl = splget(), new_ipl = num >> 4;
 	struct intr_entries *entries;
 	struct intr_entry *entry;
+	uintptr_t cr2;
+
+	if (num == 14)
+		cr2 = read_cr2();
 
 	if (splget() >new_ipl)
 		kfatal("IPL not less or equal\n");
+
 	write_cr8(new_ipl);
 	asm("sti");
 
+
 	switch (num) {
 	case 14:
-		kfatal("Unhandled page fault at IP 0x%lx: address 0x%lx\n",
-		    frame->rip, read_cr2());
+		vmp_fault(cr2, frame->code & 2, NULL);
 		break;
 
 	case kIntVecDPC:

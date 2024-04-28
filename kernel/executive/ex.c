@@ -13,8 +13,10 @@ test_anon(void)
 	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 4, false);
 	kassert(r == 0);
 	kprintf("Allocated at 0x%zx\n", addr);
-	*(unsigned int**)addr = 0xdeadbeef;
-	*(unsigned int**)(addr + PGSIZE) = 0xdeadbeef;
+	*(unsigned int*)addr = 0xdeadbeef;
+	*(unsigned int*)(addr + PGSIZE) = 0xbeefdead;
+	*(unsigned int*)(addr + PGSIZE * 2) = 0xfeedbeef;
+	*(unsigned int*)(addr + PGSIZE * 3) = 0xbeeffeed;
 }
 
 void
@@ -27,8 +29,11 @@ ex_init(void *)
 #endif
 	ddk_autoconf();
 
+#if 1
 	vmp_pages_dump();
 	obj_dump();
+#endif
+	vmp_paging_init();
 
 	test_anon();
 

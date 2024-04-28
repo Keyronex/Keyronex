@@ -35,3 +35,9 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 	*sp = (uint64_t)thread_trampoline;
 	thread->pcb.rsp = (uint64_t)(sp);
 }
+
+void
+ki_tlb_flush_vaddr_globally(vaddr_t addr)
+{
+	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
+}

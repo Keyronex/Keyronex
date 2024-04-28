@@ -38,10 +38,10 @@ typedef enum vm_fault_return {
 } vm_fault_return_t;
 
 /*!
- * Virtual Address Descriptor - a mapping of a section object.
+ * Virtual Address Descriptor - a mapping of a object object.
  */
-typedef struct vm_vad {
-	struct vm_vad_flags {
+typedef struct vm_map_entry {
+	struct vm_map_entry_flags {
 		/*! current protection, and maximum legal protection */
 		vm_protection_t protection : 3, max_protection : 3;
 		/*! whether shared on fork (if false, copied) */
@@ -50,16 +50,16 @@ typedef struct vm_vad {
 		bool private : 1;
 		/*! (!private only) whether the mapping is copy-on-write */
 		bool cow : 1;
-		/*! if !private, page-unit offset into section (max 256tib) */
+		/*! if !private, page-unit offset into object (max 256tib) */
 		int64_t offset : 36;
 	} flags;
-	/*! Entry in vm_procstate::vad_rbtree */
-	RB_ENTRY(vm_vad) rb_entry;
+	/*! Entry in vm_procstate::map_entry_rbtree */
+	RB_ENTRY(vm_map_entry) rb_entry;
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
-	/*! Section object; if flags.anonymous = false */
-	vm_section_t *section;
-} vm_vad_t;
+	/*! object object; if flags.anonymous = false */
+	vm_object_t *object;
+} vm_map_entry_t;
 
 struct vmp_wsl {
 	/*! Working set entry queue - tail most recently added, head least. */
@@ -70,6 +70,8 @@ struct vmp_wsl {
 	size_t ws_current_count;
 	/*! Count of pages locked into working set list. */
 	size_t locked_count;
+	/*! Maximum number of pages currently permitted in the WS. */
+	size_t max;
 };
 
 /*!
@@ -83,7 +85,13 @@ typedef struct vm_procstate {
 	/*! Working set list. */
 	struct vmp_wsl wsl;
 	/*! VAD tree. */
-	RB_HEAD(vm_vad_rbtree, vm_vad) vad_queue;
+	RB_HEAD(vm_map_entry_rbtree, vm_map_entry) vad_queue;
+
+	/*! Entry in the trimming queue. Protected by trimmer lock. */
+	TAILQ_ENTRY(vm_procstate) trim_queue_entry;
+	/*! Value of trim counter at last trim. Protected by trimmer lock. */
+	uint32_t last_trim_counter;
+
 	/*! Per-arch stuff. */
 	struct vmp_md_procstate md;
 } vm_procstate_t;
@@ -108,6 +116,8 @@ struct vmp_pager_state {
 	SLIST_ENTRY(vmp_pager_state) slist_entry;
 	pfn_t vpfn : PFN_BITS;
 	uint16_t length : 5;
+	vm_mdl_t mdl;
+	vm_page_t *pages[1];
 };
 
 struct vmp_forkpage {
@@ -121,19 +131,18 @@ struct vmp_filepage {
 	RB_ENTRY(vmp_filepage) rb_entry;
 };
 
-struct vm_section {
-	/*! What kind of section is this? */
-	enum vm_section_kind {
+struct vm_object {
+	/*! What kind of object is this? */
+	enum vm_object_kind {
 		kFile,
 		kAnon,
 	} kind;
+	paddr_t vpml4;
 	union {
 		struct {
-			RB_HEAD(vmp_file_page_tree, vmp_filepage) page_tree;
 			struct vnode *vnode;
 		} file;
 		struct {
-			struct vmp_amap_l3 *l3;
 		} anon;
 	};
 };
@@ -158,21 +167,21 @@ struct vm_section {
 
 /*! Initialise kernel virtual memory. */
 void vmp_kernel_init(void);
+/*! Initialise paging. */
+void vmp_paging_init(void);
 
 /*! Initialise kernel virtual memory, platform-specific part. */
 void vmp_md_kernel_init(void);
 /*! @brief Convert a virtual address to a physical. Must be mapped! */
 paddr_t vmp_md_translate(vaddr_t addr);
-/*! @brief Locally invalidate a page. */
-void pmap_invlpg(vaddr_t addr);
-void vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, bool is_new);
-void vmp_md_delete_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+void vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     pte_t *pte);
 
-void vmp_pagetable_page_valid_pte_created(kprocess_t *ps, vm_page_t *page,
+void vmp_pagetable_page_noswap_pte_created(vm_procstate_t *ps, vm_page_t *page,
     bool is_new);
-void vmp_pagetable_page_pte_deleted(kprocess_t *ps, vm_page_t *page,
+void vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
     bool was_swap);
 
 void vmp_pages_dump(void);
@@ -187,24 +196,31 @@ void vmp_page_release_locked(vm_page_t *page);
 
 int vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out);
 
-vm_vad_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
+vm_map_entry_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
-void vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked);
+int vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked);
 void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr);
 /*! @brief Evict one entry from a working set list @pre PFN HELD*/
 void wsl_evict_one(vm_procstate_t *ps);
+/*! @brief Dump info on a working set. */
+void vmp_wsl_dump(vm_procstate_t *ps);
 
 /*!
- * Note: WS lock and PFN lock will be locked and unlocked regularly here.
  * \pre VAD list mutex held
- * \pre WS mutex held
  * \pre PFN database lock held
  */
-int vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr,
+int vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
     struct vmp_pte_wire_state *state);
-void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state);
+void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state,
+    bool prototype);
 
-int vmp_fetch_pte(kprocess_t *ps, vaddr_t vaddr, pte_t **pte_out);
+int vmp_fetch_pte(vm_procstate_t *ps, vaddr_t vaddr, pte_t **pte_out);
+
+/*!
+ * \pre PFN database lock held
+ */
+void vmp_pager_state_retain(struct vmp_pager_state *state);
+void vmp_pager_state_release(struct vmp_pager_state *state);
 
 extern kspinlock_t vmp_pfn_lock;
 
