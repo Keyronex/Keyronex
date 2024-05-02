@@ -73,6 +73,10 @@ update_page_use_stats(enum vm_page_use use, int value)
 		CASE(kPageUsePML3, nprocpgtable);
 		CASE(kPageUsePML2, nprocpgtable);
 		CASE(kPageUsePML1, nprocpgtable);
+		CASE(kPageUseVPML4, nprotopgtable);
+		CASE(kPageUseVPML3, nprotopgtable);
+		CASE(kPageUseVPML2, nprotopgtable);
+		CASE(kPageUseVPML1, nprotopgtable);
 
 	default:
 		kfatal("Handle\n");
@@ -506,6 +510,7 @@ vm_page_use_str(enum vm_page_use use)
 		return "anon-private";
 	case kPageUseFileShared:
 		return "file-shared";
+
 	case kPageUsePML4:
 		return "PML4";
 	case kPageUsePML3:
@@ -514,6 +519,15 @@ vm_page_use_str(enum vm_page_use use)
 		return "PML2";
 	case kPageUsePML1:
 		return "PML1";
+
+	case kPageUseVPML4:
+		return "PROTO_PML4";
+	case kPageUseVPML3:
+		return "PROTO_PML3";
+	case kPageUseVPML2:
+		return "PROTO_PML2";
+	case kPageUseVPML1:
+		return "PROTO_PML1";
 	case kPageUseDeleted:
 		return "deleted";
 	default:
@@ -549,16 +563,15 @@ vmp_pages_dump(void)
 			    page->use == kPageUsePFNDB || page->use == kPageUseKWired)
 				continue;
 			kprintf(
-			    "Page %d: Use %s, RC %d, Used-PTEs %d, Valid-PTES %d\n",
+			    "Page %d: Use %s, RC %d, Used-PTEs %d, NoSwap-PTES %d\n",
 			    i, vm_page_use_str(page->use), page->refcnt,
-			    page->nonzero_ptes, page->valid_ptes);
+			    page->nonzero_ptes, page->noswap_ptes);
 		}
 	}
 
 	extern vm_procstate_t kernel_procstate;
-	kprintf("Kernel working set: %zu entries (%zu locked)\n",
-	    kernel_procstate.wsl.ws_current_count,
-	    kernel_procstate.wsl.locked_count);
+	kprintf("Kernel working set:\n");
+	vmp_wsl_dump(&kernel_procstate);
 }
 
 int

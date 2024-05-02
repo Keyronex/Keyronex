@@ -30,7 +30,7 @@ typedef uintptr_t pfn_t;
 /*! Process VM state. */
 typedef struct vm_procstate vm_procstate_t;
 /*! Mappable object. */
-typedef struct vm_section    vm_section_t;
+typedef struct vm_object vm_object_t;
 
 /*!
  * Protection flags.
@@ -61,13 +61,15 @@ struct vm_stat {
 };
 
 enum vm_page_use {
-	kPageUseInvalid,
+	kPageUseInvalid = 0,
+
 	kPageUsePFNDB,
 	kPageUseFree,
 	kPageUseDeleted,
 	kPageUseKWired,
 	kPageUseAnonPrivate,
 	kPageUseFileShared,
+
 	/*! Page is a pagetable (leaf). */
 	kPageUsePML1,
 	/*! Page is a pagetable (3rd-closest to root). */
@@ -76,6 +78,15 @@ enum vm_page_use {
 	kPageUsePML3,
 	/*! Page is a pagetable (closest to root). */
 	kPageUsePML4,
+
+	/*! Page is a synthetic pagetable (leaf). */
+	kPageUseVPML1,
+	/*! Page is a synthetic pagetable (3rd-closest to root). */
+	kPageUseVPML2,
+	/* Page is a synthetic pagetable (2nd-closest to root). */
+	kPageUseVPML3,
+	/*! Page is a synthetic pagetable (closest to root). */
+	kPageUseVPML4,
 };
 
 /*!
@@ -100,9 +111,9 @@ typedef struct vm_page {
 			/*! Reasons to keep the page existent at all. */
 			uint16_t nonzero_ptes;
 			/*! Reasons to keep the page in-core. */
-			uint16_t valid_ptes;
+			uint16_t noswap_ptes;
 		};
-		/* file/aonymous pages: offset into section */
+		/* file/aonymous pages: offset into object */
 		uint64_t offset : 48;
 	};
 	uint16_t refcnt;
@@ -219,8 +230,8 @@ vm_page_t *vm_paddr_to_page(paddr_t paddr);
 int vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size,
     bool exact);
 
-/*! Map a section view into a process. */
-int vm_ps_map_section_view(vm_procstate_t *vmps, void *section,
+/*! Map an object view into a process. */
+int vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object,
     vaddr_t *vaddrp, size_t size, uint64_t offset,
     vm_protection_t initial_protection, vm_protection_t max_protection,
     bool inherit_shared, bool cow, bool exact);
@@ -278,5 +289,7 @@ vm_page_direct_map_addr(vm_page_t *page)
 {
 	return P2V(vm_page_paddr(page));
 }
+
+#define vm_pfn_to_page(PFN_) (vm_paddr_to_page(vmp_pfn_to_paddr(PFN_)))
 
 #endif /* KRX_KDK_VM_H */

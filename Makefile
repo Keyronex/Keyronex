@@ -39,6 +39,9 @@ ${BUILD_SETUP_TARGET}:
 	(cd ${BUILD_DIR} && xbstrap init ../..)
 	touch $@
 
+reconfigure-kernel: ${BUILD_SETUP_TARGET}
+	(cd ${BUILD_DIR} && xbstrap install --reconfigure --rebuild kernel-headers kernel)
+
 rebuild-kernel: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install --rebuild kernel-headers kernel)
 

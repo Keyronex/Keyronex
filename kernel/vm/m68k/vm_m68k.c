@@ -4,6 +4,7 @@
 #include "kdk/port.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
+#include "kdk/executive.h"
 #include "kdk/vmem_impl.h"
 #include "mmu_040.h"
 #include "vm/m68k/vmp_m68k.h"
@@ -39,6 +40,7 @@ vmp_md_kernel_init(void)
 	vm_page_t *kernel_table;
 	paddr_t kernel_addr;
 	vm_page_alloc(&kernel_table, 0, kPageUsePML3, true);
+	kernel_table->process = &kernel_process;
 	kernel_addr = vmp_page_paddr(kernel_table);
 	kernel_procstate.md.table = kernel_addr;
 	memcpy((void *)P2V(kernel_addr), (void *)P2V(fetch_urp()), PGSIZE);
@@ -69,13 +71,7 @@ vmp_md_translate(vaddr_t addr)
 }
 
 void
-pmap_invlpg(vaddr_t addr)
-{
-	asm volatile("pflush (%0)" : : "a"(addr));
-}
-
-void
-vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, bool is_new)
 {
 	int npages;
@@ -93,7 +89,7 @@ vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
 	vmp_page_retain_locked(dirpage);
 	/* add remainder of refcount... */
 	dirpage->refcnt += npages - 1;
-	dirpage->valid_ptes += npages;
+	dirpage->noswap_ptes += npages;
 	dirpage->nonzero_ptes += npages;
 
 	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
@@ -109,7 +105,7 @@ vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
 }
 
 void
-vmp_md_delete_table_pointers(kprocess_t *ps, vm_page_t *dirpage, pte_t *dirpte)
+vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage, pte_t *dirpte)
 {
 	int npages;
 
@@ -127,7 +123,7 @@ vmp_md_delete_table_pointers(kprocess_t *ps, vm_page_t *dirpage, pte_t *dirpte)
 
 	/* TODO: update pagetable_page_pte_deleted to take a count */
 	dirpage->refcnt -= npages - 1;
-	dirpage->valid_ptes -= npages - 1;
+	dirpage->noswap_ptes -= npages - 1;
 	dirpage->nonzero_ptes -= npages - 1;
 
 	/* carry out the final deletion */

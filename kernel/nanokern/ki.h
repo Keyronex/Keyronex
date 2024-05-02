@@ -57,4 +57,6 @@ void ki_reschedule(void);
 void ki_rcu_quiet();
 void ki_rcu_per_cpu_init(struct ki_rcu_per_cpu_data *data);
 
+void ki_tlb_flush_vaddr_globally(uintptr_t vaddr);
+
 #endif /* KRX_NANOKERN_KI_H */

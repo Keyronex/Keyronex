@@ -23,9 +23,9 @@ struct vmp_md_procstate {
 };
 
 typedef struct __attribute__((packed)) pte_sw {
+	uint64_t valid : 1, /* must = 0*/
+	    data : 61;	    /* pfn, swap descriptor, fork pointer */
 	enum software_pte_kind kind : 2;
-	uint64_t data : 60, /* pfn, swap descriptor, fork pointer */
-	    type : 2;		       /* must = 0*/
 } pte_sw_t;
 
 typedef struct __attribute__((packed)) pte_hw {
@@ -70,9 +70,23 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool cacheable)
 }
 
 static inline void
-vmp_md_pte_create_busy(pte_t *pte, pfn_t pfn)
+vmp_md_pte_create_busy(pte_t *ppte, pfn_t pfn)
 {
-	kfatal("Unimplemented\n");
+	pte_t pte;
+	pte.sw.valid = 0;
+	pte.sw.data = pfn;
+	pte.sw.kind = kSoftPteKindBusy;
+	ppte->value = pte.value;
+}
+
+static inline void
+vmp_md_pte_create_trans(pte_t *ppte, pfn_t pfn)
+{
+	pte_t pte;
+	pte.sw.valid = 0;
+	pte.sw.data = pfn;
+	pte.sw.kind = kSoftPteKindTrans;
+	ppte->value = pte.value;
 }
 
 static inline void
@@ -99,8 +113,6 @@ vmp_md_hw_pte_is_writeable(pte_t *pte)
 	return pte->hw.writeable;
 }
 
-/* new stuff */
-
 static inline enum vmp_pte_kind
 vmp_pte_characterise(pte_t *pte)
 {
@@ -118,6 +130,15 @@ vmp_pte_characterise(pte_t *pte)
 	}
 }
 
+static inline pfn_t
+vmp_md_soft_pte_pfn(pte_t *pte)
+{
+	kassert(vmp_pte_characterise(pte) == kPTEKindBusy ||
+	    vmp_pte_characterise(pte) == kPTEKindTrans);
+	return pte->sw.data;
+}
+
+/* new stuff */
 static inline paddr_t
 vmp_pte_hw_paddr(pte_t *pte, int level)
 {

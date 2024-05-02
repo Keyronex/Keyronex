@@ -16,6 +16,7 @@ if not headers_only
 		'-fno-strict-aliasing',
 		'-fwrapv',
 		'-fno-delete-null-pointer-checks',
+		'-fno-omit-frame-pointer',
 	]
 
 	if (arch == 'amd64')

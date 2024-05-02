@@ -15,6 +15,7 @@ vmp_md_kernel_init(void)
 	vm_page_t *kernel_table;
 	paddr_t kernel_addr;
 	vm_page_alloc(&kernel_table, 0, kPageUsePML4, true);
+	kernel_table->process = &kernel_process;
 	kernel_addr = vmp_page_paddr(kernel_table);
 	kernel_procstate.md.table = kernel_addr;
 	memcpy((void *)P2V(kernel_addr), (void *)P2V(read_cr3()), PGSIZE);
@@ -32,7 +33,7 @@ vmp_md_translate(vaddr_t addr)
 	else {
 		int r;
 
-		r = vmp_fetch_pte(&kernel_process, PGROUNDDOWN(addr), &pte);
+		r = vmp_fetch_pte(kernel_process.vm, PGROUNDDOWN(addr), &pte);
 		kassert(r == 0);
 		paddr = vmp_pte_hw_paddr(pte, 1);
 		paddr += addr % PGSIZE;
@@ -42,19 +43,13 @@ vmp_md_translate(vaddr_t addr)
 }
 
 void
-pmap_invlpg(vaddr_t addr)
-{
-	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
-}
-
-void
 vmp_md_enter_kwired(void)
 {
 	kfatal("Implement me\n");
 }
 
 void
-vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
+vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, bool is_new)
 {
 	pte_t pte;
@@ -64,11 +59,11 @@ vmp_md_setup_table_pointers(kprocess_t *ps, vm_page_t *dirpage,
 	pte.hw.user = 1;
 	pte.hw.pfn = tablepage->pfn;
 	dirpte->value = pte.value;
-	vmp_pagetable_page_valid_pte_created(ps, dirpage, true);
+	vmp_pagetable_page_noswap_pte_created(ps, dirpage, true);
 }
 
 void
-vmp_md_delete_table_pointers(kprocess_t *ps, vm_page_t *dirpage, pte_t *dirpte)
+vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage, pte_t *dirpte)
 {
 	dirpte->hw.value = 0x0;
 	vmp_pagetable_page_pte_deleted(ps, dirpage, false);
