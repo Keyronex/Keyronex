@@ -5,6 +5,7 @@
 #include "ddk/DKObject.h"
 #include "kdk/kmem.h"
 #include "kdk/nanokern.h"
+#include "kdk/libkern.h"
 #include "kdk/object.h"
 
 struct dkobject_header {
@@ -28,7 +29,7 @@ object_alloc(Class class)
 	object_size = class_getInstanceSize(class);
 	total_size = DKOBJECT_HEADER_TOTAL_SIZE + object_size;
 
-	header = kmem_alloc(total_size);
+	header = kmem_zalloc(total_size);
 	if (header == NULL)
 		return nil;
 
@@ -115,6 +116,7 @@ ob_object_alloc(Class class, obj_class_t obclass)
 	object_size = class_getInstanceSize(class);
 
 	r = obj_new(&object, obclass, object_size, NULL);
+	memset(object, 0x0, object_size);
 	if (r != 0)
 		return nil;
 
