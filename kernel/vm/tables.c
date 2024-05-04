@@ -71,6 +71,7 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 			kfatal("expectex nonswap_ptes to be 0 or 1\n");
 #endif
 
+		kassert(page->referent_pte != 0);
 		dirpage = vm_paddr_to_page(page->referent_pte);
 		if (page_is_hw_table(page))
 			vmp_md_delete_table_pointers(ps, dirpage,

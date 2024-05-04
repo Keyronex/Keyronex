@@ -507,27 +507,27 @@ vm_page_use_str(enum vm_page_use use)
 	case kPageUsePFNDB:
 		return "pfndb";
 	case kPageUseAnonPrivate:
-		return "anon-private";
+		return "anon_priv";
 	case kPageUseFileShared:
-		return "file-shared";
+		return "file";
 
 	case kPageUsePML4:
-		return "PML4";
+		return "pml4";
 	case kPageUsePML3:
-		return "PML3";
+		return "pml3";
 	case kPageUsePML2:
-		return "PML2";
+		return "pml2";
 	case kPageUsePML1:
-		return "PML1";
+		return "pml1";
 
 	case kPageUseVPML4:
-		return "PROTO_PML4";
+		return "prot_pml4";
 	case kPageUseVPML3:
-		return "PROTO_PML3";
+		return "prot_pml3";
 	case kPageUseVPML2:
-		return "PROTO_PML2";
+		return "prot_pml2";
 	case kPageUseVPML1:
-		return "PROTO_PML1";
+		return "prot_pml1";
 	case kPageUseDeleted:
 		return "deleted";
 	default:
@@ -540,21 +540,29 @@ vmp_pages_dump(void)
 {
 	struct vmp_pregion *region;
 
-	kprintf(
-	    "Active: %zu, modified: %zu, standby: %zu, free: %zu, free-res: %zd\n",
-	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree,
-	    vmstat.nreservedfree);
+	kprintf("Active: %zu, modified: %zu, standby: %zu, free: %zu\n",
+	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
 
-	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s\033[m\n", "free", "del", "priv",
-	    "fork", "file");
+	kprintf("\033[7m"
+		"%-9s%-9s%-9s%-9s%-9s"
+		"\033[m\n",
+	    "free", "del", "priv", "fork", "file");
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu\n", vmstat.nfree, vmstat.ndeleted,
 	    vmstat.nanonprivate, vmstat.nanonfork, vmstat.nfileshared);
-	kprintf("\033[7m%-9s%-9s%-9s%-9s%-9s\033[m\n", "share", "pgtbl",
-	    "proto", "kwired", "pagedb");
+
+	kprintf("\033[7m"
+		"%-9s%-9s%-9s%-9s%-9s"
+		"\033[m\n",
+	    "share", "pgtbl", "proto", "kwired", "pagedb");
 	kprintf("%-9zu%-9zu%-9zu%-9zu%-9zu\n", vmstat.nanonshare,
 	    vmstat.nprocpgtable, vmstat.nprotopgtable, vmstat.nkwired,
 	    vmstat.npwired);
 
+	kprintf("Page summary:\n");
+	kprintf("\033[7m"
+		"%-8s%-11s%-6s%-6s%-6s%-6s"
+		"\033[m\n",
+	    "pfn", "use", "rc", "dirty", "ptes", "nsptes");
 	TAILQ_FOREACH (region, &pregion_queue, queue_entry) {
 		for (int i = 0; i < region->npages; i++) {
 			vm_page_t *page = &region->pages[i];
@@ -562,10 +570,10 @@ vmp_pages_dump(void)
 			if (page->use == kPageUseFree ||
 			    page->use == kPageUsePFNDB || page->use == kPageUseKWired)
 				continue;
-			kprintf(
-			    "Page %d: Use %s, RC %d, Used-PTEs %d, NoSwap-PTES %d\n",
-			    i, vm_page_use_str(page->use), page->refcnt,
-			    page->nonzero_ptes, page->noswap_ptes);
+			kprintf("%-8d%-11s%-6hu%-6s%-6hu%-6hu\n", i,
+			    vm_page_use_str(page->use), page->refcnt,
+			    page->dirty ? "yes" : "no", page->nonzero_ptes,
+			    page->noswap_ptes);
 		}
 	}
 

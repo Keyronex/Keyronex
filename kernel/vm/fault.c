@@ -105,6 +105,7 @@ vmp_do_file_fault(kprocess_t *process, vm_procstate_t *vmps,
 	page->owner = object;
 	page->offset = object_pgoffset;
 	page->dirty = false;
+	page->referent_pte = V2P((vaddr_t)object_state.pte);
 
 	/* create busy PTEs in both the prototype pagetable and the process */
 	vmp_md_pte_create_busy(object_state.pte, page->pfn);
@@ -247,8 +248,14 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	}
 
 	enum vmp_pte_kind pte_kind = vmp_pte_characterise(state.pte);
+#ifdef DEBUG_FAULTS
+	kprintf("FAULT ADDRESS: 0x%zx PTE KIND: %d\n", vaddr, pte_kind);
+#endif
 
 	if (pte_kind == kPTEKindValid &&
+	    (!write || vmp_md_hw_pte_is_writeable(state.pte))) {
+		kfatal("Nothing to do?\n");
+	} else if (pte_kind == kPTEKindValid &&
 	    !vmp_md_hw_pte_is_writeable(state.pte) && write) {
 		/*
 		 * Write fault, VAD permits, PTE valid, PTE not
@@ -257,9 +264,38 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		 * writeable because of dirty-bit emulation.
 		 * - this is a CoW page
 		 */
-		kfatal("Write fault\n");
-	}
-	if (pte_kind == kPTEKindZero && area_info.object == NULL) {
+		if (area_info.copy) {
+			vm_page_t *new_page, *old_page;
+			pte_t *pte = state.pte;
+			vm_page_t *pml1_page = state.pgtable_pages[0];
+
+			/* (Symmetric) CoW fault.*/
+
+			r = vmp_page_alloc_locked(&new_page,
+			    kPageUseAnonPrivate, false);
+			if (r != 0) {
+				vmp_pte_wire_state_release(&state, false);
+				vmp_release_pfn_lock(ipl);
+				ke_mutex_release(&vmps->mutex);
+				return kVMFaultRetPageShortage;
+			}
+
+			new_page->referent_pte = V2P((vaddr_t)pte);
+			old_page = vmp_pte_hw_page(pte, 1);
+
+			memcpy((void *)vm_page_direct_map_addr(new_page),
+			    (void *)vm_page_direct_map_addr(old_page), PGSIZE);
+
+			vmp_page_evict(vmps, pte, pml1_page, vaddr);
+			vmp_md_pte_create_hw(pte, new_page->pfn, write, true);
+			vmp_pagetable_page_noswap_pte_created(vmps, pml1_page,
+			    true);
+			vmp_pte_wire_state_release(&state, false);
+			vmp_release_pfn_lock(ipl);
+		} else {
+			kfatal("Unhandled write fault\n");
+		}
+	} else if (pte_kind == kPTEKindZero && area_info.object == NULL) {
 		vm_page_t *page;
 		pte_t *pte = state.pte;
 		vm_page_t *pml1_page = state.pgtable_pages[0];
@@ -272,6 +308,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			return kVMFaultRetPageShortage;
 		}
 
+		page->referent_pte = V2P((vaddr_t)pte);
 		vmp_md_pte_create_hw(pte, page->pfn, write, true);
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
 		vmp_pte_wire_state_release(&state, false);

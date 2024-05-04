@@ -40,7 +40,6 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		 * we need to replace this with a transition PTE then.
 		 * used_ptes and noswap_ptes count is as such unchanged.
 		 */
-		page->referent_pte = V2P((vaddr_t)pte);
 		vmp_md_pte_create_trans(pte, page->pfn);
 		ki_tlb_flush_vaddr_globally(vaddr);
 		vmp_page_release_locked(page);
