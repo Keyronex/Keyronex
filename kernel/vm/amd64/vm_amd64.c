@@ -59,6 +59,7 @@ vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 	pte.hw.user = 1;
 	pte.hw.pfn = tablepage->pfn;
 	dirpte->value = pte.value;
+
 	vmp_pagetable_page_noswap_pte_created(ps, dirpage, true);
 }
 

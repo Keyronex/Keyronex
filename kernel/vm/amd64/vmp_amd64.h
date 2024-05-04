@@ -92,7 +92,7 @@ vmp_md_pte_create_trans(pte_t *ppte, pfn_t pfn)
 static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
-	kfatal("Unimplemented\n");
+	pte->value = 0;
 }
 
 static inline bool

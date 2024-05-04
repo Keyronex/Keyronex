@@ -310,6 +310,7 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
 	page->owner = 0;
 	page->swap_descriptor = 0;
 	page->nonzero_ptes = 0;
+	page->noswap_ptes = 0;
 
 	vmstat.nfree -= npages;
 	vmstat.nreservedfree -= npages;
@@ -535,6 +536,31 @@ vm_page_use_str(enum vm_page_use use)
 	}
 }
 
+static bool
+page_is_pagetable(vm_page_t *page)
+{
+	return (page->use >= kPageUsePML1 && page->use <= kPageUsePML4) ||
+	    (page->use >= kPageUseVPML1 && page->use <= kPageUseVPML4);
+}
+
+static void
+dump_page(int i, vm_page_t *page)
+{
+	if (page->use == kPageUseFree || page->use == kPageUsePFNDB ||
+	    page->use == kPageUseKWired)
+		return;
+
+	if (page_is_pagetable(page))
+		kprintf("%-8d%-11s%-6hu%-6s%-6s%-6hu%-6hu\n", i,
+		    vm_page_use_str(page->use), page->refcnt, "n/a", "n/a",
+		    page->nonzero_ptes, page->noswap_ptes);
+	else
+		kprintf("%-8d%-11s%-6hu%-6s%-6" PRIu64 "%-6s%-6s\n", i,
+		    vm_page_use_str(page->use), page->refcnt,
+		    page->dirty ? "yes" : "no", (uint64_t)page->offset, "n/a",
+		    "n/a");
+}
+
 void
 vmp_pages_dump(void)
 {
@@ -560,20 +586,13 @@ vmp_pages_dump(void)
 
 	kprintf("Page summary:\n");
 	kprintf("\033[7m"
-		"%-8s%-11s%-6s%-6s%-6s%-6s"
+		"%-8s%-11s%-6s%-6s%-6s%-6s%-6s"
 		"\033[m\n",
-	    "pfn", "use", "rc", "dirty", "ptes", "nsptes");
+	    "pfn", "use", "rc", "dirty", "off", "ptes", "nsptes");
 	TAILQ_FOREACH (region, &pregion_queue, queue_entry) {
 		for (int i = 0; i < region->npages; i++) {
 			vm_page_t *page = &region->pages[i];
-
-			if (page->use == kPageUseFree ||
-			    page->use == kPageUsePFNDB || page->use == kPageUseKWired)
-				continue;
-			kprintf("%-8d%-11s%-6hu%-6s%-6hu%-6hu\n", i,
-			    vm_page_use_str(page->use), page->refcnt,
-			    page->dirty ? "yes" : "no", page->nonzero_ptes,
-			    page->noswap_ptes);
+			dump_page(i, page);
 		}
 	}
 

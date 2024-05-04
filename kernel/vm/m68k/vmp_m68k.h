@@ -114,7 +114,7 @@ vmp_md_pte_create_trans(pte_t *pte, pfn_t pfn)
 static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
-	memset(pte, 0x0, sizeof(pte_t));
+	pte->value = 0;
 }
 
 static inline pfn_t
