@@ -1,11 +1,11 @@
+#include "bootinfo.h"
 #include "ddk/DKDevice.h"
-#include "ddk/DKVirtIOMMIODevice.h"
 #include "ddk/virtio_mmio.h"
+#include "dev/virtio/DKVirtIOMMIOTransport.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
-#include "kdk/object.h"
 #include "kdk/nanokern.h"
-#include "bootinfo.h"
+#include "kdk/object.h"
 
 @interface Virt68kPlatform : DKDevice <DKPlatformDevice>
 
@@ -42,7 +42,7 @@ extern struct bootinfo bootinfo;
 	    bootinfo.qemu_version >> 8 & 0xff);
 
 	for (int i = 0; i < 128; i++) {
-		[DKVirtIOMMIODevice probeWithProvider:self
+		[DKVirtIOMMIOTransport probeWithProvider:self
 						 mmio:virtio_base + 0x200 * i
 						 interrupt:32 + i];
 	}

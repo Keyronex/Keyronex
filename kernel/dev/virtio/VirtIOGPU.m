@@ -3,18 +3,17 @@
 #include "ObjFWRT.h"
 #include "ddk/DKDevice.h"
 #include "ddk/DKFramebuffer.h"
-#include "ddk/DKVirtIOMMIODevice.h"
 #include "ddk/virtio_gpu.h"
 #include "ddk/virtioreg.h"
 #include "dev/FBTerminal.h"
-#include "dev/VirtIOGPU.h"
+#include "dev/virtio/VirtIOGPU.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 
-#define PROVIDER ((DKVirtIOMMIODevice *)m_provider)
+#define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)
 
 struct virtio_gpu_req {
 	TAILQ_ENTRY(virtio_gpu_req) queue_link;
@@ -51,13 +50,13 @@ flush_timer_dpc_handler(void *arg)
 
 @implementation VirtIOGPU
 
-+ (BOOL)probeWithProvider:(DKVirtIOMMIODevice *)provider
++ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
 	[[self alloc] initWithProvider:provider];
 	return YES;
 }
 
-- (instancetype)initWithProvider:(DKVirtIOMMIODevice *)provider
+- (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
 	int r;
 
@@ -66,7 +65,7 @@ flush_timer_dpc_handler(void *arg)
 	kmem_asprintf(obj_name_ptr(self), "virtio-gpu-%u", counter++);
 	TAILQ_INIT(&in_flight_reqs);
 
-	provider->m_delegate = self;
+	provider.delegate = self;
 	[provider resetDevice];
 
 	if (![provider exchangeFeatures:VIRTIO_F_VERSION_1]) {

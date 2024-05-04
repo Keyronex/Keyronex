@@ -2,7 +2,7 @@
 #define KRX_DEV_VIRTIODISK_H
 
 #include "ddk/DKDevice.h"
-#include "ddk/DKVirtIOMMIODevice.h"
+#include "ddk/DKVirtIOTransport.h"
 
 @interface VirtIODisk : DKDevice <DKVirtIODelegate> {
     @public

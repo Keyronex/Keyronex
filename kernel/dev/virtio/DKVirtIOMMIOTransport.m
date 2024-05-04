@@ -1,9 +1,9 @@
 #include "ddk/DKDevice.h"
-#include "ddk/DKVirtIOMMIODevice.h"
 #include "ddk/virtio_mmio.h"
 #include "ddk/virtioreg.h"
-#include "dev/VirtIODisk.h"
-#include "dev/VirtIOGPU.h"
+#include "dev/virtio/DKVirtIOMMIOTransport.h"
+#include "dev/virtio/VirtIODisk.h"
+#include "dev/virtio/VirtIOGPU.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -22,7 +22,7 @@ void gfpic_handle_irq(unsigned int vector,
 void gfpic_mask_irq(unsigned int vector);
 void gfpic_unmask_irq(unsigned int vector);
 
-@interface DKVirtIOMMIODevice (Private)
+@interface DKVirtIOMMIOTransport (Private)
 - (instancetype)initWithProvider:(DKDevice *)provider
 			    mmio:(volatile void *)mmio
 		       interrupt:(int)interrupt;
@@ -59,7 +59,7 @@ device_name(uint32_t id)
 static bool
 vitrio_handler(md_intr_frame_t *, void *arg)
 {
-	DKVirtIOMMIODevice *self = arg;
+	DKVirtIOMMIOTransport *self = arg;
 	uint32_t stat = MMIO_READ32(self->m_mmio, VIRTIO_MMIO_INTERRUPT_STATUS);
 #if DEBUG_VIRTIO >= 2
 	DKDevLog(self, "virtio-mmio interrupt (status 0x%x)\n", stat);
@@ -72,11 +72,13 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 static void
 dpc_handler(void *arg)
 {
-	DKVirtIOMMIODevice *self = arg;
+	DKVirtIOMMIOTransport *self = arg;
 	[self->m_delegate deferredProcessing];
 }
 
-@implementation DKVirtIOMMIODevice
+@implementation DKVirtIOMMIOTransport
+
+@synthesize delegate = m_delegate;
 
 + (BOOL)probeWithProvider:(DKDevice *)provider
 		     mmio:(volatile void *)mmio

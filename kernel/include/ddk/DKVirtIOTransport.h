@@ -1,12 +1,11 @@
-#ifndef KRX_DDK_DKVIRTIOMMIODEVICE_H
-#define KRX_DDK_DKVIRTIOMMIODEVICE_H
+#ifndef KRX_DDK_DKVirtIOMMIOTransport_H
+#define KRX_DDK_DKVirtIOMMIOTransport_H
 
 #include "ddk/DKDevice.h"
 #include "kdk/endian.h"
 #include "kdk/vm.h"
 
 struct vring_used_elem;
-@class DKVirtIOMMIODevice;
 
 struct virtio_queue {
 	/* queue number/index */
@@ -40,8 +39,10 @@ struct virtio_queue {
 
 #define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
 
+@protocol DKVirtIOTransport;
+
 @protocol DKVirtIODelegate
-+ (BOOL)probeWithProvider:(DKVirtIOMMIODevice*) provider;
++ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider;
 
 - (void)deferredProcessing;
 @end
@@ -49,19 +50,10 @@ struct virtio_queue {
 /*!
  * VirtIO MMIO device nub.
  */
-@interface DKVirtIOMMIODevice : DKDevice {
-    @public
-	volatile void *m_mmio;
-	int m_interrupt;
-	kdpc_t m_dpc;
-	id<DKVirtIODelegate> m_delegate;
-}
+@protocol DKVirtIOTransport
 
+@property (retain) DKDevice<DKVirtIODelegate> *delegate;
 @property (readonly) volatile void *deviceConfig;
-
-+ (BOOL)probeWithProvider:(DKDevice *)provider
-		     mmio:(volatile void *)mmio
-		interrupt:(int)interrupt;
 
 - (void)enqueueDPC;
 - (void)resetDevice;
@@ -75,4 +67,4 @@ struct virtio_queue {
 
 @end
 
-#endif /* KRX_DDK_DKVIRTIOMMIODEVICE_H */
+#endif /* KRX_DDK_DKVirtIOMMIOTransport_H */

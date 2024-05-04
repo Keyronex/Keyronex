@@ -3,7 +3,7 @@
 
 #include "ddk/DKDevice.h"
 #include "ddk/DKFramebuffer.h"
-#include "ddk/DKVirtIOMMIODevice.h"
+#include "ddk/DKVirtIOTransport.h"
 
 @interface VirtIOGPU : DKFramebuffer <DKVirtIODelegate> {
     @public
@@ -21,9 +21,9 @@
 	struct virtio_gpu_ctrl_hdr *m_FlushResponse;
 }
 
-+ (BOOL)probeWithProvider:(DKVirtIOMMIODevice *)provider;
++ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider;
 
-- (instancetype)initWithProvider:(DKVirtIOMMIODevice *)provider;
+- (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider;
 
 @end
 

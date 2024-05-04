@@ -13,7 +13,7 @@
 #include "kdk/vm.h"
 #include "dev/Ext2FS.h"
 
-#define PROVIDER ((DKVirtIOMMIODevice *)m_provider)
+#define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)
 
 struct vioblk_req {
 	/* linkage in in_flight_reqs or free_reqs */
@@ -41,13 +41,13 @@ VirtIODisk (Private)
 
 @implementation VirtIODisk
 
-+ (BOOL)probeWithProvider:(DKVirtIOMMIODevice *)provider
++ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
 	[[self alloc] initWithProvider:provider];
 	return YES;
 }
 
-- (instancetype)initWithProvider:(DKVirtIOMMIODevice *)provider
+- (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
 	int r;
 	volatile struct virtio_blk_config *cfg;
@@ -59,7 +59,7 @@ VirtIODisk (Private)
 	kmem_asprintf(obj_name_ptr(self), "virtio-disk-%u", counter++);
 	TAILQ_INIT(&in_flight_reqs);
 
-	provider->m_delegate = self;
+	provider.delegate = self;
 	[provider resetDevice];
 
 	if (![provider exchangeFeatures:VIRTIO_F_VERSION_1]) {
