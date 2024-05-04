@@ -24,6 +24,7 @@ fi
 
 cat <<EOF > $FILE
 [binaries]
+as = '$TRIPLE-as'
 c = '$TRIPLE-gcc'
 cpp = '$TRIPLE-g++'
 ar = '$TRIPLE-ar'

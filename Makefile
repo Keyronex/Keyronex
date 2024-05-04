@@ -42,6 +42,9 @@ ${BUILD_SETUP_TARGET}:
 reconfigure-kernel: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install --reconfigure --rebuild kernel-headers kernel)
 
+rebuild-mlibc: ${BUILD_SETUP_TARGET}
+	(cd ${BUILD_DIR} && xbstrap install --rebuild mlibc-headers mlibc)
+
 rebuild-kernel: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install --rebuild kernel-headers kernel)
 
