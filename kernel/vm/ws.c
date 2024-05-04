@@ -25,8 +25,9 @@ vmp_wsl_find(vm_procstate_t *ps, vaddr_t vaddr)
 	return RB_FIND(vmp_wsle_tree, &ps->wsl.tree, &key);
 }
 
-static void
-page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page, vaddr_t vaddr)
+void
+vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
+    vaddr_t vaddr)
 {
 	bool dirty = vmp_md_hw_pte_is_writeable(pte);
 	vm_page_t *page = vmp_pte_hw_page(pte, 1);
@@ -79,7 +80,7 @@ wsl_evict_one(vm_procstate_t *vmps)
 	kprintf("Evicting 0x%zx\n", wsle->vaddr);
 	pte_page = vm_paddr_to_page(PGROUNDDOWN(V2P(pte)));
 
-	page_evict(vmps, pte, pte_page, wsle->vaddr);
+	vmp_page_evict(vmps, pte, pte_page, wsle->vaddr);
 	vmp_release_pfn_lock(ipl);
 
 	kmem_free(wsle, sizeof(*wsle));
@@ -110,11 +111,15 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked)
 	return 0;
 }
 
-void vmp_wsl_remove(vm_procstate_t*ps, vaddr_t vaddr)
+void
+vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr, bool pfn_locked)
 {
-	kassert(vmp_wsl_find(ps, vaddr) == NULL);
-
-	kfatal("Implement this function\n");
+	struct vmp_wsle *wsle = vmp_wsl_find(ps, vaddr);
+	kassert(wsle != NULL);
+	RB_REMOVE(vmp_wsle_tree, &ps->wsl.tree, wsle);
+	TAILQ_REMOVE(&ps->wsl.queue, wsle, queue_entry);
+	kmem_xfree(wsle, sizeof(*wsle), pfn_locked ? kVMemPFNDBHeld : 0);
+	ps->wsl.ws_current_count--;
 }
 
 void

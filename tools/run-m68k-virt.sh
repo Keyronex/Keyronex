@@ -33,5 +33,5 @@ qemu-system-m68k -M virt \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
   -s \
-  ${qemu_args}
+  ${qemu_args} \
 #--trace "virtio_*" \

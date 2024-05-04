@@ -6,6 +6,8 @@
 
 #include "dev.h"
 
+RB_HEAD(ubc_window_tree, ubc_window);
+
 typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK, VFIFO } vtype_t;
 
 typedef struct vattr {
@@ -18,6 +20,16 @@ typedef struct vnode {
 	struct vnode_ops *ops;
 	uintptr_t fs_data;
 	struct vfs *vfs;
+
+	/*! General rwlock. */
+	kmutex_t rwlock;
+	/*! Paging I/O rqlock. */
+	kmutex_t paging_rwlock;
+
+	/*! UBC windows into this vnode; protected by UBC spinlock */
+	struct ubc_window_tree ubc_windows;
+	/*! this vnode's VM object */
+	vm_object_t *object;
 } vnode_t;
 
 typedef struct vfs {
@@ -45,6 +57,9 @@ vn_retain(vnode_t *vnode)
 {
 	return vnode;
 }
-void vn_release(vnode_t *vnode);
+static inline void
+vn_release(vnode_t *vnode)
+{
+}
 
 #endif /* KRX_KDK_VFS_H */

@@ -17,12 +17,22 @@ test_anon(void)
 	*(unsigned int*)(addr + PGSIZE) = 0xbeefdead;
 	*(unsigned int*)(addr + PGSIZE * 2) = 0xfeedbeef;
 	*(unsigned int*)(addr + PGSIZE * 3) = 0xbeeffeed;
+
+	*(unsigned int*)addr = 0xdeadbeef;
+	*(unsigned int*)(addr + PGSIZE) = 0xbeefdead;
+
+	kprintf("After touching 4 pages:\n");
+	vmp_wsl_dump(&kernel_procstate);
+	vmp_pages_dump();
 }
 
 void
 ex_init(void *)
 {
-	void ddk_init(void), ddk_autoconf(void);
+	void ddk_init(void), ddk_autoconf(void), ubc_init(void);
+
+	vmp_paging_init();
+	ubc_init();
 	ddk_init();
 #if 0
 	pe_load(module_request.response->modules[3]->path,module_request.response->modules[3]->address);
@@ -33,7 +43,7 @@ ex_init(void *)
 	vmp_pages_dump();
 	obj_dump();
 #endif
-	vmp_paging_init();
+
 
 	test_anon();
 

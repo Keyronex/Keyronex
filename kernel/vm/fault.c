@@ -5,17 +5,27 @@
 #include "kdk/queue.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
+#include "ubc.h"
 #include "vmp.h"
 
 extern vm_procstate_t kernel_procstate;
+struct fault_area_info {
+	vm_object_t *object;
+	vaddr_t start;
+	pgoff_t offset;
+	bool copy, writeable;
+};
+
 #define CURMAP (&kernel_procstate)
 
 static int
 vmp_do_file_fault(kprocess_t *process, vm_procstate_t *vmps,
-    vm_map_entry_t *map_entry, struct vmp_pte_wire_state *state, vaddr_t vaddr)
+    struct fault_area_info *area_info, struct vmp_pte_wire_state *state,
+    vaddr_t vaddr)
 {
-	vm_object_t *object = map_entry->object;
-	size_t object_byteoffset = (vaddr - map_entry->start);
+	vm_object_t *object = area_info->object;
+	size_t object_byteoffset = area_info->offset * PGSIZE +
+	    (vaddr - area_info->start);
 	pgoff_t object_pgoffset = object_byteoffset / PGSIZE;
 	struct vmp_pte_wire_state object_state;
 	int r;
@@ -189,24 +199,43 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	int r;
 	kprocess_t *process = &kernel_process;
 	vm_procstate_t *vmps = CURMAP;
-	vm_map_entry_t *map_entry;
 	ipl_t ipl;
 	struct vmp_pte_wire_state state;
-
+	struct fault_area_info area_info;
 	kassert(splget() < kIPLDPC);
 
 	KE_WAIT(&vmps->mutex, false, false, -1);
-	map_entry = vmp_ps_vad_find(vmps, vaddr);
+	if (vaddr < HHDM_BASE ||
+	    (vaddr >= KVM_DYNAMIC_BASE &&
+		vaddr < KVM_DYNAMIC_BASE + KVM_DYNAMIC_SIZE)) {
+		vm_map_entry_t *map_entry = vmp_ps_vad_find(vmps, vaddr);
 
-	if (!map_entry) {
-		kfatal("VM fault at 0x%zx doesn't have a vad\n", vaddr);
+		if (map_entry == NULL)
+			kfatal("VM fault at 0x%zx doesn't have a vad\n", vaddr);
+
+		area_info.object = map_entry->object;
+		area_info.writeable = map_entry->flags.protection & kVMWrite;
+		area_info.copy = map_entry->flags.cow;
+		area_info.offset = map_entry->flags.offset;
+		area_info.start = map_entry->start;
+	} else if (vaddr >= KVM_UBC_BASE &&
+	    vaddr < KVM_UBC_BASE + KVM_UBC_SIZE) {
+		/* note: UBC faults are always taken after a window was paged */
+		ubc_window_t *window = ubc_addr_to_window(vaddr);
+
+		area_info.object = window->vnode->object;
+		area_info.copy = false;
+		area_info.writeable = true;
+		area_info.offset = window->offset * (UBC_WINDOW_SIZE / PGSIZE);
+		area_info.start = ubc_window_addr(window);
+	} else {
+		kfatal("Page fault in an unacceptable area\n");
 	}
-
 	/*
-	 * a VAD exists. Check if it is nonwriteable and this is a write
+	 * Check if area is nonwriteable and this is a write
 	 * fault. If so, signal error.
 	 */
-	if (write && !(map_entry->flags.protection & kVMWrite))
+	if (write && !area_info.writeable)
 		kfatal("Write fault at 0x%zx in nonwriteable vad\n", vaddr);
 
 	ipl = vmp_acquire_pfn_lock();
@@ -230,7 +259,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		 */
 		kfatal("Write fault\n");
 	}
-	if (pte_kind == kPTEKindZero && map_entry->object == NULL) {
+	if (pte_kind == kPTEKindZero && area_info.object == NULL) {
 		vm_page_t *page;
 		pte_t *pte = state.pte;
 		vm_page_t *pml1_page = state.pgtable_pages[0];
@@ -258,7 +287,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			kfatal("Working set insertion failed - evict!!\n");
 		}
 	} else if (pte_kind == kPTEKindZero) {
-		r = vmp_do_file_fault(process, vmps, map_entry, &state, vaddr);
+		r = vmp_do_file_fault(process, vmps, &area_info, &state, vaddr);
 		/* pfn lock was released */
 	} else if (pte_kind == kPTEKindTrans) {
 		vm_page_t *page = vm_pfn_to_page(

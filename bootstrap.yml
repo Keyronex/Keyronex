@@ -356,7 +356,7 @@ packages:
         - '-Darch=@OPTION:arch@'
         - '--cross-file=@BUILD_ROOT@/crossfile.ini'
         - '-Dno_headers=true'
-#        - '--optimization=2'
+        - '--optimization=g'
         - '@THIS_SOURCE_DIR@'
         - '--prefix=/'
     build:

@@ -53,12 +53,12 @@ typedef struct vm_map_entry {
 		/*! if !private, page-unit offset into object (max 256tib) */
 		int64_t offset : 36;
 	} flags;
+	/*! object; if flags.anonymous = false */
+	vm_object_t *object;
 	/*! Entry in vm_procstate::map_entry_rbtree */
 	RB_ENTRY(vm_map_entry) rb_entry;
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
-	/*! object object; if flags.anonymous = false */
-	vm_object_t *object;
 } vm_map_entry_t;
 
 struct vmp_wsl {
@@ -199,11 +199,18 @@ int vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out);
 vm_map_entry_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
 int vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked);
-void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr);
+void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr, bool pfn_locked);
 /*! @brief Evict one entry from a working set list @pre PFN HELD*/
 void wsl_evict_one(vm_procstate_t *ps);
 /*! @brief Dump info on a working set. */
 void vmp_wsl_dump(vm_procstate_t *ps);
+/*!
+ * @brief Evict a valid page
+ * \pre Working set mutex held
+ * \pre PFN lock held
+ */
+void vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
+    vaddr_t vaddr);
 
 /*!
  * \pre VAD list mutex held
@@ -226,5 +233,7 @@ extern kspinlock_t vmp_pfn_lock;
 
 extern struct vmem vmem_kern_nonpaged;
 extern kspinlock_t vmp_pfn_lock;
+
+extern vm_procstate_t kernel_procstate;
 
 #endif /* KRX_VM_VMP_H */

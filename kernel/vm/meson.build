@@ -1,5 +1,5 @@
 kernel_sources += files('vmbalance.c', 'writeback.c', 'fault.c', 'kmem_slab.c',
-	'kwired.c', 'resident.c', 'tables.c', 'map.c', 'vmem.c', 'ws.c')
+	'kwired.c', 'resident.c', 'tables.c', 'ubc.c', 'map.c', 'vmem.c', 'ws.c')
 
 if (cpu == 'm68k')
 	kernel_sources += files('m68k/vm_m68k.c')
