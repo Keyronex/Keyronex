@@ -1,4 +1,5 @@
 #include "PCIBus.h"
+#include "dev/virtio/DKVirtIOPCITransport.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "ntcompat/NTStorPort.h"
@@ -25,7 +26,97 @@ enum {
 	kCapMSIx = 0x11,
 };
 
+#define INFO_ARGS(INFO) (INFO)->seg, (INFO)->bus, (INFO)->slot, (INFO)->fun
+#define ENABLE_CMD_FLAG(INFO, FLAG)           \
+	pci_writew(INFO_ARGS(INFO), kCommand, \
+	    pci_readw(INFO_ARGS(INFO), kCommand) | (FLAG))
+#define DISABLE_CMD_FLAG(INFO, FLAG)          \
+	pci_writew(INFO_ARGS(INFO), kCommand, \
+	    pci_readw(INFO_ARGS(INFO), kCommand) & ~(FLAG))
+
 @implementation PCIBus
+
++ (void)enableBusMasteringForInfo:(struct pci_dev_info *)info
+{
+	ENABLE_CMD_FLAG(info, 0x4);
+}
+
++ (void)setMemorySpaceForInfo:(struct pci_dev_info *)info enabled:(BOOL)enabled
+{
+	if (enabled)
+		DISABLE_CMD_FLAG(info, (1 << 10));
+	else
+		ENABLE_CMD_FLAG(info, (1 << 10));
+}
+
++ (void)enumerateCapabilitiesForInfo:(struct pci_dev_info *)info
+			    delegate:(DKDevice<DKPCIDeviceDelegate> *)delegate
+{
+	if (PCIINFO_CFG_READ(w, info, kStatus) & (1 << 4)) {
+		voff_t capOffset = PCIINFO_CFG_READ(b, info,
+		    kCapabilitiesPointer);
+
+		while (capOffset != 0) {
+			[delegate capabilityEnumeratedAtOffset:capOffset];
+			capOffset = PCIINFO_CFG_READ(b, info, capOffset + 1);
+		}
+	}
+}
+
++ (paddr_t)getBar:(int)num forInfo:(struct pci_dev_info *)info
+{
+	io_off_t off = kBaseAddress0 + sizeof(uint32_t) * num;
+	uint32_t bar;
+
+	uint64_t base;
+	size_t len;
+
+	bar = pci_readl(INFO_ARGS(info), off);
+
+	if ((bar & 1) == 1) {
+		kfatal("I/O space bar\n");
+	} else if (((bar >> 1) & 3) == 0) {
+		uint32_t size_mask;
+
+		pci_writel(INFO_ARGS(info), off, 0xffffffff);
+		size_mask = pci_readl(INFO_ARGS(info), off);
+		pci_writel(INFO_ARGS(info), off, bar);
+
+		base = bar & 0xffffffF0;
+		len = (size_t)1 << __builtin_ctzl(size_mask & 0xffffffF0);
+
+	} else {
+		uint64_t size_mask, bar_high, size_mask_high;
+
+		kassert(((bar >> 1) & 3) == 2);
+
+		bar_high = pci_readl(INFO_ARGS(info), off + 4);
+		base = (bar & 0xffffffF0) | (bar_high << 32);
+
+		pci_writel(INFO_ARGS(info), off, 0xffffffff);
+		pci_writel(INFO_ARGS(info), off + 4, 0xffffffff);
+		size_mask = pci_readl(INFO_ARGS(info), off);
+		size_mask_high = pci_readl(INFO_ARGS(info), off + 4);
+		pci_writel(INFO_ARGS(info), off, bar);
+		pci_writel(INFO_ARGS(info), off + 4, bar_high);
+
+		size_mask |= size_mask_high << 32;
+		len = (size_t)1
+		    << __builtin_ctzl(size_mask & 0xffffffffffffffF0);
+
+		(void)len;
+	}
+
+	return (paddr_t)base;
+}
+
++ (void)setInterruptsEnabled:(BOOL)enabled forInfo:(struct pci_dev_info *)info
+{
+	if (enabled)
+		DISABLE_CMD_FLAG(info, (1 << 10));
+	else
+		ENABLE_CMD_FLAG(info, (1 << 10));
+}
 
 - (int)routePinForInfo:(struct pci_dev_info *)info
 {
@@ -136,8 +227,14 @@ enum {
 	    info.klass, info.subClass);
 #endif
 
-	[NTStorPort probeWithPCIBus:self info:&info];
-
+	BOOL handled;
+	handled = [NTStorPort probeWithPCIBus:self info:&info];
+	if (!handled && info.vendorId == 0x1af4)
+		handled = [DKVirtIOPCITransport probeWithPCIBus:self
+							   info:&info];
+	if (!handled)
+		kprintf("No driver for PCI device %d.%d.%d\n", info.bus,
+		    info.slot, info.fun);
 }
 
 - (instancetype)initWithProvider:(DKDevice *)provider

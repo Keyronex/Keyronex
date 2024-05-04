@@ -27,11 +27,23 @@ struct pci_dev_info {
 	bool edge;
 };
 
-
 #if defined(__arch64__) || defined (__amd64__)
+@protocol DKPCIDeviceDelegate
+
+- (void)capabilityEnumeratedAtOffset:(voff_t)capOffset;
+
+@end
+
 @interface PCIBus : DKDevice {
 	uacpi_namespace_node *acpiNode;
 }
+
++ (void)enableBusMasteringForInfo:(struct pci_dev_info *)info;
++ (void)setMemorySpaceForInfo:(struct pci_dev_info *)info enabled:(BOOL)enabled;
++ (void)enumerateCapabilitiesForInfo:(struct pci_dev_info *)info
+			    delegate:(DKDevice<DKPCIDeviceDelegate> *)delegate;
++ (paddr_t)getBar:(int)i forInfo:(struct pci_dev_info *)info;
++ (void)setInterruptsEnabled:(BOOL)enabled forInfo:(struct pci_dev_info *)info;
 
 - (instancetype)initWithProvider:(DKDevice *)provider
 			acpiNode:(uacpi_namespace_node *)node
@@ -55,5 +67,9 @@ void pci_writew(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint16_t value);
 void pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint32_t value);
+
+#define PCIINFO_CFG_READ(WIDTH, PCIINFO, OFFSET)                         \
+	pci_read##WIDTH((PCIINFO)->seg, (PCIINFO)->bus, (PCIINFO)->slot, \
+	    (PCIINFO)->fun, OFFSET)
 
 #endif /* KRX_DEV_PCIBUS_H */
