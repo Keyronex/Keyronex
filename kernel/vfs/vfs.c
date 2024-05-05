@@ -21,6 +21,7 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 
 	vnode->type = type;
 	vnode->fs_data = fs_data;
+	vnode->ops = ops;
 	vnode->vfs = vfs;
 	vnode->rwlock = rwlock;
 	vnode->paging_rwlock = paging_rwlock;

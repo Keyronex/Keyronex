@@ -25,6 +25,9 @@ int isupper(int c);
 int islower(int c);
 int isxdigit(int c);
 int tolower(int c);
+int toupper(int c);
+
+#define isalnum(c__) (isalpha(c__) || isdigit(c__))
 
 /* stdlib.h */
 int atoi(const char *s);

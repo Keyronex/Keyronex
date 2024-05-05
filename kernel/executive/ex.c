@@ -1,5 +1,6 @@
 #include "kdk/executive.h"
 #include "kdk/object.h"
+#include "kdk/vfs.h"
 #include "ntcompat/ntcompat.h"
 #include "vm/vmp.h"
 
@@ -45,6 +46,11 @@ ex_init(void *)
 
 	test_anon();
 #endif
+
+	namecache_handle_t hdl = nchandle_retain(root_nch), out;
+
+	int r = vfs_lookup(hdl, &out, "A", 0);
+	kfatal("R: %d, hdl.nc: %p\n", r, out.nc);
 
 	ps_exit_this_thread();
 }

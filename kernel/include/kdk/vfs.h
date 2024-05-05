@@ -149,4 +149,23 @@ struct namecache *nc_release(struct namecache *nc);
 /*! @brief Look up a filename within a retained, UNLOCKED namecache. */
 int nc_lookup(struct namecache *nc, struct namecache **out, const char *name);
 
+void nc_make_root(vfs_t *vfs, vnode_t *vnode);
+
+static inline namecache_handle_t
+nchandle_retain(namecache_handle_t in)
+{
+	nc_retain(in.nc);
+	return in;
+}
+
+static inline namecache_handle_t
+nchandle_release(namecache_handle_t in)
+{
+	nc_release(in.nc);
+	return (namecache_handle_t) { NULL, NULL };
+}
+
+
+extern namecache_handle_t root_nch;
+
 #endif /* KRX_KDK_VFS_H */

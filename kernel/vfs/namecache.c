@@ -173,6 +173,7 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 		vnode_t *vnode;
 		found = kmem_alloc(sizeof(namecache_t));
 
+		ke_mutex_init(&found->mutex);
 		found->name = strdup(name);
 		found->name_len = key.name_len;
 		found->key = key.key;
@@ -187,6 +188,8 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 			found->vp = NULL;
 			TAILQ_INSERT_TAIL(&lru_queue, found, lru_entry);
 			n_inactive++;
+			ke_mutex_release(&nc->mutex);
+			return -ENOENT;
 		} else {
 			found->refcnt = 1;
 			found->vp = vnode;
@@ -201,4 +204,22 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 	ke_mutex_release(&nc->mutex);
 
 	return 0;
+}
+
+void
+nc_make_root(vfs_t *vfs, vnode_t *vnode)
+{
+	namecache_t *ncp = kmem_alloc(sizeof(namecache_t));
+
+	ke_mutex_init(&ncp->mutex);
+	ncp->name = NULL;
+	ncp->name_len = 0;
+	ncp->key = 0;
+	ncp->refcnt = 1;
+	RB_INIT(&ncp->entries);
+	RB_INSERT(namecache_rb, &ncp->entries, ncp);
+	ncp->vp = vnode;
+
+	root_nch.nc = ncp;
+	root_nch.vfs = vfs;
 }

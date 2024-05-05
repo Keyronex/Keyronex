@@ -61,6 +61,11 @@ tolower(int c)
 	return c;
 }
 
+int toupper(int c)
+{
+	return (c >= 'a' && c <= 'z' ? 'A' + (c - 'a') : c);
+}
+
 /* stdlib.h */
 
 /*

@@ -131,9 +131,6 @@ dpc_handler(void *arg)
 		break;
 	}
 
-	for (;;)
-		;
-
 	return self;
 }
 

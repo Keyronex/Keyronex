@@ -70,6 +70,8 @@ struct dos_node {
 	vnode_t *vnode;
 	/*! rwlock for data contents, size, etc. */
 	kmutex_t rwlock;
+	/*! paging I/O rwlock */
+	kmutex_t paging_rwlock;
 	/*! the parent directory of this node (or NULL if root). retained */
 	vnode_t *parent;
 	/*! disk address of containing short dirent */
@@ -85,6 +87,7 @@ struct dos_node {
 };
 
 static int counter = 0;
+static struct vnode_ops dosfs_vnops;
 
 static int
 dos_node_namecmp(struct dos_node_namekey *a, struct dos_node_namekey *b)
@@ -118,7 +121,8 @@ cluster_value_is_eof(struct dosfs_state *state, uint32_t value)
 static uint32_t
 read_fat(struct dosfs_state *fs, io_blkoff_t N)
 {
-	io_blkoff_t FATOffset, ThisFATSecNum, ThisFATEntOffset, ClusEntryVal;
+	io_blkoff_t FATOffset, ThisFATSecNum, ThisFATEntOffset,
+	    ClusEntryVal = -1 /* silences -Wmaybe-unitialized */;
 	buf_t *buf;
 
 	if (fs->type == kFAT12)
@@ -358,10 +362,15 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
     struct Dir *dir)
 {
 	struct dos_node *node = kmem_alloc(sizeof(*node)), *parent_node;
+	vtype_t vtype;
+
 	ke_mutex_init(&node->rwlock);
+	ke_mutex_init(&node->paging_rwlock);
+
 	if (name == NULL || parent == NULL) {
 		kassert(name == NULL && parent == NULL);
 		node->is_root = true;
+		vtype = VDIR;
 	} else {
 		kassert(name != NULL && parent != NULL);
 		parent_node = VTOD(parent);
@@ -369,11 +378,9 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 		node->key.hash = strhash32(name, strlen(name));
 		RB_INSERT(dos_node_name_rb, &parent_node->entries_rb,
 		    &node->key);
+		vtype = dir->DIR_Attr & ATTR_DIRECTORY ? VDIR : VREG;
 	}
-	node->vnode = vnode_alloc();
-	node->vnode->type = false;
-	node->vnode->fs_data = (uintptr_t)node;
-	node->vnode->vfs = &fs->vfs;
+
 	if (dir != NULL) {
 		if (fs->type == kFAT32) {
 			uint32_t rootCluster =
@@ -389,7 +396,12 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 		DKDevLog(fs->fsdev, "FIRST KLUSTER FOR NODE %p %s: %llx;\n",
 		    node, dir->DIR_Name, node->first_cluster);
 #endif
-	}
+	} else
+		kassert(node->is_root);
+
+	node->vnode = vnode_new(&fs->vfs, vtype, &dosfs_vnops, &node->rwlock,
+	    &node->paging_rwlock, (uintptr_t)node);
+
 	return node->vnode;
 }
 
@@ -416,15 +428,16 @@ ucs2_to_utf8(leu16_t *ucs2, char *utf8, size_t ucs2_len, bool *terminated)
 }
 
 static enum {
-	kDirentProcessingContinue,
+	kDirentProcessingContinueLFN,
+	kDirentProcessingSkip,
 	kDirentProcessingStop,
-	kDirentProcessed
+	kDirentProcessed,
 } processDirent(struct Dir *dir, char *lfn_str, size_t *lfn_str_max)
 {
 	if ((uint8_t)dir->DIR_Name[0] == 0x0)
 		return kDirentProcessingStop;
 	else if ((uint8_t)dir->DIR_Name[0] == 0xe5)
-		return kDirentProcessingContinue;
+		return kDirentProcessingSkip;
 	else if (dir->DIR_Attr == ATTR_LONG_NAME) {
 		struct LongDir *ldir = (void *)dir;
 		io_off_t ldir_off = 13 * ((ldir->LDIR_Ord & 0x3f) - 1);
@@ -451,11 +464,12 @@ static enum {
 	finish_lfn:
 		if ((lfn_off + ldir_off) > *lfn_str_max)
 			*lfn_str_max = lfn_off + ldir_off;
-		return kDirentProcessingContinue;
+		return kDirentProcessingContinueLFN;
 	} else
 		return kDirentProcessed;
 }
 
+#if 1
 void
 printdir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 {
@@ -501,7 +515,9 @@ printdir(struct dosfs_state *fs, vnode_t *vn, io_off_t offset)
 		dir = &((struct Dir *)buf->data)[clus_dir];
 
 		switch (processDirent(dir, lfn_str, &lfn_str_max)) {
-		case kDirentProcessingContinue:
+
+		case kDirentProcessingSkip:
+		case kDirentProcessingContinueLFN:
 			offset += sizeof(struct Dir);
 			continue;
 
@@ -530,19 +546,42 @@ out:
 	buf_release(buf);
 	ke_mutex_release(&dnode->rwlock);
 }
+#endif
+
+void
+to_sfn(const char *name, char *sfn)
+{
+	const char *dot = strrchr(name, '.');
+	int name_len = (dot == NULL) ? strlen(name) : (dot - name);
+	int ext_len = (dot == NULL) ? 0 : strlen(dot + 1);
+
+	memset(sfn, ' ', 11);
+
+	for (int i = 0; i < name_len && i < 8; i++) {
+		sfn[i] = toupper(name[i]);
+	}
+
+	for (int i = 0; i < ext_len && i < 3; i++) {
+		sfn[8 + i] = toupper(dot[i + 1]);
+	}
+}
 
 vnode_t *
 lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 {
+	char sfn[11];
 	char lfn_str[260] = { 0 };
 	size_t lfn_str_max = 0;
 	io_off_t offset = 0;
 	buf_t *buf = NULL;
 	struct dos_node *dnode = VTOD(dvn);
+	bool in_lfn = false;
 
 	if (dnode->is_root && strcmp(name, "..") == 0) {
 		return dnode->parent;
 	}
+
+	to_sfn(name, sfn);
 
 	ke_wait(&dnode->rwlock, "dosfs::lookup:inode->rwlock", false, false,
 	    -1);
@@ -561,6 +600,7 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 	while (true) {
 		size_t clus_dir;
 		struct Dir *dir;
+		int ret;
 
 		clus_dir = (offset / sizeof(struct Dir)) %
 		    fs->bytes_per_cluster;
@@ -572,8 +612,14 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 		}
 
 		dir = &((struct Dir *)buf->data)[clus_dir];
-		switch (processDirent(dir, lfn_str, &lfn_str_max)) {
-		case kDirentProcessingContinue:
+		ret = processDirent(dir, lfn_str, &lfn_str_max);
+		switch (ret) {
+		case kDirentProcessingContinueLFN:
+			in_lfn = true;
+			/* fall through */
+
+		case kDirentProcessingSkip:
+			in_lfn = false;
 			offset += sizeof(struct Dir);
 			continue;
 
@@ -581,17 +627,31 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 			goto out;
 
 		default:;
-			/* epsilon */
+			/* fall otu */
 		}
 
-		if (lfn_str[0] != '\0' && strcmp(lfn_str, name) == 0) {
+		kassert(ret == kDirentProcessed);
+
+		if (in_lfn && lfn_str[0] != '\0' &&
+		    strcmp(lfn_str, name) == 0) {
 			vnode_t *vnode = dosfs_vnode_make(fs, dvn, lfn_str,
 			    dir);
 			ke_mutex_release(&dnode->rwlock);
 			buf_release(buf);
 			return vnode;
+		} else if (memcmp(sfn, dir->DIR_Name, 11) == 0) {
+			/*
+			 * note: not good enough, if someone looks up by LFN and
+			 * then by SFN, then? need to be sure of no duplicate
+			 * vnode.
+			 */
+			vnode_t *vnode = dosfs_vnode_make(fs, dvn, name, dir);
+			ke_mutex_release(&dnode->rwlock);
+			buf_release(buf);
+			return vnode;
 		}
 
+		in_lfn = false;
 		offset += sizeof(struct Dir);
 	}
 
@@ -616,6 +676,20 @@ dos_readdir(vnode_t *dvn, void *buf, size_t nbyte, size_t bytes_read,
 	kfatal("Implement me\n");
 }
 
+int
+dos_lookup(vnode_t *dvn, vnode_t **out, const char *name)
+{
+	struct dos_node *dnode = VTOD(dvn);
+	struct dosfs_state *fs = (void *)dvn->vfs->device;
+
+	vnode_t *vn = lookup(fs, dvn, name);
+	if (vn == NULL)
+		return -1;
+
+	*out = vn;
+	return 0;
+}
+
 static void
 dos_extend_locked(struct dosfs_state *fs, vnode_t *vn, size_t size)
 {
@@ -631,7 +705,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 	kassert(offset % fs->bytes_per_cluster == 0);
 
-	ke_wait(&dnode->rwlock, "dosfs::read:inode->rwlock", false, false, -1);
+	ke_wait(&dnode->paging_rwlock, "dosfs::read:inode->paging_rwlock",
+	    false, false, -1);
 
 	if (dnode->size < offset + bytes)
 		dos_extend_locked(fs, vn, offset + bytes);
@@ -693,7 +768,7 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		current_cluster = next_cluster;
 	}
 
-	ke_mutex_release(&dnode->rwlock);
+	ke_mutex_release(&dnode->paging_rwlock);
 }
 
 - (instancetype)initWithState:(struct dosfs_state *)state
@@ -721,9 +796,13 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		state->type == kFAT16 ? 16 :
 					32);
 
-#if 0
+	state->vfs.device = (void *)state;
+
 	printdir(m_state, m_state->root, 0);
 
+#if 0
+
+#if 0
 	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
 	kprintf("VN: %p\n", vn);
 	dos_rw(m_state, vn, 0, 2048 * 4, NULL, false);
@@ -751,30 +830,51 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	sect.file.vnode = vn;
 	vm_page_alloc(&vpml4, 0, kPageUseVPML4, false);
 	sect.vpml4 = vmp_page_paddr(vpml4);
+	vn->object = &sect;
 
 	state->vfs.device = self;
 
 #if 1
+	char *buf = kmem_alloc(PGSIZE);
+	for (int i = 0; i < 3; i++) {
+		kprintf("round %d\n", i);
+		ubc_io(vn, (vaddr_t)buf, 1024 * 256 * i, PGSIZE, false);
+		buf[100] = '\0';
+		kprintf("We read: <%s>\n", buf);
+	}
+	vmp_pages_dump();
+	//for (;;)
+//		;
+#else
 	extern vm_procstate_t kernel_procstate;
-	vaddr_t mapaddr = 0xd0000000;
-	vm_ps_map_object_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 1,
-	    kVMAll, kVMAll, true, false, true);
+	vaddr_t mapaddr = KVM_DYNAMIC_BASE;
+	vm_ps_map_object_view(&kernel_procstate, &sect, &mapaddr, 4096 * 32, 0,
+	    kVMAll, kVMAll, true, true, true);
 	kprintf("Testing mapped read (at 0x%zx)\n", mapaddr);
 
-	for (int i = 0; i < 16; i++) {
+	for (int i = 0; i < 3; i++) {
 		char str[80];
 		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
 		str[79] = '\0';
 		kprintf("Success. Extract: %s\n", str);
 	}
 
-	kprintf("\n\n!!! Testing again\n");
-		for (int i = 0; i < 4; i++) {
+	kprintf("\nRound 2\n");
+	for (int i = 0; i < 2; i++) {
 		char str[80];
-		kprintf("Testing %d\n", i);
 		memcpy(str, (void *)(mapaddr + i * PGSIZE), 79);
 		str[79] = '\0';
 		kprintf("Success. Extract: %s\n", str);
+	}
+
+	kprintf("\n\n\nTesting CoW write\n");
+	for (int i = 0; i < 3; i++) {
+		kprintf("write...");
+		memcpy((void *)(mapaddr + i * PGSIZE), "DIRT", 4);
+		*(char *)(mapaddr + i * PGSIZE + 25) = '\0';
+		kprintf("read...");
+		kprintf("Success. Extract: %s\n",
+		    (char *)(mapaddr + i * PGSIZE));
 	}
 
 	vmp_pages_dump();
@@ -782,6 +882,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	for (;;)
 		;
 #endif
+#endif
+	nc_make_root(&m_state->vfs, m_state->root);
 
 	return self;
 }
@@ -865,6 +967,7 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 @end
 
-struct vnode_ops dos_vnops = {
+static struct vnode_ops dosfs_vnops = {
 	.readdir = dos_readdir,
+	.lookup = dos_lookup,
 };

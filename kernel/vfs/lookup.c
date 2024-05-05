@@ -58,22 +58,6 @@ split_path(struct lookup *out, char *path, struct namepart *after)
 	return 0;
 }
 
-extern namecache_handle_t root_nch;
-
-static namecache_handle_t
-nchandle_retain(namecache_handle_t in)
-{
-	nc_retain(in.nc);
-	return in;
-}
-
-static namecache_handle_t
-nchandle_release(namecache_handle_t in)
-{
-	nc_release(in.nc);
-	return (namecache_handle_t) { NULL, NULL };
-}
-
 int
 vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
     enum lookup_flags flags)
