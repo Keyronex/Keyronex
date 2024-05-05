@@ -33,10 +33,9 @@ typedef struct kspinlock {
 	unsigned char flag;
 } kspinlock_t;
 
-#define KSPINLOCK_INITIALISER \
-	{                     \
-		0             \
-	}
+#define KSPINLOCK_INITIALISER {	\
+	0 			\
+}
 
 enum kreschedule_reason {
 	kRescheduleReasonNone,
@@ -107,6 +106,14 @@ typedef struct kdispatchheader {
 	int signalled;
 } kdispatchheader_t;
 
+
+#define KDISPATCHHEADER_INITIALIZER(HDR_, TYPE_, SIGNALED_) { \
+	.spinlock = KSPINLOCK_INITIALISER,	\
+	.type = TYPE_,				\
+	.signalled = SIGNALED_,			\
+	.waitblock_queue = TAILQ_HEAD_INITIALIZER((HDR_).waitblock_queue) \
+}
+
 typedef struct kevent {
 	kdispatchheader_t hdr;
 } kevent_t;
@@ -121,6 +128,11 @@ typedef struct kmutex {
 	/*! thread currently owning the mutex */
 	struct kthread *owner;
 } kmutex_t;
+
+#define KMUTEX_INITIALIZER(KMUTEX_) {		\
+	.hdr = KDISPATCHHEADER_INITIALIZER(((KMUTEX_).hdr), kDispatchMutex, 1), \
+	.owner = NULL, \
+}
 
 /*!
  * Deferred Procedure Call
@@ -479,6 +491,7 @@ void ke_mutex_release(kmutex_t *mutex);
  * @brief Assert the mutex is held by the current thread.
  */
 #define ke_mutex_assert_held(MUTEX) (kassert((MUTEX)->owner == curthread()))
+
 
 /*!
  * @brief Initialise a kernel semaphore.
