@@ -13,7 +13,6 @@ kernel_sources += files(
 	'buf.c',
 	'iop.m',
 	'setup_ddk.m',
-	'vfs.c',
 )
 
 kernel_sources += files(

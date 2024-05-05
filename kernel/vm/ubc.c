@@ -162,7 +162,7 @@ put_window(ubc_window_t *window)
 		TAILQ_INSERT_TAIL(&ubc_lruqueue, window, queue_entry);
 }
 
-void
+int
 ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size, bool write)
 {
 	size_t done = 0;
@@ -171,7 +171,7 @@ ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size, bool write)
 	 * The vnode general rwlock is acquired to keep file size from
 	 * manipulation during the I/O.
 	 */
-	KE_WAIT(&vnode->rwlock, false, false, -1);
+	KE_WAIT(vnode->rwlock, false, false, -1);
 
 	while (done != size) {
 		io_off_t window_off = ROUNDDOWN(off + done, UBC_WINDOW_SIZE);
@@ -202,7 +202,9 @@ ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size, bool write)
 		done += size_from_window;
 	}
 
-	ke_mutex_release(&vnode->rwlock);
+	ke_mutex_release(vnode->rwlock);
+
+	return done;
 }
 
 void

@@ -251,3 +251,52 @@ snprintf(char *str, size_t size, const char *format, ...)
 	va_end(ap);
 	return r;
 }
+
+size_t
+strspn(const char *s1, const char *s2)
+{
+	size_t ret = 0;
+	while (*s1 && strchr(s2, *s1++))
+		ret++;
+	return ret;
+}
+
+size_t
+strcspn(const char *s1, const char *s2)
+{
+	size_t ret = 0;
+	while (*s1)
+		if (strchr(s2, *s1))
+			return ret;
+		else
+			s1++, ret++;
+	return ret;
+}
+
+char *
+strtok_r(char *str, const char *delim, char **nextp)
+{
+	char *ret;
+
+	if (str == NULL) {
+		str = *nextp;
+	}
+
+	str += strspn(str, delim);
+
+	if (*str == '\0') {
+		return NULL;
+	}
+
+	ret = str;
+
+	str += strcspn(str, delim);
+
+	if (*str) {
+		*str++ = '\0';
+	}
+
+	*nextp = str;
+
+	return ret;
+}
