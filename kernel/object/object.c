@@ -131,24 +131,28 @@ void
 obj_release(void *object)
 {
 	struct object_header *hdr = header_from_object(object);
-	uint32_t refcnt = __atomic_load_n(&hdr->refcount, __ATOMIC_SEQ_CST);
 
-	while (refcnt != 1) {
-		uint32_t new_refcnt = refcnt - 1;
-
-		if (__atomic_compare_exchange_n(&hdr->refcount, &refcnt,
-			new_refcnt, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
-			return;
-	}
-
-	/*
-	 * refcnt is 1 and should become 0 - call the release routine of the
-	 * object, or schedule it in a worker thread if IPL is >= DPC
-	 */
-	if (splget() >= kIPLDPC) {
-		kfatal("add support for deferred release\n");
-	} else {
-		kfatal("implement object release\n");
+	while (true) {
+		uint32_t old_count = __atomic_load_n(&hdr->refcount,
+		    __ATOMIC_ACQUIRE);
+		if (old_count > 1) {
+			if (__atomic_compare_exchange_n(&hdr->refcount,
+				&old_count, old_count - 1, false,
+				__ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+				return;
+			}
+		} else if (old_count == 1) {
+			if (splget() >= kIPLDPC) {
+				kfatal("just call obj_release in a worker");
+			} else {
+#if 0
+				if (do the release(obj))
+					return;
+#endif
+			}
+		} else {
+			kassert("unreached\n");
+		}
 	}
 }
 
