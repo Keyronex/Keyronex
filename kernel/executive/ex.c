@@ -39,13 +39,12 @@ ex_init(void *)
 #endif
 	ddk_autoconf();
 
-#if 1
+#if 0
 	vmp_pages_dump();
 	obj_dump();
-#endif
-
 
 	test_anon();
+#endif
 
 	ps_exit_this_thread();
 }
