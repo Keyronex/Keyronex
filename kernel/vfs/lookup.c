@@ -85,8 +85,6 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 	     np = TAILQ_NEXT(np, tailq_entry)) {
 		namecache_handle_t next_nch;
 
-		next_nch.vfs = nch.vfs;
-
 		if (TAILQ_NEXT(np, tailq_entry) == NULL &&
 		    flags & kLookup2ndLast)
 			break;
@@ -94,66 +92,38 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 		if (strcmp(np->name, ".") == 0) {
 			/* note: ought to check if is dir */
 			continue;
-		}
-#if 0
-		else if (strcmp(np->name, "..") == 0) {
-			/* note: shuld lock mount_lock and probably loop */
-			if (vn->isroot && vn->vfsp->vnodecovered != NULL) {
-				next_vn = obj_direct_retain(
-				    vn->vfsp->vnodecovered);
-				obj_direct_release(vn);
-				vn = next_vn;
+		} else if (strcmp(np->name, "..") == 0) {
+			/* note: figure out mount locking... */
+			while (nch.nc == nch.vfs->root_ncp) {
+				namecache_handle_t next = nch.vfs->nchcovered;
+				nchandle_retain(next);
+				nchandle_release(nch);
+				nch = next;
 			}
 		}
-#endif
+
+		next_nch.vfs = nch.vfs;
 
 		r = nc_lookup(nch.nc, &next_nch.nc, np->name);
 		if (r != 0)
 			break;
 
-#if 0
-		/*
-		 * note: later we'll add a kLookupNoFollowFinalMount also
-		 * for unmount()
-		 */
-		if (next_vn->vfsmountedhere != NULL) {
+		/* note: figure out mount locking.. */
+		while (next_nch.nc->n_mounts_over > 0) {
+			vfs_t *vfs;
 
-			while (next_vn->vfsmountedhere != NULL) {
-				vnode_t *root;
-				vfs_t *vfs;
-				ipl_t ipl;
-				int r;
-
-				ipl = ke_spinlock_acquire(&mount_lock);
-				vfs = next_vn->vfsmountedhere;
-				if (vfs)
-					vfs->refcnt++;
-				ke_spinlock_release(&mount_lock, ipl);
-
-				if (vfs == NULL)
-					break;
-
-				r = next_vn->vfsmountedhere->ops->root(
-				    next_vn->vfsmountedhere, &root);
-
-				/*
-				 * todo: create a vfs_release() function
-				 * if refcnt now drops to zero, we could proceed
-				 * with a temporarily-delayed unmounting
-				 */
-				__atomic_sub_fetch(&vfs->refcnt, 1,
-				    __ATOMIC_SEQ_CST);
-
-				if (r < 0) {
-					obj_direct_release(next_vn);
-					goto out;
-				}
-
-				obj_direct_release(next_vn);
-				next_vn = root;
-			}
+			vfs = vfs_find(nch);
+			if (vfs != NULL) {
+				namecache_handle_t vfsroot;
+				vfsroot.nc = nc_retain(vfs->root_ncp);
+				vfsroot.vfs = vfs;
+				nchandle_release(next_nch);
+				next_nch = vfsroot;
+			} else
+				break;
 		}
 
+#if 0
 		if (next_vn->type == VLNK &&
 		    !(TAILQ_NEXT(np, tailq_entry) == NULL &&
 			flags & kLookupNoFollowFinalSymlink)) {

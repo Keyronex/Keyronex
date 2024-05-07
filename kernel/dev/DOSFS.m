@@ -366,12 +366,14 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 
 	ke_mutex_init(&node->rwlock);
 	ke_mutex_init(&node->paging_rwlock);
+	RB_INIT(&node->entries_rb);
 
 	if (name == NULL || parent == NULL) {
 		kassert(name == NULL && parent == NULL);
 		node->is_root = true;
 		vtype = VDIR;
 	} else {
+		node->is_root = false;
 		kassert(name != NULL && parent != NULL);
 		parent_node = VTOD(parent);
 		node->key.filename = strdup(name);

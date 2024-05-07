@@ -5,12 +5,46 @@
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 
+/*!
+ * These are some initial notes on namecaches. Some of this should go in a big
+ * theory statement instead, and needs to be written about in the Keyronex book.
+ *
+ * A namecache represents an element in the filesystem namespace - a file,
+ * folder, device, etc. They hold a pointer to a parent namecache and an RB tree
+ * of child namecaches.
+ *
+ * Namecaches are reference-counted. While there is a reference count greater
+ * than 1, they may not be freed. When reference count is at 0, the namecache
+ * is entered onto an LRU list; it may be dropped when it reaches the end of
+ * that list.
+ *
+ * The pointer to the parent is a retaining pointer; the RB tree of children are
+ * weak pointers.
+ *
+ * A general parent-before-child lock ordering exists along with a pointer
+ * comparison (lower first) ordering for the acquisition of 'sibling' locks.
+ *
+ * Rough notes below to be structured:
+ *
+ * namecaches retain their vnodes.
+ *
+ * the vnode pointer may currently only transition once - from NULL to non-NULL.
+ * thereafter it is as durable as the namecache itself.
+ *
+ * name and key may change (e.g. with rename) ofc under tight locking
+ * constraints, i.e. parent locked and nc locked (? should we create new
+ * namecaches instead? does it matter?)
+ */
+
+struct ncstat {
+	size_t inactive;
+	size_t max_inactive;
+} ncstat = { 0, 256 };
+
 static int64_t nc_cmp(struct namecache *x, struct namecache *y);
 static void nc_trim_lru(void);
 RB_GENERATE(namecache_rb, namecache, rb_entry, nc_cmp);
 
-static size_t n_inactive = 0;
-static size_t max_inactive = 256;
 static kmutex_t lru_mutex = KMUTEX_INITIALIZER(lru_mutex);
 static struct namecache_tailq lru_queue = TAILQ_HEAD_INITIALIZER(lru_queue);
 namecache_handle_t root_nch;
@@ -80,10 +114,10 @@ nc_release_internal(struct namecache *ncp, bool nested)
 		}
 		kassert(ncp->refcnt == 0);
 		TAILQ_INSERT_TAIL(&lru_queue, ncp, lru_entry);
-		n_inactive++;
+		ncstat.inactive++;
 		if (!nested) {
 			ke_mutex_release(&ncp->mutex);
-			if (n_inactive > max_inactive)
+			if (ncstat.inactive > ncstat.max_inactive)
 				nc_trim_lru();
 			ke_mutex_release(&lru_mutex);
 		}
@@ -99,7 +133,7 @@ nc_trim_lru(void)
 	struct namecache *ncp, *parent;
 
 loop:
-	if (n_inactive <= max_inactive)
+	if (ncstat.inactive <= ncstat.max_inactive)
 		return;
 
 	ncp = TAILQ_FIRST(&lru_queue);
@@ -178,6 +212,7 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 		found->name_len = key.name_len;
 		found->key = key.key;
 		found->parent = nc_retain(nc);
+		found->n_mounts_over = 0;
 		RB_INIT(&found->entries);
 		RB_INSERT(namecache_rb, &nc->entries, found);
 
@@ -187,12 +222,15 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 			found->refcnt = 0;
 			found->vp = NULL;
 			TAILQ_INSERT_TAIL(&lru_queue, found, lru_entry);
-			n_inactive++;
+			ncstat.inactive++;
 			ke_mutex_release(&nc->mutex);
 			return -ENOENT;
 		} else {
 			found->refcnt = 1;
 			found->vp = vnode;
+			ke_mutex_release(&nc->mutex);
+			*out = found;
+			return 0;
 		}
 	} else if (found->vp == NULL) {
 		/* negative entry */
@@ -202,6 +240,8 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 
 	nc_retain(found);
 	ke_mutex_release(&nc->mutex);
+
+	*out = found;
 
 	return 0;
 }
@@ -216,10 +256,70 @@ nc_make_root(vfs_t *vfs, vnode_t *vnode)
 	ncp->name_len = 0;
 	ncp->key = 0;
 	ncp->refcnt = 1;
+	ncp->n_mounts_over = 0;
 	RB_INIT(&ncp->entries);
-	RB_INSERT(namecache_rb, &ncp->entries, ncp);
 	ncp->vp = vnode;
 
 	root_nch.nc = ncp;
 	root_nch.vfs = vfs;
+}
+
+enum nodeKind { kRoot, kChild, kLastChild };
+
+static void
+nc_dump_internal(namecache_handle_t nch, char *prefix, enum nodeKind kind,
+    bool mountpoint)
+{
+#if 0
+	const char *branch = "+-";
+	const char *rcorner = "\\-";
+	const char *vline = "| ";
+#else
+	const char *branch = "\e(0\x74\x71\e(B";  /* ├─ */
+	const char *rcorner = "\e(0\x6d\x71\e(B"; /* └─ */
+	const char *vline = "\e(0\x78\e(B";	  /* │ */
+#endif
+	namecache_t *child_ncp;
+	char *newPrefix;
+
+	if (kind == kRoot) {
+		/* epsilon */
+		newPrefix = prefix;
+	}
+	if (kind == kLastChild) {
+		kprintf("%s%s", prefix, rcorner);
+		kmem_asprintf(&newPrefix, "%s%s", prefix, "  ");
+	} else if (kind == kChild) {
+		kprintf("%s%s", prefix, branch);
+		kmem_asprintf(&newPrefix, "%s%s ", prefix, vline);
+	}
+
+	ke_wait(&nch.nc->mutex, "nc_dump", false, false, -1);
+
+	kprintf("%s [rc %d]\n", nch.nc->name == NULL ? "/" : nch.nc->name,
+	    nch.nc->refcnt);
+
+	RB_FOREACH (child_ncp, namecache_rb, &nch.nc->entries) {
+		namecache_handle_t child_nch = { child_ncp, nch.vfs };
+
+		kassert(child_ncp != nch.nc);
+
+		nc_dump_internal(child_nch, newPrefix,
+		    RB_NEXT(namecache_rb, &nch.nch->entries, child_ncp) ?
+			kChild :
+			kLastChild,
+		    false);
+	}
+
+	ke_mutex_release(&nch.nc->mutex);
+
+	if (newPrefix != prefix) {
+		// kmem_strfree(prefix);
+	}
+}
+
+void
+nc_dump(void)
+{
+	nc_dump_internal(root_nch, "", kRoot, true);
 }

@@ -49,7 +49,17 @@ ex_init(void *)
 
 	namecache_handle_t hdl = nchandle_retain(root_nch), out;
 
-	int r = vfs_lookup(hdl, &out, "A", 0);
+	kprintf("Before any lookups\n");
+	nc_dump();
+
+	int r = vfs_lookup(hdl, &out, "A/B/C/D.txt", 0);
+	kprintf("\nAfter looking up A/B/C/D.txt (ret %d)...\n", r);
+	nc_dump();
+
+	r = vfs_lookup(hdl, &out, "E/F/G.TXT", 0);
+	kprintf("\nAfter looking up E/F/G.TXT (ret %d)...\n", r);
+	nc_dump();
+
 	kfatal("R: %d, hdl.nc: %p\n", r, out.nc);
 
 	ps_exit_this_thread();

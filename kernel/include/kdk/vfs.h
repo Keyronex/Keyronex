@@ -8,6 +8,30 @@
 
 RB_HEAD(ubc_window_tree, ubc_window);
 
+/* TODO: make away with `uint8_t name_len`; it duplicates part of RB key. */
+typedef struct namecache {
+	kmutex_t mutex;			  /*!< namespace lock */
+	uint32_t refcnt;		  /*!< count of retaining references */
+	uint8_t name_len;		  /*!< length of name, max 255 */
+	uint8_t n_mounts_over;		  /*!< count of mounts made on this */
+	uint32_t unused : 24;		  /*!< can become flags in the future */
+	TAILQ_ENTRY(namecache) lru_entry; /*!< linkage in LRU list*/
+	RB_ENTRY(namecache) rb_entry;	  /*!< linkage in parent->entries */
+	RB_HEAD(namecache_rb, namecache) entries; /*!< (m) names in directory */
+	struct namecache *parent; /*!< (l to read) parent directory namecache */
+	struct vnode *vp;	  /*!< underlying vnode or NULL if a negative */
+	char *name;		  /*!< filename */
+	uint64_t key;		  /*!< rb key: len << 32 | hash(name) */
+	uint64_t unused2; /*!< could use this space to store an inline name? */
+} namecache_t;
+
+TAILQ_HEAD(namecache_tailq, namecache);
+
+typedef struct namecache_handle {
+	namecache_t *nc;
+	struct vfs *vfs;
+} namecache_handle_t;
+
 typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK, VFIFO } vtype_t;
 
 typedef struct vattr {
@@ -32,65 +56,17 @@ typedef struct vnode {
 } vnode_t;
 
 typedef struct vfs {
+	/*! entry on vfs hash */
+	LIST_ENTRY(vfs) vfs_hash_entry;
+	/*! root namecache node */
+	namecache_t *root_ncp;
+	/*! namecache handle over which the mount was made, if not root */
+	namecache_handle_t nchcovered;
 	/*! the filesystem device */
 	DKDevice *device;
+	/*! operations vector */
 	struct vfs_ops *ops;
 } vfs_t;
-
-/*!
- * These are some initial notes on namecaches. Some of this should go in a big
- * theory statement instead, and needs to be written about in the Keyronex book.
- *
- * A namecache represents an element in the filesystem namespace - a file,
- * folder, device, etc. They hold a pointer to a parent namecache and an RB tree
- * of child namecaches.
- *
- * Namecaches are reference-counted. While there is a reference count greater
- * than 1, they may not be freed. When reference count is at 0, the namecache
- * is entered onto an LRU list; it may be dropped when it reaches the end of
- * that list.
- *
- * The pointer to the parent is a retaining pointer; the RB tree of children are
- * weak pointers.
- *
- * A general parent-before-child lock ordering exists along with a pointer
- * comparison (lower first) ordering for the acquisition of 'sibling' locks.
- *
- * Rough notes below to be structured:
- *
- * namecaches retain their vnodes.
- *
- * the vnode pointer may currently only transition once - from NULL to non-NULL.
- * thereafter it is as durable as the namecache itself.
- *
- * name and key may change (e.g. with rename) ofc under tight locking
- * constraints, i.e. parent locked and nc locked
- *
- * Locking:
- * 	(m) => namecache::lock
- * 	(l) => namecache_lru_lock
- */
-typedef struct namecache {
-	kmutex_t mutex;			  /*!< namespace lock */
-	uint32_t refcnt;		  /*!< count of retaining references */
-	uint8_t name_len;		  /*!< length of name, max 255 */
-	uint32_t unused : 24;		  /*!< can become flags in the future */
-	TAILQ_ENTRY(namecache) lru_entry; /*!< linkage in LRU list*/
-	RB_ENTRY(namecache) rb_entry;	  /*!< linkage in parent->entries */
-	RB_HEAD(namecache_rb, namecache) entries; /*!< (m) names in directory */
-	struct namecache *parent; /*!< (l to read) parent directory namecache */
-	struct vnode *vp;	  /*!< underlying vnode or NULL if a negative */
-	char *name;		  /*!< filename */
-	uint64_t key;		  /*!< rb key: len << 32 | hash(name) */
-	uint64_t unused2; /*!< could use this space to store an inline name? */
-} namecache_t;
-
-TAILQ_HEAD(namecache_tailq, namecache);
-
-typedef struct namecache_handle {
-	namecache_t *nc;
-	vfs_t *vfs;
-} namecache_handle_t;
 
 struct vnode_ops {
 	io_off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte,
@@ -136,9 +112,10 @@ enum lookup_flags {
 	kLookup2ndLast = 1 << 2,
 };
 
-/*!
- * @brief Look up a pathname.
- */
+/*! Find the VFS mounted over a given nch. */
+vfs_t *vfs_find(namecache_handle_t nch);
+
+/*! @brief Look up a pathname. */
 int vfs_lookup(namecache_handle_t start, namecache_handle_t *out,
     const char *path, enum lookup_flags flags);
 
@@ -150,6 +127,7 @@ struct namecache *nc_release(struct namecache *nc);
 int nc_lookup(struct namecache *nc, struct namecache **out, const char *name);
 
 void nc_make_root(vfs_t *vfs, vnode_t *vnode);
+void nc_dump(void);
 
 static inline namecache_handle_t
 nchandle_retain(namecache_handle_t in)
@@ -165,6 +143,11 @@ nchandle_release(namecache_handle_t in)
 	return (namecache_handle_t) { NULL, NULL };
 }
 
+static inline bool
+nchandle_eq(namecache_handle_t x, namecache_handle_t y)
+{
+	return x.nc == y.nc && x.vfs == y.vfs;
+}
 
 extern namecache_handle_t root_nch;
 
