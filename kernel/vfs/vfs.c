@@ -71,6 +71,7 @@ vfs_find(namecache_handle_t nch)
 	return NULL;
 }
 
+#if 0
 static void
 vfs_insert(vfs_t *vfs)
 {
@@ -80,3 +81,4 @@ vfs_insert(vfs_t *vfs)
 	LIST_INSERT_HEAD(bucket, vfs, vfs_hash_entry);
 	ke_mutex_release(&vfs_lock);
 }
+#endif

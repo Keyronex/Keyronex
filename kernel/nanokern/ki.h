@@ -32,8 +32,8 @@ void ki_wake_waiters(kwaitblock_queue_t *queue);
  */
 void ki_signal(kdispatchheader_t *hdr, kwaitblock_queue_t *wakeQueue);
 
-void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, void *proc,
-    const char *name);
+void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu,
+    kprocess_t *proc, const char *name);
 
 /*!
  * @brief Resume a thread.

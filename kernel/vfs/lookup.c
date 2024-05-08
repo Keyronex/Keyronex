@@ -161,6 +161,8 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 		}
 	}
 
+	goto out;
+
 out:
 	TAILQ_FOREACH_SAFE (np, &state.components, tailq_entry, tmp)
 		kmem_free(np, sizeof(*np));

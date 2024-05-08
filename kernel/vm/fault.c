@@ -8,15 +8,12 @@
 #include "ubc.h"
 #include "vmp.h"
 
-extern vm_procstate_t kernel_procstate;
 struct fault_area_info {
 	vm_object_t *object;
 	vaddr_t start;
 	pgoff_t offset;
 	bool copy, writeable;
 };
-
-#define CURMAP (&kernel_procstate)
 
 static int
 vmp_do_file_fault(kprocess_t *process, vm_procstate_t *vmps,
@@ -198,12 +195,20 @@ int
 vmp_do_fault(vaddr_t vaddr, bool write)
 {
 	int r;
-	kprocess_t *process = &kernel_process;
-	vm_procstate_t *vmps = CURMAP;
-	ipl_t ipl;
+	kprocess_t *process;
+	vm_procstate_t *vmps;
 	struct vmp_pte_wire_state state;
 	struct fault_area_info area_info;
+	ipl_t ipl;
+
 	kassert(splget() < kIPLDPC);
+
+	if (vaddr >= HHDM_BASE)
+		process = &kernel_process;
+	else
+		process = curproc();
+
+	vmps = process->vm;
 
 	KE_WAIT(&vmps->mutex, false, false, -1);
 	if (vaddr < HHDM_BASE ||

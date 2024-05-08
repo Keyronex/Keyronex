@@ -26,6 +26,8 @@ typedef Elf64_Ehdr Elf_Ehdr;
 typedef Elf64_Phdr Elf_Phdr;
 #endif
 
+#define USER_STACK_SIZE PGSIZE * 32
+
 extern vm_procstate_t kernel_procstate;
 
 int
@@ -106,12 +108,12 @@ copyout_args(struct exec_package *pkg, const char *argp[], const char *envp[])
 	char *stackp = (char *)pkg->stack;
 	uintptr_t *stackpuptr;
 
-	for (const char **env = envp; *env; env++, nenv++) {
+	for (const char **env = envp; env && *env; env++, nenv++) {
 		stackp -= (strlen(*env) + 1);
 		strcpy(stackp, *env);
 	}
 
-	for (const char **arg = argp; *arg; arg++, narg++) {
+	for (const char **arg = argp; arg && *arg; arg++, narg++) {
 		stackp -= (strlen(*arg) + 1);
 		strcpy(stackp, *arg);
 	}
@@ -153,4 +155,40 @@ copyout_args(struct exec_package *pkg, const char *argp[], const char *envp[])
 	pkg->sp = (vaddr_t)stackpuptr;
 
 	return 0;
+}
+
+int
+load_server(vnode_t *server_vnode, vnode_t *ld_vnode)
+{
+	int r = 0;
+	struct exec_package pkg, rtldpkg;
+
+	/* assume it's not PIE */
+	r = load_elf(server_vnode, (vaddr_t)0x0, &pkg);
+	if (r < 0)
+		kfatal("failed to load server\n");
+	r = load_elf(ld_vnode, (vaddr_t)0x40000000, &rtldpkg);
+	if (r < 0)
+		kfatal("failed to load server");
+
+	pkg.stack = -1;
+	r = vm_ps_allocate(&kernel_procstate, &pkg.stack, USER_STACK_SIZE,
+	    false);
+	kassert(r == 0);
+	pkg.stack += USER_STACK_SIZE;
+	r = copyout_args(&pkg, NULL, NULL);
+	kassert(r == 0);
+
+#if 0
+	/* todo(low): separate this machine-dependent stuff */
+	memset(frame, 0x0, sizeof(*frame));
+	frame->rip = (uint64_t)rtldpkg.entry;
+	frame->rsp = (uint64_t)pkg.sp;
+	frame->cs = 0x38 | 0x3;
+	frame->ss = 0x40 | 0x3;
+	frame->rflags = 0x202;
+	r = 0;
+#endif
+
+	return r;
 }

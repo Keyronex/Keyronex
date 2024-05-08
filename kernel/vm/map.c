@@ -1,6 +1,8 @@
 #include "kdk/kmem.h"
+#include "kdk/vm.h"
 #include "vmp.h"
 
+void vmp_md_ps_init(kprocess_t *ps);
 int vmp_vad_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
 
 RB_GENERATE(vm_map_entry_rbtree, vm_map_entry, rb_entry, vmp_vad_cmp);
@@ -120,4 +122,30 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 	ke_mutex_release(&vmps->mutex);
 
 	return 0;
+}
+
+void
+vm_ps_init(kprocess_t *ps)
+{
+	vm_procstate_t *vmps = ps->vm;
+
+	if (vmps == &kernel_procstate)
+		vmem_init(&vmps->vmem, "kernel-dynamic-va", KVM_DYNAMIC_BASE,
+		    KVM_DYNAMIC_SIZE, PGSIZE, NULL, NULL, NULL, 0,
+		    kVMemBootstrap, kIPL0);
+	else
+		vmem_init(&vmps->vmem, "dynamic-va", LOWER_HALF,
+		    LOWER_HALF_SIZE, PGSIZE, NULL, NULL, NULL, 0,
+		    kVMemBootstrap, kIPL0);
+
+	ke_mutex_init(&vmps->mutex);
+	RB_INIT(&vmps->vad_queue);
+	RB_INIT(&vmps->wsl.tree);
+	TAILQ_INIT(&vmps->wsl.queue);
+	vmps->wsl.locked_count = 0;
+	vmps->wsl.ws_current_count = 0;
+	vmps->wsl.max = 2;
+	vmps->last_trim_counter = 0;
+
+	vmp_md_ps_init(ps);
 }

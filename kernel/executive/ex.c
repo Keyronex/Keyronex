@@ -1,10 +1,12 @@
 #include "kdk/executive.h"
+#include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "ntcompat/ntcompat.h"
 #include "vm/vmp.h"
 
 kthread_t ex_init_thread;
+obj_class_t process_class;
 
 static void
 test_anon(void)
@@ -27,6 +29,14 @@ test_anon(void)
 	vmp_pages_dump();
 }
 
+void user_init(void*)
+{
+	kprintf("Hello from User Init\n");
+	test_anon();
+	for (;;) ;
+
+}
+
 void
 ex_init(void *)
 {
@@ -47,6 +57,8 @@ ex_init(void *)
 	test_anon();
 #endif
 
+	process_class = obj_new_type("process");
+
 	namecache_handle_t hdl = nchandle_retain(root_nch), out;
 
 	kprintf("Before any lookups\n");
@@ -60,7 +72,15 @@ ex_init(void *)
 	kprintf("\nAfter looking up E/F/G.TXT (ret %d)...\n", r);
 	nc_dump();
 
-	kfatal("R: %d, hdl.nc: %p\n", r, out.nc);
+	kprocess_t *initps;
+	kthread_t *initthread;
+	r = ps_process_create(&initps, false);
+	kassert(r == 0);
+
+	r = ps_thread_create(&initthread, "user init thread 0", user_init, NULL, initps);
+	kassert(r == 0);
+
+	ke_thread_resume(initthread);
 
 	ps_exit_this_thread();
 }

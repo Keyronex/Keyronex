@@ -4,6 +4,7 @@
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
+#include "kdk/vfs.h"
 
 struct object_header {
 	/*! entry in type_object::objects */
@@ -190,3 +191,8 @@ obj_dump(void)
 		}
 	}
 }
+
+struct file {
+	namecache_handle_t nchandle;
+	io_off_t offset;
+};

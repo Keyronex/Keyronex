@@ -22,6 +22,8 @@ void ddk_init(void);
 void ddk_autoconf(void);
 /* intr.c */
 void intr_init(void);
+/* misc.c */
+void setup_cpu_gdt(kcpu_t *cpu);
 
 struct kcpu bootstrap_cpu;
 struct kthread thread0;
@@ -111,11 +113,11 @@ common_init(struct limine_smp_info *smpi)
 	/* guard allocations */
 	ke_spinlock_acquire_nospl(&early_lock);
 	kmem_asprintf(&name, "idle thread *cpu %d)", cpu->num);
-	ki_thread_common_init(thread, cpu, NULL, name);
+	ki_thread_common_init(thread, cpu, &kernel_process, name);
 	ke_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
-	// setup_cpu_gdt(cpu);
+	setup_cpu_gdt(cpu);
 
 	/* measure thrice and average it */
 	cpu->cpucb.lapic_tps = 0;
@@ -210,7 +212,7 @@ _start(void)
 	thread0.last_cpu = &bootstrap_cpu;
 	thread0.state = kThreadStateRunning;
 	thread0.timeslice = 5;
-	ki_thread_common_init(&thread0, &bootstrap_cpu, NULL, "idle0");
+	ki_thread_common_init(&thread0, &bootstrap_cpu, &kernel_process, "idle0");
 
 	intr_init();
 

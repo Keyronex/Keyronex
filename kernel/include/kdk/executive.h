@@ -14,9 +14,11 @@ typedef struct ex_work {
 
 int ex_work_enqueue(ex_work_t *work);
 
-int
-ps_create_kernel_thread(kthread_t **out, const char *name, void (*fn)(void *),
-    void *arg);
+int ps_process_create(kprocess_t **out, bool fork);
+int ps_thread_create(kthread_t **out, const char *name,
+    void (*fn)(void *), void *arg, kprocess_t *process);
+int ps_create_kernel_thread(kthread_t **out, const char *name,
+    void (*fn)(void *), void *arg);
 void ps_exit_this_thread(void);
 
 extern kprocess_t kernel_process;

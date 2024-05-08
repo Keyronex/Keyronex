@@ -12,7 +12,7 @@ void
 md_switch(kthread_t *old_thread)
 {
 	extern void asm_swtch(void * old, void * new);
-	//write_cr3(curthread()->process->vm->md.table);
+	write_cr3(curthread()->process->vm->md.table);
 	asm_swtch(&old_thread->pcb, &curthread()->pcb);
 }
 

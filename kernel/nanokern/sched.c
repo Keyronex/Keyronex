@@ -202,7 +202,7 @@ ke_thread_resume(kthread_t *thread)
 }
 
 void
-ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, void *proc,
+ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
     const char *name)
 {
 	ipl_t ipl;
@@ -210,6 +210,7 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, void *proc,
 	thread->timeslice = 0;
 	thread->name = name;
 	thread->timeslice = 5;
+	thread->process = proc;
 	ke_timer_init(&thread->wait_timer);
 	thread->wait_result = kKernWaitStatusOK;
 	ipl = ke_acquire_scheduler_lock();

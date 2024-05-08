@@ -684,6 +684,8 @@ dos_lookup(vnode_t *dvn, vnode_t **out, const char *name)
 	struct dos_node *dnode = VTOD(dvn);
 	struct dosfs_state *fs = (void *)dvn->vfs->device;
 
+	(void)dnode;
+
 	vnode_t *vn = lookup(fs, dvn, name);
 	if (vn == NULL)
 		return -1;
@@ -800,9 +802,9 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 
 	state->vfs.device = (void *)state;
 
+#if 0
 	printdir(m_state, m_state->root, 0);
 
-#if 0
 
 #if 0
 	vnode_t *vn = lookup(m_state, m_state->root, "genesis.txt");
