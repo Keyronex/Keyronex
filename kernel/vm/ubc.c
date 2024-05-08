@@ -189,10 +189,10 @@ ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size, bool write)
 
 		window_addr = ubc_window_addr(window);
 		if (write)
-			memcpy((void *)window_addr, (void *)user_addr,
+			memcpy((void *)(window_addr + window_internal_off), (void *)user_addr,
 			    size_from_window);
 		else
-			memcpy((void *)user_addr, (void *)window_addr,
+			memcpy((void *)user_addr, (void *)(window_addr + window_internal_off),
 			    size_from_window);
 
 		ipl = ke_spinlock_acquire(&ubc_lock);

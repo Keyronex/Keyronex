@@ -66,6 +66,8 @@ struct dos_node_namekey {
 struct dos_node {
 	/*! key for rb tree */
 	struct dos_node_namekey key;
+	/*! owning FS */
+	struct dosfs_state *fs;
 	/*! vnode counterpart */
 	vnode_t *vnode;
 	/*! rwlock for data contents, size, etc. */
@@ -367,6 +369,7 @@ dosfs_vnode_make(struct dosfs_state *fs, vnode_t *parent, const char *name,
 	ke_mutex_init(&node->rwlock);
 	ke_mutex_init(&node->paging_rwlock);
 	RB_INIT(&node->entries_rb);
+	node->fs = fs;
 
 	if (name == NULL || parent == NULL) {
 		kassert(name == NULL && parent == NULL);
@@ -618,7 +621,8 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 		switch (ret) {
 		case kDirentProcessingContinueLFN:
 			in_lfn = true;
-			/* fall through */
+			offset += sizeof(struct Dir);
+			continue;
 
 		case kDirentProcessingSkip:
 			in_lfn = false;
@@ -682,7 +686,7 @@ int
 dos_lookup(vnode_t *dvn, vnode_t **out, const char *name)
 {
 	struct dos_node *dnode = VTOD(dvn);
-	struct dosfs_state *fs = (void *)dvn->vfs->device;
+	struct dosfs_state *fs = dnode->fs;
 
 	(void)dnode;
 
@@ -800,7 +804,7 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		state->type == kFAT16 ? 16 :
 					32);
 
-	state->vfs.device = (void *)state;
+	state->vfs.device = self;
 
 #if 0
 	printdir(m_state, m_state->root, 0);
