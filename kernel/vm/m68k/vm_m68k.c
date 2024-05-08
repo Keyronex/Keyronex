@@ -94,24 +94,28 @@ vmp_md_ps_init(kprocess_t *ps)
 		/* preallocate higher half entries */
 		table_ptebase = (pte_t *)P2V(table_addr);
 
-#if 0
-		for (int i = 96; i < 127; i+= 8) {
+		for (int i = 96; i < 120; i+= 8) {
 			pte_t *pte = &table_ptebase[i];
-			if (pte->value == 0) {
-				vm_page_t *pml3_page;
+				vm_page_t *pml2_page;
 
-				vm_page_alloc(&pml3_page, 0, kPageUsePML2,
+			if (pte->value == 0) {
+				ipl_t ipl;
+
+				vm_page_alloc(&pml2_page, 0, kPageUsePML2,
 				    true);
-				pml3_page->process = &kernel_process;
-				pml3_page->nonzero_ptes = 10000;
-				pml3_page->noswap_ptes = 10000;
-				vmp_md_pte_create_hw(pte, pml3_page->pfn, true,
-				    true);
+				pml2_page->process = &kernel_process;
+				pml2_page->nonzero_ptes = 10000;
+				pml2_page->noswap_ptes = 10000;
+				ipl = vmp_acquire_pfn_lock();
+				vmp_md_setup_table_pointers(vmps, table_page, pml2_page, pte, true);
+				vmp_release_pfn_lock(ipl);
+			} else {
+				pml2_page = vmp_pte_hw_page(pte, 3);
+				pml2_page->nonzero_ptes += 10000;
+				pml2_page->noswap_ptes += 10000;
+				pml2_page->refcnt += 10000;
 			}
 		}
-#else
-		(void)table_ptebase;
-#endif
 
 		store_urp_and_srp(table_addr);
 	} else {
@@ -203,4 +207,10 @@ vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage, pte_t *dirp
 
 	/* carry out the final deletion */
 	vmp_pagetable_page_pte_deleted(ps, dirpage, false);
+}
+
+void
+vmp_activate(vm_procstate_t *ps)
+{
+	store_urp_and_srp(ps->md.table);
 }
