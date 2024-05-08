@@ -101,7 +101,6 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	write_cr8(new_ipl);
 	asm("sti");
 
-
 	switch (num) {
 	case 14:
 		vmp_fault(cr2, frame->code & 2, NULL);
@@ -121,7 +120,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		entries = &intr_entries[num];
 
 		if (TAILQ_EMPTY(entries)) {
-			kprintf("Unhandled interrupt %lu. CR2: 0x%lx\n", num,
+			kfatal("Unhandled interrupt %lu. CR2: 0x%lx\n", num,
 			    read_cr2());
 		}
 

@@ -28,8 +28,6 @@ typedef Elf64_Phdr Elf_Phdr;
 
 #define USER_STACK_SIZE PGSIZE * 32
 
-extern vm_procstate_t kernel_procstate;
-
 int
 load_elf(vnode_t *vnode, vaddr_t base, struct exec_package *pkg)
 {
@@ -77,7 +75,7 @@ load_elf(vnode_t *vnode, vaddr_t base, struct exec_package *pkg)
 		mapped_length_aligned = PGROUNDUP(mapped_length);
 		full_length = PGROUNDUP(phdr->p_vaddr + phdr->p_memsz) - vaddr;
 
-		r = vm_ps_map_object_view(&kernel_procstate, vnode->object,
+		r = vm_ps_map_object_view(curproc()->vm, vnode->object,
 		    &vaddr_based, mapped_length_aligned, file_offset_aligned,
 		    kVMAll, kVMAll, false, true, true);
 		kassert(r == 0);
@@ -89,7 +87,7 @@ load_elf(vnode_t *vnode, vaddr_t base, struct exec_package *pkg)
 
 		if (full_length > mapped_length_aligned) {
 			vaddr_t anon_addr = vaddr_based + mapped_length_aligned;
-			r = vm_ps_allocate(&kernel_procstate, &anon_addr,
+			r = vm_ps_allocate(curproc()->vm, &anon_addr,
 			    full_length - mapped_length_aligned, true);
 			kassert(r == 0);
 		}
@@ -162,6 +160,8 @@ load_server(vnode_t *server_vnode, vnode_t *ld_vnode)
 {
 	int r = 0;
 	struct exec_package pkg, rtldpkg;
+	const char *argp[] = { "/usr/bin/posix_server", NULL },
+		   *envp[] = { "THISVAR=THATVALUE", NULL };
 
 	/* assume it's not PIE */
 	r = load_elf(server_vnode, (vaddr_t)0x0, &pkg);
@@ -172,11 +172,10 @@ load_server(vnode_t *server_vnode, vnode_t *ld_vnode)
 		kfatal("failed to load server");
 
 	pkg.stack = -1;
-	r = vm_ps_allocate(&kernel_procstate, &pkg.stack, USER_STACK_SIZE,
-	    false);
+	r = vm_ps_allocate(curproc()->vm, &pkg.stack, USER_STACK_SIZE, false);
 	kassert(r == 0);
 	pkg.stack += USER_STACK_SIZE;
-	r = copyout_args(&pkg, NULL, NULL);
+	r = copyout_args(&pkg, argp, envp);
 	kassert(r == 0);
 
 #if 0

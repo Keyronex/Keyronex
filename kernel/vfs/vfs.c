@@ -3,6 +3,7 @@
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
+#include "vm/vmp.h"
 
 /*
  * note: vfs refcounting probably needed
@@ -28,6 +29,8 @@ vnode_t *
 vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
     kmutex_t *paging_rwlock, uintptr_t fs_data)
 {
+	vm_object_t *obj;
+	vm_page_t *vpml4;
 	vnode_t *vnode = vnode_alloc();
 
 	vnode->type = type;
@@ -38,6 +41,13 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 	vnode->paging_rwlock = paging_rwlock;
 
 	RB_INIT(&vnode->ubc_windows);
+
+	obj = kmem_alloc(sizeof(vm_object_t));
+	obj->kind = kFile;
+	obj->file.vnode = vnode;
+	vm_page_alloc(&vpml4, 0, kPageUseVPML4, false);
+	obj->vpml4 = vmp_page_paddr(vpml4);
+	vnode->object = obj;
 
 	return vnode;
 }

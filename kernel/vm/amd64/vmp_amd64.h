@@ -65,6 +65,7 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool cacheable)
 	pte.hw.valid = 1;
 	pte.hw.writeable = writeable;
 	pte.hw.nocache = !cacheable;
+	pte.hw.user = true;
 
 	ppte->value = pte.value;
 }

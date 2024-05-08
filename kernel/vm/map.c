@@ -50,6 +50,9 @@ vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object, vaddr_t *vaddrp
 	vm_map_entry_t *map_entry;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 
+	kassert(size % PGSIZE == 0);
+	kassert(offset % PGSIZE == 0);
+
 	ke_wait(&vmps->mutex, "map_object_view:vmps->mutex", false, false, -1);
 
 	r = vmem_xalloc(&vmps->vmem, size, 0, 0, 0, addr, 0,
@@ -62,7 +65,7 @@ vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object, vaddr_t *vaddrp
 	map_entry->start = (vaddr_t)addr;
 	map_entry->end = addr + size;
 	map_entry->flags.cow = cow;
-	map_entry->flags.offset = offset;
+	map_entry->flags.offset = offset / PGSIZE;
 	map_entry->flags.inherit_shared = inherit_shared;
 	map_entry->flags.protection = initial_protection;
 	map_entry->flags.max_protection = max_protection;
@@ -144,7 +147,7 @@ vm_ps_init(kprocess_t *ps)
 	TAILQ_INIT(&vmps->wsl.queue);
 	vmps->wsl.locked_count = 0;
 	vmps->wsl.ws_current_count = 0;
-	vmps->wsl.max = 2;
+	vmps->wsl.max = 2048;
 	vmps->last_trim_counter = 0;
 
 	vmp_md_ps_init(ps);

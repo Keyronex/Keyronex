@@ -203,6 +203,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	kassert(splget() < kIPLDPC);
 
+	vaddr = PGROUNDDOWN(vaddr);
+
 	if (vaddr >= HHDM_BASE)
 		process = &kernel_process;
 	else

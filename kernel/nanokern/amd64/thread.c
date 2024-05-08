@@ -1,3 +1,4 @@
+#include "kdk/amd64/gdt.h"
 #include "kdk/amd64/regs.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
@@ -13,6 +14,8 @@ md_switch(kthread_t *old_thread)
 {
 	extern void asm_swtch(void * old, void * new);
 	write_cr3(curthread()->process->vm->md.table);
+	curcpu()->cpucb.tss->rsp0 = ((uintptr_t)(curthread()->kstack_base)) +
+	    KSTACK_SIZE;
 	asm_swtch(&old_thread->pcb, &curthread()->pcb);
 }
 

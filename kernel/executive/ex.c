@@ -5,6 +5,9 @@
 #include "ntcompat/ntcompat.h"
 #include "vm/vmp.h"
 
+/* exec.c */
+int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
+
 kthread_t ex_init_thread;
 obj_class_t process_class;
 
@@ -29,10 +32,27 @@ test_anon(void)
 	vmp_pages_dump();
 }
 
-void user_init(void*)
+void
+user_init(void *arg)
 {
+	int r;
+	kprocess_t *self = arg;
+	namecache_handle_t ld, posix;
+
 	kprintf("Hello from User Init\n");
-	test_anon();
+
+	r = vfs_lookup(root_nch, &ld, "/usr/lib/ld.so", 0);
+	if (r != 0)
+		kfatal("Failed to look up RTDL\n");
+
+	r = vfs_lookup(root_nch, &posix, "/usr/bin/posix_server", 0);
+	if (r != 0)
+		kfatal("Failed to look up POSIX Server\n");
+
+	r = load_server(posix.nc->vp, ld.nc->vp);
+	if (r != 0)
+		kfatal("Failed to load POSIX server\n");
+
 	for (;;) ;
 
 }
