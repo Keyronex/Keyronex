@@ -7,6 +7,7 @@
 #include "kdk/libkern.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
+#include "nanokern/ki.h"
 #include "vm/vmp.h"
 
 struct exec_package {
@@ -178,16 +179,7 @@ load_server(vnode_t *server_vnode, vnode_t *ld_vnode)
 	r = copyout_args(&pkg, argp, envp);
 	kassert(r == 0);
 
-#if 0
-	/* todo(low): separate this machine-dependent stuff */
-	memset(frame, 0x0, sizeof(*frame));
-	frame->rip = (uint64_t)rtldpkg.entry;
-	frame->rsp = (uint64_t)pkg.sp;
-	frame->cs = 0x38 | 0x3;
-	frame->ss = 0x40 | 0x3;
-	frame->rflags = 0x202;
-	r = 0;
-#endif
+	ki_enter_user_mode(rtldpkg.entry, pkg.sp);
 
 	return r;
 }

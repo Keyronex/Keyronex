@@ -4,11 +4,12 @@
 #include "kdk/vfs.h"
 #include "ntcompat/ntcompat.h"
 #include "vm/vmp.h"
+#include "exp.h"
 
 /* exec.c */
 int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
 
-kthread_t ex_init_thread;
+kthread_t *ex_init_thread;
 obj_class_t process_class;
 
 static void
@@ -38,8 +39,6 @@ user_init(void *arg)
 	int r;
 	kprocess_t *self = arg;
 	namecache_handle_t ld, posix;
-
-	kprintf("Hello from User Init\n");
 
 	r = vfs_lookup(root_nch, &ld, "/usr/lib/ld.so", 0);
 	if (r != 0)
@@ -103,4 +102,12 @@ ex_init(void *)
 	ke_thread_resume(initthread);
 
 	ps_exit_this_thread();
+}
+
+uintptr_t
+ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
+    uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
+    uintptr_t *out1)
+{
+	kfatal("dispatch syscall\n")
 }

@@ -25,8 +25,8 @@ asm_exception:
 	.cfi_adjust_cfa_offset 60
 
 	# push user stack pointer
-	move.l   %usp, %a0
-	move.l   %a0, %sp@-
+	move.l %usp, %a0
+	move.l %a0, %sp@-
 	.cfi_adjust_cfa_offset 4
 
 	# finally push the stack pointer so c_exception receives it as arg
@@ -39,8 +39,9 @@ asm_exception:
 	add	 #4, %sp
 	.cfi_adjust_cfa_offset -4
 
-	# drop the usp we pushed
-	add	 #4, %sp
+	# restore the usp we pushed
+	move.l %sp@+, %a0
+	move.l %a0, %usp
 	.cfi_adjust_cfa_offset -4
 
 	# restore the general regs we pushed

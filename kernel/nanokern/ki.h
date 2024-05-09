@@ -59,4 +59,6 @@ void ki_rcu_per_cpu_init(struct ki_rcu_per_cpu_data *data);
 
 void ki_tlb_flush_vaddr_globally(uintptr_t vaddr);
 
+void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
+
 #endif /* KRX_NANOKERN_KI_H */

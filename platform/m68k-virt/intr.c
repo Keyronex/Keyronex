@@ -1,3 +1,5 @@
+#include <keyronex/syscall.h>
+
 #include "goldfish.h"
 #include "kdk/m68k.h"
 #include "kdk/nanokern.h"
@@ -5,6 +7,7 @@
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
 #include "vm/vmp.h"
+#include "executive/exp.h"
 
 void
 md_raise_dpc_interrupt(void)
@@ -77,6 +80,12 @@ c_exception(md_intr_frame_t *iframe)
 		// pac_printf("interrupt on autovector %u\n",
 		//     (iframe->vector_offset - 0x64) / 4);
 		gfpic_dispatch((iframe->vector_offset - 0x64) / 4, iframe);
+		break;
+
+	case 0x80: /* trap #0 */
+		iframe->d0 = ex_syscall_dispatch(iframe->d0, iframe->d1,
+		    iframe->d2, iframe->d3, iframe->d4, iframe->d5, iframe->a0,
+		    &iframe->d1);
 		break;
 
 	default:

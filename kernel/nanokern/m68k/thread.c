@@ -43,3 +43,21 @@ ki_tlb_flush_vaddr_globally(uintptr_t vaddr)
 {
 	asm volatile("pflush (%0)" : : "a"(vaddr));
 }
+
+void
+ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
+{
+	uint16_t sr;
+
+	asm volatile("move.w %%sr, %0\n" : "=d"(sr));
+	sr &= ~(1 << 13);
+
+	asm volatile("move.l %0, %%usp\n\t"
+		     "move.w #0, -(%%sp)\n\t" /* frame format 0, 4-word */
+		     "move.l %1, -(%%sp)\n\t" /* pc */
+		     "move.w %2, -(%%sp)\n\t" /* sr */
+		     "rte\n"
+		     :
+		     : "a"(sp), "a"(ip), "a"(sr)
+		     : "sp", "memory");
+}

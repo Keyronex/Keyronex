@@ -44,3 +44,22 @@ ki_tlb_flush_vaddr_globally(vaddr_t addr)
 {
 	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
 }
+
+void
+ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
+{
+	uint64_t frame[5];
+
+	frame[0] = ip;
+	frame[1] = 0x38 | 0x3;
+	frame[2] = 0x202;
+	frame[3] = sp;
+	frame[4] = 0x40 | 0x3;
+
+	asm volatile("mov %0, %%rsp\n\t"
+		     "swapgs\n\t"
+		     "iretq\n"
+		     :
+		     : "r"(frame)
+		     : "memory");
+}
