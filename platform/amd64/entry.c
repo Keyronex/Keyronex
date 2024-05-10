@@ -113,7 +113,7 @@ common_init(struct limine_smp_info *smpi)
 	/* guard allocations */
 	ke_spinlock_acquire_nospl(&early_lock);
 	kmem_asprintf(&name, "idle thread *cpu %d)", cpu->num);
-	ki_thread_common_init(thread, cpu, &kernel_process, name);
+	ki_thread_common_init(thread, cpu, &kernel_process->kprocess, name);
 	ke_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
 
@@ -148,7 +148,7 @@ ap_init(struct limine_smp_info *smpi)
 {
 	kcpu_t *cpu = (kcpu_t *)smpi->extra_argument;
 
-	write_cr3(kernel_process.vm->md.table);
+	write_cr3(kernel_process->vm->md.table);
 
 	/* set it up immediately to avoid problems */
 	wrmsr(kAMD64MSRGSBase, (uintptr_t)&cpus[cpu->num]);
@@ -212,7 +212,7 @@ _start(void)
 	thread0.last_cpu = &bootstrap_cpu;
 	thread0.state = kThreadStateRunning;
 	thread0.timeslice = 5;
-	ki_thread_common_init(&thread0, &bootstrap_cpu, &kernel_process, "idle0");
+	ki_thread_common_init(&thread0, &bootstrap_cpu, &kernel_process->kprocess, "idle0");
 
 	intr_init();
 

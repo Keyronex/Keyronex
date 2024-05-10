@@ -206,7 +206,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	vaddr = PGROUNDDOWN(vaddr);
 
 	if (vaddr >= HHDM_BASE)
-		process = &kernel_process;
+		process = kernel_process;
 	else
 		process = ex_curproc();
 

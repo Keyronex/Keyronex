@@ -34,46 +34,6 @@ fetch_urp(void)
 	return urp;
 }
 
-#if 0
-{
-	vm_procstate_t *vmps = ps->vm;
-	vm_page_t *table_page;
-	paddr_t table_addr;
-	pte_t *table_ptebase;
-
-	vm_page_alloc(&table_page, 0, kPageUsePML4, true);
-	table_page->process = ps;
-	table_addr = vmp_page_paddr(table_page);
-	vmps->md.table = table_addr;
-
-	if (vmps == &kernel_procstate) {
-		memcpy((void *)P2V(table_addr), (void *)P2V(read_cr3()),
-		    PGSIZE);
-
-		/* preallocate higher half entries */
-		table_ptebase = (pte_t *)P2V(table_addr);
-		for (int i = 256; i < 512; i++) {
-			pte_t *pte = &table_ptebase[i];
-			if (pte->value == 0) {
-				vm_page_t *pml3_page;
-
-				vm_page_alloc(&pml3_page, 0, kPageUsePML3,
-				    true);
-				pml3_page->process = &kernel_process;
-				pml3_page->nonzero_ptes = 10000;
-				pml3_page->noswap_ptes = 10000;
-				vmp_md_pte_create_hw(pte, pml3_page->pfn, true,
-				    true);
-			}
-		}
-
-		write_cr3(table_addr);
-	} else {
-
-	}
-}
-#endif
-
 void
 vmp_md_ps_init(eprocess_t *ps)
 {
@@ -103,7 +63,7 @@ vmp_md_ps_init(eprocess_t *ps)
 
 				vm_page_alloc(&pml2_page, 0, kPageUsePML2,
 				    true);
-				pml2_page->process = &kernel_process;
+				pml2_page->process = kernel_process;
 				pml2_page->nonzero_ptes = 10000;
 				pml2_page->noswap_ptes = 10000;
 				ipl = vmp_acquire_pfn_lock();

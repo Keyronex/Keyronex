@@ -3,11 +3,18 @@
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
+#include "object.h"
 #include "vm/vmp.h"
 
+struct {
+	struct object_header header;
+	eprocess_t process;
+} kernel_process_pkg = {
+	.process = { .vm = &kernel_procstate }
+};
+eprocess_t *kernel_process = &kernel_process_pkg.process;
 extern obj_class_t process_class;
 extern vm_procstate_t kernel_procstate;
-eprocess_t kernel_process = { .vm = &kernel_procstate };
 
 int
 ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
@@ -37,7 +44,7 @@ int
 ps_create_kernel_thread(kthread_t **out, const char *name, void (*fn)(void *),
     void *arg)
 {
-	return ps_thread_create(out, name, fn, arg, &kernel_process);
+	return ps_thread_create(out, name, fn, arg, kernel_process);
 }
 
 void

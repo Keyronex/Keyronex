@@ -31,6 +31,6 @@ void ps_exit_this_thread(void);
 
 #define ex_curproc() containerof(curproc(), eprocess_t, kprocess)
 
-extern eprocess_t kernel_process;
+extern eprocess_t *kernel_process;
 
 #endif /* KRX_KDK_EXECUTIVE_H */

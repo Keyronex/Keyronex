@@ -64,7 +64,7 @@ vmp_md_translate(vaddr_t addr)
 	else {
 		int r;
 
-		r = vmp_fetch_pte(kernel_process.vm, PGROUNDDOWN(addr), &pte);
+		r = vmp_fetch_pte(kernel_process->vm, PGROUNDDOWN(addr), &pte);
 		kassert(r == 0);
 		paddr = vmp_pte_hw_paddr(pte, 1);
 		paddr += addr % PGSIZE;

@@ -3,6 +3,7 @@
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "vm/vmp.h"
+#include "kdk/executive.h"
 
 void
 md_cpu_init(kcpu_t *cpu)
@@ -13,7 +14,7 @@ void
 md_switch(kthread_t *old_thread)
 {
 	extern void asm_swtch(void * old, void * new);
-	write_cr3(curthread()->process->vm->md.table);
+	write_cr3(ex_curproc()->vm->md.table);
 	curcpu()->cpucb.tss->rsp0 = ((uintptr_t)(curthread()->kstack_base)) +
 	    KSTACK_SIZE;
 	asm_swtch(&old_thread->pcb, &curthread()->pcb);
