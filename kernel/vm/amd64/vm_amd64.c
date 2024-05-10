@@ -11,7 +11,7 @@ typedef uint64_t pml4e_t, pdpte_t, pde_t;
 extern vm_procstate_t kernel_procstate;
 
 void
-vmp_md_ps_init(kprocess_t *ps)
+vmp_md_ps_init(eprocess_t *ps)
 {
 	vm_procstate_t *vmps = ps->vm;
 	vm_page_t *table_page;

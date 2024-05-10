@@ -5,6 +5,7 @@
 #include "kdk/vm.h"
 
 typedef union pte pte_t;
+struct eprocess;
 
 #if defined(__m68k__)
 #include "m68k/vmp_m68k.h"
@@ -216,7 +217,7 @@ void vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
  * \pre VAD list mutex held
  * \pre PFN database lock held
  */
-int vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
+int vmp_wire_pte(struct eprocess *ps, vaddr_t vaddr, paddr_t prototype,
     struct vmp_pte_wire_state *state);
 void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state,
     bool prototype);

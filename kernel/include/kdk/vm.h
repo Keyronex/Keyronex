@@ -18,6 +18,7 @@
 #endif
 
 enum vmem_flag;
+struct eprocess;
 
 /*! Physical address. */
 typedef uintptr_t paddr_t;
@@ -130,7 +131,7 @@ typedef struct vm_page {
 	/* 32-bit: word 7, 64-bit: word 6 */
 	union {
 		void *owner;
-		kprocess_t *process;
+		struct eprocess *process;
 	};
 
 	/* 32-bit: word 8; 64-bit: word 7 */
@@ -227,7 +228,7 @@ void vm_page_release(vm_page_t *page);
 vm_page_t *vm_paddr_to_page(paddr_t paddr);
 
 /*! Initialise a new VM process state structure */
-void vm_ps_init(kprocess_t *ps);
+void vm_ps_init(struct eprocess *ps);
 
 /*! Allocate anonymous memory in a process. */
 int vm_ps_allocate(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size,

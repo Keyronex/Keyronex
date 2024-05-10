@@ -1,3 +1,4 @@
+#include "kdk/executive.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "kdk/vm.h"
@@ -124,7 +125,7 @@ vmp_pte_wire_state_release(struct vmp_pte_wire_state *state, bool prototype)
  * \pre PFN database lock held
  */
 int
-vmp_wire_pte(kprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
+vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
     struct vmp_pte_wire_state *state)
 {
 	int indexes[4 + 1];

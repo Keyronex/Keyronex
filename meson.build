@@ -43,6 +43,7 @@ if not headers_only
 		cpu = 'm68k'
 		meson_cpu_family = cpu
 		freestanding_c_args += [
+			'-DM68K=1',
 			'-ffreestanding',
 			'-fno-stack-protector',
 			'-fno-stack-check',

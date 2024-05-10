@@ -716,8 +716,15 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	ke_wait(&dnode->paging_rwlock, "dosfs::read:inode->paging_rwlock",
 	    false, false, -1);
 
-	if (dnode->size < offset + bytes)
-		dos_extend_locked(fs, vn, offset + bytes);
+	if (dnode->size < offset + bytes) {
+		if (write)
+			dos_extend_locked(fs, vn, offset + bytes);
+		else {
+			kassert(offset < dnode->size);
+			bytes = ROUNDUP(dnode->size - offset,
+			    fs->bytes_per_cluster);
+		}
+	}
 
 	io_blkoff_t current_cluster = dnode->first_cluster;
 	for (size_t i = offset / fs->bytes_per_cluster; i != 0; i--) {
@@ -758,8 +765,8 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 		    (current_cluster - 2) * fs->bytes_per_cluster;
 		io_blkoff_t next_cluster = read_fat(fs, current_cluster);
 
-		kassert(next_cluster >= 2 &&
-		    !cluster_value_is_eof(fs, next_cluster));
+		kassert(current_cluster >= 2 &&
+		    !cluster_value_is_eof(fs, current_cluster));
 #endif
 
 #ifdef TRACE_DOSFS
@@ -965,9 +972,11 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	iop_frame_t *frame = iop_stack_current(iop);
 	kassert(frame->function == kIOPTypeRead);
 	kassert(frame->vnode != NULL);
+#if 0
 	DKDevLog(self,
 	    "Dispatching a read request - offset %" PRId64 " length %zu\n",
 	    frame->rw.offset, frame->rw.bytes);
+#endif
 	dos_rw(m_state, frame->vnode, frame->rw.offset, frame->rw.bytes,
 	    frame->mdl, false);
 	return kIOPRetCompleted;

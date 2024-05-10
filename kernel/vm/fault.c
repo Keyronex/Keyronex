@@ -16,7 +16,7 @@ struct fault_area_info {
 };
 
 static int
-vmp_do_file_fault(kprocess_t *process, vm_procstate_t *vmps,
+vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
     struct fault_area_info *area_info, struct vmp_pte_wire_state *state,
     vaddr_t vaddr)
 {
@@ -195,7 +195,7 @@ int
 vmp_do_fault(vaddr_t vaddr, bool write)
 {
 	int r;
-	kprocess_t *process;
+	eprocess_t *process;
 	vm_procstate_t *vmps;
 	struct vmp_pte_wire_state state;
 	struct fault_area_info area_info;
@@ -208,7 +208,11 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	if (vaddr >= HHDM_BASE)
 		process = &kernel_process;
 	else
-		process = curproc();
+		process = ex_curproc();
+
+#if TRACE_FAULT
+	kprintf("Fault at %p (write? %d)\n", vaddr, write);
+#endif
 
 	vmps = process->vm;
 

@@ -7,11 +7,11 @@
 
 extern obj_class_t process_class;
 extern vm_procstate_t kernel_procstate;
-kprocess_t kernel_process = { .vm = &kernel_procstate };
+eprocess_t kernel_process = { .vm = &kernel_procstate };
 
 int
 ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
-    void *arg, kprocess_t *ps)
+    void *arg, eprocess_t *ps)
 {
 	vaddr_t stack;
 	kthread_t *thread;
@@ -25,7 +25,7 @@ ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
 		return -1;
 
 	thread->kstack_base = (void *)stack;
-	ki_thread_common_init(thread, NULL, ps, name);
+	ki_thread_common_init(thread, NULL, &ps->kprocess, name);
 	ke_thread_init_context(thread, fn, arg);
 
 	*out = thread;
@@ -49,16 +49,16 @@ ps_exit_this_thread(void)
 }
 
 int
-ps_process_create(kprocess_t **out, bool fork)
+ps_process_create(eprocess_t **out, bool fork)
 {
 	int r;
-	kprocess_t *proc;
+	eprocess_t *proc;
 
-	r = obj_new(&proc, process_class, sizeof(kprocess_t), "a process");
+	r = obj_new(&proc, process_class, sizeof(eprocess_t), "a process");
 	if (r != 0)
 		return r;
 
-	LIST_INIT(&proc->thread_list);
+	LIST_INIT(&proc->kprocess.thread_list);
 
 	proc->vm = kmem_alloc(sizeof(vm_procstate_t));
 	if (proc->vm == NULL)

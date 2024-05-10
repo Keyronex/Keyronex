@@ -75,7 +75,7 @@ fetch_urp(void)
 #endif
 
 void
-vmp_md_ps_init(kprocess_t *ps)
+vmp_md_ps_init(eprocess_t *ps)
 {
 	vm_procstate_t *vmps = ps->vm;
 	vm_page_t *table_page;

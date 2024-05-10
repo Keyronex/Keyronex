@@ -1,10 +1,12 @@
+#include <keyronex/syscall.h>
+
+#include "exp.h"
 #include "kdk/executive.h"
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "ntcompat/ntcompat.h"
 #include "vm/vmp.h"
-#include "exp.h"
 
 /* exec.c */
 int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
@@ -37,7 +39,6 @@ void
 user_init(void *arg)
 {
 	int r;
-	kprocess_t *self = arg;
 	namecache_handle_t ld, posix;
 
 	r = vfs_lookup(root_nch, &ld, "/usr/lib/ld.so", 0);
@@ -91,7 +92,7 @@ ex_init(void *)
 	kprintf("\nAfter looking up E/F/G.TXT (ret %d)...\n", r);
 	nc_dump();
 
-	kprocess_t *initps;
+	eprocess_t *initps;
 	kthread_t *initthread;
 	r = ps_process_create(&initps, false);
 	kassert(r == 0);
@@ -104,10 +105,30 @@ ex_init(void *)
 	ps_exit_this_thread();
 }
 
+int
+krx_vm_allocate(size_t size, vaddr_t *out)
+{
+	int r;
+	vaddr_t vaddr;
+	r = vm_ps_allocate(ex_curproc()->vm, &vaddr, size, false);
+	*out = vaddr;
+	return r;
+}
+
 uintptr_t
 ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
     uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
     uintptr_t *out1)
 {
-	kfatal("dispatch syscall\n")
+	switch (syscall) {
+	case kKrxDebugMessage:
+		kprintf("[libc]: %s\n", (const char *)arg1);
+		return 0;
+
+	case kKrxVmAllocate:
+		return krx_vm_allocate(arg1, out1);
+
+	default:
+		kfatal("unhandled syscall %d\n", syscall);
+	}
 }

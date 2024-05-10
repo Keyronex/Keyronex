@@ -1,8 +1,9 @@
 #include "kdk/kmem.h"
 #include "kdk/vm.h"
+#include "kdk/executive.h"
 #include "vmp.h"
 
-void vmp_md_ps_init(kprocess_t *ps);
+void vmp_md_ps_init(eprocess_t *ps);
 int vmp_vad_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
 
 RB_GENERATE(vm_map_entry_rbtree, vm_map_entry, rb_entry, vmp_vad_cmp);
@@ -128,7 +129,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 }
 
 void
-vm_ps_init(kprocess_t *ps)
+vm_ps_init(eprocess_t *ps)
 {
 	vm_procstate_t *vmps = ps->vm;
 

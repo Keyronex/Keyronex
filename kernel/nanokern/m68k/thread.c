@@ -1,3 +1,4 @@
+#include "kdk/executive.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 
@@ -12,7 +13,7 @@ void
 md_switch(kthread_t *old_thread)
 {
 	extern void asm_swtch(m68k_context_t * old, m68k_context_t * new);
-	vmp_activate(curthread()->process->vm);
+	vmp_activate(ex_curproc()->vm);
 	asm_swtch(&old_thread->pcb.genregs, &curthread()->pcb.genregs);
 }
 
@@ -48,6 +49,10 @@ void
 ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 {
 	uint16_t sr;
+
+#if 0
+	kprintf("Entering usermode with usp 0x%zx\n", sp);
+#endif
 
 	asm volatile("move.w %%sr, %0\n" : "=d"(sr));
 	sr &= ~(1 << 13);

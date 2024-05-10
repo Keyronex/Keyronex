@@ -87,7 +87,8 @@ cstart(struct handover *handover)
 	thread0.last_cpu = &bootstrap_cpu;
 	thread0.state = kThreadStateRunning;
 	thread0.timeslice = 5;
-	ki_thread_common_init(&thread0, curcpu(), &kernel_process, "idle0");
+	ki_thread_common_init(&thread0, curcpu(), &kernel_process.kprocess,
+	    "idle0");
 
 	void intr_init(void);
 	intr_init();

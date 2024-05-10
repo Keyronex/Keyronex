@@ -22,6 +22,9 @@
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))
 #define elementsof(x) (sizeof(x) / sizeof((x)[0]))
+#define containerof(ptr, type, member) ({                      \
+        const typeof( ((type *)0)->member ) *__mptr = (ptr);   \
+        (type *)( (char *)__mptr - offsetof(type,member) );})
 #define ROUNDUP(ADDR, ALIGN) (((ADDR) + ALIGN - 1) & ~(ALIGN - 1))
 #define ROUNDDOWN(ADDR, ALIGN) ((((uintptr_t)ADDR)) & ~(ALIGN - 1))
 #define PGROUNDUP(ADDR) ROUNDUP(ADDR, PGSIZE)
@@ -298,8 +301,6 @@ typedef struct kthread {
 typedef struct kprocess {
 	/*! (D) threads of process */
 	LIST_HEAD(, kthread) thread_list;
-	/*! (~) virtual memory state */
-	struct vm_procstate *vm;
 } kprocess_t;
 
 /*! @brief Get kprocess of this core's currently-running thread. */
