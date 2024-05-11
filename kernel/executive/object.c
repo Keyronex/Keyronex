@@ -179,8 +179,3 @@ obj_dump(void)
 		}
 	}
 }
-
-struct file {
-	namecache_handle_t nchandle;
-	io_off_t offset;
-};

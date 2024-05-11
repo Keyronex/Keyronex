@@ -18,6 +18,7 @@ typedef struct ex_work {
 typedef struct eprocess {
 	kprocess_t kprocess;
 	struct vm_procstate *vm;
+	void *handles[64];
 } eprocess_t;
 
 int ex_work_enqueue(ex_work_t *work);

@@ -292,6 +292,9 @@ typedef struct kthread {
 	/*! wait reason */
 	const char *wait_reason;
 	kinternalwaitstatus_t wait_status;
+
+	/* TCB */
+	uintptr_t tcb;
 } kthread_t;
 
 /*!

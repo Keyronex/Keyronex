@@ -2,6 +2,7 @@
 #define KRX_EXECUTIVE_OBJECT_H
 
 #include "kdk/object.h"
+#include "kdk/vfs.h"
 
 struct object_header {
 	/*! entry in type_object::objects */
@@ -14,6 +15,11 @@ struct object_header {
 	size_t size : 24;
 	/*! index into class_list */
 	obj_class_t class;
+};
+
+struct file {
+	namecache_handle_t nch;
+	io_off_t offset;
 };
 
 #endif /* KRX_EXECUTIVE_OBJECT_H */

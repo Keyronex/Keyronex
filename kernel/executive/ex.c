@@ -1,18 +1,23 @@
+#include <sys/mman.h>
+
 #include <keyronex/syscall.h>
 
 #include "exp.h"
 #include "kdk/executive.h"
+#include "kdk/kmem.h"
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
+#include "kdk/vm.h"
 #include "ntcompat/ntcompat.h"
+#include "object.h"
 #include "vm/vmp.h"
 
 /* exec.c */
 int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
 
 kthread_t *ex_init_thread;
-obj_class_t process_class;
+obj_class_t process_class, file_class;
 
 static void
 test_anon(void)
@@ -78,6 +83,7 @@ ex_init(void *)
 #endif
 
 	process_class = obj_new_type("process");
+	file_class = obj_new_type("file");
 
 	namecache_handle_t hdl = nchandle_retain(root_nch), out;
 
@@ -115,6 +121,106 @@ krx_vm_allocate(size_t size, vaddr_t *out)
 	return r;
 }
 
+size_t
+user_strlen(const char *user_str)
+{
+	return strlen(user_str);
+}
+
+int
+copyout_str(const char *ustr, char **out)
+{
+	int len;
+	char *kstr;
+
+	len = user_strlen(ustr);
+	kstr = kmem_alloc(len + 1);
+	memcpy(kstr, ustr, len);
+
+	kstr[len] = '\0';
+	*out = kstr;
+	return 0;
+}
+
+int
+krx_file_open(const char *upath)
+{
+	char *path;
+	namecache_handle_t nch;
+	int r;
+
+	r = copyout_str(upath, &path);
+	if (r != 0)
+		return r;
+
+	r = vfs_lookup(root_nch, &nch, path, 0);
+	if (r != 0)
+		kprintf("Couldn't find <%s>\n", upath);
+
+	if (r == 0) {
+		struct file *file;
+		eprocess_t *proc = ex_curproc();
+
+		r = obj_new(&file, file_class, sizeof(""), NULL);
+		kassert(r == 0);
+		file->nch = nch;
+		file->offset = 0;
+		for (int i = 1; i < 64; i++) {
+			if (proc->handles[i] == NULL) {
+				proc->handles[i] = file;
+				return i;
+			}
+		}
+		kfatal("Couldn't get anywhere! Proc = %p\n", proc);
+	}
+
+	return r;
+}
+
+int
+krx_file_read_cached(int handle, vaddr_t ubuf, size_t count)
+{
+	struct file *file;
+	int r;
+
+	file = ex_curproc()->handles[handle];
+	r = ubc_io(file->nch.nc->vp, ubuf, file->offset, count, false);
+	file->offset += r;
+	return r;
+}
+
+io_off_t
+krx_file_seek(int handle, io_off_t offset)
+{
+	struct file *file;
+	int r;
+
+	file = ex_curproc()->handles[handle];
+	file->offset = offset;
+	return file->offset;
+}
+
+int
+krx_vm_map(vaddr_t hint, size_t size, int prot, int flags, int handle,
+    io_off_t offset, uintptr_t *out)
+{
+	int r;
+	vm_object_t *obj = NULL;
+
+	if (!(flags & MAP_ANON)) {
+		struct file *file = ex_curproc()->handles[handle];
+		obj = file->nch.nc->vp->object;
+	}
+
+	r = vm_ps_map_object_view(ex_curproc()->vm, obj, &hint, size, offset,
+	    kVMAll, kVMAll, flags & MAP_PRIVATE,
+	    obj != NULL ? (flags & MAP_PRIVATE) : false, flags & MAP_FIXED);
+	if (r == 0)
+		*out = hint;
+
+	return r;
+}
+
 uintptr_t
 ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
     uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
@@ -125,8 +231,27 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 		kprintf("[libc]: %s\n", (const char *)arg1);
 		return 0;
 
+	case kKrxTcbSet:
+		curthread()->tcb = arg1;
+		return 0;
+
+	case kKrxTcbGet:
+		return curthread()->tcb;
+
 	case kKrxVmAllocate:
 		return krx_vm_allocate(arg1, out1);
+
+	case kKrxVmMap:
+		return krx_vm_map(arg1, arg2, arg3, arg4, arg5, arg6, out1);
+
+	case kKrxFileOpen:
+		return krx_file_open((const char *)arg1);
+
+	case kKrxFileReadCached:
+		return krx_file_read_cached(arg1, arg2, arg3);
+
+	case kKrxFileSeek:
+		return krx_file_seek(arg1, arg2);
 
 	default:
 		kfatal("unhandled syscall %d\n", syscall);

@@ -626,6 +626,7 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 
 		case kDirentProcessingSkip:
 			in_lfn = false;
+			memset(lfn_str, 0x0, sizeof(lfn_str));
 			offset += sizeof(struct Dir);
 			continue;
 
@@ -658,6 +659,7 @@ lookup(struct dosfs_state *fs, vnode_t *dvn, const char *name)
 		}
 
 		in_lfn = false;
+		memset(lfn_str, 0x0, sizeof(lfn_str));
 		offset += sizeof(struct Dir);
 	}
 
