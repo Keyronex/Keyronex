@@ -2,6 +2,7 @@
 #include "ddk/virtio_mmio.h"
 #include "ddk/virtioreg.h"
 #include "dev/virtio/DKVirtIOMMIOTransport.h"
+#include "dev/virtio/VirtIO9pPort.h"
 #include "dev/virtio/VirtIODisk.h"
 #include "dev/virtio/VirtIOGPU.h"
 #include "kdk/endian.h"
@@ -119,6 +120,10 @@ dpc_handler(void *arg)
 
 	case VIRTIO_DEVICE_ID_GPU:
 		[VirtIOGPU probeWithProvider:self];
+		break;
+
+	case VIRTIO_DEVICE_ID_9P:
+		[VirtIO9pPort probeWithProvider:self];
 		break;
 
 	default:

@@ -149,6 +149,7 @@ typedef struct vm_mdl_view_entry {
 typedef struct vm_mdl {
 	size_t nentries;
 	size_t offset;
+	bool write;
 	vm_page_t *pages[0];
 } vm_mdl_t;
 

@@ -30,8 +30,7 @@ struct vioblk_req {
 
 static int counter = 0;
 
-@interface
-VirtIODisk (Private)
+@interface VirtIODisk (Private)
 - (void)request:(int)reqType
 	   blocks:(io_blksize_t)blocks
 	 atOffset:(io_blkoff_t)offset
@@ -208,6 +207,7 @@ void processVirtQueue(struct virtio_queue *queue, id delegate);
 		kassert(
 		    frame->rw.bytes <= PGSIZE || frame->rw.bytes % PGSIZE == 0);
 		kassert(frame->rw.bytes < PGSIZE * 4);
+		/* why? shouldn't it be / PGSIZE? */
 		ndescs = 2 + frame->rw.bytes / 512;
 
 		if (ndescs <= m_ioQueue.nfree_descs)

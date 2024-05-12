@@ -40,10 +40,10 @@ typedef enum iop_function {
 	kIOPTypeWrite,
 	/*! I/O control. */
 	kIOPTypeIOCtl,
-	/*! Mount filesystem. */
-	kIOPTypeMount,
 	/*! SCSI command. */
 	kIOPTypeSCSI,
+	/*! 9p command. */
+	kIOPType9p,
 } iop_function_t;
 
 typedef enum iop_ioctl {
@@ -53,11 +53,6 @@ typedef enum iop_ioctl {
 	 * Enqueue FUSE request. iop_frame::kbuf will point to io_fuse_request.
 	 */
 	kIOCTLFuseEnqueuRequest,
-
-	/*!
-	 * Enqueue 9P request. iop_frame::kbuf points to io_9p_request.
-	 */
-	kIOCTL9PEnqueueRequest,
 } iop_ioctl_t;
 
 /*!
@@ -82,6 +77,11 @@ struct iop_stack_data_ioctl {
 /*! For kIOPTypeSCSI */
 struct iop_stack_data_scsi {
 	struct _SCSI_REQUEST_BLOCK *srb;
+};
+
+/*! For kIOPType9p. iop_frame's ptr_in holds any relevant MDL. */
+struct iop_stack_data_9p {
+	struct ninep_buf *ninep_in, *ninep_out;
 };
 
 /*!
@@ -114,6 +114,7 @@ typedef struct iop_frame {
 		struct iop_stack_data_rw rw;
 		struct iop_stack_data_ioctl ioctl;
 		struct iop_stack_data_scsi scsi;
+		struct iop_stack_data_9p ninep;
 	};
 } iop_frame_t;
 

@@ -1,6 +1,7 @@
 kernel_sources += files(
 	'virtio/DKVirtIOMMIOTransport.m',
 	'virtio/DKVirtIOPCITransport.m',
+	'virtio/VirtIO9pPort.m',
 	'virtio/VirtIODisk.m',
 	'virtio/VirtIOGPU.m',
 	'DKDevice.m',
