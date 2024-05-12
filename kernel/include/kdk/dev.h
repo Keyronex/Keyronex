@@ -235,6 +235,16 @@ iop_t *iop_new_write(DKDevice *dev, vm_mdl_t *mdl, size_t size, io_off_t off);
  */
 iop_t *iop_new_scsi(DKDevice *dev, struct _SCSI_REQUEST_BLOCK *srb);
 
+/*!
+ * @brief Allocate & set up a 9p IOP.
+ *
+ * @param dev Device the IOP is to be sent to.
+ * @param buf_in 9p in-buffer.
+ * @param buf_out 9p out-buffer.
+ * @param mdl Optional MDL.
+ */
+iop_t *iop_new_9p(DKDevice *dev, struct ninep_buf *in, struct ninep_buf *out,
+    vm_mdl_t *mdl);
 
 /*! @brief Send and await completion of an IOP. */
 iop_return_t iop_send_sync(iop_t *iop);

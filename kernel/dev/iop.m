@@ -107,6 +107,19 @@ iop_t *iop_new_scsi(DKDevice *dev, struct _SCSI_REQUEST_BLOCK *srb)
 	return iop;
 }
 
+iop_t *iop_new_9p(DKDevice *dev, struct ninep_buf *in, struct ninep_buf *out, vm_mdl_t *mdl)
+{
+	iop_t *iop = iop_new(dev);
+
+	iop->stack[0].dev = dev;
+	iop->stack[0].function = kIOPType9p;
+	iop->stack[0].mdl = mdl;
+	iop->stack[0].ninep.ninep_in = in;
+	iop->stack[0].ninep.ninep_out = out;
+
+	return iop;
+}
+
 iop_return_t
 iop_continue(iop_t *iop, iop_return_t res)
 {

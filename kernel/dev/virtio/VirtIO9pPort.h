@@ -5,18 +5,6 @@
 #include "ddk/DKVirtIOTransport.h"
 #include "dev/safe_endian.h"
 
-struct ninep_buf {
-	size_t bufsize;
-	io_off_t offset;
-	struct ninep_hdr *data;
-};
-
-struct ninep_hdr {
-	leu32_t size;
-	uint8_t kind;
-	leu16_t tag;
-	uint8_t data[0];
-} __attribute__((packed));
 
 @interface VirtIO9pPort : DKDevice <DKVirtIODelegate> {
     @public

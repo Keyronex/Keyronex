@@ -3,6 +3,8 @@
 #include "VirtIO9pPort.h"
 #include "ddk/virtioreg.h"
 #include "dev/safe_endian.h"
+#include "fs/9p/9p_buf.h"
+#include "fs/9p/9pfs.h"
 #include "kdk/dev.h"
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
@@ -58,7 +60,7 @@ static int counter = 0;
 
 	cfg = provider.deviceConfig;
 
-	kmem_asprintf(obj_name_ptr(self), "virtio-disk-%u", counter++);
+	kmem_asprintf(obj_name_ptr(self), "virtio-9p-%u", counter++);
 	TAILQ_INIT(&in_flight_reqs);
 
 	provider.delegate = self;
@@ -84,10 +86,17 @@ static int counter = 0;
 	TAILQ_INIT(&in_flight_reqs);
 	TAILQ_INIT(&pending_packets);
 
+	size_t nrequests = m_reqQueue.length / 2;
+	m_requests = (void *)vm_kalloc(1, 0);
+	for (int i = 0; i < nrequests; i++)
+		TAILQ_INSERT_TAIL(&free_reqs, &m_requests[i], queue_entry);
+
 	[self registerDevice];
 	memcpy(tagname, (const void *)cfg->tag,
 	    MIN2(from_leu16(cfg->tag_len), 63));
 	DKLogAttachExtra(self, "Tag: %s\n", tagname);
+
+	[NinepFS probeWithProvider:self];
 
 	return self;
 }
@@ -117,8 +126,9 @@ static int counter = 0;
 
 	/* the in buffer */
 	m_reqQueue.desc[descs[0]].len = in_buf->data->size.value;
-	m_reqQueue.desc[descs[0]].addr = native_to_le64(V2P(&in_buf->data));
+	m_reqQueue.desc[descs[0]].addr = native_to_le64(V2P(in_buf->data));
 	m_reqQueue.desc[descs[0]].flags = native_to_le16(VRING_DESC_F_NEXT);
+	m_reqQueue.desc[descs[0]].next = native_to_le16(descs[1]);
 	di++;
 
 	/* the in-mdl, if extant */
@@ -136,9 +146,10 @@ static int counter = 0;
 	}
 
 	/* the out header */
-	m_reqQueue.desc[descs[di]].len = out_buf->data->size.value;
-	m_reqQueue.desc[descs[di]].addr = native_to_le64(V2P(&out_buf->data));
+	m_reqQueue.desc[descs[di]].len = native_to_le32(out_buf->bufsize);
+	m_reqQueue.desc[descs[di]].addr = native_to_le64(V2P(out_buf->data));
 	m_reqQueue.desc[descs[di]].flags = native_to_le16(VRING_DESC_F_WRITE);
+
 	if (mdl && mdl->write) {
 		m_reqQueue.desc[descs[di]].flags |= native_to_le16(
 		    VRING_DESC_F_NEXT);
@@ -203,7 +214,48 @@ static int counter = 0;
 - (void)processUsedDescriptor:(volatile struct vring_used_elem *)e
 		      onQueue:(struct virtio_queue *)queue
 {
-	kfatal("Implement me\n");
+	struct vio9p_req *req;
+	iop_t *iop;
+	uint16_t descidx = le32_to_native(e->id);
+	size_t ndescs = 0;
+
+	TAILQ_FOREACH (req, &in_flight_reqs, queue_entry) {
+		if (req->first_desc_id == le32_to_native(e->id))
+			break;
+	}
+
+	if (req == NULL) {
+		kprintf("vio9p completion without a request: desc id is %u\n",
+		    le32_to_native(e->id));
+		TAILQ_FOREACH (req, &in_flight_reqs, queue_entry)
+			kprintf(" - in-flight req, first desc is %u\n",
+			    req->first_desc_id);
+		kfatal("giving up.\n");
+	}
+
+	TAILQ_REMOVE(&in_flight_reqs, req, queue_entry);
+	while (true) {
+		volatile struct vring_desc *desc = &m_reqQueue.desc[descidx];
+
+		if (!(le16_to_native(desc->flags) & VRING_DESC_F_NEXT)) {
+			[PROVIDER freeDescNum:descidx onQueue:&m_reqQueue];
+			ndescs++;
+			break;
+		} else {
+			uint16_t oldidx = descidx;
+			descidx = desc->next;
+			[PROVIDER freeDescNum:oldidx onQueue:&m_reqQueue];
+			ndescs++;
+		}
+	}
+
+	kassert(ndescs == req->ndescs);
+
+	iop = req->iop;
+	TAILQ_INSERT_TAIL(&free_reqs, req, queue_entry);
+
+	/* this might be better in a separate DPC, or link iop to a list */
+	iop_continue(iop, kIOPRetCompleted);
 }
 
 - (iop_return_t)dispatchIOP:(iop_t *)iop
