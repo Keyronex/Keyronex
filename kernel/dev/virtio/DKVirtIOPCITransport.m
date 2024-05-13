@@ -3,6 +3,7 @@
 #include "dev/PCIBus.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "dev/virtio/VirtIODisk.h"
+#include "dev/virtio/VirtIO9pPort.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
@@ -128,6 +129,10 @@ dpc_handler(void *arg)
 	switch (info->deviceId) {
 	case 0x1001:
 		[VirtIODisk probeWithProvider:self];
+		break;
+
+	case 0x1009:
+		[VirtIO9pPort probeWithProvider:self];
 		break;
 	}
 
