@@ -77,7 +77,7 @@ struct ninep_qid {
 	uint8_t type;
 	uint32_t version;
 	uint64_t path;
-};
+} __attribute__((packed));
 
 struct ninep_buf {
 	size_t bufsize;

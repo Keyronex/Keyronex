@@ -243,7 +243,7 @@ static int counter = 0;
 			break;
 		} else {
 			uint16_t oldidx = descidx;
-			descidx = desc->next;
+			descidx = le16_to_native(desc->next);
 			[PROVIDER freeDescNum:oldidx onQueue:&m_reqQueue];
 			ndescs++;
 		}

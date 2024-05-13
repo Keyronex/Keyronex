@@ -5,7 +5,10 @@
 
 @class VirtIO9pPort;
 
-@interface NinepFS : DKDevice
+@interface NinepFS : DKDevice {
+	struct ninepfs_state *m_state;
+}
+
 + (BOOL)probeWithProvider: (VirtIO9pPort*) provider;
 @end
 

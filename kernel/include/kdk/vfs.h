@@ -66,6 +66,8 @@ typedef struct vfs {
 	DKDevice *device;
 	/*! operations vector */
 	struct vfs_ops *ops;
+	/*! per-fs data */
+	uintptr_t vfs_data;
 } vfs_t;
 
 struct vnode_ops {

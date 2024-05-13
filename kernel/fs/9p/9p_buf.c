@@ -197,10 +197,12 @@ ninep_buf_getqid(struct ninep_buf *buf, struct ninep_qid *qid_out)
 	qid_out->type = *((uint8_t *)&buf->data->data[buf->offset]);
 	buf->offset += 1;
 
-	qid_out->version = *((uint32_t *)&buf->data->data[buf->offset]);
+	qid_out->version = le32_to_native(
+	    *((uint32_t *)&buf->data->data[buf->offset]));
 	buf->offset += sizeof(uint32_t);
 
-	qid_out->path = *((uint64_t *)&buf->data->data[buf->offset]);
+	qid_out->path = le64_to_native(
+	    *((uint64_t *)&buf->data->data[buf->offset]));
 	buf->offset += sizeof(uint64_t);
 
 	return 0;

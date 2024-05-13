@@ -280,8 +280,9 @@ dpc_handler(void *arg)
 	int r;
 
 	r = queue->free_desc_index;
-	kassert(r != queue->length);
+	kassert(r < queue->length);
 	queue->free_desc_index = QUEUE_DESC_AT(queue, r).next;
+	kassert(queue->free_desc_index < queue->length);
 	queue->nfree_descs--;
 
 	return r;
@@ -297,6 +298,7 @@ dpc_handler(void *arg)
 - (void)submitDescNum:(uint16_t)descNum toQueue:(struct virtio_queue *)queue
 {
 #if DEBUG_VIRTIO > 2
+	kassert(descNum <= 64);
 	kprintf("Current index: %u\n Writing New Index: %u\n",
 	    le16_to_native(queue->avail->idx) % queue->length,
 	    native_to_le16(le16_to_native(queue->avail->idx) + 1));
