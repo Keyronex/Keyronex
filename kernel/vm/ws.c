@@ -76,7 +76,9 @@ wsl_evict_one(vm_procstate_t *vmps)
 	kassert(r == 0);
 	kassert(vmp_md_pte_is_valid(pte));
 
+#ifdef TRACE_WS
 	kprintf("Evicting 0x%zx\n", wsle->vaddr);
+#endif
 	pte_page = vm_paddr_to_page(PGROUNDDOWN(V2P(pte)));
 
 	vmp_page_evict(vmps, pte, pte_page, wsle->vaddr);

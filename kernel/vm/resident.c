@@ -367,6 +367,10 @@ page_free(struct vmp_pregion *preg, vm_page_t *page)
 	TAILQ_INSERT_HEAD(&buddy_queue[page->order], page, queue_link);
 	buddy_queue_npages[page->order]++;
 	page->on_freelist = true;
+
+#ifdef EXTREME_SANITY_CHECKING
+	memset((void*)vm_page_direct_map_addr(page), 0x67, PGSIZE);
+#endif
 }
 
 void

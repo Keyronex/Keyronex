@@ -148,7 +148,7 @@ vm_ps_init(eprocess_t *ps)
 	TAILQ_INIT(&vmps->wsl.queue);
 	vmps->wsl.locked_count = 0;
 	vmps->wsl.ws_current_count = 0;
-	vmps->wsl.max = 2048;
+	vmps->wsl.max = 6;
 	vmps->last_trim_counter = 0;
 
 	vmp_md_ps_init(ps);

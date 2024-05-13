@@ -14,10 +14,10 @@ page_is_root_table(vm_page_t *page)
 }
 
 static bool
-page_is_hw_table(vm_page_t *page)
+use_is_hw_table(enum vm_page_use use)
 {
-	return page->use >= kPageUsePML1 &&
-	    page->use <= kPageUsePML1 + VMP_TABLE_LEVELS - 1;
+	return use >= kPageUsePML1 &&
+	    use <= kPageUsePML1 + VMP_TABLE_LEVELS - 1;
 }
 
 /*!
@@ -59,6 +59,7 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 
 	if (page->nonzero_ptes-- == 1 && !page_is_root_table(page)) {
 		vm_page_t *dirpage;
+		enum vm_page_use use = page->use;
 
 		vmp_page_delete_locked(page);
 
@@ -74,7 +75,7 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 
 		kassert(page->referent_pte != 0);
 		dirpage = vm_paddr_to_page(page->referent_pte);
-		if (page_is_hw_table(page))
+		if (use_is_hw_table(use))
 			vmp_md_delete_table_pointers(ps, dirpage,
 			    (pte_t *)P2V(page->referent_pte));
 		else {
@@ -84,6 +85,13 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 
 		page->noswap_ptes = 0;
 		page->referent_pte = 0;
+
+#if EXTREME_SANITY_CHECKS
+		for (int i = 0; i < PGSIZE / sizeof(pte_t); i++) {
+			pte_t *pte = (pte_t *)vm_page_direct_map_addr(page);
+			kassert(pte[i].value == 0x0);
+		}
+#endif
 
 #if PAGETABLE_PAGING
 		/*! once for the working set removal.... */

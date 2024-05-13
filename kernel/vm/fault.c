@@ -292,6 +292,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 				return kVMFaultRetPageShortage;
 			}
 
+			new_page->process = process;
 			new_page->referent_pte = V2P((vaddr_t)pte);
 			old_page = vmp_pte_hw_page(pte, 1);
 
@@ -305,7 +306,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
 		} else {
-			kfatal("Unhandled write fault\n");
+			vmp_md_pte_create_hw(state.pte, vmp_md_pte_hw_pfn(state.pte, 1), true, true);
+			vmp_pte_wire_state_release(&state, false);
+			vmp_release_pfn_lock(ipl);
 		}
 	} else if (pte_kind == kPTEKindZero && area_info.object == NULL) {
 		vm_page_t *page;
@@ -320,6 +323,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			return kVMFaultRetPageShortage;
 		}
 
+		page->process = process;
 		page->referent_pte = V2P((vaddr_t)pte);
 		vmp_md_pte_create_hw(pte, page->pfn, write, true);
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
