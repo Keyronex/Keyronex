@@ -110,12 +110,10 @@ iop_t *iop_new_scsi(DKDevice *dev, struct _SCSI_REQUEST_BLOCK *srb)
 iop_t *iop_new_9p(DKDevice *dev, struct ninep_buf *in, struct ninep_buf *out, vm_mdl_t *mdl)
 {
 	iop_t *iop = iop_new(dev);
+	iop_frame_t *frame = &iop->stack[0];
 
 	iop->stack[0].dev = dev;
-	iop->stack[0].function = kIOPType9p;
-	iop->stack[0].mdl = mdl;
-	iop->stack[0].ninep.ninep_in = in;
-	iop->stack[0].ninep.ninep_out = out;
+	iop_frame_setup_9p(frame, in, out, mdl);
 
 	return iop;
 }
@@ -334,6 +332,16 @@ iop_stack_initialise_next(iop_t *iop)
 	frame->vnode = old->vnode;
 
 	return frame;
+}
+
+void
+iop_frame_setup_9p(iop_frame_t *frame, struct ninep_buf *in,
+    struct ninep_buf *out, vm_mdl_t *mdl)
+{
+	frame->function = kIOPType9p;
+	frame->mdl = mdl;
+	frame->ninep.ninep_in = in;
+	frame->ninep.ninep_out = out;
 }
 
 void

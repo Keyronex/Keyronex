@@ -161,7 +161,7 @@ krx_file_open(const char *upath)
 		struct file *file;
 		eprocess_t *proc = ex_curproc();
 
-		r = obj_new(&file, file_class, sizeof(""), NULL);
+		r = obj_new(&file, file_class, sizeof(struct file), NULL);
 		kassert(r == 0);
 		file->nch = nch;
 		file->offset = 0;

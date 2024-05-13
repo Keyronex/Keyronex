@@ -103,7 +103,7 @@ typedef struct iop_frame {
 	/*! Which device processes this stack entry? */
 	DKDevice *dev;
 	/*! VNode? */
-	void *vnode;
+	struct vnode *vnode;
 	/*! MDL or wired kernel buffer for principal input/out */
 	union {
 		vm_mdl_t *mdl;
@@ -284,6 +284,12 @@ iop_stack_previous(iop_t *iop)
  * being copied in.
  */
 iop_frame_t *iop_stack_initialise_next(iop_t *iop);
+
+/*!
+ * @brief Setup an IOP frame for a 9p request.
+ */
+void iop_frame_setup_9p(iop_frame_t *frame, struct ninep_buf *in,
+    struct ninep_buf *out, vm_mdl_t *mdl);
 
 /*!
  * @brief Set up an IOP frame for an I/O Control request.

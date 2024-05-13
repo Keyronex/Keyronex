@@ -160,8 +160,11 @@ static int counter = 0;
 			paddr_t paddr = vm_mdl_paddr(mdl, i * PGSIZE);
 			m_reqQueue.desc[descs[di]].addr = native_to_le64(paddr);
 			m_reqQueue.desc[descs[di]].len = native_to_le32(PGSIZE);
-			if (i == mdl->nentries - 1)
+			if (i == mdl->nentries - 1) {
+				m_reqQueue.desc[descs[di]].flags =
+				    native_to_le16(VRING_DESC_F_WRITE);
 				break;
+			}
 			m_reqQueue.desc[descs[di]].flags = native_to_le16(
 			    VRING_DESC_F_WRITE | VRING_DESC_F_NEXT);
 			m_reqQueue.desc[descs[di]].next = native_to_le16(

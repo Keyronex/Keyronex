@@ -16,10 +16,13 @@
  * - proper FID allocation
  */
 
+#include <fcntl.h>
+
 #include "9pfs.h"
 #include "ddk/DKDevice.h"
 #include "dev/virtio/VirtIO9pPort.h"
 #include "fs/9p/9p_buf.h"
+#include "kdk/dev.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
@@ -59,6 +62,12 @@ node_cmp(struct ninep_node *x, struct ninep_node *y)
 
 RB_GENERATE(ninep_node_rb, ninep_node, rb_entry, node_cmp);
 
+static fid_t
+fid_allocate(struct ninepfs_state *fs)
+{
+	return fs->fid_counter++;
+}
+
 /*!
  * Finds the ninep_node corresponding to a QID if it exists in the cache, adding
  * a reference to its vnode if so, or, if not found, ceeates one.
@@ -89,6 +98,7 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	found = kmem_alloc(sizeof(struct ninep_node));
 	found->qid = qid;
 	found->fid = fid;
+	found->paging_fid = 0;
 	RB_INSERT(ninep_node_rb, &fs->node_cache, found);
 	ke_mutex_init(&found->rwlock);
 	ke_mutex_init(&found->paging_rwlock);
@@ -116,10 +126,119 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	return 0;
 }
 
-static fid_t
-fid_allocate(struct ninepfs_state *fs)
+static int
+fid_clone(struct ninepfs_state *fs, ninep_fid_t fid, ninep_fid_t new_fid)
 {
-	return fs->fid_counter++;
+	iop_t *iop;
+	struct ninep_buf *buf_in, *buf_out;
+	int r;
+
+	/* size[4] Twalk tag[2] fid[4] newfid[4] nwname[2] nwname*(wname[s]) */
+	buf_in = ninep_buf_alloc("FFh");
+	/* size[4] Rwalk tag[2] nwqid[2] nwqid*(wqid[13]) */
+	buf_out = ninep_buf_alloc("h");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pWalk;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addfid(buf_in, new_fid);
+	ninep_buf_addu16(buf_in, 0);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pWalk + 1: {
+		uint16_t nwnames;
+		ninep_buf_getu16(buf_out, &nwnames);
+		kassert(nwnames == 0);
+		r = 0;
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		kprintf("Failed to clone node id: %d\n", err);
+		kassert(err != 0);
+		r = -err;
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	ninep_buf_free(buf_out);
+
+	return r;
+}
+
+static int
+node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
+{
+	iop_t *iop;
+	struct ninep_buf *buf_in, *buf_out;
+	ninep_fid_t new_fid;
+	int r;
+
+	if (node->paging_fid != 0)
+		return 0;
+
+	if (node->vnode->type != VREG && node->vnode->type != VDIR)
+		return -1; /* EBADF */
+
+	new_fid = fid_allocate(fs);
+
+	r = fid_clone(fs, node->fid, new_fid);
+	kassert(r == 0);
+
+	/* size[4] Tlopen tag[2] fid[4] flags[4] */
+	buf_in = ninep_buf_alloc("Fd");
+	/* size[4] Rlopen tag[2] qid[13] iounit[4] */
+	buf_out = ninep_buf_alloc("Qd");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pLopen;
+	ninep_buf_addfid(buf_in, new_fid);
+	ninep_buf_addu32(buf_in,
+	    node->vnode->type == VDIR ? O_DIRECTORY : O_RDWR);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pLopen + 1: {
+		r = 0;
+		node->paging_fid = new_fid;
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		kprintf("Failed to clone node id: %d\n", err);
+		kassert(err != 0);
+		r = -err;
+		break;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	ninep_buf_free(buf_out);
+
+	return r;
 }
 
 int
@@ -194,7 +313,10 @@ out:
 
 - (iop_return_t)dispatchIOP:(iop_t *)iop
 {
-	iop_frame_t *frame = iop_stack_current(iop);
+	iop_frame_t *frame = iop_stack_current(iop), *next_frame;
+	struct ninep_node *node;
+	struct ninep_buf *buf_in, *buf_out;
+
 	kassert(frame->function == kIOPTypeRead);
 	kassert(frame->vnode != NULL);
 #if 0
@@ -202,9 +324,59 @@ out:
 	    "Dispatching a read request - offset %" PRId64 " length %zu\n",
 	    frame->rw.offset, frame->rw.bytes);
 #endif
-	kfatal("Implement me!\n");
 
-	return kIOPRetCompleted;
+	node = VTO9(frame->vnode);
+	if (node->paging_fid == 0) {
+		int r = node_make_paging_fid(m_state, node);
+		kassert(r == 0);
+	}
+
+	/* size[4] Tread tag[2] fid[4] offset[8] count[4] */
+	buf_in = ninep_buf_alloc("Fld");
+	/* size[4] Rread tag[2] count[4] data[count] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = to_leu16(m_state->req_tag++);
+	buf_in->data->kind = k9pRead;
+	ninep_buf_addfid(buf_in, node->paging_fid);
+	ninep_buf_addu64(buf_in, frame->rw.offset);
+	ninep_buf_addu32(buf_in, frame->rw.bytes);
+	ninep_buf_close(buf_in);
+
+	next_frame = iop_stack_initialise_next(iop);
+	iop_frame_setup_9p(next_frame, buf_in, buf_out, frame->mdl);
+
+	return kIOPRetContinue;
+}
+
+- (iop_return_t)completeIOP:(iop_t *)iop
+{
+	iop_frame_t *frame = iop_stack_previous(iop);
+
+	kassert(frame->function == kIOPType9p);
+
+	switch (frame->ninep.ninep_out->data->kind) {
+	case k9pRead + 1:
+	case k9pWrite + 1: {
+		uint32_t count;
+
+		ninep_buf_getu32(frame->ninep.ninep_out, &count);
+		kassert(count <= iop_stack_current(iop)->rw.bytes);
+
+		ninep_buf_free(frame->ninep.ninep_in);
+		ninep_buf_free(frame->ninep.ninep_out);
+
+		return kIOPRetCompleted;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(frame->ninep.ninep_out, &err);
+		DKDevLog(self, "Pager I/O got error code %d\n", err);
+	}
+	default:
+		kfatal("9p error\n");
+	}
 }
 
 - (int)negotiateVersion
@@ -253,7 +425,7 @@ out:
 
 - (int)attach
 {
-	int r;
+	int r = 0;
 	struct ninep_buf *buf_in, *buf_out;
 	iop_t *iop;
 
@@ -279,7 +451,6 @@ out:
 	case k9pAttach + 1: {
 		struct ninep_qid qid;
 		struct ninep_node *root_node;
-		int r;
 
 		r = ninep_buf_getqid(buf_out, &qid);
 		if (r != 0)

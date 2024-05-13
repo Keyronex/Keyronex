@@ -125,6 +125,7 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	mdl = &pgstate->mdl;
 	mdl->nentries = 1;
 	mdl->offset = 0;
+	mdl->write = true;
 	mdl->pages[0] = page;
 	iop = iop_new_vnode_read(object->file.vnode, mdl, PGSIZE,
 	    object_byteoffset);
