@@ -169,7 +169,8 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	}
 
 	if (satisfier != -1 || timeout == 0) {
-		for (int i = 0; i < satisfier; i++) {
+		int limit = satisfier == -1 ? nobjects : satisfier;
+		for (int i = 0; i < limit; i++) {
 			kwaitblock_t *wb;
 			kdispatchheader_t *obj;
 
