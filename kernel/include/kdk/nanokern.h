@@ -295,6 +295,8 @@ typedef struct kthread {
 
 	/* TCB */
 	uintptr_t tcb;
+	/* ID - only needed for userland threads. to move into ethread. */
+	uint16_t tid;
 } kthread_t;
 
 /*!

@@ -1,10 +1,14 @@
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
+#include "kdk/misc.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
 #include "object.h"
 #include "vm/vmp.h"
+
+extern obj_class_t process_class;
+extern vm_procstate_t kernel_procstate;
 
 struct {
 	struct object_header header;
@@ -13,8 +17,10 @@ struct {
 	.process = { .vm = &kernel_procstate }
 };
 eprocess_t *kernel_process = &kernel_process_pkg.process;
-extern obj_class_t process_class;
-extern vm_procstate_t kernel_procstate;
+
+uint8_t tid_bitmap[UINT16_MAX / 8];
+struct id_allocator tid_allocator = STATIC_IDALLOC_INITIALISER(tid_bitmap,
+    UINT16_MAX / 8);
 
 int
 ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
@@ -34,6 +40,8 @@ ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
 	thread->kstack_base = (void *)stack;
 	ki_thread_common_init(thread, NULL, &ps->kprocess, name);
 	ke_thread_init_context(thread, fn, arg);
+
+	thread->tid = idalloc_alloc(&tid_allocator);
 
 	*out = thread;
 

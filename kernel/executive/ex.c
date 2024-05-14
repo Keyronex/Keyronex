@@ -15,6 +15,9 @@
 
 /* exec.c */
 int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
+/* futex.c */
+int krx_futex_wait(int *u_pointer, int expected, nanosecs_t ns);
+int krx_futex_wake(int *u_pointer);
 
 kthread_t *ex_init_thread;
 obj_class_t process_class, file_class;
@@ -195,7 +198,6 @@ io_off_t
 krx_file_seek(int handle, io_off_t offset)
 {
 	struct file *file;
-	int r;
 
 	file = ex_curproc()->handles[handle];
 	file->offset = offset;
@@ -235,7 +237,6 @@ thread_trampoline(void *arg)
 
 	void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
 	kmem_free(arg, sizeof(info));
-	kprintf("Go to entry %p stack %p\n", info.entry, info.stack);
 	ki_enter_user_mode(info.entry, info.stack);
 }
 
@@ -258,7 +259,7 @@ krx_fork_thread(uintptr_t entry, uintptr_t stack)
 
 	ke_thread_resume(thread);
 
-	return 1;
+	return thread->tid;
 }
 
 uintptr_t
@@ -281,6 +282,9 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 	case kKrxTcbGet:
 		return curthread()->tcb;
 
+	case kKrxGetTid:
+		return curthread()->tid;
+
 	case kKrxVmAllocate:
 		return krx_vm_allocate(arg1, out1);
 
@@ -298,6 +302,12 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 
 	case kKrxForkThread:
 		return krx_fork_thread(arg1, arg2);
+
+	case kKrxFutexWait:
+		return krx_futex_wait((int *)arg1, arg2, -1);
+
+	case kKrxFutexWake:
+		return krx_futex_wake((int *)arg1);
 
 	default:
 		kfatal("unhandled syscall %d\n", syscall);

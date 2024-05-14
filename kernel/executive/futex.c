@@ -121,18 +121,18 @@ krx_futex_wait(int *u_pointer, int expected, nanosecs_t ns)
 	void *object;
 	io_off_t offset;
 	kwaitresult_t w;
-	int r = 0;
+	int r;
 
-	get_object_and_offset((uintptr_t)u_pointer, &object, &offset);
+	r = get_object_and_offset((uintptr_t)u_pointer, &object, &offset);
+	if (r != 0)
+		return -EFAULT;
 
 	ipl = ke_spinlock_acquire(&futex_lock);
 	futex = futex_find(object, offset, true);
-	ke_spinlock_release_nospl(&futex_lock);
+	ke_spinlock_release(&futex_lock, ipl);
 
-	if (*u_pointer != expected) {
-		ke_spinlock_release(&futex_lock, ipl);
+	if (*u_pointer != expected)
 		return -EAGAIN;
-	}
 
 	w = ke_wait(&futex->semaphore, "sys_futex_wait", true, true, ns);
 	switch (w) {
@@ -167,8 +167,11 @@ krx_futex_wake(int *u_pointer)
 	futex_t *futex;
 	void *object;
 	io_off_t offset;
+	int r;
 
-	get_object_and_offset((uintptr_t)u_pointer, &object, &offset);
+	r = get_object_and_offset((uintptr_t)u_pointer, &object, &offset);
+	if (r != 0)
+		return -EFAULT;
 
 	ipl = ke_spinlock_acquire(&futex_lock);
 	futex = futex_find(object, offset, true);
