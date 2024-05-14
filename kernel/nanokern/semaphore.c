@@ -40,7 +40,6 @@ ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 	ke_release_scheduler_lock(ipl);
 }
 
-#if 0
 void
 ke_semaphore_release_maxone(ksemaphore_t *sem)
 {
@@ -48,12 +47,12 @@ ke_semaphore_release_maxone(ksemaphore_t *sem)
 	ipl_t ipl = ke_spinlock_acquire(&sem->hdr.spinlock);
 
 	/* low: test for overflow; implement semaphore limits? */
-	sem->hdr.signalled += adjustment;
-	ki_signal(&sem->hdr, &queue, semaphore_acquire);
+	if (sem->hdr.signalled == 0)
+		sem->hdr.signalled = 1;
+	ki_signal(&sem->hdr, &queue);
 	ke_spinlock_release_nospl(&sem->hdr.spinlock);
 
 	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
 	ke_release_scheduler_lock(ipl);
 }
-#endif
