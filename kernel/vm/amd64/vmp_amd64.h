@@ -140,6 +140,12 @@ vmp_md_soft_pte_pfn(pte_t *pte)
 }
 
 /* new stuff */
+static inline pfn_t
+vmp_md_pte_hw_pfn(pte_t *pte, int level)
+{
+	return pte->hw.pfn;
+}
+
 static inline paddr_t
 vmp_pte_hw_paddr(pte_t *pte, int level)
 {

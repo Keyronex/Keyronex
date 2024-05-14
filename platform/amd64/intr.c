@@ -1,4 +1,5 @@
 #include "asmintr.h"
+#include "executive/exp.h"
 #include "intr.h"
 #include "kdk/amd64.h"
 #include "kdk/amd64/regs.h"
@@ -87,13 +88,18 @@ intr_init(void)
 void
 handle_int(md_intr_frame_t *frame, uintptr_t num)
 {
-	ipl_t ipl = splget(), new_ipl = num >> 4;
+	ipl_t ipl = splget(), new_ipl;
 	struct intr_entries *entries;
 	struct intr_entry *entry;
 	uintptr_t cr2;
 
 	if (num == 14)
 		cr2 = read_cr2();
+
+	if (num != kIntVecSyscall)
+		new_ipl = num >> 4;
+	else
+		new_ipl = kIPL0;
 
 	if (splget() >new_ipl)
 		kfatal("IPL not less or equal\n");
@@ -109,6 +115,12 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	case kIntVecDPC:
 		lapic_eoi();
 		ki_dispatch_dpcs(curcpu());
+		break;
+
+	case kIntVecSyscall:
+		frame->rax = ex_syscall_dispatch(frame->rax, frame->rdi,
+		    frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9,
+		    &frame->rdi);
 		break;
 
 	case kIntVecLAPICTimer:

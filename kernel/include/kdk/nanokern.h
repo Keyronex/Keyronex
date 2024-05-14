@@ -603,6 +603,8 @@ void kputc(int ch, void *unused);
 
 void ke_format_time(nanosecs_t nanosecs, char *out, size_t size);
 
+void ke_set_tcb(uintptr_t tcb);
+
 #if SMP == 1
 extern kcpu_t **cpus;
 #else

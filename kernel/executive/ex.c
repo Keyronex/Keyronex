@@ -19,6 +19,8 @@ int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
 kthread_t *ex_init_thread;
 obj_class_t process_class, file_class;
 
+kthread_t *user_init_thread;
+
 static void
 test_anon(void)
 {
@@ -99,14 +101,14 @@ ex_init(void *)
 	nc_dump();
 
 	eprocess_t *initps;
-	kthread_t *initthread;
 	r = ps_process_create(&initps, false);
 	kassert(r == 0);
 
-	r = ps_thread_create(&initthread, "user init thread 0", user_init, NULL, initps);
+	r = ps_thread_create(&user_init_thread, "user init thread 0", user_init,
+	    NULL, initps);
 	kassert(r == 0);
 
-	ke_thread_resume(initthread);
+	ke_thread_resume(user_init_thread);
 
 	ps_exit_this_thread();
 }
@@ -213,12 +215,50 @@ krx_vm_map(vaddr_t hint, size_t size, int prot, int flags, int handle,
 	}
 
 	r = vm_ps_map_object_view(ex_curproc()->vm, obj, &hint, size, offset,
-	    kVMAll, kVMAll, flags & MAP_PRIVATE,
+	    kVMAll, kVMAll, !(flags & MAP_PRIVATE),
 	    obj != NULL ? (flags & MAP_PRIVATE) : false, flags & MAP_FIXED);
 	if (r == 0)
 		*out = hint;
 
 	return r;
+}
+
+struct thread_new_info {
+	uintptr_t entry;
+	uintptr_t stack;
+};
+
+static void
+thread_trampoline(void *arg)
+{
+	struct thread_new_info info = *(struct thread_new_info *)arg;
+
+	void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
+	kmem_free(arg, sizeof(info));
+	kprintf("Go to entry %p stack %p\n", info.entry, info.stack);
+	ki_enter_user_mode(info.entry, info.stack);
+}
+
+int
+krx_fork_thread(uintptr_t entry, uintptr_t stack)
+{
+	kthread_t *thread;
+	struct thread_new_info *info = kmem_alloc(sizeof(*info));
+	int r;
+
+	info->entry = entry;
+	info->stack = stack;
+
+	r = ps_thread_create(&thread, "newthread", thread_trampoline, info,
+	    ex_curproc());
+	if (r != 0) {
+		kmem_free(info, sizeof(*info));
+		return r;
+	}
+
+	ke_thread_resume(thread);
+
+	return 1;
 }
 
 uintptr_t
@@ -233,6 +273,9 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 
 	case kKrxTcbSet:
 		curthread()->tcb = arg1;
+#ifndef __m68k__
+		ke_set_tcb(arg1);
+#endif
 		return 0;
 
 	case kKrxTcbGet:
@@ -252,6 +295,9 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 
 	case kKrxFileSeek:
 		return krx_file_seek(arg1, arg2);
+
+	case kKrxForkThread:
+		return krx_fork_thread(arg1, arg2);
 
 	default:
 		kfatal("unhandled syscall %d\n", syscall);

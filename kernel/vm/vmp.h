@@ -47,8 +47,6 @@ typedef struct vm_map_entry {
 		vm_protection_t protection : 3, max_protection : 3;
 		/*! whether shared on fork (if false, copied) */
 		bool inherit_shared : 1;
-		/*! whether mapping is private anonymous memory. */
-		bool private : 1;
 		/*! (!private only) whether the mapping is copy-on-write */
 		bool cow : 1;
 		/*! if !private, page-unit offset into object (max 256tib) */

@@ -15,6 +15,7 @@ md_switch(kthread_t *old_thread)
 {
 	extern void asm_swtch(void * old, void * new);
 	write_cr3(ex_curproc()->vm->md.table);
+	wrmsr(kAMD64MSRFSBase, curthread()->tcb);
 	curcpu()->cpucb.tss->rsp0 = ((uintptr_t)(curthread()->kstack_base)) +
 	    KSTACK_SIZE;
 	asm_swtch(&old_thread->pcb, &curthread()->pcb);
@@ -63,4 +64,10 @@ ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 		     :
 		     : "r"(frame)
 		     : "memory");
+}
+
+void
+ke_set_tcb(uintptr_t tcb)
+{
+	wrmsr(kAMD64MSRFSBase, tcb);
 }
