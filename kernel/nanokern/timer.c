@@ -30,6 +30,7 @@ ke_timer_init(ktimer_t *timer)
 	ke_spinlock_init(&timer->hdr.spinlock);
 	timer->state = kTimerDisabled;
 	timer->cpu = NULL;
+	timer->dpc = NULL;
 	TAILQ_INIT(&timer->hdr.waitblock_queue);
 }
 
