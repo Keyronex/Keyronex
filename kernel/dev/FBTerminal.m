@@ -101,7 +101,8 @@ fbterminal_printstats()
 		struct pctx pctx = { .gterm = gterm, .x = X, .y = Y }; \
 		npf_pprintf(stat_putc, &pctx, __VA_ARGS__);            \
 	})
-	STPRINT(0, 0, "ACT: %zu MOD: %zu STBY: %zu FREE: %zu", vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
+	STPRINT(0, 0, "ACT: %zu MOD: %zu STBY: %zu FREE: %zu        ",
+	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
 	STPRINT(0, 16, "Console: %s", obj_name(system_terminal));
 }
 
