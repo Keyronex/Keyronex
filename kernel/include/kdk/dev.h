@@ -175,6 +175,11 @@ typedef struct iop {
 iop_t *iop_new(DKDevice *dev);
 
 /*!
+ * @brief (re-)initialise an IOP.
+ */
+void iop_init(iop_t *iop);
+
+/*!
  * @brief Free an IOP.
  */
 void iop_free(iop_t *iop);
@@ -216,6 +221,16 @@ iop_t *iop_new_read(DKDevice *dev, vm_mdl_t *mdl, size_t size, io_off_t off);
  * @param size Size in bytes to read.
  */
 iop_t *iop_new_vnode_read(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
+    io_off_t off);
+
+/*!
+ * @brief Allocate & set up a write IOP on a vnode.
+ *
+ * @param dev Device the IOP is to be sent to.
+ * @param mdl MDL for the input buffer. (Should have ->write = false)
+ * @param size Size in bytes to write.
+ */
+iop_t *iop_new_vnode_write(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
     io_off_t off);
 
 /*!

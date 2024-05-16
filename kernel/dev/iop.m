@@ -7,7 +7,8 @@
 #define kdprintf kprintf
 #define IOP_SIZE(DEPTH) (sizeof(iop_t) + sizeof(iop_frame_t) * DEPTH)
 
-void iop_init(iop_t *iop)
+void
+iop_init(iop_t *iop)
 {
 	iop->direction = kIOPDown;
 	iop->stack_current = -1;
@@ -22,7 +23,7 @@ iop_t *
 iop_new(DKDevice *dev)
 {
 	uint8_t depth = 10;//dev->m_stackDepth;
-	iop_t *iop = kmem_alloc(IOP_SIZE(depth));
+	iop_t *iop = kmem_zalloc(IOP_SIZE(depth));
 	iop->stack_count = depth;
 	iop_init(iop);
 	return iop;
@@ -79,6 +80,23 @@ iop_new_vnode_read(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
 	iop->stack[0].vnode = vnode;
 	iop->stack[0].dev = dev;
 	iop->stack[0].function = kIOPTypeRead;
+	iop->stack[0].mdl = mdl;
+	iop->stack[0].rw.bytes = size;
+	iop->stack[0].rw.offset = off;
+
+	return iop;
+}
+
+iop_t *
+iop_new_vnode_write(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
+    io_off_t off)
+{
+	DKDevice *dev = vnode->vfs->device;
+	iop_t *iop = iop_new(dev);
+
+	iop->stack[0].vnode = vnode;
+	iop->stack[0].dev = dev;
+	iop->stack[0].function = kIOPTypeWrite;
 	iop->stack[0].mdl = mdl;
 	iop->stack[0].rw.bytes = size;
 	iop->stack[0].rw.offset = off;
@@ -175,9 +193,11 @@ cont:
 		 * frame 0's device is explicitly set by the iop_new() function
 		 * and all its derivatives
 		 */
-		if (frame->dev == NULL)
+		if (frame->dev == NULL) {
+			kassert(iop->stack_current > 0);
 			frame->dev =
 			    iop->stack[iop->stack_current - 1].dev->m_provider;
+		}
 
 		kassert(frame->dev != NULL);
 		//kassert(frame->dev->dispatch != NULL);
