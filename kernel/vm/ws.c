@@ -32,6 +32,8 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 	bool dirty = vmp_md_hw_pte_is_writeable(pte);
 	vm_page_t *page = vmp_pte_hw_page(pte, 1);
 
+	kassert(vmp_pte_characterise(pte) == kPTEKindValid);
+
 	page->dirty |= dirty;
 
 	switch (page->use) {
@@ -40,6 +42,8 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		 * we need to replace this with a transition PTE then.
 		 * used_ptes and noswap_ptes count is as such unchanged.
 		 */
+		kassert(page->refcnt == 1);
+		kassert(page->referent_pte == V2P(pte));
 		vmp_md_pte_create_trans(pte, page->pfn);
 		ki_tlb_flush_vaddr_globally(vaddr);
 		vmp_page_release_locked(page);

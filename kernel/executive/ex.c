@@ -24,6 +24,7 @@ obj_class_t process_class, file_class;
 
 kthread_t *user_init_thread;
 
+#if 0
 static void
 test_anon(void)
 {
@@ -44,6 +45,26 @@ test_anon(void)
 	vmp_wsl_dump(&kernel_procstate);
 	vmp_pages_dump();
 }
+#endif
+
+#if 0
+static void
+test_namecache(void)
+{
+	namecache_handle_t hdl = nchandle_retain(root_nch), out;
+
+	kprintf("Before any lookups\n");
+	nc_dump();
+
+	int r = vfs_lookup(hdl, &out, "A/B/C/D.txt", 0);
+	kprintf("\nAfter looking up A/B/C/D.txt (ret %d)...\n", r);
+	nc_dump();
+
+	r = vfs_lookup(hdl, &out, "E/F/G.TXT", 0);
+	kprintf("\nAfter looking up E/F/G.TXT (ret %d)...\n", r);
+	nc_dump();
+}
+#endif
 
 void
 user_init(void *arg)
@@ -63,13 +84,27 @@ user_init(void *arg)
 	if (r != 0)
 		kfatal("Failed to load POSIX server\n");
 
-	for (;;) ;
+	kfatal("Unreached\n");
+}
 
+static void pagefile_init(void)
+{
+	int r;
+	namecache_handle_t pagefile;
+
+	r = vfs_lookup(root_nch, &pagefile, "pagefile", 0);
+	if (r != 0)
+		kfatal("Failed to look up /pagefile\n");
+
+	obj_retain(pagefile.nc->vp);
+	vm_pagefile_add(pagefile.nc->vp);
+	nchandle_release(pagefile);
 }
 
 void
 ex_init(void *)
 {
+	int r;
 	void ddk_init(void), ddk_autoconf(void), ubc_init(void);
 
 	vmp_paging_init();
@@ -90,18 +125,7 @@ ex_init(void *)
 	process_class = obj_new_type("process");
 	file_class = obj_new_type("file");
 
-	namecache_handle_t hdl = nchandle_retain(root_nch), out;
-
-	kprintf("Before any lookups\n");
-	nc_dump();
-
-	int r = vfs_lookup(hdl, &out, "A/B/C/D.txt", 0);
-	kprintf("\nAfter looking up A/B/C/D.txt (ret %d)...\n", r);
-	nc_dump();
-
-	r = vfs_lookup(hdl, &out, "E/F/G.TXT", 0);
-	kprintf("\nAfter looking up E/F/G.TXT (ret %d)...\n", r);
-	nc_dump();
+	pagefile_init();
 
 	eprocess_t *initps;
 	r = ps_process_create(&initps, false);

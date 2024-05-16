@@ -31,6 +31,9 @@ vmp_paging_init(void)
 	    vmp_balancer, NULL);
 	ps_create_kernel_thread(&vmp_writeback_thread,
 	    "vm dirty writer daemon", vmp_writeback, NULL);
+
+	ke_thread_resume(vmp_balancer_thread);
+	ke_thread_resume(vmp_writeback_thread);
 }
 
 static void
@@ -87,6 +90,8 @@ vmp_balancer(void *)
 		    "vmp_balancer_event", false, false, NS_PER_S);
 		bool urgent = w == 0;
 
+#if 0
 		trim_working_sets(urgent);
+#endif
 	}
 }

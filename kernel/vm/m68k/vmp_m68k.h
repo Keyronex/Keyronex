@@ -112,6 +112,14 @@ vmp_md_pte_create_trans(pte_t *pte, pfn_t pfn)
 }
 
 static inline void
+vmp_md_pte_create_swap(pte_t *pte, pfn_t swapdesc)
+{
+	pte->sw.type = 0;
+	pte->sw.data = swapdesc;
+	pte->sw.kind = kSoftPteKindSwap;
+}
+
+static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	pte->value = 0;

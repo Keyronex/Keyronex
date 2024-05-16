@@ -269,6 +269,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		kfatal("Nothing to do?\n");
 	} else if (pte_kind == kPTEKindValid &&
 	    !vmp_md_hw_pte_is_writeable(state.pte) && write) {
+		pte_t *pte = state.pte;
+		vm_page_t *old_page = vmp_pte_hw_page(pte, 1);
+
 		/*
 		 * Write fault, VAD permits, PTE valid, PTE not
 		 * writeable. Possibilities:
@@ -276,9 +279,15 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		 * writeable because of dirty-bit emulation.
 		 * - this is a CoW page
 		 */
-		if (area_info.copy) {
-			vm_page_t *new_page, *old_page;
-			pte_t *pte = state.pte;
+
+		if (old_page->use == kPageUseAnonPrivate) {
+			/* Dirty fault. */
+			vmp_md_pte_create_hw(state.pte,
+			    vmp_md_pte_hw_pfn(state.pte, 1), true, true);
+			vmp_pte_wire_state_release(&state, false);
+			vmp_release_pfn_lock(ipl);
+		} else if (area_info.copy) {
+			vm_page_t *new_page;
 			vm_page_t *pml1_page = state.pgtable_pages[0];
 
 			/* (Symmetric) CoW fault.*/
@@ -294,7 +303,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 			new_page->process = process;
 			new_page->referent_pte = V2P((vaddr_t)pte);
-			old_page = vmp_pte_hw_page(pte, 1);
+			new_page->offset = vaddr / PGSIZE;
 
 			memcpy((void *)vm_page_direct_map_addr(new_page),
 			    (void *)vm_page_direct_map_addr(old_page), PGSIZE);
@@ -303,10 +312,6 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			vmp_md_pte_create_hw(pte, new_page->pfn, write, true);
 			vmp_pagetable_page_noswap_pte_created(vmps, pml1_page,
 			    true);
-			vmp_pte_wire_state_release(&state, false);
-			vmp_release_pfn_lock(ipl);
-		} else {
-			vmp_md_pte_create_hw(state.pte, vmp_md_pte_hw_pfn(state.pte, 1), true, true);
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
 		}
@@ -325,6 +330,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 		page->process = process;
 		page->referent_pte = V2P((vaddr_t)pte);
+		page->offset = vaddr / PGSIZE;
 		vmp_md_pte_create_hw(pte, page->pfn, write, true);
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
 		vmp_pte_wire_state_release(&state, false);
@@ -346,6 +352,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		vm_page_t *page = vm_pfn_to_page(
 		    vmp_md_soft_pte_pfn(state.pte));
 
+		kassert(page->use == kPageUseAnonPrivate);
+
 		vmp_page_retain_locked(page);
 		vmp_md_pte_create_hw(state.pte, page->pfn, write, true);
 		vmp_pte_wire_state_release(&state, false);
@@ -359,6 +367,60 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			 * unlock again.
 			 */
 			kfatal("Working set insertion failed - evict!!\n");
+		}
+	} else if (pte_kind == kPTEKindSwap) {
+
+		vm_mdl_t *mdl;
+		iop_t *iop;
+		struct vmp_pager_state *pgstate;
+		vm_page_t *page;
+
+		r = vmp_page_alloc_locked(&page, kPageUseAnonPrivate, false);
+		kassert(r == 0);
+
+		pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
+		kassert(r == 0);
+
+		pgstate->vpfn = (vaddr / PGSIZE);
+		pgstate->length = 1;
+		ke_event_init(&pgstate->event, false);
+
+		page->pager_request = pgstate;
+		page->owner = process;
+		page->dirty = false;
+		page->referent_pte = V2P((vaddr_t)state.pte);
+		page->offset = vaddr / PGSIZE;
+
+		/* create busy PTE */
+		vmp_md_pte_create_busy(state.pte, page->pfn);
+		vmp_pagetable_page_noswap_pte_created(process->vm,
+		    state.pgtable_pages[0], false);
+
+		/* additional retain to keep PTE valid */
+		vmp_page_retain_locked(state.pgtable_pages[0]);
+
+		vmp_pte_wire_state_release(&state, false);
+		vmp_release_pfn_lock(kIPLAST);
+		ke_mutex_release(&vmps->mutex);
+
+		extern vnode_t *pagefile_vnode;
+
+		mdl = &pgstate->mdl;
+		mdl->nentries = 1;
+		mdl->offset = 0;
+		mdl->write = true;
+		mdl->pages[0] = page;
+		iop = iop_new_vnode_read(pagefile_vnode, mdl, PGSIZE,
+		    vmp_md_soft_pte_pfn(state.pte) * PGSIZE);
+
+		iop_send_sync(iop);
+
+		KE_WAIT(&vmps->mutex, false, false, -1);
+		vmp_acquire_pfn_lock();
+
+		switch (vmp_pte_characterise(state.pte)) {
+		default:
+			kfatal("Complete this codepath\n");
 		}
 	} else {
 		kfatal("Unexpected PTE state\n");

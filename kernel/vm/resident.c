@@ -13,6 +13,7 @@
  * @brief Resident page management - allocation, deallocation, etc.
  */
 
+#include "kdk/executive.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
@@ -28,10 +29,7 @@
 #endif
 #define BAD_PTR ((void *)BAD_INT)
 
-#define DEFINE_PAGEQUEUE(NAME) \
-	static page_queue_t NAME = TAILQ_HEAD_INITIALIZER(NAME)
-
-typedef TAILQ_HEAD(, vm_page) page_queue_t;
+#define DEFINE_PAGEQUEUE(NAME) page_queue_t NAME = TAILQ_HEAD_INITIALIZER(NAME)
 
 struct vmp_pregion {
 	/*! Linkage to pregion_queue. */
@@ -308,7 +306,7 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
 	page->offset = 0;
 	page->referent_pte = 0;
 	page->owner = 0;
-	page->swap_descriptor = 0;
+	page->drumslot = 0;
 	page->nonzero_ptes = 0;
 	page->noswap_ptes = 0;
 
@@ -478,7 +476,11 @@ vmp_page_release_locked(vm_page_t *page)
 			vmp_page_free_locked(page);
 			return;
 
-		case kPageUseAnonPrivate:
+		case kPageUseAnonPrivate: {
+			pte_t *thepte = (pte_t *)P2V(page->referent_pte);
+			kassert(vmp_pte_characterise(thepte) == kPTEKindTrans);
+			kassert(vmp_md_soft_pte_pfn(thepte) == page->pfn);
+		}
 		case kPageUseFileShared:
 			/* continue with logic below */
 			break;
@@ -620,11 +622,52 @@ vm_page_alloc(vm_page_t **out, size_t order, enum vm_page_use use, bool must)
 	return r;
 }
 
-void vmp_modified_pages_dump(void)
+void
+vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
+{
+	pte_t *pte;
+	vm_page_t *dirpage;
+
+	kassert(ke_spinlock_held(&vmp_pfn_lock));
+	kassert(page->refcnt == 0);
+	kassert(!page->dirty);
+
+	pte = (pte_t *)P2V(page->referent_pte);
+	dirpage = vm_paddr_to_page(page->referent_pte);
+
+	switch (page->use) {
+	case kPageUseAnonPrivate: {
+		kassert(vmp_pte_characterise(pte) == kPTEKindTrans);
+		vmp_md_pte_create_swap(pte, page->drumslot);
+		/* get ps from owner field */
+		vmp_pagetable_page_pte_became_swap(page->process->vm, dirpage);
+		break;
+	}
+
+	case kPageUseFileShared: {
+		/* a file PTE is either valid, busy, or zero */
+		kassert(vmp_pte_characterise(pte) == kPTEKindValid);
+		vmp_md_pte_create_zero(pte);
+		vmp_pagetable_page_pte_deleted(&kernel_procstate, dirpage,
+		    false);
+		break;
+	}
+
+	default:
+		kfatal("Can't steal page of use %d\n", page->use);
+	}
+
+	/* TODO (low): this can be made more efficient */
+	page->refcnt = 1;
+	vmp_page_delete_locked(page);
+	vmp_page_release_locked(page);
+}
+
+void
+vmp_modified_pages_dump(void)
 {
 	ipl_t ipl = vmp_acquire_pfn_lock();
 	vm_page_t *page;
-
 
 	kprintf("Modified Page Queue summary:\n");
 	print_page_summary_header();

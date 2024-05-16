@@ -113,6 +113,18 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 }
 
 void
+vmp_pagetable_page_pte_became_swap(vm_procstate_t *ps, vm_page_t *page)
+{
+#if PAGETABLE_PAGING
+	if (page->nonswap_ptes-- == 1 && !page_is_root_table(page))
+		vmp_wsl_unlock_entry(ps, P2V(vmp_page_paddr(page)));
+	vmp_page_release_locked(page);
+#else
+	page->noswap_ptes--;
+#endif
+}
+
+void
 vmp_pte_wire_state_release(struct vmp_pte_wire_state *state, bool prototype)
 {
 

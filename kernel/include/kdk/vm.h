@@ -19,6 +19,7 @@
 
 enum vmem_flag;
 struct eprocess;
+struct vnode;
 
 /*! Physical address. */
 typedef uintptr_t paddr_t;
@@ -135,7 +136,7 @@ typedef struct vm_page {
 	};
 
 	/* 32-bit: word 8; 64-bit: word 7 */
-	uintptr_t swap_descriptor;
+	uintptr_t drumslot;
 } vm_page_t;
 
 typedef struct vm_mdl_view_entry {
@@ -152,6 +153,11 @@ typedef struct vm_mdl {
 	bool write;
 	vm_page_t *pages[0];
 } vm_mdl_t;
+
+#define STATIC_MDL(NPAGES) struct {	\
+	vm_mdl_t mdl;			\
+	vm_page_t *static_pages[NPAGES];\
+}
 
 enum vmp_pte_kind {
 	kPTEKindZero,
@@ -243,6 +249,9 @@ int vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object,
 
 /*! Dump the VAD tree of a process.*/
 int vm_ps_dump_vadtree(vm_procstate_t *vmps);
+
+/*! Set up a new pagefile. */
+int vm_pagefile_add(struct vnode *vnode);
 
 extern struct vm_stat vmstat;
 
