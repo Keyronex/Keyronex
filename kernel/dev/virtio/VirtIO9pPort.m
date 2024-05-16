@@ -113,6 +113,7 @@ static int counter = 0;
 	struct vio9p_req *req = TAILQ_FIRST(&free_reqs);
 
 	kassert(req != NULL);
+	TAILQ_REMOVE(&in_flight_reqs, req, queue_entry);
 
 	if (mdl != NULL)
 		ndescs += mdl->nentries;

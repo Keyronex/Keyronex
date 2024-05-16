@@ -317,13 +317,20 @@ out:
 	struct ninep_node *node;
 	struct ninep_buf *buf_in, *buf_out;
 
-	kassert(frame->function == kIOPTypeRead);
+	kassert(frame->function == kIOPTypeRead ||
+	    frame->function == kIOPTypeWrite);
 	kassert(frame->vnode != NULL);
 #if 0
 	DKDevLog(self,
 	    "Dispatching a read request - offset %" PRId64 " length %zu\n",
 	    frame->rw.offset, frame->rw.bytes);
 #endif
+
+	if (frame->function == kIOPTypeRead) {
+		kassert(frame->mdl->write == true);
+	} else {
+		kassert(frame->mdl->write == false);
+	}
 
 	node = VTO9(frame->vnode);
 	if (node->paging_fid == 0) {
@@ -337,7 +344,8 @@ out:
 	buf_out = ninep_buf_alloc("d");
 
 	buf_in->data->tag = to_leu16(m_state->req_tag++);
-	buf_in->data->kind = k9pRead;
+	buf_in->data->kind = frame->function == kIOPTypeRead ? k9pRead :
+							       k9pWrite;
 	ninep_buf_addfid(buf_in, node->paging_fid);
 	ninep_buf_addu64(buf_in, frame->rw.offset);
 	ninep_buf_addu32(buf_in, frame->rw.bytes);
