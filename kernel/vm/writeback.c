@@ -10,6 +10,7 @@
 #include "kdk/dev.h"
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/misc.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
@@ -25,6 +26,8 @@ struct pagefile {
 	size_t next_free;
 };
 
+#define kMaxWritebacks 16
+const int kMaxPagesPerWrite = 4;
 struct pagefile pagefile;
 
 int
@@ -123,12 +126,12 @@ reclaim_all_pages(void)
 void
 vmp_writeback(void *)
 {
-	iop_t *iops[8] = { 0 };
-	STATIC_MDL(8) mdls[8];
+	iop_t *iops[kMaxWritebacks] = { 0 };
+	STATIC_MDL(kMaxPagesPerWrite) mdls[kMaxWritebacks];
 
 	while (true) {
 		kwaitresult_t w = ke_wait(&vmp_writeback_event,
-		    "vmp_writeback_event", false, false, NS_PER_S);
+		    "vmp_writeback_event", false, false, NS_PER_S / 5);
 		ipl_t ipl;
 		size_t nio_prepared = 0;
 
@@ -136,7 +139,7 @@ vmp_writeback(void *)
 			continue;
 
 		if (iops[0] == NULL) {
-			for (int i = 0; i < 8; i++)
+			for (int i = 0; i < kMaxWritebacks; i++)
 				iops[i] = iop_new_vnode_write(pagefile.vnode,
 				    &mdls[i].mdl, 0, 0);
 		}
@@ -145,7 +148,7 @@ vmp_writeback(void *)
 		kprintf("The Writeback Daemon!\n");
 
 		ipl = vmp_acquire_pfn_lock();
-		for (int i = 0; i < 8; i++) {
+		for (int i = 0; i < kMaxWritebacks; i++) {
 			vm_page_t *page = TAILQ_FIRST(&vm_pagequeue_modified);
 			int r;
 

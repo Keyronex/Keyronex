@@ -566,12 +566,12 @@ dump_page(vm_page_t *page)
 		return;
 
 	if (page_is_pagetable(page))
-		kprintf("%-8d%-11s%-6hu%-6s%-6s%-6hu%-6hu\n", page->pfn,
-		    vm_page_use_str(page->use), page->refcnt, "n/a", "n/a",
-		    page->nonzero_ptes, page->noswap_ptes);
+		kprintf("%-8zu%-11s%-6hu%-6s%-6s%-6hu%-6hu\n",
+		    (size_t)page->pfn, vm_page_use_str(page->use), page->refcnt,
+		    "n/a", "n/a", page->nonzero_ptes, page->noswap_ptes);
 	else
-		kprintf("%-8d%-11s%-6hu%-6s%-6" PRIu64 "%-6s%-6s\n", page->pfn,
-		    vm_page_use_str(page->use), page->refcnt,
+		kprintf("%-8zu%-11s%-6hu%-6s%-6" PRIu64 "%-6s%-6s\n",
+		    (size_t)page->pfn, vm_page_use_str(page->use), page->refcnt,
 		    page->dirty ? "yes" : "no", (uint64_t)page->offset, "n/a",
 		    "n/a");
 }
@@ -659,6 +659,8 @@ vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
 
 	/* TODO (low): this can be made more efficient */
 	page->refcnt = 1;
+	vmstat.nactive++;
+	vmstat.nstandby--;
 	vmp_page_delete_locked(page);
 	vmp_page_release_locked(page);
 }

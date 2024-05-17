@@ -117,9 +117,9 @@ send_ipi(uint32_t lapic_id, uint8_t intr)
 }
 
 void
-hl_ipi_invlpg(kcpu_t *cpu)
+md_send_invlpg_ipi(kcpu_t *cpu)
 {
-	//send_ipi(cpu->cpucb.lapic_id, kIntVecIPIInvlPG);
+	send_ipi(cpu->cpucb.lapic_id, kIntVecIPIInvlPG);
 }
 
 void md_raise_dpc_interrupt()

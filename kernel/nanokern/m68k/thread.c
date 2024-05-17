@@ -20,6 +20,7 @@ md_switch(kthread_t *old_thread)
 static void
 thread_trampoline(void (*func)(void *), void *arg)
 {
+	ke_spinlock_release_nospl(&scheduler_lock);
 	splx(kIPL0);
 	func(arg);
 }
@@ -37,6 +38,7 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 	*sp-- = 0x0;
 	thread->pcb.genregs.sp = (uint32_t)sp;
 	thread->pcb.genregs.sr = 0x2000;
+	thread->tcb = 0;
 }
 
 void

@@ -91,6 +91,16 @@ vmp_md_pte_create_trans(pte_t *ppte, pfn_t pfn)
 }
 
 static inline void
+vmp_md_pte_create_swap(pte_t *ppte, pfn_t pfn)
+{
+	pte_t pte;
+	pte.sw.valid = 0;
+	pte.sw.data = pfn;
+	pte.sw.kind = kSoftPteKindSwap;
+	ppte->value = pte.value;
+}
+
+static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	pte->value = 0;
@@ -135,7 +145,8 @@ static inline pfn_t
 vmp_md_soft_pte_pfn(pte_t *pte)
 {
 	kassert(vmp_pte_characterise(pte) == kPTEKindBusy ||
-	    vmp_pte_characterise(pte) == kPTEKindTrans);
+	    vmp_pte_characterise(pte) == kPTEKindTrans ||
+	    vmp_pte_characterise(pte) == kPTEKindSwap);
 	return pte->sw.data;
 }
 

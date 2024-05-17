@@ -21,6 +21,8 @@ typedef struct {
 static TAILQ_HEAD(intr_entries, intr_entry) intr_entries[256];
 static idt_entry_t idt[256] = { 0 };
 
+void ki_tlb_flush_handler(void);
+
 ipl_t
 splraise(ipl_t ipl)
 {
@@ -125,6 +127,11 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 
 	case kIntVecLAPICTimer:
 		ki_cpu_hardclock(frame, curcpu());
+		lapic_eoi();
+		break;
+
+	case kIntVecIPIInvlPG:
+		ki_tlb_flush_handler();
 		lapic_eoi();
 		break;
 

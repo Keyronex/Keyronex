@@ -8,12 +8,42 @@
 #include "ubc.h"
 #include "vmp.h"
 
+/*!
+ * @file fault.c
+ * @brief Page fault handling
+ *
+ * Notes
+ * - When a busy PTE is made, an additional reference is kept to the pagetable
+ * pte so that it can be consulted afterwards - we need to decide on whether we
+ * will be needing this. We will do if we permit expulsion of busy pages, which
+ * is not currently possible because the page isn't added to a working set until
+ * after the fault was completed, and because we don't have unmapping, but when
+ * we do, we might elect to wait for busy pages to not be busy before proceeding
+ * with it. That may require thought to square with the creation of some kind
+ * of mapping list lock separate from the working set lock.
+ */
+
 struct fault_area_info {
 	vm_object_t *object;
 	vaddr_t start;
 	pgoff_t offset;
 	bool copy, writeable;
 };
+
+void
+vmp_pager_state_retain(struct vmp_pager_state *state)
+{
+	kassert(state->refcnt >= 0 && state->refcnt <= 5);
+	__atomic_fetch_add(&state->refcnt, 1, __ATOMIC_RELAXED);
+}
+
+void
+vmp_pager_state_release(struct vmp_pager_state *state)
+{
+	kassert(state->refcnt >= 0 && state->refcnt <= 5);
+	if (__atomic_fetch_sub(&state->refcnt, 1, __ATOMIC_RELEASE) == 1)
+		kmem_free(state, sizeof(struct vmp_pager_state));
+}
 
 static int
 vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
@@ -57,12 +87,17 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 		    vmp_md_soft_pte_pfn(state->pte));
 		struct vmp_pager_state *pgstate = page->pager_request;
 
-		vmp_pte_wire_state_release(&object_state, false);
+		vmp_pager_state_retain(pgstate);
+		vmp_pte_wire_state_release(&object_state, true);
 		vmp_pte_wire_state_release(state, false);
 		vmp_release_pfn_lock(kIPLAST);
 
 		/* wait for the page-in to complete... */
+		ke_mutex_release(&vmps->mutex);
 		KE_WAIT(&pgstate->event, false, false, -1);
+
+		vmp_pager_state_release(pgstate);
+
 		/*
 		 * and reacquire the working set mutex - todo get rid of this
 		 * necessity.
@@ -94,6 +129,7 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
 	kassert(r == 0);
 
+	pgstate->refcnt = 1;
 	pgstate->vpfn = (vaddr / PGSIZE);
 	pgstate->length = 1;
 	ke_event_init(&pgstate->event, false);
@@ -131,12 +167,15 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	    object_byteoffset);
 
 	iop_send_sync(iop);
+	iop_free(iop);
 
 	KE_WAIT(&vmps->mutex, false, false, -1);
+
 	vmp_acquire_pfn_lock();
 
 	switch (vmp_pte_characterise(object_state.pte)) {
 	case kPTEKindZero:
+		kfatal("Not working yet\n"); /* pager state */
 		/* not used yet, but could be useful for e.g. file truncation */
 		kassert(page->use == kPageUseDeleted && page->refcnt == 1);
 		vmp_page_release_locked(page);
@@ -151,7 +190,7 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	case kPTEKindSwap:
 	case kPTEKindTrans:
 		/*
-		 * we might end up permitting this in the future.
+		 * we might end up permitting this in the future. (for anons)
 		 * should be treated like the case of finding a zero PTE?
 		 * i.e. give up on it all.
 		 * for now it's impossible, but let's be certain
@@ -182,6 +221,10 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	vmp_page_release_locked(state->pgtable_pages[0]);
 
 	vmp_release_pfn_lock(kIPLAST);
+
+	/* now release waiters */
+	ke_event_signal(&pgstate->event);
+	vmp_pager_state_release(pgstate);
 
 	/* this effectively steals the reference we have on the page */
 	r = vmp_wsl_insert(vmps, vaddr, false);
@@ -266,7 +309,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	if (pte_kind == kPTEKindValid &&
 	    (!write || vmp_md_hw_pte_is_writeable(state.pte))) {
-		kfatal("Nothing to do?\n");
+		kprintf("Nothing to do?\n");
+		vmp_pte_wire_state_release(&state, false);
+		vmp_release_pfn_lock(ipl);
 	} else if (pte_kind == kPTEKindValid &&
 	    !vmp_md_hw_pte_is_writeable(state.pte) && write) {
 		pte_t *pte = state.pte;
@@ -374,6 +419,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		iop_t *iop;
 		struct vmp_pager_state *pgstate;
 		vm_page_t *page;
+		pfn_t drumslot = vmp_md_soft_pte_pfn(state.pte);
 
 		r = vmp_page_alloc_locked(&page, kPageUseAnonPrivate, false);
 		kassert(r == 0);
@@ -381,6 +427,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
 		kassert(r == 0);
 
+		pgstate->refcnt = 1;
 		pgstate->vpfn = (vaddr / PGSIZE);
 		pgstate->length = 1;
 		ke_event_init(&pgstate->event, false);
@@ -390,6 +437,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		page->dirty = false;
 		page->referent_pte = V2P((vaddr_t)state.pte);
 		page->offset = vaddr / PGSIZE;
+		page->drumslot = drumslot;
 
 		/* create busy PTE */
 		vmp_md_pte_create_busy(state.pte, page->pfn);
@@ -411,19 +459,62 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		mdl->write = true;
 		mdl->pages[0] = page;
 		iop = iop_new_vnode_read(pagefile_vnode, mdl, PGSIZE,
-		    vmp_md_soft_pte_pfn(state.pte) * PGSIZE);
+		    drumslot * PGSIZE);
 
 		iop_send_sync(iop);
+		iop_free(iop);
 
+		/* reacquire locks */
 		KE_WAIT(&vmps->mutex, false, false, -1);
+
 		vmp_acquire_pfn_lock();
 
 		switch (vmp_pte_characterise(state.pte)) {
+		case kPTEKindBusy:
+			break;
 		default:
 			kfatal("Complete this codepath\n");
 		}
+
+		kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state.pte)) == page);
+		vmp_md_pte_create_hw(state.pte, page->pfn, write, true);
+
+		/* release reference we took to preserve the PTE page */
+		vmp_page_release_locked(state.pgtable_pages[0]);
+
+		vmp_release_pfn_lock(kIPLAST);
+
+		/* now release waiters */
+		ke_event_signal(&pgstate->event);
+		vmp_pager_state_release(pgstate);
+
+		/* this effectively steals the reference we have on the page */
+		r = vmp_wsl_insert(vmps, vaddr, false);
+		if (r != 0) {
+			kfatal(
+			    "Working set insertion failed - evict & unref page!!\n");
+		}
+
+	} else if (pte_kind == kPTEKindBusy) {
+		vm_page_t *page = vm_pfn_to_page(
+		    vmp_md_soft_pte_pfn(state.pte));
+		struct vmp_pager_state *pgstate = page->pager_request;
+
+		vmp_pager_state_retain(pgstate);
+		vmp_pte_wire_state_release(&state, false);
+		vmp_release_pfn_lock(kIPLAST);
+
+		/* wait for the page-in to complete... */
+		ke_mutex_release(&vmps->mutex);
+
+		KE_WAIT(&pgstate->event, false, false, -1);
+
+		vmp_pager_state_release(pgstate);
+
+		/* and let the collided fault be retried. */
+		return kVMFaultRetRetry;
 	} else {
-		kfatal("Unexpected PTE state\n");
+		kfatal("Unexpected PTE state %d\n", pte_kind);
 	}
 
 	ke_mutex_release(&vmps->mutex);
@@ -435,8 +526,25 @@ int
 vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out)
 {
 	vm_fault_return_t ret;
+
+retry:
 	ret = vmp_do_fault(vaddr, write);
-	kassert(ret == kVMFaultRetOK);
-	(void)ret;
+	switch (ret) {
+	case kVMFaultRetOK:
+		break;
+
+	case kVMFaultRetRetry:
+		goto retry;
+
+	case kVMFaultRetPageShortage:
+		kfatal("Handle pagewait\n");
+
+	case kVMFaultRetFailure:
+		kfatal("Handle fault failure\n");
+
+	default:
+		kfatal("Unexpected fault return code %d\n", ret);
+	}
+
 	return ret;
 }

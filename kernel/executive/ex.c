@@ -5,6 +5,7 @@
 #include "exp.h"
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
@@ -292,9 +293,16 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
     uintptr_t *out1)
 {
 	switch (syscall) {
-	case kKrxDebugMessage:
-		kprintf("[libc]: %s\n", (const char *)arg1);
+	case kKrxDebugMessage: {
+		char *msg;
+		int r;
+
+		r = copyout_str((const char *)arg1, &msg);
+		kassert(r == 0);
+		kprintf("[libc]: %s\n", msg);
+		kmem_strfree(msg);
 		return 0;
+	}
 
 	case kKrxTcbSet:
 		curthread()->tcb = arg1;

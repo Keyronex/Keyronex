@@ -164,7 +164,9 @@ vmp_md_hw_pte_is_writeable(pte_t *pte)
 static inline pfn_t
 vmp_md_soft_pte_pfn(pte_t *pte)
 {
-	kassert(vmp_pte_characterise(pte) == kPTEKindBusy || vmp_pte_characterise(pte) == kPTEKindTrans);
+	kassert(vmp_pte_characterise(pte) == kPTEKindBusy ||
+	    vmp_pte_characterise(pte) == kPTEKindTrans ||
+	    vmp_pte_characterise(pte) == kPTEKindSwap);
 	return pte->sw.data;
 }
 

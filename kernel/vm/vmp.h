@@ -111,6 +111,7 @@ struct vmp_amap_l1 {
 };
 
 struct vmp_pager_state {
+	uint32_t refcnt;
 	kevent_t event;
 	SLIST_ENTRY(vmp_pager_state) slist_entry;
 	pfn_t vpfn : PFN_BITS;

@@ -197,12 +197,15 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 		kInternalWaitStatusWaiting, false, __ATOMIC_ACQ_REL,
 		__ATOMIC_ACQUIRE)) {
 		kassert(ipl < kIPLDPC);
+		thread->wait_reason = reason;
 		thread->state = kThreadStateWaiting;
 		ki_reschedule();
 	} else {
 		/* wait was terminated early. check what happened */
 		ke_release_scheduler_lock(kIPLDPC);
 	}
+
+	thread->wait_reason = NULL;
 
 	if (timeout != 0 && timeout != -1)
 		ke_timer_cancel(&timer);

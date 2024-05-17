@@ -1,9 +1,10 @@
 #include "kdk/amd64/gdt.h"
 #include "kdk/amd64/regs.h"
+#include "kdk/executive.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
+#include "nanokern/ki.h"
 #include "vm/vmp.h"
-#include "kdk/executive.h"
 
 void
 md_cpu_init(kcpu_t *cpu)
@@ -24,6 +25,7 @@ md_switch(kthread_t *old_thread)
 static void
 thread_trampoline(void (*func)(void *), void *arg)
 {
+	ke_spinlock_release_nospl(&scheduler_lock);
 	splx(kIPL0);
 	func(arg);
 }
@@ -39,11 +41,40 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 	sp-= 2;
 	*sp = (uint64_t)thread_trampoline;
 	thread->pcb.rsp = (uint64_t)(sp);
+	thread->tcb = 0;
+}
+
+vaddr_t invlpg_addr;
+volatile uint32_t invlpg_done;
+
+void
+ki_tlb_flush_handler(void)
+{
+	asm volatile("invlpg %0"
+		     :
+		     : "m"(*((const char *)invlpg_addr))
+		     : "memory");
+	__atomic_add_fetch(&invlpg_done, 1, __ATOMIC_RELEASE);
 }
 
 void
 ki_tlb_flush_vaddr_globally(vaddr_t addr)
 {
+	invlpg_addr = addr;
+	invlpg_done = 1;
+
+	kassert(ke_spinlock_held(&vmp_pfn_lock));
+
+	for (int i = 0; i < ncpus; i++) {
+		if (cpus[i] == curcpu())
+			continue;
+
+		md_send_invlpg_ipi(cpus[i]);
+	}
+
+	while (__atomic_load_n(&invlpg_done, __ATOMIC_ACQUIRE) != ncpus)
+		__asm__("pause");
+
 	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
 }
 

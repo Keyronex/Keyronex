@@ -68,6 +68,7 @@ ke_dpc_enqueue(kdpc_t *dpc)
 	}
 
 	ipl_t ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock, kIPLHigh);
+	kassert((uintptr_t)dpc >= 0x10000ull);
 	if (dpc->cpu == NULL) {
 		dpc->cpu = curcpu();
 		TAILQ_INSERT_TAIL(&curcpu()->dpc_queue, dpc, queue_entry);
@@ -180,8 +181,10 @@ ki_reschedule(void)
 	}
 
 	/* activate VM map... */
-	ke_spinlock_release_nospl(&scheduler_lock);
 	md_switch(old_thread);
+
+	/* we are being returned to- so drop the scheduler lock. */
+	ke_spinlock_release_nospl(&scheduler_lock);
 }
 
 void
