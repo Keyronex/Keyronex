@@ -216,11 +216,14 @@ void vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
     vaddr_t vaddr);
 
 /*!
- * \pre VAD list mutex held
+ * \pre Working set mutex held
  * \pre PFN database lock held
+ * @retval -n (only if !create) At PMLn, no PML(n - 1) was found.
+ * @retval 0 PTE wired with no locks released.
+ * @retval 1 PTE wired but locks were released at least once.
  */
 int vmp_wire_pte(struct eprocess *ps, vaddr_t vaddr, paddr_t prototype,
-    struct vmp_pte_wire_state *state);
+    struct vmp_pte_wire_state *state, bool create);
 void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state,
     bool prototype);
 

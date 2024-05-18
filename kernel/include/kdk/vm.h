@@ -247,6 +247,9 @@ int vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object,
     vm_protection_t initial_protection, vm_protection_t max_protection,
     bool inherit_shared, bool cow, bool exact);
 
+/*! Deallocate part of address space. */
+int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
+
 /*! Dump the VAD tree of a process.*/
 int vm_ps_dump_vadtree(vm_procstate_t *vmps);
 

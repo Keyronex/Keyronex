@@ -67,6 +67,31 @@ test_namecache(void)
 }
 #endif
 
+#if 1
+static void
+test_unmap(void)
+{
+	vaddr_t addr;
+	extern vm_procstate_t kernel_procstate;
+	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 1024 * 3, false);
+	kassert(r == 0);
+	kprintf("Allocated at 0x%zx\n", addr);
+
+	*(unsigned int*)addr = 0xdeadbeef;
+	*(unsigned int*)(addr + PGSIZE * 5) = 0xbeefdead;
+
+	*(unsigned int*)(addr + PGSIZE * (1024 * 2)) = 0xfeedbeef;
+
+	kprintf("After touching 4 pages:\n");
+	vmp_wsl_dump(&kernel_procstate);
+
+	vm_ps_deallocate(&kernel_procstate, addr, PGSIZE * 1024 * 16);
+
+	//vmp_pages_dump();
+	for (;;) ;
+}
+#endif
+
 void
 user_init(void *arg)
 {
@@ -127,6 +152,10 @@ ex_init(void *)
 	file_class = obj_new_type("file");
 
 	pagefile_init();
+
+#if 1
+	test_unmap();
+#endif
 
 	eprocess_t *initps;
 	r = ps_process_create(&initps, false);

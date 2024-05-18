@@ -8,6 +8,11 @@
 #define VMP_TABLE_LEVELS 4
 #define VMP_PAGE_SHIFT 12
 
+#define VMP_LEVEL_4_ENTRIES 512
+#define VMP_LEVEL_3_ENTRIES 512
+#define VMP_LEVEL_2_ENTRIES 512
+#define VMP_LEVEL_1_ENTRIES 512
+
 enum software_pte_kind {
 	/*! PTE represents an address in swap. */
 	kSoftPteKindSwap,

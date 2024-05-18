@@ -127,7 +127,6 @@ vmp_pagetable_page_pte_became_swap(vm_procstate_t *ps, vm_page_t *page)
 void
 vmp_pte_wire_state_release(struct vmp_pte_wire_state *state, bool prototype)
 {
-
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
 
 	for (int i = 0; i < (prototype ? 4 : VMP_TABLE_LEVELS); i++) {
@@ -141,12 +140,12 @@ vmp_pte_wire_state_release(struct vmp_pte_wire_state *state, bool prototype)
 }
 
 /*!
- * \pre VAD list mutex held
+ * \pre Working set mutex held
  * \pre PFN database lock held
  */
 int
 vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
-    struct vmp_pte_wire_state *state)
+    struct vmp_pte_wire_state *state, bool create)
 {
 	int indexes[4 + 1];
 	vm_page_t *pages[4] = { 0 };
@@ -212,6 +211,13 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 		case kPTEKindZero: {
 			vm_page_t *page;
 			int r;
+
+			if (!create) {
+				memcpy(state->pgtable_pages, pages,
+				    sizeof(pages));
+				vmp_pte_wire_state_release(state, prototype);
+				return -level;
+			}
 
 			/* newly-allocated page is retained */
 			r = vmp_page_alloc_locked(&page,
@@ -282,4 +288,62 @@ vmp_fetch_pte(vm_procstate_t *vmps, vaddr_t vaddr, pte_t **pte_out)
 		table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, level));
 	}
 	kfatal("unreached\n");
+}
+
+int
+vmp_md_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
+{
+	pte_t *pte = NULL;
+	struct vmp_pte_wire_state pte_wire;
+	ipl_t ipl;
+	int r;
+
+	eprocess_t *ps = kernel_process;
+
+	// KE_WAIT(&vmps->mutex, false, false, -1);
+	ipl = vmp_acquire_pfn_lock();
+
+	for (vaddr_t addr = start; addr < end; addr += PGSIZE) {
+	skipped:
+
+		if (pte == NULL || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+			if (pte != NULL)
+				vmp_pte_wire_state_release(&pte_wire, false);
+
+			pte = NULL;
+
+			r = vmp_wire_pte(kernel_process, addr, 0, &pte_wire,
+			    false);
+			if (r < 0) {
+				uintptr_t align = PGSIZE;
+
+				switch (-r) {
+				case 4:
+					align *= VMP_LEVEL_3_ENTRIES;
+				case 3:
+					align *= VMP_LEVEL_2_ENTRIES;
+				case 2:
+					align *= VMP_LEVEL_1_ENTRIES;
+					break;
+
+				default:
+					kfatal("Unexpected offset %d\n", r);
+				}
+
+				addr = ROUNDUP(addr + 1, align);
+				if (addr >= end)
+					break;
+
+				goto skipped;
+			}
+
+			pte = pte_wire.pte;
+		}
+
+		if (pte->value != 0)
+			kprintf("get rid of addr %p\n", addr);
+	}
+
+	if (pte != NULL)
+		vmp_pte_wire_state_release(&pte_wire, false);
 }

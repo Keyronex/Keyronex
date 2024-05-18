@@ -106,8 +106,8 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 
 			RB_REMOVE(vm_map_entry_rbtree, &vmps->vad_queue, entry);
 
-			kfatal("unimplemented\n");
-
+			vmp_md_unmap_range(vmps, entry->start, entry->end);
+			kfatal("Done...\n");
 #if 0
 			ipl = vmp_acquire_pfn_lock();
 			vmp_wsl_remove_range(vmps, entry->start, entry->end);
