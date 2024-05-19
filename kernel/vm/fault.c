@@ -491,8 +491,12 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		/* this effectively steals the reference we have on the page */
 		r = vmp_wsl_insert(vmps, vaddr, false);
 		if (r != 0) {
-			kfatal(
-			    "Working set insertion failed - evict & unref page!!\n");
+			/*
+			 * we have the working set lock held so we can just
+			 * acquire pfn lock, trans the PTE, pml1_page deleted,
+			 * unlock again.
+			 */
+			kfatal("Working set insertion failed - evict!!\n");
 		}
 
 	} else if (pte_kind == kPTEKindBusy) {

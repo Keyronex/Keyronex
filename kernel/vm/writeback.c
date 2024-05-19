@@ -77,8 +77,8 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 {
 	pte_t *page_pte = (pte_t *)P2V(main_page->referent_pte);
 
-
-	kassert(main_page->use == kPageUseAnonPrivate);
+	kassert(main_page->use == kPageUseAnonPrivate ||
+	    main_page->use == kPageUsePML1 || main_page->use == kPageUsePML2);
 	kassert(vmp_pte_characterise(page_pte) == kPTEKindTrans);
 
 	if (main_page->drumslot == 0) {

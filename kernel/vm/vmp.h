@@ -176,8 +176,13 @@ void vmp_paging_init(void);
 void vmp_md_kernel_init(void);
 /*! @brief Convert a virtual address to a physical. Must be mapped! */
 paddr_t vmp_md_translate(vaddr_t addr);
+enum vmp_table_old_state { kWasZero, kWasSwap, kWasTrans };
 void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    vm_page_t *tablepage, pte_t *dirpte, bool is_new);
+    vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state);
+void vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, vm_page_t *tablepage);
+void vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, uintptr_t drumslot);
 void vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     pte_t *pte);
 
@@ -203,8 +208,6 @@ vm_map_entry_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
 int vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked);
 void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr, bool pfn_locked);
-/*! @brief Evict one entry from a working set list @pre PFN HELD*/
-void wsl_evict_one(vm_procstate_t *ps);
 /*! @brief Dump info on a working set. */
 void vmp_wsl_dump(vm_procstate_t *ps);
 /*!

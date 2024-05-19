@@ -478,11 +478,14 @@ vmp_page_release_locked(vm_page_t *page)
 			vmp_page_free_locked(page);
 			return;
 
+		case kPageUsePML1:
+		case kPageUsePML2:
 		case kPageUseAnonPrivate: {
 			pte_t *thepte = (pte_t *)P2V(page->referent_pte);
 			kassert(vmp_pte_characterise(thepte) == kPTEKindTrans);
 			kassert(vmp_md_soft_pte_pfn(thepte) == page->pfn);
 		}
+
 		case kPageUseFileShared:
 			/* continue with logic below */
 			break;
@@ -555,7 +558,7 @@ page_is_pagetable(vm_page_t *page)
 static void print_page_summary_header(void)
 {
 	kprintf("\033[7m"
-		"%-8s%-11s%-6s%-6s%-6s%-6s%-6s"
+		"%-8s%-11s%-6s%-6s%-10s%-6s%-6s"
 		"\033[m\n",
 	    "pfn", "use", "rc", "dirty", "off", "ptes", "nsptes");
 }
@@ -568,11 +571,11 @@ dump_page(vm_page_t *page)
 		return;
 
 	if (page_is_pagetable(page))
-		kprintf("%-8zu%-11s%-6hu%-6s%-6s%-6hu%-6hu\n",
+		kprintf("%-8zx%-11s%-6hu%-6s%-10s%-6hu%-6hu\n",
 		    (size_t)page->pfn, vm_page_use_str(page->use), page->refcnt,
 		    "n/a", "n/a", page->nonzero_ptes, page->noswap_ptes);
 	else
-		kprintf("%-8zu%-11s%-6hu%-6s%-6" PRIu64 "%-6s%-6s\n",
+		kprintf("%-8zx%-11s%-6hu%-6s%-10" PRIx64 "%-6s%-6s\n",
 		    (size_t)page->pfn, vm_page_use_str(page->use), page->refcnt,
 		    page->dirty ? "yes" : "no", (uint64_t)page->offset, "n/a",
 		    "n/a");
@@ -638,6 +641,14 @@ vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
 	dirpage = vm_paddr_to_page(page->referent_pte);
 
 	switch (page->use) {
+	case kPageUsePML1:
+	case kPageUsePML2: {
+		kassert(vmp_pte_characterise(pte) == kPTEKindTrans);
+		vmp_md_swap_table_pointers(page->process->vm, dirpage, pte,
+		    page->drumslot);
+		break;
+	}
+
 	case kPageUseAnonPrivate: {
 		kassert(vmp_pte_characterise(pte) == kPTEKindTrans);
 		vmp_md_pte_create_swap(pte, page->drumslot);

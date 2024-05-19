@@ -60,6 +60,9 @@ struct vm_stat {
 	/*! memory by use; nfree still counts free. */
 	size_t ndeleted, nanonprivate, nanonfork, nfileshared, nanonshare,
 	    nprocpgtable, nprotopgtable, nkwired;
+
+	/*! pagings in and out */
+	size_t n_table_pageins;
 };
 
 enum vm_page_use {

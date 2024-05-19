@@ -65,8 +65,8 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 	}
 }
 
-void
-wsl_evict_one(vm_procstate_t *vmps)
+int
+wsl_evict_one(vm_procstate_t *vmps, bool must)
 {
 	struct vmp_wsle *wsle = TAILQ_FIRST(&vmps->wsl.queue);
 	vm_page_t *pte_page;
@@ -74,7 +74,11 @@ wsl_evict_one(vm_procstate_t *vmps)
 	int r;
 	ipl_t ipl;
 
-	kassert(wsle != NULL);
+	if (wsle == NULL && !must) {
+		kprintf("No WSLE for replacement:\n");
+		return -1;
+	}
+
 	TAILQ_REMOVE(&vmps->wsl.queue, wsle, queue_entry);
 	RB_REMOVE(vmp_wsle_tree, &vmps->wsl.tree, wsle);
 
@@ -93,17 +97,22 @@ wsl_evict_one(vm_procstate_t *vmps)
 
 	kmem_free(wsle, sizeof(*wsle));
 	vmps->wsl.ws_current_count--;
+
+	return 0;
 }
 
 int
 vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked)
 {
 	struct vmp_wsle *wsle;
+	int r;
 
 	kassert(vmp_wsl_find(ps, vaddr) == NULL);
 
 	if (ps->wsl.ws_current_count >= ps->wsl.max) {
-		wsl_evict_one(ps);
+		r = wsl_evict_one(ps, locked);
+		if (r != 0)
+			return r;
 	}
 
 	if (locked)

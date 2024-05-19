@@ -1,6 +1,7 @@
 #include <sys/mman.h>
 
 #include <keyronex/syscall.h>
+#include <stdint.h>
 
 #include "exp.h"
 #include "kdk/executive.h"
@@ -68,26 +69,62 @@ test_namecache(void)
 #endif
 
 #if 1
+
+#pragma GCC push_options
+#pragma GCC optimize("O0")
+void
+wait_a_bit()
+{
+
+	kprintf("\n\nWaiting....\n");
+	for (int i = 0; i < INT32_MAX / 4; i++)
+		asm volatile("nop");
+}
+#pragma GCC pop_options
+
 static void
 test_unmap(void)
 {
 	vaddr_t addr;
 	extern vm_procstate_t kernel_procstate;
-	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 1024 * 3, false);
+	int r;
+
+	kprintf("Pages before test:\n");
+	vmp_wsl_dump(&kernel_procstate);
+	vmp_pages_dump();
+
+	r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 1024 * 3, false);
 	kassert(r == 0);
-	kprintf("Allocated at 0x%zx\n", addr);
 
 	*(unsigned int*)addr = 0xdeadbeef;
+	*(unsigned int *)(addr + PGSIZE * 2) = 0xbeefdead;
+	*(unsigned int *)(addr + PGSIZE * 3) = 0xbeefdead;
+	*(unsigned int *)(addr + PGSIZE * 4) = 0xbeefdead;
 	*(unsigned int*)(addr + PGSIZE * 5) = 0xbeefdead;
+	*(unsigned int *)(addr + PGSIZE * 6) = 0xbeefdead;
+	*(unsigned int *)(addr + PGSIZE * 7) = 0xbeefdead;
 
-	*(unsigned int*)(addr + PGSIZE * (1024 * 2)) = 0xfeedbeef;
+	*(unsigned int *)(addr + PGSIZE * (2048 + 2)) = 0xfeedbeef;
+	*(unsigned int *)(addr + PGSIZE * (1024 + 3)) = 0xfeedbeef;
+	*(unsigned int *)(addr + PGSIZE * (1024 + 4)) = 0xfeedbeef;
+	*(unsigned int *)(addr + PGSIZE * (1024 + 5)) = 0xfeedbeef;
+	*(unsigned int *)(addr + PGSIZE * (1024 + 6)) = 0xfeedbeef;
+	*(unsigned int *)(addr + PGSIZE * (1024 + 7)) = 0xfeedbeef;
 
-	kprintf("After touching 4 pages:\n");
+	wait_a_bit();
+
+	kprintf("\n\nAfter touching pages:\n");
 	vmp_wsl_dump(&kernel_procstate);
+	vmp_pages_dump();
 
-	vm_ps_deallocate(&kernel_procstate, addr, PGSIZE * 1024 * 16);
+	*(unsigned int *)addr = 0xdeadbeef;
 
-	//vmp_pages_dump();
+	vm_ps_deallocate(&kernel_procstate, addr, PGSIZE * 1024 * 3);
+
+	kprintf("\n\nAfter freeing pages:\n");
+	vmp_wsl_dump(&kernel_procstate);
+	vmp_pages_dump();
+
 	for (;;) ;
 }
 #endif
@@ -153,7 +190,7 @@ ex_init(void *)
 
 	pagefile_init();
 
-#if 1
+#if 0
 	test_unmap();
 #endif
 

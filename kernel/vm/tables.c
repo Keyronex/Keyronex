@@ -1,9 +1,14 @@
+#include "kdk/dev.h"
 #include "kdk/executive.h"
+#include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
+#include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
 #include "vmp.h"
+
+#define PAGETABLE_PAGING 1
 
 extern vm_procstate_t kernel_procstate;
 
@@ -34,13 +39,14 @@ vmp_pagetable_page_noswap_pte_created(vm_procstate_t *ps, vm_page_t *page,
 	if (is_new)
 		page->nonzero_ptes++;
 	page->noswap_ptes++;
-	if (page->noswap_ptes == 1 && !page_is_root_table(page)) {
 #if PAGETABLE_PAGING
-		vmp_wsl_lock_entry(ps, P2V(vmp_page_paddr(page)));
-#else
-		(void)0;
-#endif
+	if (page->noswap_ptes == 1 && !page_is_root_table(page)) {
+		/*
+		 * do nothing?
+		 * page should already be pointed to validly by vmp_wire_pte
+		 */
 	}
+#endif
 }
 
 /*!
@@ -64,16 +70,6 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 
 		vmp_page_delete_locked(page);
 
-#if PAGETABLE_PAGING
-		if (page->nonswap_ptes == 1) {
-			vmp_wsl_unlock_entry(ps, P2V(vmp_page_paddr(page)));
-			vmp_wsl_remove(ps, P2V(vmp_page_paddr(page)));
-		} else if (page->nonswap_ptes == 0)
-			vmp_wsl_remove(ps, P2V(vmp_page_paddr(page)));
-		else
-			kfatal("expectex nonswap_ptes to be 0 or 1\n");
-#endif
-
 		kassert(page->referent_pte != 0);
 		dirpage = vm_paddr_to_page(page->referent_pte);
 		if (use_is_hw_table(use))
@@ -94,10 +90,6 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 		}
 #endif
 
-#if PAGETABLE_PAGING
-		/*! once for the working set removal.... */
-		vmp_page_release_locked(page);
-#endif
 		/*! and once for the PTE zeroing; this will free the page. */
 		vmp_page_release_locked(page);
 
@@ -105,20 +97,38 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 	}
 	if (!was_swap && page->noswap_ptes-- == 1 && !page_is_root_table(page)) {
 #if PAGETABLE_PAGING
-		vmp_wsl_unlock_entry(ps, P2V(vmp_page_paddr(page)));
-#else
-		(void)0;
+		vm_page_t *dirpage = vm_paddr_to_page(page->referent_pte);
+
+		if (use_is_hw_table(page->use))
+			vmp_md_trans_table_pointers(ps, dirpage,
+			    (pte_t *)P2V(page->referent_pte), page);
+		else
+			kfatal("Implement me?\n");
 #endif
 	}
-	vmp_page_release_locked(page);
+	if (!was_swap) {
+		page->dirty = true;
+		vmp_page_release_locked(page);
+	}
 }
 
 void
 vmp_pagetable_page_pte_became_swap(vm_procstate_t *ps, vm_page_t *page)
 {
 #if PAGETABLE_PAGING
-	if (page->nonswap_ptes-- == 1 && !page_is_root_table(page))
-		vmp_wsl_unlock_entry(ps, P2V(vmp_page_paddr(page)));
+	if (page->noswap_ptes-- == 1 && !page_is_root_table(page)) {
+		vm_page_t *dirpage;
+
+		kassert(page->referent_pte != 0);
+		dirpage = vm_paddr_to_page(page->referent_pte);
+
+		if (use_is_hw_table(page->use))
+			vmp_md_trans_table_pointers(ps, dirpage,
+			    (pte_t *)P2V(page->referent_pte), page);
+		else
+			kfatal("Implement me?\n");
+	}
+	page->dirty = true;
 	vmp_page_release_locked(page);
 #else
 	page->noswap_ptes--;
@@ -137,6 +147,25 @@ vmp_pte_wire_state_release(struct vmp_pte_wire_state *state, bool prototype)
 			&kernel_procstate :
 			state->pgtable_pages[i]->process->vm,
 		    state->pgtable_pages[i], false);
+	}
+}
+
+static void
+setup_pte_counts(vm_page_t *page)
+{
+	pte_t *pte = (pte_t *)vm_page_direct_map_addr(page);
+
+	for (size_t i = 0; i < PGSIZE / sizeof(pte_t); i++, pte++) {
+		switch (vmp_pte_characterise(pte)) {
+		case kPTEKindSwap:
+			page->nonzero_ptes++;
+
+		case kPTEKindZero:
+			break;
+
+		default:
+			kfatal("Unexpected PTE kind in paged-in page!\n");
+		}
 	}
 }
 
@@ -209,6 +238,111 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			break;
 		}
 
+		case kPTEKindTrans: {
+			pfn_t pfn = vmp_md_soft_pte_pfn(pte);
+			vm_page_t *page = vm_pfn_to_page(pfn);
+			/* retain for our wiring purposes */
+			pages[level - 2] = page;
+
+			kassert(page->use != kPageUseFree);
+
+			/* manually adjust the page */
+			vmp_page_retain_locked(page);
+			vmp_pagetable_page_noswap_pte_created(ps->vm, page,
+			    true);
+
+			vmp_md_setup_table_pointers(ps->vm, pages[level - 1],
+			    page, pte, kWasTrans);
+
+			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, level));
+			break;
+		}
+
+		case kPTEKindSwap: {
+			vm_mdl_t *mdl;
+			iop_t *iop;
+			struct vmp_pager_state *pgstate;
+			vm_page_t *page;
+			pfn_t drumslot = vmp_md_soft_pte_pfn(pte);
+			int r;
+
+			kassert(prototype == 0);
+
+			if (!create) {
+				memcpy(state->pgtable_pages, pages,
+				    sizeof(pages));
+				vmp_pte_wire_state_release(state, prototype);
+				return -level;
+			}
+
+			/* newly-allocated page is retained */
+			r = vmp_page_alloc_locked(&page,
+			    prototype == 0 ? kPageUsePML1 + (level - 2) :
+					     kPageUseVPML1 + (level - 2),
+			    false);
+			kassert(r == 0);
+
+			pages[level - 2] = page;
+
+			/* manually adjust the new page, includes our pinning */
+			page->process = ps;
+			page->nonzero_ptes++;
+			page->noswap_ptes++;
+			page->referent_pte = V2P(pte);
+			page->drumslot = drumslot;
+
+			pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
+			kassert(r == 0);
+
+			pgstate->refcnt = 1;
+			pgstate->vpfn = (vaddr / PGSIZE);
+			pgstate->length = 1;
+			ke_event_init(&pgstate->event, false);
+
+			page->pager_request = pgstate;
+			page->dirty = false;
+
+			/* create busy PTE */
+			// do it here!!
+
+			vmstat.n_table_pageins++;
+
+			vmp_release_pfn_lock(kIPLAST);
+			ke_mutex_release(&ps->vm->mutex);
+
+			extern vnode_t *pagefile_vnode;
+
+			mdl = &pgstate->mdl;
+			mdl->nentries = 1;
+			mdl->offset = 0;
+			mdl->write = true;
+			mdl->pages[0] = page;
+			iop = iop_new_vnode_read(pagefile_vnode, mdl, PGSIZE,
+			    drumslot * PGSIZE);
+
+			iop_send_sync(iop);
+			iop_free(iop);
+
+			KE_WAIT(&ps->vm->mutex, false, false, -1);
+			vmp_acquire_pfn_lock();
+
+			if (prototype == 0)
+				vmp_md_setup_table_pointers(ps->vm,
+				    pages[level - 1], page, pte, kWasSwap);
+			else {
+				vmp_md_pte_create_hw(pte, page->pfn, true,
+				    false);
+				vmp_pagetable_page_noswap_pte_created(ps->vm,
+				    pages[level - 1], false);
+			}
+
+			setup_pte_counts(page);
+
+			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, pte_level));
+
+			break;
+		}
+
 		case kPTEKindZero: {
 			vm_page_t *page;
 			int r;
@@ -242,7 +376,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			 */
 			if (prototype == 0)
 				vmp_md_setup_table_pointers(ps->vm,
-				    pages[level - 1], page, pte, true);
+				    pages[level - 1], page, pte, kWasZero);
 			else {
 				vmp_md_pte_create_hw(pte, page->pfn, true,
 				    false);
@@ -251,6 +385,17 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			}
 
 			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, pte_level));
+
+#if 0
+			if (prototype == 0) {
+				vmp_release_pfn_lock(kIPLAST);
+				r = vmp_wsl_insert(ps->vm,
+				    vm_page_direct_map_addr(page), true);
+				kassert(r == 0);
+				vmp_acquire_pfn_lock();
+			}
+#endif
+
 			break;
 		}
 
@@ -378,8 +523,14 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 		case kPTEKindBusy:
 			kfatal("Not handled yet\n");
 
-		case kPTEKindSwap:
-			kfatal("Not handled yet\n");
+		case kPTEKindSwap: {
+			vm_page_t *pte_page = vm_paddr_to_page(
+			    PGROUNDDOWN(V2P(pte)));
+			vmp_md_pte_create_zero(pte);
+			vmp_pagetable_page_pte_deleted(vmps, pte_page, true);
+			/* TODO: free swap slot! */
+			break;
+		}
 
 		case kPTEKindZero:
 			continue;
@@ -390,4 +541,6 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 		vmp_pte_wire_state_release(&pte_wire, false);
 
 	vmp_release_pfn_lock(ipl);
+
+	return 0;
 }

@@ -27,6 +27,7 @@ vmp_md_ps_init(eprocess_t *ps)
 		memcpy((void *)P2V(table_addr), (void *)P2V(read_cr3()),
 		    PGSIZE);
 
+#if 1
 		/* preallocate higher half entries */
 		table_ptebase = (pte_t *)P2V(table_addr);
 		for (int i = 256; i < 512; i++) {
@@ -44,6 +45,7 @@ vmp_md_ps_init(eprocess_t *ps)
 				    true);
 			}
 		}
+#endif
 
 		write_cr3(table_addr);
 	} else {
@@ -79,9 +81,18 @@ vmp_md_enter_kwired(void)
 	kfatal("Implement me\n");
 }
 
-void
-vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    vm_page_t *tablepage, pte_t *dirpte, bool is_new)
+
+void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state);
+void vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, vm_page_t *tablepage);
+void vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, uintptr_t drumslot);
+void vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *pte);
+
+void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state)
 {
 	pte_t pte;
 	pte.value = 0x0;
@@ -91,8 +102,25 @@ vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 	pte.hw.pfn = tablepage->pfn;
 	dirpte->value = pte.value;
 
-	vmp_pagetable_page_noswap_pte_created(ps, dirpage, true);
+	if (old_state != kWasTrans)
+		vmp_pagetable_page_noswap_pte_created(ps, dirpage, old_state == kWasZero ? true : false);
 }
+
+void
+vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, vm_page_t *tablepage)
+{
+	vmp_md_pte_create_trans(dirpte, tablepage->pfn);
+}
+
+void
+vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, uintptr_t drumslot)
+{
+	vmp_md_pte_create_swap(dirpte, drumslot);
+	vmp_pagetable_page_pte_became_swap(ps, dirpage);
+}
+
 
 void
 vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage, pte_t *dirpte)

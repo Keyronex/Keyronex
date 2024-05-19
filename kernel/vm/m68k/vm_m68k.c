@@ -51,6 +51,7 @@ vmp_md_ps_init(eprocess_t *ps)
 		memcpy((void *)P2V(table_addr), (void *)P2V(fetch_urp()),
 		    PGSIZE);
 
+#if 1
 		/* preallocate higher half entries */
 		table_ptebase = (pte_t *)P2V(table_addr);
 
@@ -76,6 +77,7 @@ vmp_md_ps_init(eprocess_t *ps)
 				pml2_page->refcnt += 10000;
 			}
 		}
+#endif
 
 		store_urp_and_srp(table_addr);
 	} else {
@@ -111,7 +113,7 @@ vmp_md_translate(vaddr_t addr)
 
 void
 vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    vm_page_t *tablepage, pte_t *dirpte, bool is_new)
+    vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state)
 {
 	int npages;
 	paddr_t phys = vm_page_paddr(tablepage);
@@ -123,13 +125,18 @@ vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 	else
 		kfatal("unexpected page directory use\n");
 
-	/* retain the page directory, and update its PTE counts accordingly...
-	 */
-	vmp_page_retain_locked(dirpage);
-	/* add remainder of refcount... */
-	dirpage->refcnt += npages - 1;
-	dirpage->noswap_ptes += npages;
-	dirpage->nonzero_ptes += npages;
+	if (old_state != kWasTrans) {
+		/*
+		 * retain the page directory, and update its PTE counts
+		 * accordingly
+		 */
+		vmp_page_retain_locked(dirpage);
+		/* add remainder of refcount... */
+		dirpage->refcnt += npages - 1;
+		dirpage->noswap_ptes += npages;
+		if (old_state == kWasZero)
+			dirpage->nonzero_ptes += npages;
+	}
 
 	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
 
@@ -141,6 +148,50 @@ vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 		pte.hw_pml2_040.type = 3;
 		dirpte[i].value = pte.value;
 	}
+}
+
+void
+vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, vm_page_t *tablepage)
+{
+	int npages;
+
+	if (dirpage->use == kPageUsePML3)
+		npages = 8;
+	else if (dirpage->use == kPageUsePML2)
+		npages = 16;
+	else
+		kfatal("unexpected page directory use\n");
+
+	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
+
+	for (int i = 0; i < npages; i++)
+		vmp_md_pte_create_trans(&dirpte[i], tablepage->pfn);
+}
+
+void
+vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, uintptr_t drumslot)
+{
+	int npages;
+
+	if (dirpage->use == kPageUsePML3)
+		npages = 8;
+	else if (dirpage->use == kPageUsePML2)
+		npages = 16;
+	else
+		kfatal("unexpected page directory use\n");
+
+	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
+
+	for (int i = 0; i < npages; i++)
+		vmp_md_pte_create_swap(&dirpte[i], drumslot);
+
+	/* TODO: update pagetable_page_pte_became_swap to take a count */
+	dirpage->refcnt -= npages - 1;
+	dirpage->noswap_ptes -= npages - 1;
+
+	vmp_pagetable_page_pte_became_swap(ps, dirpage);
 }
 
 void

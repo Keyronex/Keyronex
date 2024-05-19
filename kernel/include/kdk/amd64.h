@@ -40,6 +40,7 @@
 #define PRId64 "ld"
 #define PRIu64 "lu"
 #define PRIb64 "lb"
+#define PRIx64 "lx"
 
 typedef enum ipl {
 	kIPL0 = 0,
