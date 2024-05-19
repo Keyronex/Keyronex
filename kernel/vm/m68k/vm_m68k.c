@@ -111,19 +111,23 @@ vmp_md_translate(vaddr_t addr)
 	return PFN_TO_PADDR(stuff.phys) + addr % PGSIZE;
 }
 
+static int
+npages_for_dir(vm_page_t *dirpage)
+{
+	if (dirpage->use == kPageUsePML3)
+		return 8;
+	else if (dirpage->use == kPageUsePML2)
+		return 16;
+	else
+		kfatal("unexpected page directory use\n");
+}
+
 void
 vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state)
 {
-	int npages;
+	int npages = npages_for_dir(dirpage);
 	paddr_t phys = vm_page_paddr(tablepage);
-
-	if (dirpage->use == kPageUsePML3)
-		npages = 8;
-	else if (dirpage->use == kPageUsePML2)
-		npages = 16;
-	else
-		kfatal("unexpected page directory use\n");
 
 	if (old_state != kWasTrans) {
 		/*
@@ -151,17 +155,32 @@ vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 }
 
 void
+vmp_md_busy_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, vm_page_t *tablepage)
+{
+	int npages = npages_for_dir(dirpage);
+
+	/*
+	 * retain the page directory, and update its PTE counts
+	 * accordingly
+	 */
+	vmp_page_retain_locked(dirpage);
+	/* add remainder of refcount... */
+	dirpage->refcnt += npages - 1;
+	dirpage->noswap_ptes += npages;
+	dirpage->nonzero_ptes += npages;
+
+	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
+
+	for (int i = 0; i < npages; i++)
+		vmp_md_pte_create_busy(&dirpte[i], tablepage->pfn);
+}
+
+void
 vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     pte_t *dirpte, vm_page_t *tablepage)
 {
-	int npages;
-
-	if (dirpage->use == kPageUsePML3)
-		npages = 8;
-	else if (dirpage->use == kPageUsePML2)
-		npages = 16;
-	else
-		kfatal("unexpected page directory use\n");
+	int npages = npages_for_dir(dirpage);
 
 	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
 
@@ -173,14 +192,7 @@ void
 vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     pte_t *dirpte, uintptr_t drumslot)
 {
-	int npages;
-
-	if (dirpage->use == kPageUsePML3)
-		npages = 8;
-	else if (dirpage->use == kPageUsePML2)
-		npages = 16;
-	else
-		kfatal("unexpected page directory use\n");
+	int npages = npages_for_dir(dirpage);
 
 	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
 
@@ -197,14 +209,7 @@ vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 void
 vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage, pte_t *dirpte)
 {
-	int npages;
-
-	if (dirpage->use == kPageUsePML3)
-		npages = 8;
-	else if (dirpage->use == kPageUsePML2)
-		npages = 16;
-	else
-		kfatal("unexpected page directory use\n");
+	int npages = npages_for_dir(dirpage);
 
 	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
 

@@ -83,15 +83,6 @@ vmp_md_enter_kwired(void)
 
 
 void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state);
-void vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    pte_t *dirpte, vm_page_t *tablepage);
-void vmp_md_swap_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    pte_t *dirpte, uintptr_t drumslot);
-void vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
-    pte_t *pte);
-
-void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state)
 {
 	pte_t pte;
@@ -104,6 +95,13 @@ void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 
 	if (old_state != kWasTrans)
 		vmp_pagetable_page_noswap_pte_created(ps, dirpage, old_state == kWasZero ? true : false);
+}
+
+void vmp_md_busy_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
+    pte_t *dirpte, vm_page_t *tablepage)
+{
+	vmp_md_pte_create_busy(dirpte, tablepage->pfn);
+	vmp_pagetable_page_noswap_pte_created(ps, dirpage, true);
 }
 
 void

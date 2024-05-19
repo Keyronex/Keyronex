@@ -227,6 +227,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			return 0;
 		}
 
+	restart_level:
 		switch (vmp_pte_characterise(pte)) {
 		case kPTEKindValid: {
 			vm_page_t *page = vmp_pte_hw_page(pte, pte_level);
@@ -236,6 +237,23 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			    true);
 			table = (pte_t *)P2V(vmp_pte_hw_paddr(pte, pte_level));
 			break;
+		}
+
+		case kPTEKindBusy: {
+			pfn_t pfn = vmp_md_soft_pte_pfn(pte);
+			vm_page_t *page = vm_pfn_to_page(pfn);
+			struct vmp_pager_state *pgstate = page->pager_request;
+
+			vmp_pager_state_retain(pgstate);
+			vmp_release_pfn_lock(kIPLAST);
+			ke_mutex_release(&ps->vm->mutex);
+
+			KE_WAIT(&pgstate->event, false, false, -1);
+			vmp_pager_state_release(pgstate);
+
+			KE_WAIT(&ps->vm->mutex, false, false, -1);
+			vmp_acquire_pfn_lock();
+			goto restart_level;
 		}
 
 		case kPTEKindTrans: {
@@ -303,7 +321,12 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			page->dirty = false;
 
 			/* create busy PTE */
-			// do it here!!
+			if (prototype == 0)
+				vmp_md_busy_table_pointers(ps->vm,
+				    pages[level - 1], pte, page);
+			else {
+				kfatal("implement\n");
+			}
 
 			vmstat.n_table_pageins++;
 
@@ -328,7 +351,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 
 			if (prototype == 0)
 				vmp_md_setup_table_pointers(ps->vm,
-				    pages[level - 1], page, pte, kWasSwap);
+				    pages[level - 1], page, pte, kWasTrans);
 			else {
 				vmp_md_pte_create_hw(pte, page->pfn, true,
 				    false);
