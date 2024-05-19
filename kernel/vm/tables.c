@@ -2,6 +2,7 @@
 #include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "kdk/vm.h"
+#include "nanokern/ki.h"
 #include "vmp.h"
 
 extern vm_procstate_t kernel_procstate;
@@ -291,7 +292,7 @@ vmp_fetch_pte(vm_procstate_t *vmps, vaddr_t vaddr, pte_t **pte_out)
 }
 
 int
-vmp_md_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
+vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 {
 	pte_t *pte = NULL;
 	struct vmp_pte_wire_state pte_wire;
@@ -340,10 +341,53 @@ vmp_md_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 			pte = pte_wire.pte;
 		}
 
-		if (pte->value != 0)
-			kprintf("get rid of addr %p\n", addr);
+		switch (vmp_pte_characterise(pte)) {
+		case kPTEKindValid: {
+			vm_page_t *page = vmp_pte_hw_page(pte, 1);
+			vm_page_t *pte_page = vm_paddr_to_page(
+			    PGROUNDDOWN(V2P(pte)));
+
+			vmp_wsl_remove(vmps, addr, true);
+			vmp_md_pte_create_zero(pte);
+			vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
+			ki_tlb_flush_vaddr_globally(addr);
+
+			if (page->use == kPageUseAnonPrivate)
+				vmp_page_delete_locked(page);
+
+			vmp_page_release_locked(page);
+
+			break;
+		}
+
+		case kPTEKindTrans: {
+			vm_page_t *page = vm_pfn_to_page(
+			    vmp_md_soft_pte_pfn(pte));
+			vm_page_t *pte_page = vm_paddr_to_page(
+			    PGROUNDDOWN(V2P(pte)));
+
+			vmp_md_pte_create_zero(pte);
+			vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
+
+			if (page->use == kPageUseAnonPrivate)
+				vmp_page_delete_locked(page);
+
+			break;
+		}
+
+		case kPTEKindBusy:
+			kfatal("Not handled yet\n");
+
+		case kPTEKindSwap:
+			kfatal("Not handled yet\n");
+
+		case kPTEKindZero:
+			continue;
+		}
 	}
 
 	if (pte != NULL)
 		vmp_pte_wire_state_release(&pte_wire, false);
+
+	vmp_release_pfn_lock(ipl);
 }

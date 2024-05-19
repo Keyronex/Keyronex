@@ -230,6 +230,12 @@ void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state,
 int vmp_fetch_pte(vm_procstate_t *ps, vaddr_t vaddr, pte_t **pte_out);
 
 /*!
+ * @brief Unmap a range of a process.
+ * \pre Map control lock held.
+ */
+int vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end);
+
+/*!
  * \pre PFN database lock held
  */
 void vmp_pager_state_retain(struct vmp_pager_state *state);

@@ -415,6 +415,8 @@ vmp_page_delete_locked(vm_page_t *page)
 	vmstat.ndeleted += npages;
 	page->use = kPageUseDeleted;
 
+	/* TODO: if page is anonymous, and drumslot != 0, then free drumslot */
+
 	if (page->refcnt == 0 && page->dirty) {
 		TAILQ_REMOVE(&vm_pagequeue_modified, page, queue_link);
 		vmstat.nmodified -= npages;

@@ -145,7 +145,9 @@ vmp_writeback(void *)
 		}
 
 		(void)w;
+#if 0
 		kprintf("The Writeback Daemon!\n");
+#endif
 
 		ipl = vmp_acquire_pfn_lock();
 		for (int i = 0; i < kMaxWritebacks; i++) {

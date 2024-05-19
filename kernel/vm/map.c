@@ -1,6 +1,7 @@
-#include "kdk/kmem.h"
-#include "kdk/vm.h"
 #include "kdk/executive.h"
+#include "kdk/kmem.h"
+#include "kdk/vfs.h"
+#include "kdk/vm.h"
 #include "vmp.h"
 
 void vmp_md_ps_init(eprocess_t *ps);
@@ -97,8 +98,9 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 		    (entry->start >= end))
 			continue;
 		else if (entry->start >= start && entry->end <= end) {
+			/* entry wholly encompassed */
+
 			int r;
-			// ipl_t ipl;
 
 			r = vmem_xfree(&vmps->vmem, entry->start,
 			    entry->end - entry->start, 0);
@@ -106,20 +108,86 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 
 			RB_REMOVE(vm_map_entry_rbtree, &vmps->vad_queue, entry);
 
-			vmp_md_unmap_range(vmps, entry->start, entry->end);
-			kfatal("Done...\n");
-#if 0
-			ipl = vmp_acquire_pfn_lock();
-			vmp_wsl_remove_range(vmps, entry->start, entry->end);
-			vmp_release_pfn_lock(ipl);
+			vmp_unmap_range(vmps, entry->start, entry->end);
 
-			obj_direct_release(entry->object);
+			if (entry->object != NULL) {
+				kassert(entry->object->file.vnode != NULL);
+				vn_release(entry->object->file.vnode);
+			}
+
 			kmem_free(entry, sizeof(vm_map_entry_t));
+		} else if (entry->start < start && entry->end > start &&
+		    entry->end <= end) {
+			/* part of the right side of the entry is encompassed */
+
+			int r;
+			vmem_addr_t new_start = entry->start;
+
+			r = vmem_xfree(&vmps->vmem, entry->start,
+			    entry->end - entry->start, 0);
+			kassert(r == entry->end - entry->start);
+
+			vmp_unmap_range(vmps, start, entry->end);
+
+			entry->end = start;
+
+			r = vmem_xalloc(&vmps->vmem, entry->end - new_start, 0,
+			    0, 0, 0, ~0, 0, &new_start);
+			kassert(r == 0);
+		} else if (entry->start >= start && entry->start < end &&
+		    entry->end > end) {
+			/* part of the left side of the entry is encompassed */
+
+			int r;
+
+			r = vmem_xfree(&vmps->vmem, entry->start,
+			    entry->end - entry->start, 0);
+			kassert(r == entry->end - entry->start);
+
+			vmp_unmap_range(vmps, entry->start, end);
+
+			entry->start = end;
+
+			r = vmem_xalloc(&vmps->vmem, entry->end - entry->start, 0,
+			    0, 0, 0, ~0, 0, &entry->start);
+			kassert(r == 0);
+		} else if (entry->start < start && entry->end > end) {
+			/* middle of the entry is encompassed */
+
+			int r;
+			vm_map_entry_t *new_entry;
+
+			r = vmem_xfree(&vmps->vmem, entry->start,
+			    entry->end - entry->start, 0);
+			kassert(r == entry->end - entry->start);
+
+			vmp_unmap_range(vmps, start, end);
+
+			new_entry = kmem_alloc(sizeof(vm_map_entry_t));
+			kassert(new_entry != NULL);
+
+#if 0
+			*new_entry = *entry;
+			new_entry->start = end;
+			new_entry->flags.offset = entry->flags.offset +
+			    (end - entry->start) / PGSIZE;
+
+			RB_INSERT(vm_map_entry_rbtree, &vmps->vad_queue,
+			    new_entry);
+
+			entry->end = start;
+
+			r = vmem_xalloc(&vmps->vmem,
+			    new_entry->end - new_entry->start, 0, 0, 0, 0, ~0,
+			    0, &new_entry->start);
+			kassert(r == 0);
+
+			r = vmem_xalloc(&vmps->vmem, entry->end - entry->start,
+			    0, 0, 0, 0, ~0, 0, &entry->start);
+			kassert(r == 0);
+#else
+			kfatal("Implement me\n");
 #endif
-		} else if (entry->start >= start && entry->end <= end) {
-			kfatal("unimplemented deallocate right of vadt\n");
-		} else if (entry->start < start && entry->end < end) {
-			kfatal("unimplemented other sort of deallocate\n");
 		}
 	}
 
