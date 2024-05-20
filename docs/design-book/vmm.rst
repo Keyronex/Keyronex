@@ -4,18 +4,17 @@ Virtual Memory Manager
 Overview
 --------
 
-Virtual memory is the centrepiece of Keyronex and so is the subject of a lot of
-attention in the design. The goal of the design is to provide the following
-features:
+Virtual memory is the centrepiece of Keyronex, receiving significant attention
+in its design. The goal of that design is to provide the following:
 
  - Portability to many architectures
  - Memory mapped files
  - Shareable anonymous memory
  - Posix fork() support with copy-on-write optimisation
  - Copy-on-write optimisation for private file/anonymous object mappings
- - Paging dynamics in line with Denning's Working Set Model
+ - Paging dynamics aligned with Denning's Working Set Model
  - Efficient and coherent cached file I/O
- - Pageability of as much memory as possible, including page tables themselves
+ - Maximising the pageability of memory, including page tables themselves
 
 The design of the virtual memory manager draws on three distinct traditions:
 that of Mach, that of VMS and family (VMS itself, Windows NT, and MINTIA), and
@@ -26,11 +25,11 @@ forked memory is from NetBSD's UVM (which itself borrowed it from SunOS).
 Compromises
 -----------
 
-Keyronex VM assumes native support in the architecture for a traditional system
-of tree-based page tables, which is true of the 68k, amd64, aarch64, and risc64
-architectures - the current and probable future targets of Keyronex. It could
-run on systems based on software-refilled TLBs by constructing page tables of
-its own format and walking these in the TLB refill trap handler.
+Keyronex VM assumes native architectural support for traditional tree-based page
+tables, as in the 68k, amd64, aarch64, and risc64 architectures - current and
+future targets of Keyronex. It could run on systems with software-refilled TLBs
+by constructing page tables of its own format and walking these in the TLB
+refill trap handler.
 
 
 Principle of Operation
@@ -40,52 +39,60 @@ The founding principle of the virtual memory system is that main memory should
 act as the cache of secondary memory, with exceptions for certain data that
 cannot be paged or where efficiency demands it not be.
 
-Denning's Working Set Model proposes that a **working set** is the set of pages
-that a process must have resident in main memory to run without thrashing
-(excessive page faults) within a given period of time. As processes' needs
-change over the course of their execution, their working set may vary.
+Denning's Working Set Model defines a **working set** as the set of pages
+that a process needs resident in main memory to run without excessive page
+faults (thrashing) over a given period of time. The working set of a process can
+vary as its needs change during execution.
 
-To this the concept of **balance set** can be added: a sort of working set of
-working sets. The balance set is the set of processes permitted to reside in
-main memory over a given period of time.
+The **balance set** extends the working set concept: it is a sort of working set
+of working sets. The balance set is the set of processes permitted to reside in
+main memory over a given period of time such that all their working sets can
+be resident.
 
-With these concepts the fundamental goals of the virtual memory manager is made
-clear: it should determine how many pages a process needs to run without
-thrashing, and permit it to retain those many pages in memory, and it should
-adapt to changes in this number over the lifetime of the process. It should
-further determine which and how many processes it can keep resident in memory
-over a given period of time, such that there is room for each's working set to
-be wholly resident.
+Based on these concepts, the fundamental goals of the virtual memory manager
+are:
+
+- to determine how many pages a process needs to avoid thrashing, to allow a
+  process to retain that many pages in memory, and to adapt to changes over time
+- to determine which and how many processes can be coresident in memory
+  simultaneously, ensuring their working sets are fully resident.
+
 
 On that basis, the page replacement approach that the VMM takes is designed to
 optimise for this. The algorithm is called Segmented FIFO. It is so-called
 because the page cache is segmented into two entities:
 
 Primary Page Cache (aka Balance Set, Working Sets, Resident Set)
-    This is composed of per-process queues of pages, called Working Set Queues;
-    these pages are those which are currently mapped with valid PTEs in that
-    process. These queues are growable and shrinkable, and replacement is by
-    FIFO: when the working set queue of a process cannot be grown, the least
-    recently mapped page in a process is locally replaced when a new page
-    is mapped in that process.
+    This consists of per-process queues of pages, known as Working Set Queues.
+    Pages in the Primary Page Cache are currently mapped with valid PTEs in
+    at least one process, or otherwise wired into memory.
+
+    The queues are dynamic, capable of growing and shrinking as needed, but this
+    is subject to controls. Replacement within a queue is handled by FIFO:
+    when a process's working set queue cannot be expanded, the least recently
+    mapped page in that process is replaced when a new page is mapped.
 
 Secondary Page Cache
-    This is composed of two queues: the Modified Page Queue and the Standby Page
-    Queue. When a page is no longer mapped in any Working Set, it is placed onto
-    either the Modified or Standby page queue depending on whether it was
-    modified while mapped into a working set. On these queues, the page gets a
+    This conists of two queues:
+
+    -  Modified Page Queue
+    -  Standby Page Queue
+
+    When a page is no longer mapped in any Working Set Queue nor otherwise
+    wired, it is placed onto one of these queues, depending on whether it was
+    modified while mapped into a working set. These queues give the page a
     second chance to be brought back into the Primary Page Cache without
-    incurring a backing store read.
-    It is from these queues that pages actually get replaced on the global
-    level, by being written to disk if dirty and made available for reuse for
-    new data when clean.
+    incurring a disk read.
+
+    Pages are replaced globally from these queues by being written to disk if
+    dirty and made available for reuse when clean.
 
 Two specific tasks of the VMM can be inferred from these:
 
 1. To balance the sizes of the primary page cache and secondary page cache to
    minimise unnecessary disk reads.
-2. To balance the size of the modified page queue and the standby page queue, as
-   only from the standby page queue can pages be immediately repurposed.
+2. To balance the size of the modified page queue and the standby page queue,
+   because only from the standby page queue can pages be immediately repurposed.
 
 
 Page Frame Database (aka PFN Database, PFNDB)
@@ -98,7 +105,7 @@ physical address can be quickly determined. Every page of allocatable main
 memory is described by an entry.
 
 .. note::
-    as an efficiency to eliminate the need to iterate the queue of regions, in
+    As an efficiency to eliminate the need to iterate the queue of regions, in
     the future this could become a fixed region of the virtual address space
     which is mapped such that e.g. `pfndb[pfn]` is all it takes to access the
     PFNDB entry for a given page frame number. This would also allow translation
@@ -110,12 +117,12 @@ and 64 bytes for 64-bit ports. The data stored is different depending on the use
 and state of a page. The fields are:
 
 `pfn`
-    The physical page frame number of a page.
+    The physical page frame number of the page.
 
 `use`
-    Tracks what a page is being used for. The uses are Free, Deleted, Anonymous
-    Private; Anonymous Forked; Anonymous Shared; File; Page Table Levels 4
-    to 1; and Prototype Page Table Levels 4 to 1.
+    Tracks what a page is being used for. The uses are Free, Deleted, Kernel
+    Wired, Anonymous Private, Anonymous Forked, Anonymous Shared, File,
+    Page Table Levels 4 to 1, and Prototype Page Table Levels 4 to 1.
 
 `refcnt`
     This field, together with `use`, determines the state of a page. It is the
@@ -125,44 +132,48 @@ and state of a page. The fields are:
     it's dirty, or onto the Free list if the page use has been set to Deleted.
 
 `dirty`
-    Whether this page is known to be dirty. It is OR'd into the PFNDB entry at
-    the time of a page's eviction from a working set, or may be set explicitly
-    on an active page.
+    Indicates whether the page is known to be dirty. When a page is evicted from
+    a working set, the dirty value of the PTE that mapped the page is OR'd into
+    this field. It can also be set explicitly while a page is active.
 
 `queue_entry`
-    Links a page of refcnt 0 either onto the modified, standby, or free page
-    queues.
+    Links a page with a refcnt 0 to either the modified, standby, or free page
+    queue.
 
 `nonzero_ptes` / `noswap_ptes`
-    Used for pages used as page tables. `nonzero_ptes` counts how many actually
-    existing PTEs of any kind that there are in a table; if it reaches 0, the
-    page table can be freed. The `noswap_ptes` counts how many PTEs there are in
-    the table that prevent the table from being paged out to the pagefile, and
-    is incremented and decremented together with `refcnt`.
+    Used for pages used as page tables.
+
+    - `nonzero_ptes` counts how many PTEs exist in in a table. When the count
+      reaches 0, the page table can be freed.
+    - `noswap_ptes` counts PTEs that prevent the table from being paged out to
+      the pagefile. Adjustments to this count are always made with the same
+      adjustment made to `refcnt`.
 
 `offset`
-    Denotes the offset (in units of page size) into either the virtual address
-    space of the process (for private pages), or into the object (for file and
-    shared anonymous pages). Shares its location in the PFNDB entry structure
-    with the PTE counts, as page table pages don't use this field.
+    Specifies the offset (in units of page size) within the virtual address
+    space of a process (for private pages), or within the object (for pages
+    belonging to shared VM objects).
+    This field shares its location in the structure with the PTE counts above,
+    as page table pages do not use this field.
 
 `owner`
-    Points to either the process the page is part of the private address space
-    of (for private anonymous memory, including page tables), or to the object -
-    either a shared anonymous VM object or a file VM object.
+    Points to either the process to which the page belongs (for private
+    anonymous memory, including page tables), to the VM object (for file or
+    shared anonymous pages), or to the `vmp_anon` (for fork anonymous pages).
 
 `pte_address`
-    Points to the physical address of the PTE mapping this page - a PTE in a
-    process page table for private memory, a PTE in a prototype page table for
-    shared memory, or the `pte` field of a `vmp_anon` for forked memory.
+    The physical address of the PTE mapping this page. This could be:
+    - A PTE in a process page table for private pages
+    - A PTE in a prototype page table for shared memory
+    - The `pte` field of a `vmp_anon` for forked memory.
 
 `drumslot`
-    Holds the pagefile address that backs this process. This is lazily allocated
-    when the page needs to be paged out for the first time, and restored when
-    it's paged back in.
+    Stores the pagefile address backing this page. This address is lazily
+    allocated when the page is written back for the first time, and restored
+    when it is paged back in.
 
-Page state is an important concept which depends on the value of `refcnt`,
-`dirty`, and `use`. State is determined in this way:
+Page state is an important concept determined by the values of `refcnt`,
+`dirty`, and `use`:
 
 .. code-block::
 
@@ -179,16 +190,14 @@ Page state is an important concept which depends on the value of `refcnt`,
 The states mean:
 
 Active
-    The page is mapped in at least one working set or has been wired, e.g.
-    by an MDL.
+    Mapped in at least one working set or wired (e.g. by an MDL).
 
 Modified
-    The page is not validly mapped anywhere, but it is dirty and must be
-    flushed to disk. It is on the Modified Page Queue.
+    Not validly mapped, dirty, and must be flushed to disk; on the Modified Page
+    Queue.
 
 Standby
-    The page is not validly mapped anywhere and has already been flushed to
-    disk (or was never dirtied), so it is free to be reused. It is on the
+    Not validly mapped, already flushed to disk (or never dirtied); on the
     Standby Page Queue.
 
 Free
@@ -198,25 +207,45 @@ Note that a page being written to disk is in the Active state because of the
 reference to it held by the paging MDL. A page being read from disk is also in
 the Active state, and has a `busy` bit set to indicate this.
 
+VM Objects
+----------
+
+VM Objects are objects that can be mapped into an address space and come in two
+types: shared anonymous VM objects and vnode VM objects.
+
+Shared Anonymous VM Objects
+    Backed by the page file like private anonymous memory. These are used by the
+    tmpfs filesystem to provide space for file contents.
+
+Vnode VM Objects
+    Backed by other files (or by block devices). A vnode VM object is allocated
+    the first time a file is mapped into memory and then associated with the
+    vnode.
+
+Common code handles VM objects where possible, but there are some deviations.
+These are described in the later sections on fault handling and page
+replacement.
+
 
 Page Tables and PTEs
 --------------------
 
-The VMM by relying on the existence of traditional multi-level page tables can
-store metadata more optimally. In contrast to Mach-style VMMs, Keyronex VM
-uses the native page tables of the architecture to store metadata and does not
-treat them as purely caches of more abstract datastructures.
+The VMM optimises storage of metadata by relying on traditional multi-level page
+tables. Unlike Mach-style VMMs, Keyronex VM uses the architecture's native page
+tables for metadata storage, treating them as first-class entities rather than
+simple caches for abstract data structures.
 
-For consistency, the PTE format is also used by abstract datastructures of the
-Keyronex VM - when PTEs are used in this way, in locations where they will never
-be interpreted by the MMU itself, they are called prototype PTEs. Prototype
-PTEs are used to implement shared anonymous, file cache, and forked anonymous
-memory.
+Page tables are classified by the use field in their PFN database entries. PML1
+refers to leaf page tables with PTEs pointed to data pages, while PML2 and above
+are the higher-level page tables whose PTEs point to lower page tables.
 
-Page table entries can then be either software or hardware PTEs. A hardware PTE
-has the valid bit set, while a software PTE does not. The general format of
-software PTEs varies depending on the architecture, but looks roughly like this
-on a 32-bit platform:
+PTE types
+^^^^^^^^^
+
+Page table entries can be either software or hardware. A hardware PTE has the
+valid bit set, while a software PTE does not. The general format of software
+PTEs varies depending on the architecture, but looks roughly like this on a
+32-bit platform:
 
 .. code-block:: c
 
@@ -226,30 +255,79 @@ on a 32-bit platform:
 
 On 64-bit platforms, the `data` field is instead around 61 bits in length.
 
-There are several kinds of software PTEs:
+PTEs can also be zero. The full set of non-zero PTE types, then, are:
+
+Valid (or Hardware) PTEs
+    True PTEs as understood by the MMU. They may vary in format depending on
+    what level of page table they are entries in.
 
 Busy PTEs
-    These indicate a page being read in from backing store.
+    Indicate a page being read in from backing store.
 
 Transition PTEs
-    These are created when a private anonymous page is evicted from a process'
-    working set. The `data` field is the PFN number of the anonymous page.
+    Created when a page enters the standby or modified state (reference count
+    reaches 0). The `data` field holds the PFN of the anonymous page.
 
-Swap Descriptor PTEs
-    These are created when a private anonymous page is paged out at the global
-    level, i.e. written to disk and removed from the standby page queue. The
-    `data` field is a unique number by which the swapped-out page can be
-    retrieved from the pagefile.
+Drumslot PTEs
+    Created when an anonymous page is paged out at the global level (written to
+    a pagefile and removed from the standby page queue). The `data` field holds
+    a unique number by which the swapped-out page can be retrieved from a
+    pagefile.
 
 Fork PTEs:
-    These are created when the Posix fork() operation is carried out. The `data`
-    field is a pointer to the `vmp_anon` structure (described later) which holds
-    the prototype PTE (again described later). The pointer can fit here because
-    `vmp_anon`\ s are always 8-byte aligned, meaning the 3 low bits are always
-    zero and can accordingly be shifted away. (If it were necessary to shrink
-    the number of bits used for the `data` field even further, we could do so
-    by storing the vmp_anon as an offset from the kernel heap base instead; this
-    would save yet more bits).
+    Created during a Posix fork() operation. The `data` field holds a pointer to
+    a `vmp_anon` structure (described later), which itself holds a prototype
+    PTE.
+    The pointer fits into the 28 or 60 available bits because `vmp_anon`\ s are
+    always 16-byte aligned, meaning the 4 low bits are always zero and can
+    accordingly be shifted away. Further bit savings could be achieved by
+    storing vmp_anon as an offset from the kernel heap base.
+
+
+Prototype Page Tables and VM objects
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Keyronex uses **prototype page tables**, purely-software and never walked by the
+MMU, to track memory belonging to shared VM objects. These are always 4-level,
+with each level containing 512 entries on 64-bit ports and 1024 on 32-bit ports.
+
+For consistency, the PTE format in prototype page tables is the same as hardware
+PTEs - though while hardware PTE formats may vary depending on the level of the
+page table they are in, the valid PTE format for prototype page tables is always
+the same as that of the hardware PML1. Prototype page tables have the PFNDB
+`use` field set to PPML1, PPML2, PPML3, or PPML4.
+
+Page Table Paging
+^^^^^^^^^^^^^^^^^
+
+Page table pages, like other anonymous memory, can be paged out to the swapfile.
+For a page table page to be eligible for paging out, it must contain no PTEs
+other than drumslot or fork PTEs. This condition is reflected by the noswap_ptes
+count, updated when PTEs that prevent paging out are created or deleted. The
+refcnt is adjusted in tandem with `noswap_ptes`; each PTE making a table
+ineligible for paging adds 1 to both counts.
+
+When a page table meets the condition of containing only drumslot or fork PTEs,
+the PTE in the parent page table that points to this page table is placed into
+the transition state. Typically, the page table's reference count drops to zero
+at the same time, causing its PFNDB entry to be linked to the modified page
+queue. The page can then be written to the pagefile and potentially replaced.
+Replacement converts the PTE pointing to the now-paged-out table from a
+transition PTE to a drumslot PTE. This change can make the parent table eligible
+for paging out as well.
+
+Prototype page tables for anonymous VM objects also participate in this process.
+However, the prototype page tables of vnode VM objects are never paged out.
+Paging out can only occur if there are drumslot or fork PTEs in a table but no
+valid, transitional, or busy PTEs.
+When a vnode VM object page is replaced, the PTE in the PPML1 (the first level
+of the prototype page table) referring to it is zeroed. The prototype page
+tables of vnode VM objects can therefore only contain valid, busy, or transition
+PTEs.
+Accordingly, the `noswap_ptes` count of a prototype page table belonging to a
+vnode VM object will always match the `nonzero_ptes` count, and when the
+`nonzero_ptes` count reaches 0, the prototype page table is destroyed and the
+PTE pointing to it is zeroed.
 
 Forked Anonymous and `vmp_anon`\ s
 ----------------------------------

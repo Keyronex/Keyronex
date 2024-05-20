@@ -11,5 +11,5 @@ Contents
 .. toctree::
 
    intro
-   vm
+   vmm
    io
