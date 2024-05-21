@@ -55,7 +55,7 @@ vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object, vaddr_t *vaddrp
 	kassert(size % PGSIZE == 0);
 	kassert(offset % PGSIZE == 0);
 
-	ke_wait(&vmps->mutex, "map_object_view:vmps->mutex", false, false, -1);
+	ex_rwlock_acquire_write(&vmps->map_lock, "map_object_view:vmps->map_lock");
 
 	r = vmem_xalloc(&vmps->vmem, size, 0, 0, 0, addr, 0,
 	    exact ? kVMemExact : 0, &addr);
@@ -75,7 +75,7 @@ vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object, vaddr_t *vaddrp
 
 	RB_INSERT(vm_map_entry_rbtree, &vmps->vad_queue, map_entry);
 
-	ke_mutex_release(&vmps->mutex);
+	ex_rwlock_release_write(&vmps->map_lock);
 
 	*vaddrp = addr;
 
@@ -89,8 +89,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 	vaddr_t end = start + size;
 	kwaitresult_t w;
 
-	w = ke_wait(&vmps->mutex, "vm_ps_deallocate:vmps->mutex", false, false,
-	    -1);
+	ex_rwlock_acquire_write(&vmps->map_lock, "vm_ps_deallocate:vmps->map_lock");
 	kassert(w == kKernWaitStatusOK);
 
 	RB_FOREACH_SAFE (entry, vm_map_entry_rbtree, &vmps->vad_queue, tmp) {
@@ -191,7 +190,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 		}
 	}
 
-	ke_mutex_release(&vmps->mutex);
+	ex_rwlock_release_write(&vmps->map_lock);
 
 	return 0;
 }
@@ -210,7 +209,9 @@ vm_ps_init(eprocess_t *ps)
 		    LOWER_HALF_SIZE, PGSIZE, NULL, NULL, NULL, 0,
 		    kVMemBootstrap, kIPL0);
 
-	ke_mutex_init(&vmps->mutex);
+	ke_mutex_init(&vmps->map_lock.mutex);
+	ke_mutex_init(&vmps->ws_mutex);
+
 	RB_INIT(&vmps->vad_queue);
 	RB_INIT(&vmps->wsl.tree);
 	TAILQ_INIT(&vmps->wsl.queue);

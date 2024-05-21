@@ -246,12 +246,12 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 
 			vmp_pager_state_retain(pgstate);
 			vmp_release_pfn_lock(kIPLAST);
-			ke_mutex_release(&ps->vm->mutex);
+			ke_mutex_release(&ps->vm->ws_mutex);
 
 			KE_WAIT(&pgstate->event, false, false, -1);
 			vmp_pager_state_release(pgstate);
 
-			KE_WAIT(&ps->vm->mutex, false, false, -1);
+			KE_WAIT(&ps->vm->ws_mutex, false, false, -1);
 			vmp_acquire_pfn_lock();
 			goto restart_level;
 		}
@@ -331,7 +331,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			vmstat.n_table_pageins++;
 
 			vmp_release_pfn_lock(kIPLAST);
-			ke_mutex_release(&ps->vm->mutex);
+			ke_mutex_release(&ps->vm->ws_mutex);
 
 			extern vnode_t *pagefile_vnode;
 
@@ -346,7 +346,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 			iop_send_sync(iop);
 			iop_free(iop);
 
-			KE_WAIT(&ps->vm->mutex, false, false, -1);
+			KE_WAIT(&ps->vm->ws_mutex, false, false, -1);
 			vmp_acquire_pfn_lock();
 
 			if (prototype == 0)
@@ -469,7 +469,7 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 
 	eprocess_t *ps = kernel_process;
 
-	// KE_WAIT(&vmps->mutex, false, false, -1);
+	KE_WAIT(&vmps->ws_mutex, false, false, -1);
 	ipl = vmp_acquire_pfn_lock();
 
 	for (vaddr_t addr = start; addr < end; addr += PGSIZE) {
@@ -564,6 +564,7 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 		vmp_pte_wire_state_release(&pte_wire, false);
 
 	vmp_release_pfn_lock(ipl);
+	ke_mutex_release(&vmps->ws_mutex);
 
 	return 0;
 }

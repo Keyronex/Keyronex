@@ -90,12 +90,12 @@ get_object_and_offset(uintptr_t uaddr, void **object, io_off_t *offset)
 {
 	vm_map_entry_t *entry;
 
-	ke_wait(&ex_curproc()->vm->mutex, "futex get object and offset", false,
-	    false, -1);
+	ex_rwlock_acquire_read(&ex_curproc()->vm->map_lock,
+	    "futex get object and offset");
 
 	entry = vmp_ps_vad_find(ex_curproc()->vm, uaddr);
 	if (entry == NULL) {
-		ke_mutex_release(&ex_curproc()->vm->mutex);
+		ex_rwlock_release_read(&ex_curproc()->vm->map_lock);
 		return -1;
 	}
 
@@ -109,7 +109,8 @@ get_object_and_offset(uintptr_t uaddr, void **object, io_off_t *offset)
 		*offset = (uaddr - entry->start) + entry->flags.offset * PGSIZE;
 	}
 
-	ke_mutex_release(&ex_curproc()->vm->mutex);
+	ex_rwlock_release_read(&ex_curproc()->vm->map_lock);
+
 	return 0;
 }
 

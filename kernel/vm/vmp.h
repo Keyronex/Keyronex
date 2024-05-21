@@ -1,6 +1,7 @@
 #ifndef KRX_VM_VMP_H
 #define KRX_VM_VMP_H
 
+#include "kdk/executive.h"
 #include "kdk/nanokern.h"
 #include "kdk/vm.h"
 
@@ -77,8 +78,10 @@ struct vmp_wsl {
  * Per-process state.
  */
 typedef struct vm_procstate {
-	/*! VAD queue + working set list lock. */
-	kmutex_t mutex;
+	/*! Working set list lock. */
+	kmutex_t ws_mutex;
+	/*! Mapping lock. */
+	ex_rwlock_t map_lock;
 	/*! VMem. */
 	vmem_t vmem;
 	/*! Working set list. */

@@ -23,11 +23,13 @@
  * of mapping list lock separate from the working set lock.
  */
 
-struct fault_area_info {
+struct fault_info {
 	vm_object_t *object;
 	vaddr_t start;
 	pgoff_t offset;
 	bool copy, writeable;
+	bool map_lock_held;
+	bool ws_lock_held;
 };
 
 void
@@ -47,7 +49,7 @@ vmp_pager_state_release(struct vmp_pager_state *state)
 
 static int
 vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
-    struct fault_area_info *area_info, struct vmp_pte_wire_state *state,
+    struct fault_info *area_info, struct vmp_pte_wire_state *state,
     vaddr_t vaddr)
 {
 	vm_object_t *object = area_info->object;
@@ -93,16 +95,15 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 		vmp_release_pfn_lock(kIPLAST);
 
 		/* wait for the page-in to complete... */
-		ke_mutex_release(&vmps->mutex);
+		if (area_info->map_lock_held) {
+			area_info->map_lock_held = false;
+			ex_rwlock_release_read(&vmps->map_lock);
+		}
+		area_info->ws_lock_held = false;
+		ke_mutex_release(&vmps->ws_mutex);
 		KE_WAIT(&pgstate->event, false, false, -1);
 
 		vmp_pager_state_release(pgstate);
-
-		/*
-		 * and reacquire the working set mutex - todo get rid of this
-		 * necessity.
-		 */
-		KE_WAIT(&vmps->mutex, false, false, -1);
 
 		/* and let the collided fault be retried. */
 		return kVMFaultRetRetry;
@@ -156,7 +157,11 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	vmp_pte_wire_state_release(&object_state, true);
 	vmp_pte_wire_state_release(state, false);
 	vmp_release_pfn_lock(kIPLAST);
-	ke_mutex_release(&vmps->mutex);
+	if (area_info->map_lock_held) {
+		area_info->map_lock_held = false;
+		ex_rwlock_release_read(&vmps->map_lock);
+	}
+	ke_mutex_release(&vmps->ws_mutex);
 
 	mdl = &pgstate->mdl;
 	mdl->nentries = 1;
@@ -169,8 +174,12 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	iop_send_sync(iop);
 	iop_free(iop);
 
-	KE_WAIT(&vmps->mutex, false, false, -1);
+	/*
+	 * we don't need the map_lock, any unmapper will be waiting on our busy
+	 * page
+	 */
 
+	KE_WAIT(&vmps->ws_mutex, false, false, -1);
 	vmp_acquire_pfn_lock();
 
 	switch (vmp_pte_characterise(object_state.pte)) {
@@ -242,7 +251,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	eprocess_t *process;
 	vm_procstate_t *vmps;
 	struct vmp_pte_wire_state state;
-	struct fault_area_info area_info;
+	struct fault_info area_info;
 	ipl_t ipl;
 
 	kassert(splget() < kIPLDPC);
@@ -260,11 +269,13 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	vmps = process->vm;
 
-	KE_WAIT(&vmps->mutex, false, false, -1);
 	if (vaddr < HHDM_BASE ||
 	    (vaddr >= KVM_DYNAMIC_BASE &&
 		vaddr < KVM_DYNAMIC_BASE + KVM_DYNAMIC_SIZE)) {
-		vm_map_entry_t *map_entry = vmp_ps_vad_find(vmps, vaddr);
+		vm_map_entry_t *map_entry;
+
+		ex_rwlock_acquire_read(&vmps->map_lock, "vm_fault: acquire map_lock");
+		map_entry = vmp_ps_vad_find(vmps, vaddr);
 
 		if (map_entry == NULL)
 			kfatal("VM fault at 0x%zx doesn't have a vad\n", vaddr);
@@ -274,6 +285,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		area_info.copy = map_entry->flags.cow;
 		area_info.offset = map_entry->flags.offset;
 		area_info.start = map_entry->start;
+		area_info.map_lock_held = true;
 	} else if (vaddr >= KVM_UBC_BASE &&
 	    vaddr < KVM_UBC_BASE + KVM_UBC_SIZE) {
 		/* note: UBC faults are always taken after a window was paged */
@@ -284,8 +296,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		area_info.writeable = true;
 		area_info.offset = window->offset * (UBC_WINDOW_SIZE / PGSIZE);
 		area_info.start = ubc_window_addr(window);
+		area_info.map_lock_held = false;
 	} else {
-		kfatal("Page fault in an unacceptable area\n");
+		kfatal("Page fault in an unacceptable area (0x%zx)\n", vaddr);
 	}
 	/*
 	 * Check if area is nonwriteable and this is a write
@@ -293,6 +306,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	 */
 	if (write && !area_info.writeable)
 		kfatal("Write fault at 0x%zx in nonwriteable vad\n", vaddr);
+
+	area_info.ws_lock_held = true;
+	KE_WAIT(&vmps->ws_mutex, false, false, -1);
 
 	ipl = vmp_acquire_pfn_lock();
 	r = vmp_wire_pte(process, vaddr, 0, &state, true);
@@ -342,7 +358,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			if (r != 0) {
 				vmp_pte_wire_state_release(&state, false);
 				vmp_release_pfn_lock(ipl);
-				ke_mutex_release(&vmps->mutex);
+				ke_mutex_release(&vmps->ws_mutex);
+				ex_rwlock_release_read(&vmps->map_lock);
 				return kVMFaultRetPageShortage;
 			}
 
@@ -369,7 +386,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		if (r != 0) {
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
-			ke_mutex_release(&vmps->mutex);
+			ke_mutex_release(&vmps->ws_mutex);
+			ex_rwlock_release_read(&vmps->map_lock);
 			return kVMFaultRetPageShortage;
 		}
 
@@ -449,7 +467,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(kIPLAST);
-		ke_mutex_release(&vmps->mutex);
+		ke_mutex_release(&vmps->ws_mutex);
+		ex_rwlock_release_read(&vmps->map_lock);
+		area_info.map_lock_held = false;
 
 		extern vnode_t *pagefile_vnode;
 
@@ -464,8 +484,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		iop_send_sync(iop);
 		iop_free(iop);
 
-		/* reacquire locks */
-		KE_WAIT(&vmps->mutex, false, false, -1);
+		/* only need WS mutex for dealing with a busy page */
+		KE_WAIT(&vmps->ws_mutex, false, false, -1);
 
 		vmp_acquire_pfn_lock();
 
@@ -507,10 +527,11 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		vmp_pager_state_retain(pgstate);
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(kIPLAST);
+		ke_mutex_release(&vmps->ws_mutex);
+		ex_rwlock_release_read(&vmps->map_lock);
+
 
 		/* wait for the page-in to complete... */
-		ke_mutex_release(&vmps->mutex);
-
 		KE_WAIT(&pgstate->event, false, false, -1);
 
 		vmp_pager_state_release(pgstate);
@@ -521,7 +542,9 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		kfatal("Unexpected PTE state %d\n", pte_kind);
 	}
 
-	ke_mutex_release(&vmps->mutex);
+	if (area_info.map_lock_held)
+		ex_rwlock_release_read(&vmps->map_lock);
+	ke_mutex_release(&vmps->ws_mutex);
 
 	return r;
 }

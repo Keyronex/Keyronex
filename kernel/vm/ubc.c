@@ -88,7 +88,7 @@ window_replace(ubc_window_t *window)
 	RB_REMOVE(ubc_window_tree, &window->vnode->ubc_windows, window);
 	ke_spinlock_release(&ubc_lock, kIPLAST);
 
-	KE_WAIT(&kernel_procstate.mutex, false, false, -1);
+	KE_WAIT(&kernel_procstate.ws_mutex, false, false, -1);
 	(void)vmp_acquire_pfn_lock();
 
 	vmp_fetch_pte(&kernel_procstate, window_addr, &pte);
@@ -109,7 +109,7 @@ window_replace(ubc_window_t *window)
 
 	vmp_release_pfn_lock(kIPLAST);
 	vn_release(window->vnode);
-	ke_mutex_release(&kernel_procstate.mutex);
+	ke_mutex_release(&kernel_procstate.ws_mutex);
 
 	ke_spinlock_acquire(&ubc_lock);
 	window->refcnt = 0;
