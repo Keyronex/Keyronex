@@ -98,10 +98,11 @@ window_replace(ubc_window_t *window)
 		kassert(vmp_pte_characterise(pte + i) == kPTEKindValid ||
 		    vmp_pte_characterise(pte + i) == kPTEKindZero);
 		if (vmp_md_pte_is_valid(pte + i)) {
+			vm_page_t *page = vmp_pte_hw_page(pte, 1);
 			vm_page_t *pte_page = vm_paddr_to_page(
 			    PGROUNDDOWN(V2P(pte)));
 			vmp_wsl_remove(&kernel_procstate,
-			    window_addr + i * PGSIZE, true);
+			    window_addr + i * PGSIZE, page->wsi_hint);
 			vmp_page_evict(&kernel_procstate, pte + i, pte_page,
 			    window_addr + i * PGSIZE);
 		}

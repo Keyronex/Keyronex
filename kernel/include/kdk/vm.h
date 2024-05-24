@@ -130,6 +130,7 @@ typedef struct vm_page {
 	union __attribute__((packed)) {
 		TAILQ_ENTRY(vm_page)	  queue_link;
 		struct vmp_pager_state *pager_request;
+		uint32_t wsi_hint;
 	};
 
 	/* 32-bit: word 7, 64-bit: word 6 */
@@ -175,6 +176,10 @@ vaddr_t vm_kalloc(size_t npages, enum vmem_flag flags);
 
 /*! @brief Free kernel wired pages. */
 void vm_kfree(vaddr_t addr, size_t npages, enum vmem_flag flags);
+
+/*! @brief Reallocate kernel wired pages. (Doesn't deal yet in HHDM allocs!) */
+vaddr_t vm_krealloc(vaddr_t addr, size_t old_npages, size_t new_npages,
+    vmem_flag_t flags);
 
 /*! @brief Allocate an MDL complete with pages. */
 vm_mdl_t *vm_mdl_buffer_alloc(size_t npages);

@@ -213,12 +213,7 @@ vm_ps_init(eprocess_t *ps)
 	ke_mutex_init(&vmps->ws_mutex);
 
 	RB_INIT(&vmps->vad_queue);
-	RB_INIT(&vmps->wsl.tree);
-	TAILQ_INIT(&vmps->wsl.queue);
-	vmps->wsl.locked_count = 0;
-	vmps->wsl.ws_current_count = 0;
-	vmps->wsl.max = 6;
-	vmps->last_trim_counter = 0;
+	vmp_wsl_init(vmps, &vmps->wsl);
 
 	vmp_md_ps_init(ps);
 }

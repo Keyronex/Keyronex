@@ -61,17 +61,24 @@ typedef struct vm_map_entry {
 	vaddr_t start, end;
 } vm_map_entry_t;
 
+#if BITS == 64
+typedef uint32_t wsindex_t;
+#else
+typedef uint16_t wsindex_t;
+#endif
+
+#define NIL_WSE ((wsindex_t)(-1))
+
 struct vmp_wsl {
-	/*! Working set entry queue - tail most recently added, head least. */
-	TAILQ_HEAD(, vmp_wsle) queue;
-	/*! Working set entry tree. */
-	RB_HEAD(vmp_wsle_tree, vmp_wsle) tree;
-	/*! Count of pages in working set list. */
-	size_t ws_current_count;
-	/*! Count of pages locked into working set list. */
-	size_t locked_count;
-	/*! Maximum number of pages currently permitted in the WS. */
-	size_t max;
+	vm_procstate_t *vmps;
+	struct wse *nodes;  /*!< Entry array. */
+	size_t capacity;    /*!< Working set cap - can be grown/shrunk */
+	size_t limit;	    /*!< Current working set size limit */
+	size_t size;	    /*!< Number of pages currently in the set. */
+	wsindex_t freelist; /*!< Next WSE index to replace. */
+	wsindex_t head; /*!< Index to begin search for entry to replace from. */
+	size_t hash_size; /*!< Size of hash table. */
+	wsindex_t *hash;  /*!< Hash table for looking up shared WSEs. */
 };
 
 /*!
@@ -212,8 +219,9 @@ int vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out);
 
 vm_map_entry_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 
-int vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool locked);
-void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr, bool pfn_locked);
+int vmp_wsl_init(vm_procstate_t *vmps, struct vmp_wsl *ws);
+wsindex_t vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool shared);
+void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr, wsindex_t hint);
 /*! @brief Dump info on a working set. */
 void vmp_wsl_dump(vm_procstate_t *ps);
 /*!

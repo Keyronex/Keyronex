@@ -309,6 +309,7 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
 	page->drumslot = 0;
 	page->nonzero_ptes = 0;
 	page->noswap_ptes = 0;
+	page->wsi_hint = NIL_WSE;
 
 	vmstat.nfree -= npages;
 	vmstat.nreservedfree -= npages;

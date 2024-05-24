@@ -76,8 +76,8 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 		vmp_pte_wire_state_release(state, false);
 		vmp_release_pfn_lock(kIPLAST);
 
-		r = vmp_wsl_insert(vmps, vaddr, false);
-		if (r != 0) {
+		r = vmp_wsl_insert(vmps, vaddr, true);
+		if (r == NIL_WSE) {
 			kfatal("Working set insertion failed - evict!!\n");
 		}
 
@@ -236,12 +236,12 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	vmp_pager_state_release(pgstate);
 
 	/* this effectively steals the reference we have on the page */
-	r = vmp_wsl_insert(vmps, vaddr, false);
-	if (r != 0) {
+	r = vmp_wsl_insert(vmps, vaddr, true);
+	if (r == NIL_WSE) {
 		kfatal("Working set insertion failed - evict & unref page!!\n");
 	}
 
-	return r;
+	return 0;
 }
 
 int
@@ -400,13 +400,16 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		vmp_release_pfn_lock(ipl);
 
 		r = vmp_wsl_insert(vmps, vaddr, false);
-		if (r != 0) {
+		if (r == NIL_WSE) {
 			/*
 			 * we have the working set lock held so we can just
 			 * acquire pfn lock, trans the PTE, pml1_page deleted,
 			 * unlock again.
 			 */
 			kfatal("Working set insertion failed - evict!!\n");
+		} else {
+			page->wsi_hint = r;
+			r = 0;
 		}
 	} else if (pte_kind == kPTEKindZero) {
 		r = vmp_do_file_fault(process, vmps, &area_info, &state, vaddr);
@@ -423,13 +426,16 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		vmp_release_pfn_lock(ipl);
 
 		r = vmp_wsl_insert(vmps, vaddr, false);
-		if (r != 0) {
+		if (r == NIL_WSE) {
 			/*
 			 * we have the working set lock held so we can just
 			 * acquire pfn lock, trans the PTE, pml1_page deleted,
 			 * unlock again.
 			 */
 			kfatal("Working set insertion failed - evict!!\n");
+		} else {
+			page->wsi_hint = r;
+			r = 0;
 		}
 	} else if (pte_kind == kPTEKindSwap) {
 
@@ -510,15 +516,17 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 		/* this effectively steals the reference we have on the page */
 		r = vmp_wsl_insert(vmps, vaddr, false);
-		if (r != 0) {
+		if (r == NIL_WSE) {
 			/*
 			 * we have the working set lock held so we can just
 			 * acquire pfn lock, trans the PTE, pml1_page deleted,
 			 * unlock again.
 			 */
 			kfatal("Working set insertion failed - evict!!\n");
+		} else {
+			page->wsi_hint = r;
+			r = 0;
 		}
-
 	} else if (pte_kind == kPTEKindBusy) {
 		vm_page_t *page = vm_pfn_to_page(
 		    vmp_md_soft_pte_pfn(state.pte));

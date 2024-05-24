@@ -515,7 +515,7 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 			vm_page_t *pte_page = vm_paddr_to_page(
 			    PGROUNDDOWN(V2P(pte)));
 
-			vmp_wsl_remove(vmps, addr, true);
+			vmp_wsl_remove(vmps, addr, page->wsi_hint);
 			vmp_md_pte_create_zero(pte);
 			vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
 			ki_tlb_flush_vaddr_globally(addr);

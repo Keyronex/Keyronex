@@ -57,9 +57,10 @@ void vmem_destroy(vmem_t *vmem);
 int vmem_xalloc(vmem_t *vmem, vmem_size_t size, vmem_size_t align,
     vmem_size_t phase, vmem_size_t nocross, vmem_addr_t min, vmem_addr_t max,
     vmem_flag_t flags, vmem_addr_t *out);
-
 int vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
     vmem_flag_t flags);
+int vmem_xrealloc(vmem_t *vmem, vmem_addr_t addr, vmem_size_t oldsize,
+    vmem_size_t newsize, vmem_flag_t flags, vmem_addr_t *out);
 
 void vmem_dump(const vmem_t *vmem);
 
