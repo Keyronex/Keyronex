@@ -589,40 +589,6 @@ kmem_zalloc(size_t size)
 	return ret;
 }
 
-#if 0
-void *
-kmem_malloc(size_t size)
-{
-	size_t *ptr = kmem_xalloc(size + sizeof(size_t), 0);
-	*ptr = size;
-	return ptr + 1;
-}
-
-void kmem_mfree(void *ptr)
-{
-	size_t *orig_ptr = ptr;
-	orig_ptr--;
-	kmem_xfree(orig_ptr, *orig_ptr, 0);
-}
-
-void *kmem_mrealloc(void *ptr, size_t size)
-{
-	size_t *orig_ptr = ptr;
-	size_t *ret;
-
-	orig_ptr--;
-
-	ret = kmem_xalloc(size + sizeof(size_t), 0);
-	if (ptr != NULL) {
-		kassert(oldSize > 0);
-		kassert(size > oldSize);
-		memcpy(ret, ptr, oldSize);
-		kmem_xfree(ptr, oldSize, flags);
-	}
-	return ret;
-}
-#endif
-
 void *
 kmem_malloc(size_t size)
 {
