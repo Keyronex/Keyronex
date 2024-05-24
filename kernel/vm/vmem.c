@@ -482,7 +482,7 @@ split_seg:
 }
 
 static void
-freeseg_expand(vmem_t *vmem, vmem_seg_t *seg, vmem_addr_t newbase,
+freeseg_resize(vmem_t *vmem, vmem_seg_t *seg, vmem_addr_t newbase,
     vmem_size_t newsize)
 {
 	size_t oldfreelist = freelist(seg->size), new;
@@ -528,7 +528,7 @@ free:
 	/* coalesce to the left */
 	left = prev_seg(seg);
 	if (left->type == kVMemSegFree) {
-		freeseg_expand(vmem, left, left->base, left->size + seg->size);
+		freeseg_resize(vmem, left, left->base, left->size + seg->size);
 		TAILQ_REMOVE(&vmem->segqueue, seg, segqueue);
 		seg_free(vmem, seg);
 		seg = left;
@@ -539,7 +539,7 @@ free:
 	/* coalesce to the right */
 	right = next_seg(seg);
 	if (right && right->type == kVMemSegFree) {
-		freeseg_expand(vmem, right, seg->base, right->size + seg->size);
+		freeseg_resize(vmem, right, seg->base, right->size + seg->size);
 		TAILQ_REMOVE(&vmem->segqueue, seg, segqueue);
 		if (coalesced_left)
 			/* remaining on a freelist */
@@ -590,6 +590,94 @@ free:
 	vmem->used -= size;
 
 	return size;
+}
+
+int
+vmem_xrealloc(vmem_t *vmem, vmem_addr_t addr, vmem_size_t oldsize,
+    vmem_size_t newsize, vmem_flag_t flags, vmem_addr_t *out)
+{
+	vmem_seg_t *seg;
+	vmem_seglist_t *bucket = hashbucket_for_addr(vmem, addr);
+	vmem_seg_t *right;
+	vmem_addr_t new_addr;
+	vmem_size_t size_diff;
+
+	kassert(!(flags & kVMemBootstrap));
+
+	if (oldsize == 0) {
+		kassert(newsize != 0);
+		return vmem_xalloc(vmem, newsize, 0, 0, 0, 0, 0, flags, &addr);
+	} else if (newsize == 0) {
+		kassert(oldsize != 0);
+		return vmem_xfree(vmem, addr, oldsize, flags);
+	}
+
+	LIST_FOREACH (seg, bucket, seglist) {
+		if (seg->base == addr && seg->size == oldsize)
+			break;
+	}
+
+	if (seg == NULL) {
+		kfatal(
+		    "vmem_xrealloc: segment at address 0x%zx with size 0x%zx doesn't exist\n",
+		    addr, oldsize);
+		return -1;
+	}
+
+	if (newsize == oldsize) {
+		*out = addr;
+		return 0;
+	}
+
+	if (newsize < oldsize) {
+		size_diff = oldsize - newsize;
+		seg->size = newsize;
+
+		right = next_seg(seg);
+		if (right && right->type == kVMemSegFree) {
+			right->base -= size_diff;
+			right->size += size_diff;
+		} else {
+			vmem_seg_t *newseg = seg_alloc(vmem, flags);
+			newseg->base = addr + newsize;
+			newseg->size = size_diff;
+			newseg->type = kVMemSegFree;
+			TAILQ_INSERT_AFTER(&vmem->segqueue, seg, newseg,
+			    segqueue);
+			freelist_insert(vmem, newseg);
+		}
+
+		*out = addr;
+		return 0;
+	}
+
+	size_diff = newsize - oldsize;
+
+	right = next_seg(seg);
+	if (right && right->type == kVMemSegFree && right->size >= size_diff) {
+		seg->size = newsize;
+
+		if (right->size > size_diff) {
+			freeseg_resize(vmem, right, right->base + size_diff,
+			    right->size - size_diff);
+		} else {
+			/* remove from freelist */
+			LIST_REMOVE(right, seglist);
+			TAILQ_REMOVE(&vmem->segqueue, right, segqueue);
+			seg_free(vmem, right);
+		}
+
+		*out = addr;
+		return 0;
+	}
+
+	if (vmem_xalloc(vmem, newsize, 0, 0, 0, 0, 0, flags, &new_addr) != 0)
+		return -ERESOURCEEXHAUSTED;
+
+	vmem_xfree(vmem, addr, oldsize, flags);
+
+	*out = new_addr;
+	return 0;
 }
 
 void

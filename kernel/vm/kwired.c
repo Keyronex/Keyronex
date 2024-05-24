@@ -14,7 +14,6 @@ void internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 
 vm_procstate_t kernel_procstate;
 vmem_t vmem_kern_nonpaged_va;
-vmem_t vmem_kern_nonpaged;
 
 void
 vmp_kernel_init(void)
@@ -22,14 +21,11 @@ vmp_kernel_init(void)
 	vmem_earlyinit();
 	vmem_init(&vmem_kern_nonpaged_va, "kernel-nonpaged-va", KVM_WIRED_BASE,
 	    KVM_WIRED_SIZE, PGSIZE, NULL, NULL, NULL, 0, kVMemBootstrap, kIPL0);
-	vmem_init(&vmem_kern_nonpaged, "kernel-nonpaged", 0, 0, PGSIZE,
-	    internal_allocwired, internal_freewired, &vmem_kern_nonpaged_va, 0,
-	    kVMemBootstrap, kIPL0);
-
 	vm_ps_init(kernel_process);
 }
 
-int vmp_enter_kwired(vaddr_t virt, paddr_t phys)
+int
+vmp_enter_kwired(vaddr_t virt, paddr_t phys)
 {
 	int r;
 	struct vmp_pte_wire_state pte_wire;
@@ -39,12 +35,11 @@ int vmp_enter_kwired(vaddr_t virt, paddr_t phys)
 
 	vmp_md_pte_create_hw(pte_wire.pte, phys >> VMP_PAGE_SHIFT, true, true);
 	vmp_pagetable_page_noswap_pte_created(kernel_process->vm,
-		    pte_wire.pgtable_pages[0], true);
+	    pte_wire.pgtable_pages[0], true);
 	vmp_pte_wire_state_release(&pte_wire, false);
 
 	return 0;
 }
-
 
 int
 internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
@@ -74,7 +69,8 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
 			if (pte)
 				vmp_pte_wire_state_release(&pte_wire, false);
-			r = vmp_wire_pte(kernel_process, addr, 0, &pte_wire, true);
+			r = vmp_wire_pte(kernel_process, addr, 0, &pte_wire,
+			    true);
 			kassert(r == 0);
 			pte = pte_wire.pte;
 		}
@@ -118,7 +114,8 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
 			if (pte)
 				vmp_pte_wire_state_release(&pte_wire, false);
-			r = vmp_wire_pte(kernel_process, addr, 0, &pte_wire, true);
+			r = vmp_wire_pte(kernel_process, addr, 0, &pte_wire,
+			    true);
 			kassert(r == 0);
 			pte = pte_wire.pte;
 		}
@@ -134,6 +131,79 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 #endif
 }
 
+int
+internal_reallocwired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t oldsize,
+    vmem_size_t newsize, vmem_flag_t flags, vmem_addr_t *out)
+{
+	int r;
+	pte_t *pte = NULL;
+	struct vmp_pte_wire_state pte_wire;
+	vmem_addr_t new_addr;
+
+	r = vmem_xrealloc(vmem, addr, oldsize, newsize, flags | kVMemPFNDBHeld,
+	    &new_addr);
+	if (r < 0) {
+		kfatal("vmem_xrealloc returned %d\n", r);
+		return r;
+	}
+
+	*out = new_addr;
+
+	if (newsize > oldsize) {
+		addr = new_addr + oldsize;
+		for (int i = oldsize; i < newsize;
+		     i += PGSIZE, addr += PGSIZE) {
+			vm_page_t *page;
+
+			if (i == oldsize ||
+			    ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+				if (pte)
+					vmp_pte_wire_state_release(&pte_wire,
+					    false);
+				r = vmp_wire_pte(kernel_process, addr, 0,
+				    &pte_wire, true);
+				kassert(r == 0);
+				pte = pte_wire.pte;
+			}
+
+			r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
+			kassert(r == 0);
+			vmp_md_pte_create_hw(pte, page->pfn, true, true);
+			vmp_pagetable_page_noswap_pte_created(
+			    kernel_process->vm, pte_wire.pgtable_pages[0],
+			    true);
+		}
+		vmp_pte_wire_state_release(&pte_wire, false);
+	} else if (newsize < oldsize) {
+		addr = new_addr + newsize;
+		for (int i = newsize; i < oldsize;
+		     i += PGSIZE, addr += PGSIZE) {
+			vm_page_t *page;
+
+			if (i == newsize ||
+			    ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+				if (pte)
+					vmp_pte_wire_state_release(&pte_wire,
+					    false);
+				r = vmp_wire_pte(kernel_process, addr, 0,
+				    &pte_wire, true);
+				kassert(r == 0);
+				pte = pte_wire.pte;
+			}
+
+			page = vmp_pte_hw_page(pte, 1);
+			pte->value = 0x0;
+			vmp_pagetable_page_pte_deleted(&kernel_procstate,
+			    pte_wire.pgtable_pages[0], false);
+			vmp_page_delete_locked(page);
+			vmp_page_release_locked(page);
+		}
+		vmp_pte_wire_state_release(&pte_wire, false);
+	}
+
+	return 0;
+}
+
 vaddr_t
 vm_kalloc(size_t npages, vmem_flag_t flags)
 {
@@ -144,8 +214,8 @@ vm_kalloc(size_t npages, vmem_flag_t flags)
 	if (!(flags & kVMemPFNDBHeld))
 		ipl = vmp_acquire_pfn_lock();
 	if (npages > 1) {
-		r = vmem_xalloc(&vmem_kern_nonpaged, npages * PGSIZE, 0, 0, 0,
-		    0, 0, flags | kVMemPFNDBHeld, &addr);
+		r = internal_allocwired(&vmem_kern_nonpaged_va, npages * PGSIZE,
+		    flags | kVMemPFNDBHeld, &addr);
 		if (r != 0) /* xxx release pfn lock!! */ {
 			kfatal("Failed\n");
 			return 0;
@@ -176,25 +246,43 @@ vm_kfree(vaddr_t addr, size_t npages, vmem_flag_t flags)
 		ipl = vmp_acquire_pfn_lock();
 
 	if (npages > 1) {
-		vmem_xfree(&vmem_kern_nonpaged, (vmem_addr_t)addr,
+		internal_freewired(&vmem_kern_nonpaged_va, (vmem_addr_t)addr,
 		    npages * PGSIZE, flags | kVMemPFNDBHeld);
 	} else {
+		vm_page_t *page = vm_paddr_to_page(V2P(addr));
+		vmp_page_delete_locked(page);
+		vmp_page_release_locked(page);
 	}
 
 	if (!(flags & kVMemPFNDBHeld))
 		vmp_release_pfn_lock(ipl);
 }
 
-int
-vm_allocspace(size_t npages, size_t align, vaddr_t *out)
+vaddr_t
+vm_krealloc(vaddr_t addr, size_t old_npages, size_t new_npages,
+    vmem_flag_t flags)
 {
-	ipl_t ipl;
+	vmem_addr_t new_addr;
 	int r;
+	ipl_t ipl = kIPL0; /* only to silence  -Wmaybe-uninitialized */
 
-	ipl = vmp_acquire_pfn_lock();
-	r = vmem_xalloc(&kernel_procstate.vmem, npages * PGSIZE, align, 0, 0, 0,
-	    0, kVMemPFNDBHeld, out);
-	vmp_release_pfn_lock(ipl);
+	if (!(flags & kVMemPFNDBHeld))
+		ipl = vmp_acquire_pfn_lock();
 
-	return r;
+	if (new_npages != old_npages) {
+		r = internal_reallocwired(&vmem_kern_nonpaged_va,
+		    (vmem_addr_t)addr, old_npages * PGSIZE, new_npages * PGSIZE,
+		    flags | kVMemPFNDBHeld, &new_addr);
+		if (r != 0) {
+			kfatal("Failed to reallocate\n");
+			return 0;
+		}
+	} else {
+		new_addr = addr;
+	}
+
+	if (!(flags & kVMemPFNDBHeld))
+		vmp_release_pfn_lock(ipl);
+
+	return (vaddr_t)new_addr;
 }
