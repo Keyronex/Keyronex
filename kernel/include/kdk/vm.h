@@ -114,9 +114,9 @@ typedef struct vm_page {
 		/* pagetable pages */
 		struct __attribute__((packed)) {
 			/*! Reasons to keep the page existent at all. */
-			uint16_t nonzero_ptes;
+			int16_t nonzero_ptes;
 			/*! Reasons to keep the page in-core. */
-			uint16_t noswap_ptes;
+			int16_t noswap_ptes;
 		};
 		/* file/aonymous pages: offset into object */
 		uint64_t offset : 48;

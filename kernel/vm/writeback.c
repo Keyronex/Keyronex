@@ -14,9 +14,8 @@
 #include "kdk/misc.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
+#include "vm/vmp_dynamics.h"
 #include "vmp.h"
-
-extern kevent_t vmp_writeback_event;
 
 struct pagefile {
 	vnode_t *vnode;
@@ -76,7 +75,6 @@ int
 prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 {
 	pte_t *page_pte = (pte_t *)P2V(main_page->referent_pte);
-	io_off_t offset;
 	bool anon;
 
 	switch (main_page->use) {
@@ -156,8 +154,8 @@ vmp_writeback(void *)
 	STATIC_MDL(kMaxPagesPerWrite) mdls[kMaxWritebacks];
 
 	while (true) {
-		kwaitresult_t w = ke_wait(&vmp_writeback_event,
-		    "vmp_writeback_event", false, false, NS_PER_S / 5);
+		kwaitresult_t w = ke_wait(&vmp_writer_event, "vmp_writer_event",
+		    false, false, -1);
 		ipl_t ipl;
 		size_t nio_prepared = 0;
 
@@ -199,6 +197,9 @@ vmp_writeback(void *)
 
 		if (nio_prepared != 0)
 			kprintf("nio_prepared == %d\n", nio_prepared);
+
+		if (!vmp_writer_should_run())
+			ke_event_clear(&vmp_writer_event);
 
 		vmp_release_pfn_lock(ipl);
 

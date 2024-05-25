@@ -469,7 +469,13 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		pfn_t drumslot = vmp_md_soft_pte_pfn(state.pte);
 
 		r = vmp_page_alloc_locked(&page, kPageUseAnonPrivate, false);
-		kassert(r == 0);
+		if (r != 0) {
+			vmp_pte_wire_state_release(&state, false);
+			vmp_release_pfn_lock(kIPLAST);
+			ke_mutex_release(&vmps->ws_mutex);
+			ex_rwlock_release_read(&vmps->map_lock);
+			return kVMFaultRetPageShortage;
+		}
 
 		pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
 		kassert(r == 0);

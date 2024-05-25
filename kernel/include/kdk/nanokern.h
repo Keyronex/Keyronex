@@ -121,6 +121,10 @@ typedef struct kevent {
 	kdispatchheader_t hdr;
 } kevent_t;
 
+#define KEVENT_INITIALISER(KEVENT_) {		\
+	.hdr = KDISPATCHHEADER_INITIALIZER(((KEVENT_).hdr), kDispatchEvent, 0), \
+}
+
 typedef struct ksemaphore {
 	kdispatchheader_t hdr;
 } ksemaphore_t;

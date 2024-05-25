@@ -18,6 +18,7 @@
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "vmp.h"
+#include "vmp_dynamics.h"
 
 #define KRX_VM_SANITY_CHECKING
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
@@ -41,6 +42,8 @@ struct vmp_pregion {
 	/*! PFN database part for region. */
 	vm_page_t pages[0];
 };
+
+void vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use);
 
 #define BUDDY_ORDERS 16
 static page_queue_t buddy_queue[BUDDY_ORDERS];
@@ -269,6 +272,18 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
 
+	if (vmp_avail_pages_very_low() && !must)
+		return -1;
+	else if (vmp_free_pages_low()) {
+		page = TAILQ_FIRST(&vm_pagequeue_standby);
+		if (page == NULL && !must)
+			return -1;
+		else if (page != NULL) {
+			TAILQ_REMOVE(&vm_pagequeue_standby, page, queue_link);
+			vmp_page_reclaim(page, kPageUseDeleted);
+		}
+	}
+
 	kassert(order < BUDDY_ORDERS);
 
 	while (TAILQ_EMPTY(&buddy_queue[order])) {
@@ -319,6 +334,9 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
 	memset((void *)vm_page_direct_map_addr(page), 0x0, PGSIZE * npages);
 
 	*out = page;
+
+	vmp_update_events();
+
 	return 0;
 }
 
@@ -435,6 +453,7 @@ vmp_page_retain_locked(vm_page_t *page)
 	size_t npages = vm_order_to_npages(page->order);
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
+	kassert(page->refcnt >= 0);
 
 	if (page->refcnt++ == 0) {
 		/* going from inactive to active state */
@@ -447,6 +466,7 @@ vmp_page_retain_locked(vm_page_t *page)
 			TAILQ_REMOVE(&vm_pagequeue_standby, page, queue_link);
 			vmstat.nstandby -= npages;
 			vmstat.nactive += npages;
+			vmp_update_events();
 		}
 	}
 
@@ -501,6 +521,7 @@ vmp_page_release_locked(vm_page_t *page)
 			TAILQ_INSERT_TAIL(&vm_pagequeue_modified, page,
 			    queue_link);
 			vmstat.nmodified += npages;
+			vmp_update_events();
 		} else {
 			TAILQ_INSERT_TAIL(&vm_pagequeue_standby, page,
 			    queue_link);

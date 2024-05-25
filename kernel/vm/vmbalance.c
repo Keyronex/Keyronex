@@ -10,6 +10,7 @@
 #include "kdk/executive.h"
 #include "kdk/nanokern.h"
 #include "kdk/queue.h"
+#include "vm/vmp_dynamics.h"
 #include "vmp.h"
 
 TAILQ_HEAD(vmp_trim_queue, vm_procstate);
@@ -17,16 +18,15 @@ struct vmp_trim_queue vmp_trim_queue = TAILQ_HEAD_INITIALIZER(vmp_trim_queue);
 kspinlock_t vmp_trim_queue_lock = KSPINLOCK_INITIALISER;
 static uint32_t trim_counter = 0;
 
-kevent_t vmp_balancer_event, vmp_writeback_event;
+kevent_t vmp_balance_set_scheduler_event = KEVENT_INITIALISER(
+	     vmp_balance_set_scheduler_event),
+	 vmp_writer_event = KEVENT_INITIALISER(vmp_writer_event);
 kthread_t *vmp_balancer_thread, *vmp_writeback_thread;
 void vmp_balancer(void *), vmp_writeback(void *);
 
 void
 vmp_paging_init(void)
 {
-	ke_event_init(&vmp_balancer_event, false);
-	ke_event_init(&vmp_writeback_event, false);
-
 	ps_create_kernel_thread(&vmp_balancer_thread, "vm balance set manager",
 	    vmp_balancer, NULL);
 	ps_create_kernel_thread(&vmp_writeback_thread,
@@ -86,8 +86,8 @@ void
 vmp_balancer(void *)
 {
 	while (true) {
-		kwaitresult_t w = ke_wait(&vmp_balancer_event,
-		    "vmp_balancer_event", false, false, NS_PER_S);
+		kwaitresult_t w = ke_wait(&vmp_balance_set_scheduler_event,
+		    "vmp_balance_set_scheduler_event", false, false, NS_PER_S);
 		bool urgent = w == 0;
 
 #if 0
