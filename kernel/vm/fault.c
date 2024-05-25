@@ -376,6 +376,29 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			    true);
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
+		} else {
+			kassert(old_page->use == kPageUseFileShared);
+			if (!old_page->dirty) {
+				/* page is dirty for the first time. */
+				old_page->dirty = true;
+				if (area_info.object->file.n_dirty_pages++ ==
+				    0) {
+					/*
+					 * first time this increased above 0, so
+					 * retain the vnode to keep it alive
+					 * until dirty pages have all been
+					 * written.
+					 */
+					kprintf(
+					    "Vnode %p has its first dirty page, retaining\n",
+					    area_info.object->file.vnode);
+					vn_retain(area_info.object->file.vnode);
+				}
+			}
+			vmp_md_pte_create_hw(state.pte,
+			    vmp_md_pte_hw_pfn(state.pte, 1), true, true);
+			vmp_pte_wire_state_release(&state, false);
+			vmp_release_pfn_lock(ipl);
 		}
 	} else if (pte_kind == kPTEKindZero && area_info.object == NULL) {
 		vm_page_t *page;

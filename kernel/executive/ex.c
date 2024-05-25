@@ -32,13 +32,15 @@ test_anon(void)
 {
 	vaddr_t addr;
 	extern vm_procstate_t kernel_procstate;
-	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 4, false);
+	int r = vm_ps_allocate(&kernel_procstate, &addr, PGSIZE * 6, false);
 	kassert(r == 0);
 	kprintf("Allocated at 0x%zx\n", addr);
 	*(unsigned int*)addr = 0xdeadbeef;
 	*(unsigned int*)(addr + PGSIZE) = 0xbeefdead;
 	*(unsigned int*)(addr + PGSIZE * 2) = 0xfeedbeef;
 	*(unsigned int*)(addr + PGSIZE * 3) = 0xbeeffeed;
+	*(unsigned int*)(addr + PGSIZE * 4) = 0xfeedbeef;
+	*(unsigned int*)(addr + PGSIZE * 5) = 0xbeeffeed;
 
 	*(unsigned int*)addr = 0xdeadbeef;
 	*(unsigned int*)(addr + PGSIZE) = 0xbeefdead;
@@ -68,7 +70,30 @@ test_namecache(void)
 }
 #endif
 
-#if 1
+#if 0
+static void
+test_file_write(void)
+{
+	namecache_handle_t hdl;
+	int r;
+	const char *txt = "Hello, file write world!\n";
+
+	r = vfs_lookup(root_nch, &hdl, "testwrite.txt", 0);
+	kassert(r == 0);
+
+	r = ubc_io(hdl.nc->vp, (vaddr_t)txt, 0, strlen(txt) + 1,
+	    true);
+	kassert(r > 0);
+
+	/* force eviction */
+	test_anon();
+
+	for (;;)
+		;
+}
+#endif
+
+#if 0
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
@@ -189,6 +214,10 @@ ex_init(void *)
 	file_class = obj_new_type("file");
 
 	pagefile_init();
+
+#if 0
+	test_file_write();
+#endif
 
 #if 0
 	test_unmap();

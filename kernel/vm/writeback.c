@@ -14,6 +14,7 @@
 #include "kdk/misc.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
+#include "vm/m68k/vmp_m68k.h"
 #include "vmp.h"
 
 extern kevent_t vmp_writeback_event;
@@ -76,16 +77,40 @@ int
 prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 {
 	pte_t *page_pte = (pte_t *)P2V(main_page->referent_pte);
+	io_off_t offset;
+	bool anon;
 
-	kassert(main_page->use == kPageUseAnonPrivate ||
-	    main_page->use == kPageUsePML1 || main_page->use == kPageUsePML2);
-	kassert(vmp_pte_characterise(page_pte) == kPTEKindTrans);
+	switch (main_page->use) {
+	case kPageUseAnonPrivate:
+	case kPageUsePML1:
+	case kPageUsePML2:
+	case kPageUsePML3:
+	case kPageUsePML4:
+		kassert(vmp_pte_characterise(page_pte) == kPTEKindTrans);
+		anon = true;
+		frame->dev = pagefile.vnode->vfs->device;
+		frame->vnode = pagefile.vnode;
+		break;
 
-	if (main_page->drumslot == 0) {
+	case kPageUseFileShared: {
+		vm_object_t *obj = main_page->owner;
+		vnode_t *vnode = obj->file.vnode;
+		anon = false;
+		frame->dev = vnode->vfs->device;
+		frame->vnode = vnode;
+		break;
+	}
+	}
+
+	if (anon && main_page->drumslot == 0) {
 		uintptr_t drumslot = vmp_pagefile_alloc(&pagefile);
 		if (drumslot == -1)
 			return -1;
 		main_page->drumslot = drumslot;
+		frame->rw.offset = main_page->drumslot * PGSIZE;
+	} else {
+		frame->rw.offset = (io_off_t)main_page->offset >>
+		    VMP_PAGE_SHIFT;
 	}
 
 	mdl->offset = 0;
@@ -93,11 +118,8 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 	mdl->pages[0] = main_page;
 	mdl->write = false;
 
-	frame->dev = pagefile.vnode->vfs->device;
-	frame->vnode = pagefile.vnode;
 	frame->function = kIOPTypeWrite;
 	frame->rw.bytes = PGSIZE;
-	frame->rw.offset = main_page->drumslot * PGSIZE;
 	frame->mdl = mdl;
 
 	return 0;
@@ -184,6 +206,27 @@ vmp_writeback(void *)
 		ipl = vmp_acquire_pfn_lock();
 		for (int i = 0; i < nio_prepared; i++) {
 			vmp_page_release_locked(mdls[i].mdl.pages[0]);
+
+			if (mdls[i].mdl.pages[0]->use == kPageUseFileShared) {
+				vm_object_t *obj = mdls[i].mdl.pages[0]->owner;
+
+				if (--obj->file.n_dirty_pages == 0) {
+					/*
+					 * reached 0 after being 1 - this means
+					 * there are no dirty pages left for
+					 * this vnode (that aren't in working
+					 * sets anyway) so the vnode can be
+					 * released.
+					 *
+					 * if they were dirtied in the meantime,
+					 * there is no problem - in the fault
+					 * handler, the needful adjustment
+					 * would have been made.
+					 */
+					/* todo: defer til PFN lock released */
+					vn_release(obj->file.vnode);
+				}
+			}
 		}
 		vmp_release_pfn_lock(ipl);
 

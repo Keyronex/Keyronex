@@ -151,6 +151,7 @@ struct vm_object {
 	union {
 		struct {
 			struct vnode *vnode;
+			size_t n_dirty_pages;
 		} file;
 		struct {
 		} anon;

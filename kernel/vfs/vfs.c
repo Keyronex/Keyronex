@@ -45,6 +45,7 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 	obj = kmem_alloc(sizeof(vm_object_t));
 	obj->kind = kFile;
 	obj->file.vnode = vnode;
+	obj->file.n_dirty_pages = 0;
 	vm_page_alloc(&vpml4, 0, kPageUseVPML4, false);
 	obj->vpml4 = vmp_page_paddr(vpml4);
 	vnode->object = obj;

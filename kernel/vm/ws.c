@@ -316,8 +316,12 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 {
 	bool dirty = vmp_md_hw_pte_is_writeable(pte);
 	vm_page_t *page = vmp_pte_hw_page(pte, 1);
+	bool became_dirty = false;
 
 	kassert(vmp_pte_characterise(pte) == kPTEKindValid);
+
+	if (!page->dirty && dirty)
+		became_dirty = true;
 
 	page->dirty |= dirty;
 
@@ -339,6 +343,7 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 	}
 
 	case kPageUseFileShared:
+		(void)became_dirty; /* could do refcnt stuff here */
 		vmp_md_pte_create_zero(pte);
 		vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
 		ki_tlb_flush_vaddr_globally(vaddr);
