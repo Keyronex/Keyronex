@@ -14,7 +14,6 @@
 #include "kdk/misc.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
-#include "vm/m68k/vmp_m68k.h"
 #include "vmp.h"
 
 extern kevent_t vmp_writeback_event;
@@ -99,6 +98,9 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 		frame->dev = vnode->vfs->device;
 		frame->vnode = vnode;
 		break;
+
+	default:
+		kfatal("Unexpected page use\n");
 	}
 	}
 
@@ -107,11 +109,13 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 		if (drumslot == -1)
 			return -1;
 		main_page->drumslot = drumslot;
+	}
+
+	if (anon)
 		frame->rw.offset = main_page->drumslot * PGSIZE;
-	} else {
+	else
 		frame->rw.offset = (io_off_t)main_page->offset >>
 		    VMP_PAGE_SHIFT;
-	}
 
 	mdl->offset = 0;
 	mdl->nentries = 1;
