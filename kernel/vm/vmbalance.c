@@ -10,25 +10,29 @@
 #include "kdk/executive.h"
 #include "kdk/nanokern.h"
 #include "kdk/queue.h"
+#include "kdk/vm.h"
 #include "vm/vmp_dynamics.h"
 #include "vmp.h"
 
-TAILQ_HEAD(vmp_trim_queue, vm_procstate);
-struct vmp_trim_queue vmp_trim_queue = TAILQ_HEAD_INITIALIZER(vmp_trim_queue);
-kspinlock_t vmp_trim_queue_lock = KSPINLOCK_INITIALISER;
+TAILQ_HEAD(vmp_balance_set, vm_procstate);
+struct vmp_balance_set vmp_balance_set = TAILQ_HEAD_INITIALIZER(
+    vmp_balance_set);
+kspinlock_t vmp_balance_set_lock = KSPINLOCK_INITIALISER;
 static uint32_t trim_counter = 0;
 
 kevent_t vmp_balance_set_scheduler_event = KEVENT_INITIALISER(
 	     vmp_balance_set_scheduler_event),
-	 vmp_writer_event = KEVENT_INITIALISER(vmp_writer_event);
+	 vmp_writer_event = KEVENT_INITIALISER(vmp_writer_event),
+	 vmp_page_availability_event = KEVENT_INITIALISER(
+	     vmp_page_availability_event);
 kthread_t *vmp_balancer_thread, *vmp_writeback_thread;
 void vmp_balancer(void *), vmp_writeback(void *);
 
 void
 vmp_paging_init(void)
 {
-	ps_create_kernel_thread(&vmp_balancer_thread, "vm balance set manager",
-	    vmp_balancer, NULL);
+	ps_create_kernel_thread(&vmp_balancer_thread,
+	    "vm balance set scheduler", vmp_balancer, NULL);
 	ps_create_kernel_thread(&vmp_writeback_thread,
 	    "vm dirty writer daemon", vmp_writeback, NULL);
 
@@ -63,22 +67,25 @@ trim_working_sets(bool urgent)
 		 * replacing the vm_procstate on the trim queue?
 		 */
 
-		ipl = ke_spinlock_acquire(&vmp_trim_queue_lock);
-		vmps = TAILQ_FIRST(&vmp_trim_queue);
+		ipl = ke_spinlock_acquire(&vmp_balance_set_lock);
+		vmps = TAILQ_FIRST(&vmp_balance_set);
 		if (vmps->last_trim_counter == trim_counter) {
 			/* all working sets visited */
-			ke_spinlock_release(&vmp_trim_queue_lock, ipl);
+			ke_spinlock_release(&vmp_balance_set_lock, ipl);
 			return;
 		}
 		vmps->last_trim_counter = trim_counter;
-		TAILQ_REMOVE(&vmp_trim_queue, vmps, trim_queue_entry);
-		ke_spinlock_release(&vmp_trim_queue_lock, ipl);
+		TAILQ_REMOVE(&vmp_balance_set, vmps, balance_set_entry);
+		ke_spinlock_release(&vmp_balance_set_lock, ipl);
 
-		/* do the trimming.... */
+		ke_wait(&vmps->ws_mutex, "trim_working_sets", false, false, -1);
+		vmp_wsl_trim(&vmps->wsl, vmps->wsl.size / (urgent ? 20 : 5));
+		vmps->wsl.limit = vmps->wsl.size;
+		ke_mutex_release(&vmps->ws_mutex);
 
-		ipl = ke_spinlock_acquire(&vmp_trim_queue_lock);
-		TAILQ_INSERT_TAIL(&vmp_trim_queue, vmps, trim_queue_entry);
-		ke_spinlock_release(&vmp_trim_queue_lock, ipl);
+		ipl = ke_spinlock_acquire(&vmp_balance_set_lock);
+		TAILQ_INSERT_TAIL(&vmp_balance_set, vmps, balance_set_entry);
+		ke_spinlock_release(&vmp_balance_set_lock, ipl);
 	}
 }
 
@@ -90,8 +97,18 @@ vmp_balancer(void *)
 		    "vmp_balance_set_scheduler_event", false, false, NS_PER_S);
 		bool urgent = w == 0;
 
-#if 0
 		trim_working_sets(urgent);
-#endif
+
+		if (!vmp_avail_pages_fairly_low())
+			ke_event_clear(&vmp_balance_set_scheduler_event);
 	}
+}
+
+void
+vmp_add_to_balance_set(vm_procstate_t *vmps)
+{
+	ipl_t ipl = ke_spinlock_acquire(&vmp_balance_set_lock);
+	vmps->last_trim_counter = trim_counter;
+	TAILQ_INSERT_TAIL(&vmp_balance_set, vmps, balance_set_entry);
+	ke_spinlock_release(&vmp_balance_set_lock, ipl);
 }

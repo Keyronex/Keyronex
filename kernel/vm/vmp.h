@@ -97,7 +97,7 @@ typedef struct vm_procstate {
 	RB_HEAD(vm_map_entry_rbtree, vm_map_entry) vad_queue;
 
 	/*! Entry in the trimming queue. Protected by trimmer lock. */
-	TAILQ_ENTRY(vm_procstate) trim_queue_entry;
+	TAILQ_ENTRY(vm_procstate) balance_set_entry;
 	/*! Value of trim counter at last trim. Protected by trimmer lock. */
 	uint32_t last_trim_counter;
 
@@ -225,6 +225,7 @@ wsindex_t vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool shared);
 void vmp_wsl_remove(vm_procstate_t *ps, vaddr_t vaddr, wsindex_t hint);
 /*! @brief Dump info on a working set. */
 void vmp_wsl_dump(vm_procstate_t *ps);
+void vmp_wsl_trim(struct vmp_wsl *ws, size_t n);
 /*!
  * @brief Evict a valid page
  * \pre Working set mutex held

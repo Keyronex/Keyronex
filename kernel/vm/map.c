@@ -6,6 +6,7 @@
 
 void vmp_md_ps_init(eprocess_t *ps);
 int vmp_vad_cmp(vm_map_entry_t *x, vm_map_entry_t *y);
+void vmp_add_to_balance_set(vm_procstate_t *vmps);
 
 RB_GENERATE(vm_map_entry_rbtree, vm_map_entry, rb_entry, vmp_vad_cmp);
 
@@ -216,4 +217,5 @@ vm_ps_init(eprocess_t *ps)
 	vmp_wsl_init(vmps, &vmps->wsl);
 
 	vmp_md_ps_init(ps);
+	vmp_add_to_balance_set(vmps);
 }

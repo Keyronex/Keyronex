@@ -4,7 +4,8 @@
 #include "kdk/libkern.h"
 #include "vmp.h"
 
-extern kevent_t vmp_writer_event, vmp_balance_set_scheduler_event;
+extern kevent_t vmp_writer_event, vmp_balance_set_scheduler_event,
+    vmp_page_availability_event;
 
 /* below this, allocations are made by stealing a page */
 static inline bool

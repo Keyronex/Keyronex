@@ -1,4 +1,5 @@
 #include "kdk/kmem.h"
+#include "kdk/nanokern.h"
 #include "kdk/vm.h"
 #include "nanokern/ki.h"
 #include "vm/vmp_dynamics.h"
@@ -293,6 +294,38 @@ vmp_wsl_dump(vm_procstate_t *ps)
 	}
 	kprintf("Capacity: %zu, Limit: %zu, Size: %zu\n", ws->capacity,
 	    ws->limit, ws->size);
+}
+
+void
+vmp_wsl_trim(struct vmp_wsl *ws, size_t n)
+{
+	size_t pages_trimmed = 0;
+
+	ke_mutex_assert_held(&ws->vmps->ws_mutex);
+
+	while (pages_trimmed < n && ws->size > 0) {
+		wsindex_t iter = ws->head;
+
+		while (true) {
+			if (!ws->nodes[iter].free) {
+				break;
+			}
+			iter = (iter + 1) % ws->capacity;
+		}
+
+		wse_t *wse = &ws->nodes[iter];
+		ws->head = (iter + 1) % ws->capacity;
+		wse_evict(ws, wse);
+		if (wse->shared && wse->hashed)
+			hash_remove(ws, iter);
+
+		wse->free = 1;
+		wse->vpfn = ws->freelist;
+		ws->freelist = iter;
+		ws->size--;
+
+		pages_trimmed++;
+	}
 }
 
 static void

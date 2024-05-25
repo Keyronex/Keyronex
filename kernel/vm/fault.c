@@ -7,6 +7,7 @@
 #include "kdk/vmem.h"
 #include "ubc.h"
 #include "vmp.h"
+#include "vmp_dynamics.h"
 
 /*!
  * @file fault.c
@@ -606,7 +607,9 @@ retry:
 		goto retry;
 
 	case kVMFaultRetPageShortage:
-		kfatal("Handle pagewait\n");
+		ke_wait(&vmp_page_availability_event, "pagewait", false, false,
+		    -1);
+		goto retry;
 
 	case kVMFaultRetFailure:
 		kfatal("Handle fault failure\n");
