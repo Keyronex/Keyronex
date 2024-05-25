@@ -235,7 +235,9 @@ vmp_writeback(void *)
 		}
 		vmp_release_pfn_lock(ipl);
 
+#if 0
 		reclaim_all_pages();
+#endif
 	}
 }
 

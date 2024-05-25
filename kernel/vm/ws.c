@@ -1,7 +1,8 @@
-#include "kdk/vm.h"
 #include "kdk/kmem.h"
-#include "vmp.h"
+#include "kdk/vm.h"
 #include "nanokern/ki.h"
+#include "vm/vmp_dynamics.h"
+#include "vmp.h"
 
 #define MAX_PROBING_ATTEMPTS 4
 #define WS_EXPANSION_COUNT 16
@@ -138,13 +139,13 @@ ws_expand(struct vmp_wsl *ws)
 {
 #if 0
 	size_t new_capacity = ws->capacity + WSE_PER_PAGE;
-	wse_t *new_entries = realloc(ws->nodes, sizeof(wse_t) * new_capacity);
+	wse_t *new_entries = (wse_t *)vm_krealloc((vaddr_t)ws->nodes,
+	    ws->capacity * sizeof(wse_t), sizeof(wse_t) * new_capacity, 0);
 
 	kprintf("Expanding!...");
 
 	if (!new_entries) {
-		perror("Failed to expand working set");
-		exit(EXIT_FAILURE);
+		kfatal("Fixme: working set expansion failed\n");
 	}
 
 	for (size_t i = new_capacity; i > ws->capacity; i--) {
@@ -156,14 +157,16 @@ ws_expand(struct vmp_wsl *ws)
 
 	ws->nodes = new_entries;
 	ws->capacity = new_capacity;
-#endif
+#else
 	kfatal("Implement me\n");
+#endif
 }
 
 static bool
 ws_can_expand(struct vmp_wsl *ws)
 {
-	return false;
+	/* can't expand beyond one page yet*/
+	return ws->limit != ws->capacity && !vmp_avail_pages_fairly_low();
 }
 
 wsindex_t
@@ -192,7 +195,9 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool shared)
 				ws_expand(ws);
 			}
 
-			ws->limit += WS_EXPANSION_COUNT;
+			ws->limit = MIN2(ws->limit + WS_EXPANSION_COUNT,
+			    ws->capacity);
+			kprintf("WS limit raised to %d\n", ws->limit);
 		}
 
 		/* take an entry from the freelist */

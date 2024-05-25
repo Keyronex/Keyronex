@@ -125,7 +125,12 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	vm_page_t *page;
 
 	r = vmp_page_alloc_locked(&page, kPageUseFileShared, false);
-	kassert(r == 0);
+	if (r != 0) {
+		vmp_pte_wire_state_release(&object_state, true);
+		vmp_pte_wire_state_release(state, false);
+		vmp_release_pfn_lock(kIPLAST);
+		return -kVMFaultRetPageShortage;
+	}
 
 	pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
 	kassert(r == 0);
