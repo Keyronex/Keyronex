@@ -26,6 +26,47 @@ use_is_hw_table(enum vm_page_use use)
 	    use <= kPageUsePML1 + VMP_TABLE_LEVELS - 1;
 }
 
+static void
+check_page_consistency(vm_page_t *page)
+{
+	if (page->nonzero_ptes < 10000 && page->refcnt < page->noswap_ptes) {
+		size_t n_nonswap_found = 0, n_nonzero_found = 0;
+		pte_t *pte = (pte_t *)vm_page_direct_map_addr(page);
+
+		kprintf("Inconsistency in pagetable page!\n"
+			"Nonzero PTEs: %d; Noswap PTEs: %d; refcnt %d\n",
+		    page->nonzero_ptes, page->noswap_ptes, page->refcnt);
+
+		for (int i = 0; i < PGSIZE / sizeof(pte_t); i++, pte++) {
+			switch (vmp_pte_characterise(pte)) {
+			case kPTEKindValid:
+				kprintf("Found valid PTE %p\n", pte);
+				goto carry;
+			case kPTEKindTrans:
+				kprintf("Found trans PTE %p\n", pte);
+				goto carry;
+			case kPTEKindBusy:
+				kprintf("Found busy PTE %p\n", pte);
+				goto carry;
+
+			carry:
+				n_nonswap_found++;
+				goto out;
+				/* fallthrough */
+			case kPTEKindSwap:
+				kprintf("Found swap PTE %p\n", pte);
+			out:
+				n_nonzero_found++;
+			default:
+			}
+		}
+
+		kprintf("Actual values: Nonzero PTEs: %d; Noswap PTEs: %d\n",
+		    n_nonzero_found, n_nonswap_found);
+		kfatal("Halting.\n");
+	}
+}
+
 /*!
  * @brief Pagetable page is retained, and nonzero and valid PTEs incremented
  */
@@ -34,6 +75,8 @@ vmp_pagetable_page_noswap_pte_created(vm_procstate_t *ps, vm_page_t *page,
     bool is_new)
 {
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
+
+	check_page_consistency(page);
 
 	vmp_page_retain_locked(page);
 	if (is_new)
@@ -63,6 +106,8 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
     bool was_swap)
 {
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
+
+	check_page_consistency(page);
 
 	if (page->nonzero_ptes-- == 1 && !page_is_root_table(page)) {
 		vm_page_t *dirpage;
@@ -264,8 +309,6 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 
 			kassert(page->use != kPageUseFree);
 
-			/* manually adjust the page */
-			vmp_page_retain_locked(page);
 			vmp_pagetable_page_noswap_pte_created(ps->vm, page,
 			    true);
 
@@ -302,7 +345,10 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 
 			pages[level - 2] = page;
 
-			/* manually adjust the new page, includes our pinning */
+			/*
+			 * manually adjust the new page; refcnt is already 1, so
+			 * only adjust nonzero and noswap_ptes
+			 */
 			page->process = ps;
 			page->nonzero_ptes++;
 			page->noswap_ptes++;
@@ -386,7 +432,10 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, paddr_t prototype,
 
 			pages[level - 2] = page;
 
-			/* manually adjust the new page, includes our pinning */
+			/*
+			 * manually adjust the new page; refcnt is already 1, so
+			 * only adjust nonzero and noswap_ptes
+			 */
 			page->process = ps;
 			page->nonzero_ptes++;
 			page->noswap_ptes++;
