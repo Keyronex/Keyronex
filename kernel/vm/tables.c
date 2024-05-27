@@ -61,7 +61,7 @@ check_page_consistency(vm_page_t *page)
 			}
 		}
 
-		kprintf("Actual values: Nonzero PTEs: %d; Noswap PTEs: %d\n",
+		kprintf("Actual values: Nonzero PTEs: %zu; Noswap PTEs: %zu\n",
 		    n_nonzero_found, n_nonswap_found);
 		kfatal("Halting.\n");
 	}
@@ -117,9 +117,10 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 
 		kassert(page->referent_pte != 0);
 		dirpage = vm_paddr_to_page(page->referent_pte);
-		if (use_is_hw_table(use))
+		if (use_is_hw_table(use)) {
 			vmp_md_delete_table_pointers(ps, dirpage,
 			    (pte_t *)P2V(page->referent_pte));
+		}
 		else {
 			((pte_t *)P2V(page->referent_pte))->value = 0x0;
 			vmp_pagetable_page_pte_deleted(ps, dirpage, false);
@@ -144,9 +145,10 @@ vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
 #if PAGETABLE_PAGING
 		vm_page_t *dirpage = vm_paddr_to_page(page->referent_pte);
 
-		if (use_is_hw_table(page->use))
+		if (use_is_hw_table(page->use)) {
 			vmp_md_trans_table_pointers(ps, dirpage,
 			    (pte_t *)P2V(page->referent_pte), page);
+		}
 		else
 			kfatal("Implement me?\n");
 #endif

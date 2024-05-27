@@ -187,6 +187,9 @@ vm_region_add(paddr_t base, size_t length)
 	int		    b;
 	paddr_t limit;
 
+	if (length < 2)
+		return;
+
 	/* set up a pregion for this area */
 	bm->base = base;
 	bm->npages = length / PGSIZE;

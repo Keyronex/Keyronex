@@ -154,6 +154,9 @@ uacpi_kernel_vlog(enum uacpi_log_level lvl, const char *msg, uacpi_va_list va)
 	const char *lvlStr;
 
 	switch (lvl) {
+	case UACPI_LOG_DEBUG:
+		lvlStr = "debug";
+		break;
 	case UACPI_LOG_TRACE:
 		lvlStr = "trace";
 		break;
@@ -392,7 +395,9 @@ uacpi_kernel_stall(uacpi_u8 usec)
 void
 uacpi_kernel_sleep(uacpi_u64 msec)
 {
-	kfatal("Implement me\n");
+	kevent_t nothing;
+	ke_event_init(&nothing, false);
+	ke_wait(&nothing, "uacpi_kernel_sleep", false, false, msec * 1000000);
 }
 
 struct uacpi_interrupt {

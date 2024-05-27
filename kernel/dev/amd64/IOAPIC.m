@@ -79,9 +79,10 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 	_vaddr = (vaddr_t)P2V(paddr);
 	_gsi_base = gsiBase;
 	_n_redirs = ((ioapic_read(_vaddr, kRegisterVersion) >> 16) & 0xff) + 1;
-	kassert(_n_redirs <= 24);
+	kassert(_n_redirs <= 240);
 
-	for (int i = 0; i < elementsof(redirs); i++)
+	redirs = kmem_alloc(sizeof(uint8_t) * _n_redirs);
+	for (int i = 0; i < _n_redirs; i++)
 		redirs[i] = 0;
 
 	TAILQ_INSERT_TAIL(&ioapics, self, _ioapics_entries);

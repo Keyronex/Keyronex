@@ -144,7 +144,7 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	struct uacpi_init_params params = {
 		.rsdp = V2P(rsdp),
 		.rt_params = {
-			.log_level = UACPI_LOG_TRACE,
+			.log_level = UACPI_LOG_INFO,
 			.flags = 0,
 		},
 		.no_acpi_mode = 0,
@@ -179,6 +179,7 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 #elif defined(__aarch64__)
 	madt_walk((acpi_madt_t *)P2V(madt->phys_addr), parse_giccs, NULL);
 #endif
+
 
 	r = uacpi_namespace_load();
 	kassert(r == UACPI_STATUS_OK);

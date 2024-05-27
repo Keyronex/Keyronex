@@ -216,7 +216,7 @@ void vmp_page_delete_locked(vm_page_t *page);
 vm_page_t *vmp_page_retain_locked(vm_page_t *page);
 void vmp_page_release_locked(vm_page_t *page);
 
-int vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out);
+int vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, vm_page_t **out);
 
 vm_map_entry_t *vmp_ps_vad_find(vm_procstate_t *ps, vaddr_t vaddr);
 

@@ -48,12 +48,15 @@ vaddr_t invlpg_addr;
 volatile uint32_t invlpg_done;
 
 void
+ki_tlb_flush_vaddr_locally(vaddr_t addr)
+{
+	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
+}
+
+void
 ki_tlb_flush_handler(void)
 {
-	asm volatile("invlpg %0"
-		     :
-		     : "m"(*((const char *)invlpg_addr))
-		     : "memory");
+	ki_tlb_flush_vaddr_locally(invlpg_addr);
 	__atomic_add_fetch(&invlpg_done, 1, __ATOMIC_RELEASE);
 }
 

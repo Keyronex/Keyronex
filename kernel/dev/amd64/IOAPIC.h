@@ -14,7 +14,7 @@ struct isa_intr_override {
 	vaddr_t _vaddr;
 	uint32_t _gsi_base;
 	uint32_t _n_redirs;
-	uint8_t redirs[24]; /**< map APIC PIN to IDT vector */
+	uint8_t *redirs; /**< map APIC PIN to IDT vector */
 
 	TAILQ_TYPE_ENTRY(IOApic) _ioapics_entries;
 }

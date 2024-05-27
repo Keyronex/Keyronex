@@ -593,9 +593,9 @@ void kputc(int ch, void *unused);
 
 /*! @brief Kernel fatal - prints out on PAC and main console and halts. */
 #define kfatal(...) {				\
-	pac_printf("at %s:%d (%s):\n", __FILE__,\
+	kprintf("at %s:%d (%s):\n", __FILE__,\
 	    __LINE__, __FUNCTION__); 		\
-	pac_printf(__VA_ARGS__); 		\
+	kprintf(__VA_ARGS__); 		\
 	hcf();					\
 }
 

@@ -1,6 +1,7 @@
 #include "kdk/executive.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
+#include "nanokern/ki.h"
 #include "vmp.h"
 
 int vmp_md_enter_kwired(vaddr_t virt, paddr_t phys);
@@ -122,6 +123,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 
 		page = vmp_pte_hw_page(pte, 1);
 		pte->value = 0x0;
+		ki_tlb_flush_vaddr_locally(addr);
 		vmp_pagetable_page_pte_deleted(&kernel_procstate,
 		    pte_wire.pgtable_pages[0], false);
 		vmp_page_delete_locked(page);

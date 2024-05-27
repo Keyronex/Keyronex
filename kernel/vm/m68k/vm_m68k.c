@@ -13,8 +13,6 @@
 #define kPTEWireStatePML2 1
 #define kPTEWireStatePML1 0
 
-const char *vm_page_use_str(enum vm_page_use use);
-
 extern vm_procstate_t kernel_procstate;
 
 static void

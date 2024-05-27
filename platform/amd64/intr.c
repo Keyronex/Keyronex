@@ -111,7 +111,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 
 	switch (num) {
 	case 14:
-		vmp_fault(cr2, frame->code & 2, NULL);
+		vmp_fault(frame, cr2, frame->code & 2, NULL);
 		break;
 
 	case kIntVecDPC:
@@ -201,4 +201,28 @@ md_intr_register(const char *name, uint8_t vec, ipl_t prio,
 	entry->arg = arg;
 	entry->shareable = shareable;
 	TAILQ_INSERT_TAIL(&intr_entries[vec], entry, queue_entry);
+}
+
+void
+md_intr_frame_trace(md_intr_frame_t *frame)
+{
+	struct frame {
+		struct frame *rbp;
+		uint64_t rip;
+	} *aframe = (struct frame *)frame->rbp;
+	const char *name = NULL;
+	size_t offs = 0;
+
+	kprintf("Begin stack trace:\n");
+	kprintf(" - %p %s+%zu\n", (void *)frame->rip, name ? name : "???",
+	    offs);
+
+	if (aframe != NULL)
+		do {
+			name = NULL;
+			offs = 0;
+			kprintf(" - %p %s+%zu\n", (void *)aframe->rip,
+			    name ? name : "???", offs);
+		} while ((aframe = aframe->rbp) &&
+		    (uint64_t)aframe >= 0xffff80000000 && aframe->rip != 0x0);
 }

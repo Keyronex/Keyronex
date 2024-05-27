@@ -304,7 +304,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		area_info.start = ubc_window_addr(window);
 		area_info.map_lock_held = false;
 	} else {
-		kfatal("Page fault in an unacceptable area (0x%zx)\n", vaddr);
+		kprintf("Page fault in an unacceptable area (0x%zx)\n", vaddr);
+		return kVMFaultRetFailure;
 	}
 	/*
 	 * Check if area is nonwriteable and this is a write
@@ -592,8 +593,10 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	return r;
 }
 
+void md_intr_frame_trace(md_intr_frame_t *frame);
+
 int
-vmp_fault(vaddr_t vaddr, bool write, vm_page_t **out)
+vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, vm_page_t **out)
 {
 	vm_fault_return_t ret;
 
@@ -611,8 +614,10 @@ retry:
 		    -1);
 		goto retry;
 
-	case kVMFaultRetFailure:
-		kfatal("Handle fault failure\n");
+	case kVMFaultRetFailure: {
+		md_intr_frame_trace(frame);
+		kfatal("Stopping.\n");
+	}
 
 	default:
 		kfatal("Unexpected fault return code %d\n", ret);
