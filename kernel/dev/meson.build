@@ -31,6 +31,7 @@ if (cpu != 'm68k')
 		files('acpi/DKACPIPlatform.m', 'acpi/uacpi_integration.m', 'E1000.m'),
 		uacpi_sources,
 	]
+	freestanding_c_args += [ '-DUACPI_FORMATTED_LOGGING=1' ]
 	freestanding_include_dirs += uacpi_includes
 endif
 

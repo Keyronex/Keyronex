@@ -143,11 +143,7 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 {
 	struct uacpi_init_params params = {
 		.rsdp = V2P(rsdp),
-		.rt_params = {
-			.log_level = UACPI_LOG_INFO,
-			.flags = 0,
-		},
-		.no_acpi_mode = 0,
+		.log_level = UACPI_LOG_INFO,
 	};
 	uacpi_namespace_node *sb;
 	int r;
@@ -162,8 +158,7 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	kassert(r == UACPI_STATUS_OK);
 
 	uacpi_table *madt;
-	r = uacpi_table_find_by_signature(
-	    (uacpi_object_name) { .text = "APIC" }, &madt);
+	r = uacpi_table_find_by_signature("APIC", &madt);
 	kassert(r == UACPI_STATUS_OK);
 
 	for (int i = 0; i < 16; i++) {

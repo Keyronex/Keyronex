@@ -180,7 +180,7 @@ uacpi_kernel_vlog(enum uacpi_log_level lvl, const char *msg, uacpi_va_list va)
 }
 
 void
-uacpi_kernel_log(enum uacpi_log_level lvl, const char *fmt, ...)
+uacpi_kernel_log(uacpi_log_level lvl, const uacpi_char *fmt, ...)
 {
 	va_list va;
 	va_start(va, fmt);
@@ -383,7 +383,7 @@ uacpi_kernel_pci_write(uacpi_pci_address *address, uacpi_size offset,
 uacpi_u64
 uacpi_kernel_get_ticks(void)
 {
-	kfatal("Implement me\n");
+	return cpus[0]->nanos;
 }
 
 void
@@ -444,6 +444,32 @@ uacpi_status
 uacpi_kernel_uninstall_interrupt_handler(uacpi_interrupt_handler, uacpi_handle)
 {
 	kfatal("Implement me\n");
+}
+
+uacpi_handle
+uacpi_kernel_create_spinlock(void)
+{
+	void *lock = kmem_alloc(sizeof(kspinlock_t));
+	ke_spinlock_init(lock);
+	return lock;
+}
+
+void
+uacpi_kernel_free_spinlock(uacpi_handle handle)
+{
+	kmem_free(handle, sizeof(kspinlock_t));
+}
+
+uacpi_cpu_flags
+uacpi_kernel_spinlock_lock(uacpi_handle handle)
+{
+	return ke_spinlock_acquire(handle);
+}
+
+void
+uacpi_kernel_spinlock_unlock(uacpi_handle handle, uacpi_cpu_flags ipl)
+{
+	ke_spinlock_release(handle, ipl);
 }
 
 typedef struct alloc_cache {
@@ -507,10 +533,17 @@ uacpi_kernel_create_event(void)
 	ke_semaphore_init(semaphore, 0);
 	return semaphore;
 }
+
 void
 uacpi_kernel_free_event(uacpi_handle opaque)
 {
 	kmem_free(opaque, sizeof(ksemaphore_t));
+}
+
+uacpi_thread_id
+uacpi_kernel_get_thread_id(void)
+{
+	return curthread();
 }
 
 uacpi_bool
