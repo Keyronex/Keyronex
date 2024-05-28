@@ -1,13 +1,16 @@
 #ifndef KRX_DEV_E1000_H
 #define KRX_DEV_E1000_H
 
-#include <dev/PCIBus.h>
+#include "DKNIC.h"
+#include "PCIBus.h"
 
 #if defined(__arch64__) || defined(__amd64__)
 
 #define E1000_NDESCS 256
 
-@interface E1000 : DKDevice <DKPCIDeviceDelegate> {
+struct pbuf_rx;
+
+@interface E1000 : DKNIC <DKPCIDeviceDelegate> {
 	struct intr_entry m_intxEntry;
 	struct pci_dev_info m_pciInfo;
 
@@ -16,9 +19,8 @@
 	kdpc_t m_rxDpc, m_txDpc, m_linkDpc;
 
 	vaddr_t m_reg;
-	uint8_t m_mac[6];
 
-	struct pkt_buf *m_txPendingHead, *m_txPendingTail;
+	struct pbuf *m_txPendingHead, *m_txPendingTail;
 
 	/* 256 RX descriptors. */
 	struct rx_desc *m_rxDescs;

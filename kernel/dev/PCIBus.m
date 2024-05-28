@@ -204,6 +204,7 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	case 0x100e: /* 82540EM */
 	case 0x100f: /* 82545EM */
 	case 0x10d3: /* 82574L */
+	case 0x10c9: /* 82576 - qemu igb */
 	case 0x15bd: /* I219-LM */
 	case 0x15d7: /* I219-LM */
 	case 0x15fa: /* I219-V */

@@ -9,6 +9,11 @@ CompileFlags:
   CompilationDatabase: build/amd64/pkg-builds/kernel
 ---
 If:
+  PathMatch: lwip/.*
+CompileFlags:
+  CompilationDatabase: build/amd64/pkg-builds/kernel
+---
+If:
   PathMatch: mlibc/.*
 CompileFlags:
   CompilationDatabase: build/amd64/pkg-builds/mlibc

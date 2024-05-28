@@ -7,21 +7,12 @@
 #include "kdk/object.h"
 #include "kdk/vm.h"
 
-/* placeholder... */
-typedef struct pkt_buf {
-	paddr_t data;
-	uint16_t length;
-	struct pkt_buf *next;
-} pkt_buf_t;
-
 @interface E1000 (Private)
 - (instancetype)initWithPCIBus:(PCIBus *)provider
 			  info:(struct pci_dev_info *)info;
 @end
 
 #define PROVIDER ((PCIBus *)m_provider)
-#define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
-#define MAC_ARGS(MAC) MAC[0], MAC[1], MAC[2], MAC[3], MAC[4], MAC[5]
 
 enum e1000_reg {
 	kE1000RegSTATUS = 0x8,
@@ -39,7 +30,7 @@ enum e1000_reg {
 	kE1000RegRDT = 0x2818,
 	kE1000RegRDTR = 0x2820,
 
-	kE1000RegTDBAL = 0x38000,
+	kE1000RegTDBAL = 0x3800,
 	kE1000RegTDBAH = 0x3804,
 	kE1000RegTDLEN = 0x3808,
 	kE1000RegTDH = 0x3810,
@@ -55,6 +46,10 @@ enum e1000_tctl {
 	kE1000TctlEN = 0x2,	    /*!< enable */
 	kE1000TctlPSP = 0x8,	    /*!< pad short packet */
 	kE1000TctlRTLC = 0x1000000, /*!< retransmit on late collission */
+
+	kE1000TctlRRTHRESH_Shift = 28, /*!< read request threshold (bits 30:29).
+					* must be 0b11 for i219!!
+					* NOT tested on older E1000s! */
 };
 
 enum e1000_rctl {
@@ -200,15 +195,15 @@ e1000_read_mac(vaddr_t base, uint8_t *out)
 	    kE1000IcrTXDW | kE1000IcrLSC | kE1000IcrRXT0);
 }
 
-uint16_t
-ntohs(uint16_t in)
+- (void)completeProcessingOfRxIndex:(size_t)index locked:(BOOL)isLocked
 {
-	return (in >> 8) | (in << 8);
-}
+	struct rx_desc *desc;
+	ipl_t ipl = kIPL0;
 
-- (void)completeProcessingOfRxIndex:(size_t)index
-{
-	struct rx_desc *desc = &m_rxDescs[index];
+	if (!isLocked)
+		ipl = ke_spinlock_acquire(&m_rxLock);
+
+	desc = &m_rxDescs[index];
 
 	kassert(index == m_rxNextTail);
 
@@ -216,22 +211,9 @@ ntohs(uint16_t in)
 	desc->length = 2048;
 	desc->status = 0;
 	e1000_write(m_reg, kE1000RegRDT, index);
-}
 
-static void
-processPacket(void *data, size_t len, size_t index, void *arg)
-{
-	struct ethframe {
-		uint8_t dst[6];
-		uint8_t src[6];
-		uint16_t type;
-	} *header = data;
-
-	kprintf("(DEST " MAC_FMT " SRC " MAC_FMT " TYPE %x)\n",
-	    MAC_ARGS(header->dst), MAC_ARGS(header->src), ntohs(header->type));
-
-	/* In the future this will be asynchronously invoked later! */
-	[(E1000 *)arg completeProcessingOfRxIndex:index];
+	if (!isLocked)
+		ke_spinlock_release(&m_rxLock, ipl);
 }
 
 - (void)rxDeferredProcessing
@@ -239,16 +221,18 @@ processPacket(void *data, size_t len, size_t index, void *arg)
 	ke_spinlock_acquire_nospl(&m_rxLock);
 	while (m_rxDescs[m_rxHead].status & 0x1) {
 		struct rx_desc *desc = &m_rxDescs[m_rxHead];
+		void *data = (void *)P2V(desc->address);
 
-		processPacket((void *)P2V(desc->address), desc->length,
-		    m_rxHead, self);
+		[super queueReceivedDataForProcessing:data
+					       length:desc->length
+						   id:m_rxHead];
 
 		m_rxHead = (m_rxHead + 1) % E1000_NDESCS;
 	}
 	ke_spinlock_release_nospl(&m_rxLock);
 }
 
-- (BOOL)tryTransmitPacket:(pkt_buf_t *)pkt
+- (BOOL)tryTransmitPacket:(struct pbuf *)pkt
 {
 	size_t reqDescs, availDescs;
 
@@ -262,12 +246,21 @@ processPacket(void *data, size_t len, size_t index, void *arg)
 
 	for (int i = 0; i < reqDescs; i++) {
 		tx_desc_t *desc = &m_txDescs[m_txTail];
-		/* can become one part of pkt */
-		desc->address = pkt->data;
-		desc->length = pkt->length;
+		uint8_t cmd;
+
+		pbuf_copy_partial(pkt, (void *)P2V(desc->address), 2048, 0);
+		desc->length = pkt->tot_len;
 		desc->status = 0;
+
 		/* RS everything, EOP last */
-		desc->command = (i == (reqDescs - 1)) ? 0x9 : 0x1;
+		cmd = (1 << 1) /* insert FCS */ | (1 << 3) /* report status */;
+		if (i == (reqDescs - 1))
+			cmd |= 0x1; /* EOP */
+
+		desc->command = cmd;
+		desc->cso = 0;
+		desc->css = 0;
+		desc->vlan = 0;
 		m_txTail = (m_txTail + 1) % E1000_NDESCS;
 	}
 
@@ -276,13 +269,16 @@ processPacket(void *data, size_t len, size_t index, void *arg)
 	return YES;
 }
 
-- (void)submitPacket:(pkt_buf_t *)pkt
+- (void)submitPacket:(struct pbuf *)pkt
 {
 	ke_spinlock_acquire_nospl(&m_txLock);
 
-	if (m_txPendingHead == NULL && [self tryTransmitPacket:pkt])
+	if (m_txPendingHead == NULL && [self tryTransmitPacket:pkt]) {
+		ke_spinlock_release_nospl(&m_txLock);
 		return;
+	}
 
+#if 0
 	if (m_txPendingHead == NULL) {
 		m_txPendingHead = m_txPendingTail = pkt;
 	} else {
@@ -292,11 +288,17 @@ processPacket(void *data, size_t len, size_t index, void *arg)
 	pkt->next = NULL;
 
 	ke_spinlock_release_nospl(&m_txLock);
-	e1000_write(m_reg, kE1000RegIMS, kE1000IcrTXDW);
+#endif
 }
 
 - (void)txDeferredProcessing
 {
+	while (m_txDescs[m_txHead].status & 0x1) {
+		m_txDescs[m_txHead].status = 0;
+		m_txHead = (m_txHead + 1) % E1000_NDESCS;
+	}
+
+#if 0
 	pkt_buf_t *prev = NULL;
 	pkt_buf_t *current = m_txPendingHead;
 
@@ -327,12 +329,16 @@ processPacket(void *data, size_t len, size_t index, void *arg)
 	}
 
 	ke_spinlock_release_nospl(&m_txLock);
+#endif
 }
 
 - (void)linkDeferredProcessing
 {
 	uint32_t dstat = e1000_read(m_reg, kE1000RegSTATUS);
-	kprintf("LSC! Stat = %x\n", dstat);
+	if (dstat & 2)
+		[super setLinkUp:YES speed:1000 fullDuplex:dstat & 1];
+	else
+		[super setLinkUp:NO speed:0 fullDuplex:NO];
 }
 
 - (BOOL)handleInterrupt
@@ -406,6 +412,8 @@ link_dpc(void *arg)
 	self = [super initWithProvider:provider];
 	kmem_asprintf(obj_name_ptr(self), "e1000-%u", counter++);
 
+	[super setupForQueueLength:E1000_NDESCS rxBufSize:2048];
+
 	m_pciInfo = *info;
 	m_rxDpc.arg = self;
 	m_rxDpc.callback = rx_dpc;
@@ -454,7 +462,8 @@ link_dpc(void *arg)
 	[self initTransmit];
 
 	e1000_write(m_reg, kE1000RegTCTL,
-	    kE1000TctlEN | kE1000TctlPSP | kE1000TctlRTLC);
+	    0b11 << kE1000TctlRRTHRESH_Shift | kE1000TctlEN | kE1000TctlPSP |
+		kE1000TctlRTLC);
 	e1000_write(m_reg, kE1000RegRCTL,
 	    kE1000RctlEN | kE1000RctlBAM | kE1000RctlSZ_2048 | kE1000RctlSECRC);
 
@@ -471,11 +480,16 @@ link_dpc(void *arg)
 		return nil;
 	}
 
+	[super setupNetif];
+	[self linkDeferredProcessing];
+
 	[self enableInterrupts];
 	[PCIBus setInterruptsEnabled:YES forInfo:&m_pciInfo];
 
 	[self registerDevice];
 	DKLogAttachExtra(self, "Ethernet address " MAC_FMT, MAC_ARGS(m_mac));
+
+	for (;;) ;
 
 	return self;
 }

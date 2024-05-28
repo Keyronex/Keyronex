@@ -5,6 +5,7 @@ kernel_sources += files(
 	'virtio/VirtIODisk.m',
 	'virtio/VirtIOGPU.m',
 	'DKDevice.m',
+	'DKNIC.m',
 	'DKObject.m',
 	'DOSFS.m',
 	'Ext2FS.m',
