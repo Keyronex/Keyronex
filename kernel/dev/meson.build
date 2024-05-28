@@ -28,7 +28,7 @@ kernel_sources += [
 
 if (cpu != 'm68k')
 	kernel_sources += [
-		files('acpi/DKACPIPlatform.m', 'acpi/uacpi_integration.m'),
+		files('acpi/DKACPIPlatform.m', 'acpi/uacpi_integration.m', 'E1000.m'),
 		uacpi_sources,
 	]
 	freestanding_include_dirs += uacpi_includes

@@ -450,6 +450,14 @@ vmp_page_delete_locked(vm_page_t *page)
 	}
 }
 
+void
+vm_page_delete(vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+	vmp_page_delete_locked(page);
+	vmp_release_pfn_lock(ipl);
+}
+
 vm_page_t *
 vmp_page_retain_locked(vm_page_t *page)
 {
@@ -531,6 +539,14 @@ vmp_page_release_locked(vm_page_t *page)
 			vmstat.nstandby += npages;
 		}
 	}
+}
+
+void
+vm_page_release(vm_page_t *page)
+{
+	ipl_t ipl = vmp_acquire_pfn_lock();
+	vmp_page_release_locked(page);
+	vmp_release_pfn_lock(ipl);
 }
 
 const char *

@@ -1,4 +1,5 @@
 #include "PCIBus.h"
+#include "dev/E1000.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
@@ -74,7 +75,8 @@ enum {
 	bar = pci_readl(INFO_ARGS(info), off);
 
 	if ((bar & 1) == 1) {
-		kfatal("I/O space bar\n");
+		kprintf("I/O space bar\n");
+		return 0;
 	} else if (((bar >> 1) & 3) == 0) {
 		uint32_t size_mask;
 
@@ -191,6 +193,27 @@ enum {
 	return 0;
 }
 
+static BOOL
+match_e1000(uint16_t vendorId, uint16_t devId)
+{
+	if (vendorId != 0x8086)
+		return NO;
+
+	switch (devId) {
+	case 0x100c: /* 82544GC */
+	case 0x100e: /* 82540EM */
+	case 0x100f: /* 82545EM */
+	case 0x10d3: /* 82574L */
+	case 0x15bd: /* I219-LM */
+	case 0x15d7: /* I219-LM */
+	case 0x15fa: /* I219-V */
+		return YES;
+
+	default:
+		return NO;
+	}
+}
+
 - (void)doSegment:(uint16_t)seg
 	      bus:(uint8_t)bus
 	     slot:(uint8_t)slot
@@ -232,9 +255,11 @@ enum {
 	if (!handled && info.vendorId == 0x1af4)
 		handled = [DKVirtIOPCITransport probeWithPCIBus:self
 							   info:&info];
+	else if (!handled && match_e1000(info.vendorId, info.deviceId))
+		handled = [E1000 probeWithPCIBus:self info:&info];
 	if (!handled)
-		kprintf("No driver for PCI device %d.%d.%d\n", info.bus,
-		    info.slot, info.fun);
+		kprintf("No driver for PCI device %d.%d.%d (%x:%x)\n", info.bus,
+		    info.slot, info.fun, info.vendorId, info.deviceId);
 }
 
 - (instancetype)initWithProvider:(DKDevice *)provider

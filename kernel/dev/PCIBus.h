@@ -72,4 +72,8 @@ void pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
 	pci_read##WIDTH((PCIINFO)->seg, (PCIINFO)->bus, (PCIINFO)->slot, \
 	    (PCIINFO)->fun, OFFSET)
 
+#define PCIINFO_CFG_WRITE(WIDTH, PCIINFO, OFFSET, VALUE)                  \
+	pci_write##WIDTH((PCIINFO)->seg, (PCIINFO)->bus, (PCIINFO)->slot, \
+	    (PCIINFO)->fun, OFFSET, VALUE)
+
 #endif /* KRX_DEV_PCIBUS_H */
