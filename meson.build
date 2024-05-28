@@ -93,6 +93,7 @@ if not headers_only
 	uacpi_sources = uacpi.get_variable('sources')
 	uacpi_includes = uacpi.get_variable('includes')
 
+	subdir('lwip')
 	subdir('vendor/objfwrt')
 	subdir('kernel')
 	if (arch == 'amd64')

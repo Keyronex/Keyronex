@@ -59,6 +59,8 @@ Several third-party components are used. These are some of them:
  - **nanoprintf**: Printf implementation; provides `kprintf` and family.
  - **uACPI**: The UltraOS ACPI Implementation from UltraOS. Used by the ACPI
    drivers.
+ - **LwIP**: Lightweight TCP/IP stack. Adapted parts of LwIP provide the basis
+   of the TCP/IP stack, while original code
  - Various headers (mostly BSDs, some Linux): BSD-licenced headers mainly for
  device register definitions.
 

@@ -20,6 +20,8 @@ int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
 /* futex.c */
 int krx_futex_wait(int *u_pointer, int expected, nanosecs_t ns);
 int krx_futex_wake(int *u_pointer);
+/* net/net.c */
+void net_init(void);
 
 kthread_t *ex_init_thread;
 obj_class_t process_class, file_class;
@@ -198,6 +200,7 @@ ex_init(void *)
 	vmp_paging_init();
 	ubc_init();
 	ddk_init();
+	net_init();
 #if 0
 	pe_load(module_request.response->modules[3]->path,module_request.response->modules[3]->address);
 #endif
