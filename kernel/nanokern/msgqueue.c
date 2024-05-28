@@ -42,7 +42,6 @@ ke_event_clear(kevent_t *ev)
 	return signalled;
 }
 
-#if 0
 void
 ke_msgqueue_init(kmsgqueue_t *msgq, unsigned count)
 {
@@ -57,54 +56,52 @@ ke_msgqueue_init(kmsgqueue_t *msgq, unsigned count)
 }
 
 void
-ke_msgq_post(kmsgqueue_t *queue, void *msg)
+ke_msgq_post(kmsgqueue_t *msgq, void *msg)
 {
-	kwaitresult_t wait = ke_wait(&queue->sem, "msgqueue_wait", false, false,
-	    -1);
+	kwaitblock_queue_t queue = TAILQ_HEAD_INITIALIZER(queue);
+	kwaitresult_t wait;
+	ipl_t ipl;
+
+	wait = ke_wait(&msgq->sem, "msgqueue_wait", false, false, -1);
 	kassert(wait == kKernWaitStatusOK);
 
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	ipl = ke_spinlock_acquire(&msgq->hdr.spinlock);
 
-	queue->messages[queue->writehead++] = msg;
-	if (queue->writehead == queue->size)
-		queue->writehead = 0;
+	msgq->messages[msgq->writehead++] = msg;
+	if (msgq->writehead == msgq->size)
+		msgq->writehead = 0;
 
-	kassert(queue->writehead != queue->readhead);
-	queue->hdr.signalled = true;
+	kassert(msgq->writehead != msgq->readhead);
+	msgq->hdr.signalled = true;
+	ki_signal(&msgq->hdr, &queue);
+	ke_spinlock_release_nospl(&msgq->hdr.spinlock);
 
-	kwaitblock_t *block = TAILQ_FIRST(&queue->hdr.waitblock_queue);
-	while ((block) != NULL) {
-		kwaitblock_t *next = TAILQ_NEXT(block, queue_entry);
-		if (ki_waiter_maybe_wakeup(block->thread, &queue->hdr))
-			break;
-		block = next;
-	}
-
-	ke_release_dispatcher_lock(ipl);
+	ke_acquire_scheduler_lock();
+	ki_wake_waiters(&queue);
+	ke_release_scheduler_lock(ipl);
 }
 
 int
-ke_msgq_read(kmsgqueue_t *queue, void **msg)
+ke_msgq_read(kmsgqueue_t *msgq, void **msg)
 {
-	ipl_t ipl = ke_acquire_dispatcher_lock();
+	ipl_t ipl = ke_spinlock_acquire(&msgq->hdr.spinlock);
 
-	if (queue->writehead == queue->readhead) {
-		ke_release_dispatcher_lock(ipl);
+	if (msgq->writehead == msgq->readhead) {
+		ke_spinlock_release(&msgq->hdr.spinlock, ipl);
 		return -1;
 	}
 
-	*msg = queue->messages[queue->readhead++];
-	if (queue->readhead == queue->size)
-		queue->readhead = 0;
+	*msg = msgq->messages[msgq->readhead++];
 
-	if (queue->writehead == queue->readhead) {
-		queue->hdr.signalled = false;
-	}
+	if (msgq->readhead == msgq->size)
+		msgq->readhead = 0;
 
-	ke_release_dispatcher_lock(ipl);
+	if (msgq->writehead == msgq->readhead)
+		msgq->hdr.signalled = false;
 
-	ke_semaphore_release(&queue->sem, 1);
+	ke_spinlock_release(&msgq->hdr.spinlock, ipl);
+
+	ke_semaphore_release(&msgq->sem, 1);
 
 	return 0;
 }
-#endif

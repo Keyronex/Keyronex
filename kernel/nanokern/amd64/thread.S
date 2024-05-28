@@ -21,3 +21,5 @@ asm_swtch:
 	movq 56(%rsi), %rsi
 
 	ret
+
+.section .note.GNU-stack,"",%progbits

@@ -174,6 +174,26 @@ typedef struct ktimer {
 	kdpc_t *dpc;
 } ktimer_t;
 
+/*!
+ * Fixed-size message queue.
+ */
+typedef struct kmsgqueue {
+	kdispatchheader_t hdr;
+
+	/* size (must be power of 2) */
+	size_t size;
+	/* write head */
+	size_t writehead;
+	/* read head */
+	size_t readhead;
+
+	/*! message enqueuing semaphore */
+	ksemaphore_t sem;
+
+	/*! message ringbuf */
+	void **messages;
+} kmsgqueue_t;
+
 TAILQ_HEAD(kthread_queue, kthread);
 
 struct runqueue {
@@ -473,19 +493,19 @@ bool ke_event_clear(kevent_t *ev);
 /*!
  * @brief Initialise a kernel messagequeue with the given capacity.
  */
-void ke_msgqueue_init(void *msgq, unsigned count);
+void ke_msgqueue_init(kmsgqueue_t *msgq, unsigned count);
 
 /*!
  * @brief Post a message to a kernel messagequeue. Waits until it can be done.
  */
-void ke_msgq_post(void *queue, void *msg);
+void ke_msgq_post(kmsgqueue_t *queue, void *msg);
 
 /*!
  * @brief Read a message from a kernel messagequeue.
  * @retval 0 a message was retrieved
  * @retval 1 no messages were pending
  */
-int ke_msgq_read(void *queue, void **msg);
+int ke_msgq_read(kmsgqueue_t *queue, void **msg);
 
 /*!
  * @brief Initialise a kernel mutex.
