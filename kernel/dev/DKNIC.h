@@ -1,7 +1,9 @@
 #ifndef KRX_DEV_DKNIC_H
 #define KRX_DEV_DKNIC_H
 
+#ifdef __OBJC__
 #include "ddk/DKDevice.h"
+#endif
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"
 
@@ -15,8 +17,12 @@ struct pbuf_rx {
 	uint32_t hdr_desc_id;
 	/* whether this is being freed from within processBuffers() */
 	bool locked;
+	/* linkage in packet ingress queue */
+	TAILQ_ENTRY(pbuf_rx) queue_entry;
+	struct netif *netif;
 };
 
+#ifdef __OBJC__
 @interface DKNIC : DKDevice {
 	size_t m_queueLength;
 	size_t m_rxBufSize;
@@ -50,5 +56,6 @@ struct pbuf_rx {
 - (void)completeProcessingOfRxIndex:(size_t)index locked:(BOOL)isLocked;
 
 @end
+#endif
 
 #endif /* KRX_DEV_DKNIC_H */

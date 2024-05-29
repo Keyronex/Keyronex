@@ -4,6 +4,7 @@
 #include "lwip/err.h"
 #include "lwip/netifapi.h"
 #include "lwip/prot/etharp.h"
+#include "net/net.h"
 #include "netif/etharp.h"
 #include "netif/ethernet.h"
 
@@ -54,21 +55,21 @@ netifInit(struct netif *nic)
 
 - (void)setupNetif
 {
-	err_t err;
+	ipl_t ipl;
 
 	memcpy(&m_netif.hwaddr, self->m_mac, sizeof(self->m_mac));
 
-	err = netifapi_netif_add(&m_netif, NULL, NULL, NULL, self, netifInit,
+	ipl = LOCK_LWIP();
+	netif_add(&m_netif, NULL, NULL, NULL, self, netifInit,
 	    ethernet_input);
-	kassert(err == ERR_OK);
-
 	netif_set_default(&m_netif);
+	UNLOCK_LWIP(ipl);
 }
 
 - (void)setLinkUp:(BOOL)up speed:(size_t)mbits fullDuplex:(BOOL)duplex
 {
-	err_t err;
 	ip4_addr_t ip, netmask, gw;
+	ipl_t ipl;
 
 	if (up)
 		DKDevLog(self, "Link up (%luMb %s Duplex)\n", mbits,
@@ -80,17 +81,11 @@ netifInit(struct netif *nic)
 	netmask.addr = ipaddr_addr("255.255.255.0");
 	gw.addr = ipaddr_addr(GW_ADDR);
 
-	err = netifapi_netif_set_addr(&m_netif, &ip, &netmask, &gw);
-	if (err != ERR_OK) {
-		DKDevLog(self, "Failed to set interface IP: %d\n", err);
-	}
-
-	if (up) {
-		err = netifapi_netif_set_up(&m_netif);
-		if (err != ERR_OK) {
-			DKDevLog(self, "Failed to set interface up: %d\n", err);
-		}
-	}
+	ipl = LOCK_LWIP();
+	netif_set_addr(&m_netif, &ip, &netmask, &gw);
+	if (up)
+		netif_set_up(&m_netif);
+	UNLOCK_LWIP(ipl);
 }
 
 static void
@@ -121,7 +116,6 @@ freeRXPBuf(struct pbuf *p)
 		uint16_t type;
 	} *header = data;
 	struct pbuf_rx *p;
-	err_t err;
 
 	kprintf("(DEST " MAC_FMT " SRC " MAC_FMT " TYPE %x)\n",
 	    MAC_ARGS(header->dst), MAC_ARGS(header->src),
@@ -135,13 +129,7 @@ freeRXPBuf(struct pbuf *p)
 	p->hdr_desc_id = id;
 	p->pbuf.pbuf.if_idx = netif_get_index(&m_netif);
 	p->locked = false;
-
-	err = tcpip_input(&p->pbuf.pbuf, &m_netif);
-	if (err != ERR_OK) {
-		p->locked = true;
-		pbuf_free(&p->pbuf.pbuf);
-		DKDevLog(self, "Packet dropped: %d\n", err);
-	}
+	p->netif = &m_netif;
 }
 
 @end

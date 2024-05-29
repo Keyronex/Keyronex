@@ -204,11 +204,13 @@ sys_timeout_abs(u32_t abs_time, sys_timeout_handler handler, void *arg)
 
   if (next_timeout == NULL) {
     next_timeout = timeout;
+    ksp_reset_timer(timeout->time);
     return;
   }
   if (TIME_LESS_THAN(timeout->time, next_timeout->time)) {
     timeout->next = next_timeout;
     next_timeout = timeout;
+    ksp_reset_timer(timeout->time);
   } else {
     for (t = next_timeout; t != NULL; t = t->next) {
       if ((t->next == NULL) || TIME_LESS_THAN(timeout->time, t->next->time)) {

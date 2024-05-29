@@ -43,9 +43,13 @@ sys_arch_unprotect(ipl_t ipl)
 	splx(ipl);
 }
 
+/* special interfaces */
+void ksp_reset_timer(uint32_t abs);
+
 #define SYS_ARCH_PROTECT(x) ipl_##x = sys_arch_protect()
 #define SYS_ARCH_UNPROTECT(x) sys_arch_unprotect(ipl_##x)
 
+extern kspinlock_t tcpip_lock;
 typedef ksemaphore_t sys_sem_t;
 typedef kmutex_t sys_mutex_t;
 typedef kmsgqueue_t sys_mbox_t;
