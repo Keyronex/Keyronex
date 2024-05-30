@@ -320,7 +320,6 @@ struct tcp_seg {
 #endif /* LWIP_WND_SCALE */
 
 /* Global variables: */
-extern struct tcp_pcb *tcp_input_pcb;
 extern u32_t tcp_ticks;
 extern u8_t tcp_active_pcbs_changed;
 
@@ -473,7 +472,9 @@ u32_t tcp_next_iss(struct tcp_pcb *pcb);
 err_t tcp_keepalive(struct tcp_pcb *pcb);
 err_t tcp_split_unsent_seg(struct tcp_pcb *pcb, u16_t split);
 err_t tcp_zero_window_probe(struct tcp_pcb *pcb);
-void  tcp_trigger_input_pcb_close(void);
+#if 0 /* FIXME tcp input thing */
+void  tcp_trigger_input_pcb_close(struct tcp_globals *globals);
+#endif
 
 #if TCP_CALCULATE_EFF_SEND_MSS
 u16_t tcp_eff_send_mss_netif(u16_t sendmss, struct netif *outif,
