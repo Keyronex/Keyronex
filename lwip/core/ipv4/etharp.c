@@ -664,17 +664,6 @@ etharp_input(struct pbuf *p, struct netif *netif)
   }
   ETHARP_STATS_INC(etharp.recv);
 
-#if LWIP_ACD
-  /* We have to check if a host already has configured our ip address and
-   * continuously check if there is a host with this IP-address so we can
-   * detect collisions.
-   * acd_arp_reply ensures the detection of conflicts. It will handle possible
-   * defending or retreating and will make sure a new IP address is selected.
-   * etharp_input does not need to handle packets that originate "from_us".
-   */
-  acd_arp_reply(netif, hdr);
-#endif /* LWIP_ACD */
-
   /* Copy struct ip4_addr_wordaligned to aligned ip4_addr, to support compilers without
    * structure packing (not using structure copy which breaks strict-aliasing rules). */
   IPADDR_WORDALIGNED_COPY_TO_IP4_ADDR_T(&sipaddr, &hdr->sipaddr);
@@ -1206,43 +1195,5 @@ etharp_request(struct netif *netif, const ip4_addr_t *ipaddr)
   LWIP_DEBUGF(ETHARP_DEBUG | LWIP_DBG_TRACE, ("etharp_request: sending ARP request.\n"));
   return etharp_request_dst(netif, ipaddr, &ethbroadcast);
 }
-
-#if LWIP_ACD
-/**
- * Send an ARP request packet probing for an ipaddr.
- * Used to send probe messages for address conflict detection.
- *
- * @param netif the lwip network interface on which to send the request
- * @param ipaddr the IP address to probe
- * @return ERR_OK if the request has been sent
- *         ERR_MEM if the ARP packet couldn't be allocated
- *         any other err_t on failure
- */
-err_t
-etharp_acd_probe(struct netif *netif, const ip4_addr_t *ipaddr)
-{
-  return etharp_raw(netif, (struct eth_addr *)netif->hwaddr, &ethbroadcast,
-                    (struct eth_addr *)netif->hwaddr, IP4_ADDR_ANY4, &ethzero,
-                    ipaddr, ARP_REQUEST);
-}
-
-/**
- * Send an ARP request packet announcing an ipaddr.
- * Used to send announce messages for address conflict detection.
- *
- * @param netif the lwip network interface on which to send the request
- * @param ipaddr the IP address to announce
- * @return ERR_OK if the request has been sent
- *         ERR_MEM if the ARP packet couldn't be allocated
- *         any other err_t on failure
- */
-err_t
-etharp_acd_announce(struct netif *netif, const ip4_addr_t *ipaddr)
-{
-  return etharp_raw(netif, (struct eth_addr *)netif->hwaddr, &ethbroadcast,
-                    (struct eth_addr *)netif->hwaddr, ipaddr, &ethzero,
-                    ipaddr, ARP_REQUEST);
-}
-#endif /* LWIP_ACD */
 
 #endif /* LWIP_IPV4 && LWIP_ARP */

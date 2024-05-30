@@ -640,12 +640,6 @@ nd6_input(struct pbuf *p, struct netif *inp)
     /* Update flags in local entry (incl. preference). */
     default_router_list[i].flags = ra_hdr->flags;
 
-#if LWIP_IPV6_DHCP6
-    /* Trigger DHCPv6 if enabled */
-    dhcp6_nd6_ra_trigger(inp, ra_hdr->flags & ND6_RA_FLAG_MANAGED_ADDR_CONFIG,
-      ra_hdr->flags & ND6_RA_FLAG_OTHER_CONFIG);
-#endif
-
     /* Offset to options. */
     offset = sizeof(struct ra_header);
 
