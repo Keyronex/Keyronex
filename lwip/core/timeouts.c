@@ -46,7 +46,6 @@
 
 #include "lwip/def.h"
 #include "lwip/memp.h"
-#include "lwip/priv/tcpip_priv.h"
 
 #include "lwip/ip4_frag.h"
 #include "lwip/etharp.h"

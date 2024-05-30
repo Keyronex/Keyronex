@@ -1,7 +1,6 @@
 #include "dev/DKNIC.h"
 #include "kdk/nanokern.h"
 #include "lwip/init.h"
-#include "lwip/tcpip.h"
 #include "lwip/timeouts.h"
 #include "net/net.h"
 #include "netif/ethernet.h"
