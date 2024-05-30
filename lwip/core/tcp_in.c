@@ -90,17 +90,19 @@ struct tcp_globals {
 };
 
 /* Forward declarations. */
-static err_t tcp_process(struct tcp_globals *, struct tcp_pcb *pcb);
-static void tcp_receive(struct tcp_globals *, struct tcp_pcb *pcb);
+static err_t tcp_process(struct ip_globals *ip_data, struct tcp_globals *,
+    struct tcp_pcb *pcb);
+static void tcp_receive(struct ip_globals *ip_data, struct tcp_globals *,
+    struct tcp_pcb *pcb);
 static void tcp_parseopt(struct tcp_globals *, struct tcp_pcb *pcb);
 
-static void tcp_listen_input(struct tcp_globals *tcp_data,
-  struct tcp_pcb_listen *pcb);
-static void tcp_timewait_input(struct tcp_globals *tcp_data,
-  struct tcp_pcb *pcb);
+static void tcp_listen_input(struct ip_globals *ip_data,
+    struct tcp_globals *tcp_data, struct tcp_pcb_listen *pcb);
+static void tcp_timewait_input(struct ip_globals *ip_data,
+    struct tcp_globals *tcp_data, struct tcp_pcb *pcb);
 
 static int tcp_input_delayed_close(struct tcp_globals *tcp_data,
-  struct tcp_pcb *pcb);
+    struct tcp_pcb *pcb);
 
 #if LWIP_TCP_SACK_OUT
 static void tcp_add_sack(struct tcp_pcb *pcb, u32_t left, u32_t right);
@@ -120,7 +122,7 @@ static void tcp_remove_sacks_gt(struct tcp_pcb *pcb, u32_t seq);
  * @param inp network interface on which this segment was received
  */
 void
-tcp_input(struct pbuf *p, struct netif *inp)
+tcp_input(struct ip_globals *ip_data, struct pbuf *p, struct netif *inp)
 {
   struct tcp_globals tcp_data;
   struct tcp_pcb *pcb, *prev;
@@ -260,7 +262,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
 
     /* check if PCB is bound to specific netif */
     if ((pcb->netif_idx != NETIF_NO_INDEX) &&
-        (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
+        (pcb->netif_idx != netif_get_index(ip_data->current_input_netif))) {
       prev = pcb;
       continue;
     }
@@ -294,7 +296,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
 
       /* check if PCB is bound to specific netif */
       if ((pcb->netif_idx != NETIF_NO_INDEX) &&
-          (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
+          (pcb->netif_idx != netif_get_index(ip_data->current_input_netif))) {
         continue;
       }
 
@@ -311,7 +313,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
                                        tcphdr_opt2, p) == ERR_OK)
 #endif
         {
-          tcp_timewait_input(&tcp_data, pcb);
+          tcp_timewait_input(ip_data, &tcp_data, pcb);
         }
         pbuf_free(p);
         return;
@@ -324,7 +326,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
     for (lpcb = tcp_listen_pcbs.listen_pcbs; lpcb != NULL; lpcb = lpcb->next) {
       /* check if PCB is bound to specific netif */
       if ((lpcb->netif_idx != NETIF_NO_INDEX) &&
-          (lpcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
+          (lpcb->netif_idx != netif_get_index(ip_data->current_input_netif))) {
         prev = (struct tcp_pcb *)lpcb;
         continue;
       }
@@ -383,7 +385,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
                                      tcphdr_opt1len, tcphdr_opt2, p) == ERR_OK)
 #endif
       {
-        tcp_listen_input(&tcp_data, lpcb);
+        tcp_listen_input(ip_data, &tcp_data, lpcb);
       }
       pbuf_free(p);
       return;
@@ -441,7 +443,7 @@ tcp_input(struct pbuf *p, struct netif *inp)
       }
     }
     tcp_data.tcp_input_pcb = pcb;
-    err = tcp_process(&tcp_data, pcb);
+    err = tcp_process(ip_data, &tcp_data, pcb);
     /* A return value of ERR_ABRT means that tcp_abort() was called
        and that the pcb has been freed. If so, we don't do anything. */
     if (err != ERR_ABRT) {
@@ -582,7 +584,7 @@ aborted:
     if (!(TCPH_FLAGS(tcp_data.tcphdr) & TCP_RST)) {
       TCP_STATS_INC(tcp.proterr);
       TCP_STATS_INC(tcp.drop);
-      tcp_rst_netif(ip_data.current_input_netif, tcp_data.ackno, tcp_data.seqno + tcp_data.tcplen, ip_current_dest_addr(),
+      tcp_rst_netif(ip_data->current_input_netif, tcp_data.ackno, tcp_data.seqno + tcp_data.tcplen, ip_current_dest_addr(),
               ip_current_src_addr(), tcp_data.tcphdr->dest, tcp_data.tcphdr->src);
     }
     pbuf_free(p);
@@ -633,7 +635,7 @@ tcp_input_delayed_close(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
  *       involved is passed as a parameter to this function
  */
 static void
-tcp_listen_input(struct tcp_globals *tcp_data, struct tcp_pcb_listen *pcb)
+tcp_listen_input(struct ip_globals *ip_data, struct tcp_globals *tcp_data, struct tcp_pcb_listen *pcb)
 {
   struct tcp_pcb *npcb;
   u32_t iss;
@@ -652,7 +654,7 @@ tcp_listen_input(struct tcp_globals *tcp_data, struct tcp_pcb_listen *pcb)
     /* For incoming segments with the ACK flag set, respond with a
        RST. */
     LWIP_DEBUGF(TCP_RST_DEBUG, ("tcp_listen_input: ACK in LISTEN, sending reset\n"));
-    tcp_rst_netif(ip_data.current_input_netif, tcp_data->ackno,
+    tcp_rst_netif(ip_data->current_input_netif, tcp_data->ackno,
       tcp_data->seqno + tcp_data->tcplen, ip_current_dest_addr(),
       ip_current_src_addr(), tcp_data->tcphdr->dest,
       tcp_data->tcphdr->src);
@@ -747,7 +749,8 @@ tcp_listen_input(struct tcp_globals *tcp_data, struct tcp_pcb_listen *pcb)
  *       involved is passed as a parameter to this function
  */
 static void
-tcp_timewait_input(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
+tcp_timewait_input(struct ip_globals *ip_data, struct tcp_globals *tcp_data,
+    struct tcp_pcb *pcb)
 {
   /* RFC 1337: in TIME_WAIT, ignore RST and ACK FINs + any 'acceptable' segments */
   /* RFC 793 3.9 Event Processing - Segment Arrives:
@@ -797,7 +800,8 @@ tcp_timewait_input(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
  *       involved is passed as a parameter to this function
  */
 static err_t
-tcp_process(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
+tcp_process(struct ip_globals *ip_data, struct tcp_globals *tcp_data,
+    struct tcp_pcb *pcb)
 {
   struct tcp_seg *rseg;
   u8_t acceptable = 0;
@@ -975,7 +979,7 @@ tcp_process(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
           }
           /* If there was any data contained within this ACK,
            * we'd better pass it on to the application as well. */
-          tcp_receive(tcp_data, pcb);
+          tcp_receive(ip_data, tcp_data, pcb);
 
           /* Prevent ACK for SYN to generate a sent event */
           if (tcp_data->recv_acked != 0) {
@@ -1002,14 +1006,14 @@ tcp_process(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
     case CLOSE_WAIT:
     /* FALLTHROUGH */
     case ESTABLISHED:
-      tcp_receive(tcp_data, pcb);
+      tcp_receive(ip_data, tcp_data, pcb);
       if (tcp_data->recv_flags & TF_GOT_FIN) { /* passive close */
         tcp_ack_now(pcb);
         pcb->state = CLOSE_WAIT;
       }
       break;
     case FIN_WAIT_1:
-      tcp_receive(tcp_data, pcb);
+      tcp_receive(ip_data, tcp_data, pcb);
       if (tcp_data->recv_flags & TF_GOT_FIN) {
         if ((tcp_data->flags & TCP_ACK) && (tcp_data->ackno == pcb->snd_nxt) &&
             pcb->unsent == NULL) {
@@ -1030,7 +1034,7 @@ tcp_process(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
       }
       break;
     case FIN_WAIT_2:
-      tcp_receive(tcp_data, pcb);
+      tcp_receive(ip_data, tcp_data, pcb);
       if (tcp_data->recv_flags & TF_GOT_FIN) {
         LWIP_DEBUGF(TCP_DEBUG, ("TCP connection closed: FIN_WAIT_2 %"U16_F" -> %"U16_F".\n", inseg.tcphdr->src, inseg.tcphdr->dest));
         tcp_ack_now(pcb);
@@ -1041,7 +1045,7 @@ tcp_process(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
       }
       break;
     case CLOSING:
-      tcp_receive(tcp_data, pcb);
+      tcp_receive(ip_data, tcp_data, pcb);
       if ((tcp_data->flags & TCP_ACK) && tcp_data->ackno == pcb->snd_nxt && pcb->unsent == NULL) {
         LWIP_DEBUGF(TCP_DEBUG, ("TCP connection closed: CLOSING %"U16_F" -> %"U16_F".\n", inseg.tcphdr->src, inseg.tcphdr->dest));
         tcp_pcb_purge(pcb);
@@ -1051,7 +1055,7 @@ tcp_process(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
       }
       break;
     case LAST_ACK:
-      tcp_receive(tcp_data, pcb);
+      tcp_receive(ip_data, tcp_data, pcb);
       if ((tcp_data->flags & TCP_ACK) && tcp_data->ackno == pcb->snd_nxt && pcb->unsent == NULL) {
         LWIP_DEBUGF(TCP_DEBUG, ("TCP connection closed: LAST_ACK %"U16_F" -> %"U16_F".\n", inseg.tcphdr->src, inseg.tcphdr->dest));
         /* bugfix #21699: don't set pcb->state to CLOSED here or we risk leaking segments */
@@ -1163,7 +1167,8 @@ tcp_free_acked_segments(struct tcp_globals *tcp_data, struct tcp_pcb *pcb,
  * Called from tcp_process().
  */
 static void
-tcp_receive(struct tcp_globals *tcp_data, struct tcp_pcb *pcb)
+tcp_receive(struct ip_globals *ip_data, struct tcp_globals *tcp_data,
+    struct tcp_pcb *pcb)
 {
   s16_t m;
   u32_t right_wnd_edge;

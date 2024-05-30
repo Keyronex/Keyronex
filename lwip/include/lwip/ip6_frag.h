@@ -54,6 +54,8 @@ extern "C" {
 
 #if LWIP_IPV6 && LWIP_IPV6_REASS  /* don't build if not configured for use in lwipopts.h */
 
+struct ip_globals;
+
 /** The IPv6 reassembly timer interval in milliseconds. */
 #define IP6_REASS_TMR_INTERVAL 1000
 
@@ -113,7 +115,7 @@ struct ip6_reassdata {
 
 #define ip6_reass_init() /* Compatibility define */
 void ip6_reass_tmr(void);
-struct pbuf *ip6_reass(struct pbuf *p);
+struct pbuf *ip6_reass(struct ip_globals *ip_data, struct pbuf *p);
 
 #endif /* LWIP_IPV6 && LWIP_IPV6_REASS */
 

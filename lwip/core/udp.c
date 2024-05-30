@@ -126,7 +126,8 @@ again:
  * @return 1 on match, 0 otherwise
  */
 static u8_t
-udp_input_local_match(struct udp_pcb *pcb, struct netif *inp, u8_t broadcast)
+udp_input_local_match(struct ip_globals *ip_data, struct udp_pcb *pcb,
+    struct netif *inp, u8_t broadcast)
 {
   LWIP_UNUSED_ARG(inp);       /* in IPv6 only case */
   LWIP_UNUSED_ARG(broadcast); /* in IPv6 only case */
@@ -136,7 +137,7 @@ udp_input_local_match(struct udp_pcb *pcb, struct netif *inp, u8_t broadcast)
 
   /* check if PCB is bound to specific netif */
   if ((pcb->netif_idx != NETIF_NO_INDEX) &&
-      (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
+      (pcb->netif_idx != netif_get_index(ip_data->current_input_netif))) {
     return 0;
   }
 
@@ -190,7 +191,7 @@ udp_input_local_match(struct udp_pcb *pcb, struct netif *inp, u8_t broadcast)
  *
  */
 void
-udp_input(struct pbuf *p, struct netif *inp)
+udp_input(struct ip_globals *ip_data, struct pbuf *p, struct netif *inp)
 {
   struct udp_hdr *udphdr;
   struct udp_pcb *pcb, *prev;
@@ -259,7 +260,7 @@ udp_input(struct pbuf *p, struct netif *inp)
 
     /* compare PCB local addr+port to UDP destination addr+port */
     if ((pcb->local_port == dest) &&
-        (udp_input_local_match(pcb, inp, broadcast) != 0)) {
+        (udp_input_local_match(ip_data, pcb, inp, broadcast) != 0)) {
       if ((pcb->flags & UDP_FLAGS_CONNECTED) == 0) {
         if (uncon_pcb == NULL) {
           /* the first unconnected matching PCB */
@@ -415,7 +416,7 @@ udp_input(struct pbuf *p, struct netif *inp)
       if (!broadcast && !ip_addr_ismulticast(ip_current_dest_addr())) {
         /* move payload pointer back to ip header */
         pbuf_header_force(p, (s16_t)(ip_current_header_tot_len() + UDP_HLEN));
-        icmp_port_unreach(ip_current_is_v6(), p);
+        icmp_port_unreach(ip_data, ip_current_is_v6(), p);
       }
 #endif /* LWIP_ICMP || LWIP_ICMP6 */
       UDP_STATS_INC(udp.proterr);

@@ -135,7 +135,8 @@ static err_t nd6_queue_packet(s8_t neighbor_index, struct pbuf *q);
 #define ND6_SEND_FLAG_ALLNODES_DEST 0x02
 #define ND6_SEND_FLAG_ANY_SRC 0x04
 static void nd6_send_ns(struct netif *netif, const ip6_addr_t *target_addr, u8_t flags);
-static void nd6_send_na(struct netif *netif, const ip6_addr_t *target_addr, u8_t flags);
+static void nd6_send_na(struct ip_globals *ip_data, struct netif *netif,
+  const ip6_addr_t *target_addr, u8_t flags);
 static void nd6_send_neighbor_cache_probe(struct nd6_neighbor_cache_entry *entry, u8_t flags);
 #if LWIP_IPV6_SEND_ROUTER_SOLICIT
 static err_t nd6_send_rs(struct netif *netif);
@@ -297,7 +298,7 @@ nd6_process_autoconfig_prefix(struct netif *netif,
  * @param inp the netif on which this packet was received
  */
 void
-nd6_input(struct pbuf *p, struct netif *inp)
+nd6_input(struct ip_globals *ip_data, struct pbuf *p, struct netif *inp)
 {
   u8_t msg_type;
   s8_t i;
@@ -507,7 +508,8 @@ nd6_input(struct pbuf *p, struct netif *inp)
         if (!ip6_addr_isinvalid(netif_ip6_addr_state(inp, i)) &&
             ip6_addr_eq(&target_address, netif_ip6_addr(inp, i))) {
           /* Send a NA back so that the sender does not use this address. */
-          nd6_send_na(inp, netif_ip6_addr(inp, i), ND6_FLAG_OVERRIDE | ND6_SEND_FLAG_ALLNODES_DEST);
+          nd6_send_na(ip_data, inp, netif_ip6_addr(inp, i),
+            ND6_FLAG_OVERRIDE | ND6_SEND_FLAG_ALLNODES_DEST);
           if (ip6_addr_istentative(netif_ip6_addr_state(inp, i))) {
             /* We shouldn't use this address either. */
             nd6_duplicate_addr_detected(inp, i);
@@ -559,7 +561,8 @@ nd6_input(struct pbuf *p, struct netif *inp)
       }
 
       /* Send back a NA for us. Allocate the reply pbuf. */
-      nd6_send_na(inp, &target_address, ND6_FLAG_SOLICITED | ND6_FLAG_OVERRIDE);
+      nd6_send_na(ip_data, inp, &target_address,
+        ND6_FLAG_SOLICITED | ND6_FLAG_OVERRIDE);
     }
 
     break; /* ICMP6_TYPE_NS */
@@ -1270,7 +1273,8 @@ nd6_send_ns(struct netif *netif, const ip6_addr_t *target_addr, u8_t flags)
  * @param flags one of ND6_SEND_FLAG_*
  */
 static void
-nd6_send_na(struct netif *netif, const ip6_addr_t *target_addr, u8_t flags)
+nd6_send_na(struct ip_globals *ip_data, struct netif *netif,
+  const ip6_addr_t *target_addr, u8_t flags)
 {
   struct na_header *na_hdr;
   struct lladdr_option *lladdr_opt;

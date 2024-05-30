@@ -66,13 +66,14 @@
 static struct raw_pcb *raw_pcbs;
 
 static u8_t
-raw_input_local_match(struct raw_pcb *pcb, u8_t broadcast)
+raw_input_local_match(struct ip_globals *ip_data, struct raw_pcb *pcb,
+  u8_t broadcast)
 {
   LWIP_UNUSED_ARG(broadcast); /* in IPv6 only case */
 
   /* check if PCB is bound to specific netif */
   if ((pcb->netif_idx != NETIF_NO_INDEX) &&
-      (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
+      (pcb->netif_idx != netif_get_index(ip_data->current_input_netif))) {
     return 0;
   }
 
@@ -132,7 +133,7 @@ raw_input_local_match(struct raw_pcb *pcb, u8_t broadcast)
  *
  */
 raw_input_state_t
-raw_input(struct pbuf *p, struct netif *inp)
+raw_input(struct ip_globals *ip_data, struct pbuf *p, struct netif *inp)
 {
   struct raw_pcb *pcb, *prev;
   s16_t proto;
@@ -164,7 +165,8 @@ raw_input(struct pbuf *p, struct netif *inp)
   /* loop through all raw pcbs until the packet is eaten by one */
   /* this allows multiple pcbs to match against the packet by design */
   while (pcb != NULL) {
-    if ((pcb->protocol == proto) && raw_input_local_match(pcb, broadcast) &&
+    if ((pcb->protocol == proto) &&
+        raw_input_local_match(ip_data, pcb, broadcast) &&
         (((pcb->flags & RAW_FLAGS_CONNECTED) == 0) ||
          ip_addr_eq(&pcb->remote_ip, ip_current_src_addr()))) {
       /* receive callback function available? */
