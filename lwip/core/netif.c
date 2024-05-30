@@ -74,18 +74,6 @@
 
 #include "netif/ethernet.h"
 
-#if LWIP_AUTOIP
-#include "lwip/autoip.h"
-#endif /* LWIP_AUTOIP */
-#if LWIP_DHCP
-#include "lwip/dhcp.h"
-#endif /* LWIP_DHCP */
-#if LWIP_ACD
-#include "lwip/acd.h"
-#endif /* LWIP_ACD */
-#if LWIP_IPV6_DHCP6
-#include "lwip/dhcp6.h"
-#endif /* LWIP_IPV6_DHCP6 */
 #if LWIP_IPV6_MLD
 #include "lwip/mld6.h"
 #endif /* LWIP_IPV6_MLD */
@@ -1105,11 +1093,11 @@ netif_set_link_callback(struct netif *netif, netif_status_callback_fn link_callb
 /**
  * @ingroup netif
  * Send an IP packet to be received on the same netif (loopif-like).
- * The pbuf is copied and added to an internal queue which is fed to 
+ * The pbuf is copied and added to an internal queue which is fed to
  * netif->input by netif_poll().
  * In multithreaded mode, the call to netif_poll() is queued to be done on the
  * TCP/IP thread.
- * In callback mode, the user has the responsibility to call netif_poll() in 
+ * In callback mode, the user has the responsibility to call netif_poll() in
  * the main loop of their application.
  *
  * @param netif the lwip network interface structure

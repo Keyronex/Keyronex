@@ -53,7 +53,6 @@
 #include "lwip/priv/raw_priv.h"
 #include "lwip/udp.h"
 #include "lwip/priv/tcp_priv.h"
-#include "lwip/autoip.h"
 #include "lwip/stats.h"
 #include "lwip/prot/iana.h"
 

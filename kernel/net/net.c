@@ -40,12 +40,6 @@ ingress_callback(void *)
 	}
 }
 
-static void
-tcpip_running(void *)
-{
-	kprintf("net_init: Keyronex Sockets for Kernel, version 2\n");
-}
-
 void
 ksp_reset_timer(uint32_t abs)
 {
@@ -73,6 +67,8 @@ net_init(void)
 	ingress_dpc.callback = ingress_callback;
 
 	lwip_init();
+
+	kprintf("net_init: Keyronex Sockets for Kernel, version 2\n");
 }
 
 void
@@ -84,4 +80,13 @@ ksk_packet_in(struct pbuf_rx *pbuf)
 	TAILQ_INSERT_TAIL(&ingress_queue, pbuf, queue_entry);
 	ke_spinlock_release_nospl(&ingress_lock);
 	ke_dpc_enqueue(&ingress_dpc);
+}
+
+typedef void (*tcpip_callback_fn)(void *ctx);
+
+err_t
+tcpip_try_callback(tcpip_callback_fn function, void *ctx)
+{
+	kprintf("tcpip_try_callback\n");
+	return ERR_OK;
 }

@@ -50,9 +50,6 @@
 #include "lwip/etharp.h"
 #include "lwip/stats.h"
 #include "lwip/snmp.h"
-#include "lwip/dhcp.h"
-#include "lwip/autoip.h"
-#include "lwip/acd.h"
 #include "lwip/prot/iana.h"
 #include "netif/ethernet.h"
 

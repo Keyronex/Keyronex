@@ -9,9 +9,10 @@
 #undef errno
 #define errno curcpu()->curthread->errno
 
-#if 1
+#if 0
 #define LWIP_DEBUG 1
 #define MEMP_DEBUG LWIP_DBG_ON
+#define TIMERS_DEBUG LWIP_DBG_ON
 #define TCP_DEBUG                       LWIP_DBG_ON
 #define TCP_INPUT_DEBUG LWIP_DBG_ON
 #define TCP_OUTPUT_DEBUG LWIP_DBG_ON
@@ -27,12 +28,14 @@
 #define LWIP_PBUF_CUSTOM_DATA STAILQ_ENTRY(pbuf) stailq_entry;
 
 #define LWIP_TIMERS 1
-#define LWIP_NETIF_API 1
+#define LWIP_NETIF_API 0
+#define LWIP_NETCONN 0
 #define LWIP_SOCKET 0
 #define LWIP_RAW 1
 #define LWIP_STATS 1
 #define MIB2_STATS 1
-
+#define LWIP_IPV6 1
+#define IPV6_FRAG_COPYHEADER 1
 
 #define LWIP_CHECKSUM_ON_COPY 1
 

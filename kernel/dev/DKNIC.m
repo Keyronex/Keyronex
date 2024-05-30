@@ -2,13 +2,12 @@
 #include "kdk/kmem.h"
 #include "lwip/def.h"
 #include "lwip/err.h"
-#include "lwip/netifapi.h"
 #include "lwip/prot/etharp.h"
 #include "net/net.h"
 #include "netif/etharp.h"
 #include "netif/ethernet.h"
 
-#if 1
+#if 0
 #define IP_ADDR "192.168.178.212"
 #define GW_ADDR "192.168.178.1"
 #else
@@ -130,6 +129,8 @@ freeRXPBuf(struct pbuf *p)
 	p->pbuf.pbuf.if_idx = netif_get_index(&m_netif);
 	p->locked = false;
 	p->netif = &m_netif;
+
+	ksk_packet_in(p);
 }
 
 @end

@@ -58,10 +58,8 @@
 #include "lwip/netif.h"
 #include "lwip/icmp6.h"
 #include "lwip/mld6.h"
-#include "lwip/dhcp6.h"
 #include "lwip/ip.h"
 #include "lwip/stats.h"
-#include "lwip/dns.h"
 
 #include <string.h>
 
