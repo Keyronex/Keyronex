@@ -4,11 +4,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define BIG_ENDIAN 0
-#define LITTLE_ENDIAN 1
+#define KRX_BIG_ENDIAN 0
+#define KRX_LITTLE_ENDIAN 1
 
 #define SMP 0
-#define ENDIAN BIG_ENDIAN
+#define KRX_ENDIAN KRX_BIG_ENDIAN
 #define BITS 32
 #define KERN_HZ 64
 #define KSTACK_SIZE 32768

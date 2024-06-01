@@ -44,6 +44,8 @@ typedef enum iop_function {
 	kIOPTypeSCSI,
 	/*! 9p command. */
 	kIOPType9p,
+	/*! Connect socket. */
+	kIOPTypeConnect,
 } iop_function_t;
 
 typedef enum iop_ioctl {
@@ -84,21 +86,19 @@ struct iop_stack_data_9p {
 	struct ninep_buf *ninep_in, *ninep_out;
 };
 
+/*! For kIOPTypeConnect. */
+struct iop_stack_data_connect {
+	struct sockaddr_storage *sockaddr;
+};
+
 /*!
  * A frame in an I/O packet stack.
  */
 typedef struct iop_frame {
-	/*!
-	 * Associated IOPs. These are associated with a frame entry by its
-	 * dispatch function, and if they are present, then they will all be ran
-	 * and only when they are all finished will the completion of this IOP
-	 * be ran.
-	 */
-	SLIST_HEAD(, iop) associated_iops;
-	/*! Number of pending associated IOPs. */
-	uint8_t n_pending_associated_iops;
 	/*! Which function is being carried out? (located here for packing)*/
-	iop_function_t function;
+	iop_function_t function: 8;
+	/* Is the buffer a buffer (not an MDL?) */
+	bool has_kbuf;
 
 	/*! Which device processes this stack entry? */
 	DKDevice *dev;
@@ -109,12 +109,13 @@ typedef struct iop_frame {
 		vm_mdl_t *mdl;
 		void *kbuf;
 	};
-	/*! Union of different types. */
+	/*! Function-specific data. */
 	union {
 		struct iop_stack_data_rw rw;
 		struct iop_stack_data_ioctl ioctl;
 		struct iop_stack_data_scsi scsi;
 		struct iop_stack_data_9p ninep;
+		struct iop_stack_data_connect connect;
 	};
 } iop_frame_t;
 
@@ -145,7 +146,7 @@ typedef struct iop {
 
 	unsigned
 	    /*! Has the IOP started running? */
-	    begun : 1;
+	    begun ;
 
 	/*! Which direction is it currently travelling? */
 	iop_direction_t direction;
@@ -154,6 +155,17 @@ typedef struct iop {
 	struct iop *master_iop;
 	/*! If this is an associated IOP, its linkage. */
 	SLIST_ENTRY(iop) associated_iops_link;
+
+	/*!
+	 * Associated IOPs. These are associated with an IOP during dispatch at
+	 * one frame, and if present, they are ran when the IOP is
+	 * dispatch function, and if they are present, then they will all be ran
+	 * and only when they are all finished will the completion of this IOP
+	 * be ran.
+	 */
+	SLIST_HEAD(, iop) associated_iops;
+	/*! Number of pending associated IOPs. */
+	uint8_t n_pending_associated_iops;
 
 	/*! How many items are on the stack? */
 	uint8_t stack_count;
@@ -165,6 +177,8 @@ typedef struct iop {
 	 */
 	iop_frame_t stack[0];
 } iop_t;
+
+typedef TAILQ_HEAD(iop_queue, iop) iop_queue_t;
 
 /*!
  * @brief Allocate and set up an empty IOP which must be further initialised.

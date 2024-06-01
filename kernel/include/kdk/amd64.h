@@ -6,11 +6,11 @@
 
 #include "kdk/queue.h"
 
-#define BIG_ENDIAN 0
-#define LITTLE_ENDIAN 1
+#define KRX_BIG_ENDIAN 0
+#define KRX_LITTLE_ENDIAN 1
 
 #define SMP 1
-#define ENDIAN LITTLE_ENDIAN
+#define ENDIAN KRX_LITTLE_ENDIAN
 #define BITS 64
 #define KERN_HZ 64
 #define KSTACK_SIZE 32768
