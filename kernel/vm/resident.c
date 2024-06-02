@@ -180,6 +180,30 @@ vm_mdl_paddr(vm_mdl_t *mdl, voff_t offset)
 }
 
 void
+vm_mdl_copy_into(vm_mdl_t *mdl, voff_t offset, void *data, size_t len)
+{
+	size_t written = 0;
+
+	kassert(mdl->offset + offset + len <= mdl->nentries * PGSIZE -
+	    mdl->offset);
+
+	while (written < len) {
+		paddr_t paddr = vm_mdl_paddr(mdl, offset);
+		size_t limit = MIN2(PGSIZE - (paddr % PGSIZE), len);
+		memcpy((void *)P2V(paddr), data + written, limit);
+		written += limit;
+		offset += limit;
+		len -= limit;
+	}
+}
+
+size_t
+vm_mdl_contig_bytes(vm_mdl_t *mdl, voff_t offset)
+{
+	return PGSIZE - (mdl->offset + offset) % PGSIZE;
+}
+
+void
 vm_region_add(paddr_t base, size_t length)
 {
 	struct vmp_pregion *bm = (void *)P2V(base);

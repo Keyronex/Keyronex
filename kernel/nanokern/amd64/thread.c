@@ -64,7 +64,7 @@ void
 ki_tlb_flush_vaddr_globally(vaddr_t addr)
 {
 	invlpg_addr = addr;
-	invlpg_done = 1;
+	__atomic_store_n(&invlpg_done, 1, __ATOMIC_RELEASE);
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
 

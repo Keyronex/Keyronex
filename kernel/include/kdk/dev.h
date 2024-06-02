@@ -144,6 +144,8 @@ typedef struct iop {
 	/*! Linkage in a device queue. */
 	TAILQ_ENTRY(iop) dev_queue_entry;
 
+	uintptr_t status; /*! Success/failure status. */
+
 	unsigned
 	    /*! Has the IOP started running? */
 	    begun ;
