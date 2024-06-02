@@ -4,6 +4,7 @@
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "limine.h"
+#include "net/keysock_dev.h"
 
 extern volatile struct limine_framebuffer_request framebuffer_request;
 
@@ -40,6 +41,7 @@ extern struct bootinfo bootinfo;
 	[self registerDevice];
 	DKLogAttach(self);
 
+	[KeySock probeWithProvider:self];
 	[SimpleFB probeWithProvider:self
 			    address:V2P(fb->address)
 			      width:fb->width

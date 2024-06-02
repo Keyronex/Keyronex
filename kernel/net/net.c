@@ -1,9 +1,13 @@
 #include "dev/DKNIC.h"
+#include "kdk/dev.h"
 #include "kdk/nanokern.h"
 #include "lwip/init.h"
 #include "lwip/timeouts.h"
+#include "kdk/kmem.h"
 #include "net/net.h"
 #include "netif/ethernet.h"
+
+#define RCV_BUF_SIZE 65536
 
 kdpc_t lwip_timer_dpc;
 ktimer_t lwip_timer;
