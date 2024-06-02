@@ -336,11 +336,13 @@ igmp_input(struct pbuf *p, struct netif *inp, const ip4_addr_t *dest)
     return;
   }
 
+#if 0 /* needs ip_data */
   LWIP_DEBUGF(IGMP_DEBUG, ("igmp_input: message from "));
   ip4_addr_debug_print_val(IGMP_DEBUG, ip4_current_header()->src);
   LWIP_DEBUGF(IGMP_DEBUG, (" to address "));
   ip4_addr_debug_print_val(IGMP_DEBUG, ip4_current_header()->dest);
   LWIP_DEBUGF(IGMP_DEBUG, (" on if %p\n", (void *)inp));
+#endif
 
   /* Now calculate and check the checksum */
   igmp = (struct igmp_msg *)p->payload;
