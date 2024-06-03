@@ -1,4 +1,5 @@
 #include "DKNIC.h"
+#include "kdb/kdb_udp.h"
 #include "kdk/kmem.h"
 #include "lwip/def.h"
 #include "lwip/err.h"
@@ -23,6 +24,8 @@
 	m_rxBufSize = rxBufSize;
 
 	m_rxPbufs = kmem_alloc(sizeof(struct pbuf_rx) * m_queueLength);
+
+	m_kdbAttached = true;
 }
 
 static err_t
@@ -59,8 +62,7 @@ netifInit(struct netif *nic)
 	memcpy(&m_netif.hwaddr, self->m_mac, sizeof(self->m_mac));
 
 	ipl = LOCK_LWIP();
-	netif_add(&m_netif, NULL, NULL, NULL, self, netifInit,
-	    ethernet_input);
+	netif_add(&m_netif, NULL, NULL, NULL, self, netifInit, ethernet_input);
 	netif_set_default(&m_netif);
 	UNLOCK_LWIP(ipl);
 }
@@ -105,7 +107,26 @@ freeRXPBuf(struct pbuf *p)
 				   locked:pbuf->locked];
 }
 
-- (void)queueReceivedDataForProcessing:(void *)data
+- (struct pbuf *)debugPBufForData:(void *)data
+			   length:(size_t)length
+			       id:(uint16_t)id
+{
+	struct pbuf_rx *p;
+
+	p = &m_rxPbufs[id];
+
+	pbuf_alloced_custom(PBUF_RAW, length, PBUF_REF, &p->pbuf, data,
+	    m_rxBufSize);
+	p->pbuf.custom_free_function = freeRXPBuf;
+	p->hdr_desc_id = id;
+	p->pbuf.pbuf.if_idx = netif_get_index(&m_netif);
+	p->locked = true;
+	p->netif = &m_netif;
+
+	return &p->pbuf.pbuf;
+}
+
+- (BOOL)queueReceivedDataForProcessing:(void *)data
 				length:(size_t)length
 				    id:(uint16_t)id
 {
@@ -116,9 +137,11 @@ freeRXPBuf(struct pbuf *p)
 	} *header = data;
 	struct pbuf_rx *p;
 
+#if TRACE_RX
 	kprintf("(DEST " MAC_FMT " SRC " MAC_FMT " TYPE %x)\n",
 	    MAC_ARGS(header->dst), MAC_ARGS(header->src),
 	    lwip_ntohs(header->type));
+#endif
 
 	p = &m_rxPbufs[id];
 
@@ -130,7 +153,31 @@ freeRXPBuf(struct pbuf *p)
 	p->locked = false;
 	p->netif = &m_netif;
 
+	if (m_kdbAttached)
+		return kdbudp_check_packet(&p->pbuf.pbuf);
+
 	ksk_packet_in(p);
+	return NO;
+}
+
+- (void)submitPacket:(struct pbuf *)pkt
+{
+	kfatal("Subclass responsibility\n");
+}
+
+- (void)completeProcessingOfRxIndex:(size_t)index locked:(BOOL)isLocked
+{
+	kfatal("Subclass responsibility\n");
+}
+
+- (struct pbuf *)debuggerPoll
+{
+	kfatal("Subclass responsibility\n");
+}
+
+- (void)debuggerTransmit:(struct pbuf *)pbuf
+{
+	kfatal("Subclass responsibility\n");
 }
 
 @end

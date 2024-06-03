@@ -24,6 +24,8 @@ struct pbuf_rx {
 
 #ifdef __OBJC__
 @interface DKNIC : DKDevice {
+	BOOL m_kdbAttached;
+
 	size_t m_queueLength;
 	size_t m_rxBufSize;
 
@@ -42,8 +44,8 @@ struct pbuf_rx {
 - (void)setupNetif;
 /*! DKNIC: set link up/down */
 - (void)setLinkUp:(BOOL)up speed:(size_t)mbits fullDuplex:(BOOL)duplex;
-/*! DKNIC: submit packet data for eventual processing. */
-- (void)queueReceivedDataForProcessing:(void *)data
+/*! DKNIC: submit packet data for eventual processing. YES = break processing */
+- (BOOL)queueReceivedDataForProcessing:(void *)data
 				length:(size_t)length
 				    id:(uint16_t)id;
 
@@ -54,6 +56,11 @@ struct pbuf_rx {
 - (void)submitPacket:(struct pbuf *)pkt;
 /*! subclass: processing of an index in the RX queue completed; resource free */
 - (void)completeProcessingOfRxIndex:(size_t)index locked:(BOOL)isLocked;
+
+/*! subclass: poll for a received packet on behalf of kernel debugger */
+- (struct pbuf *)debuggerPoll;
+/*! subclass: transmit a packet on behalf of kernel debugger */
+- (void)debuggerTransmit:(struct pbuf *)pbuf;
 
 @end
 #endif

@@ -1,4 +1,5 @@
 #include "ddk/virtio_pcireg.h"
+#include "dev/9pSockTransport.h"
 #include "dev/E1000.h"
 #include "dev/amd64/IOAPIC.h"
 #include "kdk/amd64.h"
@@ -6,8 +7,10 @@
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
+#include "net/keysock_dev.h"
 
-@interface E1000 (Private)
+@interface
+E1000 (Private)
 - (instancetype)initWithPCIBus:(PCIBus *)provider
 			  info:(struct pci_dev_info *)info;
 @end
@@ -216,18 +219,35 @@ e1000_read_mac(vaddr_t base, uint8_t *out)
 		ke_spinlock_release(&m_rxLock, ipl);
 }
 
+- (struct pbuf *)debuggerPoll
+{
+	struct rx_desc *desc = &m_rxDescs[m_rxHead];
+	void *data = (void *)P2V(desc->address);
+	size_t id = m_rxHead;
+
+	while (m_rxDescs[m_rxHead].status & 0x0)
+		;
+
+	m_rxHead = (m_rxHead + 1) % E1000_NDESCS;
+
+	kfatal("Implement me\n");
+}
+
 - (void)rxDeferredProcessing
 {
 	ke_spinlock_acquire_nospl(&m_rxLock);
 	while (m_rxDescs[m_rxHead].status & 0x1) {
 		struct rx_desc *desc = &m_rxDescs[m_rxHead];
 		void *data = (void *)P2V(desc->address);
-
-		[super queueReceivedDataForProcessing:data
-					       length:desc->length
-						   id:m_rxHead];
+		size_t id = m_rxHead;
+		BOOL do_break;
 
 		m_rxHead = (m_rxHead + 1) % E1000_NDESCS;
+
+		do_break = [super queueReceivedDataForProcessing:data
+							  length:desc->length
+							      id:id];
+		(void)do_break;
 	}
 	ke_spinlock_release_nospl(&m_rxLock);
 }
@@ -289,6 +309,21 @@ e1000_read_mac(vaddr_t base, uint8_t *out)
 
 	ke_spinlock_release_nospl(&m_txLock);
 #endif
+}
+
+- (void)debuggerTransmit:(struct pbuf *)pbuf
+{
+	BOOL sent = [self tryTransmitPacket:pbuf];
+
+	kassert(sent == YES);
+
+	while (m_txDescs[m_txHead].status & 0x0)
+		;
+
+	while (m_txDescs[m_txHead].status & 0x1) {
+		m_txDescs[m_txHead].status = 0;
+		m_txHead = (m_txHead + 1) % E1000_NDESCS;
+	}
 }
 
 - (void)txDeferredProcessing
@@ -488,8 +523,6 @@ link_dpc(void *arg)
 
 	[self registerDevice];
 	DKLogAttachExtra(self, "Ethernet address " MAC_FMT, MAC_ARGS(m_mac));
-
-	for (;;) ;
 
 	return self;
 }
