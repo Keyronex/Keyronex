@@ -12,6 +12,7 @@ kernel_sources += files(
 	'Ext2FS.m',
 	'FBTerminal.m',
 	'PCIBus.m',
+	'PS2Keyboard.m',
 	'SimpleFB.m',
 	'buf.c',
 	'iop.m',
