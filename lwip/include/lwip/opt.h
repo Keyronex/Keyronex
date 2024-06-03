@@ -516,7 +516,7 @@
  * The number of sys timeouts used by the core stack (not apps)
  * The default number of timeouts is calculated here for all enabled modules.
  */
-#define LWIP_NUM_SYS_TIMEOUT_INTERNAL   (LWIP_TCP + IP_REASSEMBLY + LWIP_ARP + (2*LWIP_DHCP) + LWIP_ACD + LWIP_IGMP + LWIP_DNS + PPP_NUM_TIMEOUTS + (LWIP_IPV6 * (1 + LWIP_IPV6_REASS + LWIP_IPV6_MLD + LWIP_IPV6_DHCP6)))
+#define LWIP_NUM_SYS_TIMEOUT_INTERNAL   (LWIP_TCP + IP_REASSEMBLY + LWIP_ARP + LWIP_IGMP +  (LWIP_IPV6 * (1 + LWIP_IPV6_REASS + LWIP_IPV6_MLD)))
 
 /**
  * MEMP_NUM_SYS_TIMEOUT: the number of simultaneously active timeouts.
@@ -528,97 +528,12 @@
 #endif
 
 /**
- * MEMP_NUM_NETBUF: the number of struct netbufs.
- * (only needed if you use the sequential API, like api_lib.c)
- */
-#if !defined MEMP_NUM_NETBUF || defined __DOXYGEN__
-#define MEMP_NUM_NETBUF                 2
-#endif
-
-/**
- * MEMP_NUM_NETCONN: the number of struct netconns.
- * (only needed if you use the sequential API, like api_lib.c)
- */
-#if !defined MEMP_NUM_NETCONN || defined __DOXYGEN__
-#define MEMP_NUM_NETCONN                4
-#endif
-
-/**
- * MEMP_NUM_SELECT_CB: the number of struct lwip_select_cb.
- * (Only needed if you have LWIP_MPU_COMPATIBLE==1 and use the socket API.
- * In that case, you need one per thread calling lwip_select.)
- */
-#if !defined MEMP_NUM_SELECT_CB || defined __DOXYGEN__
-#define MEMP_NUM_SELECT_CB              4
-#endif
-
-/**
- * MEMP_NUM_TCPIP_MSG_API: the number of struct tcpip_msg, which are used
- * for callback/timeout API communication.
- * (only needed if you use tcpip.c)
- */
-#if !defined MEMP_NUM_TCPIP_MSG_API || defined __DOXYGEN__
-#define MEMP_NUM_TCPIP_MSG_API          8
-#endif
-
-/**
- * MEMP_NUM_TCPIP_MSG_INPKT: the number of struct tcpip_msg, which are used
- * for incoming packets.
- * (only needed if you use tcpip.c)
- */
-#if !defined MEMP_NUM_TCPIP_MSG_INPKT || defined __DOXYGEN__
-#define MEMP_NUM_TCPIP_MSG_INPKT        8
-#endif
-
-/**
- * MEMP_NUM_NETDB: the number of concurrently running lwip_addrinfo() calls
- * (before freeing the corresponding memory using lwip_freeaddrinfo()).
- */
-#if !defined MEMP_NUM_NETDB || defined __DOXYGEN__
-#define MEMP_NUM_NETDB                  1
-#endif
-
-/**
- * MEMP_NUM_LOCALHOSTLIST: the number of host entries in the local host list
- * if DNS_LOCAL_HOSTLIST_IS_DYNAMIC==1.
- */
-#if !defined MEMP_NUM_LOCALHOSTLIST || defined __DOXYGEN__
-#define MEMP_NUM_LOCALHOSTLIST          1
-#endif
-
-/**
  * PBUF_POOL_SIZE: the number of buffers in the pbuf pool.
  */
 #if !defined PBUF_POOL_SIZE || defined __DOXYGEN__
 #define PBUF_POOL_SIZE                  16
 #endif
 
-/** MEMP_NUM_API_MSG: the number of concurrently active calls to various
- * socket, netconn, and tcpip functions
- */
-#if !defined MEMP_NUM_API_MSG || defined __DOXYGEN__
-#define MEMP_NUM_API_MSG                MEMP_NUM_TCPIP_MSG_API
-#endif
-
-/** MEMP_NUM_DNS_API_MSG: the number of concurrently active calls to netconn_gethostbyname
- */
-#if !defined MEMP_NUM_DNS_API_MSG || defined __DOXYGEN__
-#define MEMP_NUM_DNS_API_MSG            MEMP_NUM_TCPIP_MSG_API
-#endif
-
-/** MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA: the number of concurrently active calls
- * to getsockopt/setsockopt
- */
-#if !defined MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA || defined __DOXYGEN__
-#define MEMP_NUM_SOCKET_SETGETSOCKOPT_DATA MEMP_NUM_TCPIP_MSG_API
-#endif
-
-/** MEMP_NUM_NETIFAPI_MSG: the number of concurrently active calls to the
- * netifapi functions
- */
-#if !defined MEMP_NUM_NETIFAPI_MSG || defined __DOXYGEN__
-#define MEMP_NUM_NETIFAPI_MSG           MEMP_NUM_TCPIP_MSG_API
-#endif
 /**
  * @}
  */
@@ -928,147 +843,6 @@
 
 /*
    ----------------------------------
-   ---------- DHCP options ----------
-   ----------------------------------
-*/
-/**
- * @defgroup lwip_opts_dhcp DHCP
- * @ingroup lwip_opts_ipv4
- * @{
- */
-/**
- * LWIP_DHCP==1: Enable DHCP module.
- */
-#if !defined LWIP_DHCP || defined __DOXYGEN__
-#define LWIP_DHCP                       0
-#endif
-#if !LWIP_IPV4
-/* disable DHCP when IPv4 is disabled */
-#undef LWIP_DHCP
-#define LWIP_DHCP                       0
-#endif /* !LWIP_IPV4 */
-
-/**
- * LWIP_DHCP_DOES_ACD_CHECK==1: Perform address conflict detection on the dhcp address.
- */
-#if !defined LWIP_DHCP_DOES_ACD_CHECK || defined __DOXYGEN__
-#define LWIP_DHCP_DOES_ACD_CHECK        LWIP_DHCP
-#endif
-
-/**
- * LWIP_DHCP_BOOTP_FILE==1: Store offered_si_addr and boot_file_name.
- */
-#if !defined LWIP_DHCP_BOOTP_FILE || defined __DOXYGEN__
-#define LWIP_DHCP_BOOTP_FILE            0
-#endif
-
-/**
- * LWIP_DHCP_GETS_NTP==1: Request NTP servers with discover/select. For each
- * response packet, an callback is called, which has to be provided by the port:
- * void dhcp_set_ntp_servers(u8_t num_ntp_servers, ip_addr_t* ntp_server_addrs);
-*/
-#if !defined LWIP_DHCP_GET_NTP_SRV || defined __DOXYGEN__
-#define LWIP_DHCP_GET_NTP_SRV           0
-#endif
-
-/**
- * The maximum of NTP servers requested
- */
-#if !defined LWIP_DHCP_MAX_NTP_SERVERS || defined __DOXYGEN__
-#define LWIP_DHCP_MAX_NTP_SERVERS       1
-#endif
-
-/**
- * LWIP_DHCP_MAX_DNS_SERVERS > 0: Request DNS servers with discover/select.
- * DNS servers received in the response are passed to DNS via @ref dns_setserver()
- * (up to the maximum limit defined here).
- */
-#if !defined LWIP_DHCP_MAX_DNS_SERVERS || defined __DOXYGEN__
-#define LWIP_DHCP_MAX_DNS_SERVERS       DNS_MAX_SERVERS
-#endif
-
-/** LWIP_DHCP_DISCOVER_ADD_HOSTNAME: Set to 0 to not include hostname opt in discover packets.
- * If the hostname is not set in the DISCOVER packet, then some servers might issue an OFFER with hostname
- * configured and consequently reject the REQUEST with any other hostname.
- */
-#if !defined LWIP_DHCP_DISCOVER_ADD_HOSTNAME || defined __DOXYGEN__
-#define LWIP_DHCP_DISCOVER_ADD_HOSTNAME 1
-#endif /* LWIP_DHCP_DISCOVER_ADD_HOSTNAME */
-/**
- * @}
- */
-
-/*
-   ------------------------------------
-   ---------- AUTOIP options ----------
-   ------------------------------------
-*/
-/**
- * @defgroup lwip_opts_autoip AUTOIP
- * @ingroup lwip_opts_ipv4
- * @{
- */
-/**
- * LWIP_AUTOIP==1: Enable AUTOIP module.
- */
-#if !defined LWIP_AUTOIP || defined __DOXYGEN__
-#define LWIP_AUTOIP                     0
-#endif
-#if !LWIP_IPV4
-/* disable AUTOIP when IPv4 is disabled */
-#undef LWIP_AUTOIP
-#define LWIP_AUTOIP                     0
-#endif /* !LWIP_IPV4 */
-
-/**
- * LWIP_DHCP_AUTOIP_COOP==1: Allow DHCP and AUTOIP to be both enabled on
- * the same interface at the same time.
- */
-#if !defined LWIP_DHCP_AUTOIP_COOP || defined __DOXYGEN__
-#define LWIP_DHCP_AUTOIP_COOP           0
-#endif
-
-/**
- * LWIP_DHCP_AUTOIP_COOP_TRIES: Set to the number of DHCP DISCOVER probes
- * that should be sent before falling back on AUTOIP (the DHCP client keeps
- * running in this case). This can be set as low as 1 to get an AutoIP address
- * very  quickly, but you should be prepared to handle a changing IP address
- * when DHCP overrides AutoIP.
- */
-#if !defined LWIP_DHCP_AUTOIP_COOP_TRIES || defined __DOXYGEN__
-#define LWIP_DHCP_AUTOIP_COOP_TRIES     9
-#endif
-/**
- * @}
- */
-
-/*
-   ------------------------------------
-   ----------- ACD options ------------
-   ------------------------------------
-*/
-/**
- * @defgroup lwip_opts_acd ACD
- * @ingroup lwip_opts_ipv4
- * @{
- */
- /**
-  * LWIP_ACD==1: Enable ACD module. ACD module is needed when using AUTOIP.
-  */
-#if !defined LWIP_ACD || defined __DOXYGEN__
-#define LWIP_ACD                     (LWIP_AUTOIP || LWIP_DHCP_DOES_ACD_CHECK)
-#endif
-#if !LWIP_IPV4
-/* disable ACD when IPv4 is disabled */
-#undef LWIP_ACD
-#define LWIP_ACD                     0
-#endif /* !LWIP_IPV4 */
-/**
- * @}
- */
-
-/*
-   ----------------------------------
    ----- SNMP MIB2 support      -----
    ----------------------------------
 */
@@ -1130,94 +904,6 @@
 #if !LWIP_IPV4
 #undef LWIP_IGMP
 #define LWIP_IGMP                       0
-#endif
-/**
- * @}
- */
-
-/*
-   ----------------------------------
-   ---------- DNS options -----------
-   ----------------------------------
-*/
-/**
- * @defgroup lwip_opts_dns DNS
- * @ingroup lwip_opts_callback
- * @{
- */
-/**
- * LWIP_DNS==1: Turn on DNS module. UDP must be available for DNS
- * transport.
- */
-#if !defined LWIP_DNS || defined __DOXYGEN__
-#define LWIP_DNS                        0
-#endif
-
-/** DNS maximum number of entries to maintain locally. */
-#if !defined DNS_TABLE_SIZE || defined __DOXYGEN__
-#define DNS_TABLE_SIZE                  4
-#endif
-
-/** DNS maximum host name length supported in the name table. */
-#if !defined DNS_MAX_NAME_LENGTH || defined __DOXYGEN__
-#define DNS_MAX_NAME_LENGTH             256
-#endif
-
-/** The maximum of DNS servers
- * The first server can be initialized automatically by defining
- * DNS_SERVER_ADDRESS(ipaddr), where 'ipaddr' is an 'ip_addr_t*'
- */
-#if !defined DNS_MAX_SERVERS || defined __DOXYGEN__
-#define DNS_MAX_SERVERS                 2
-#endif
-
-/** DNS maximum number of retries when asking for a name, before "timeout". */
-#if !defined DNS_MAX_RETRIES || defined __DOXYGEN__
-#define DNS_MAX_RETRIES                 4
-#endif
-
-/** DNS do a name checking between the query and the response. */
-#if !defined DNS_DOES_NAME_CHECK || defined __DOXYGEN__
-#define DNS_DOES_NAME_CHECK             1
-#endif
-
-/** LWIP_DNS_SECURE: controls the security level of the DNS implementation
- * Use all DNS security features by default.
- * This is overridable but should only be needed by very small targets
- * or when using against non standard DNS servers. */
-#if !defined LWIP_DNS_SECURE || defined __DOXYGEN__
-#define LWIP_DNS_SECURE (LWIP_DNS_SECURE_RAND_XID | LWIP_DNS_SECURE_NO_MULTIPLE_OUTSTANDING | LWIP_DNS_SECURE_RAND_SRC_PORT)
-#endif
-
-/* A list of DNS security features follows */
-#define LWIP_DNS_SECURE_RAND_XID                1
-#define LWIP_DNS_SECURE_NO_MULTIPLE_OUTSTANDING 2
-#define LWIP_DNS_SECURE_RAND_SRC_PORT           4
-
-/** DNS_LOCAL_HOSTLIST: Implements a local host-to-address list. If enabled, you have to define an initializer:
- *  \#define DNS_LOCAL_HOSTLIST_INIT {DNS_LOCAL_HOSTLIST_ELEM("host_ip4", IPADDR4_INIT_BYTES(1,2,3,4)), \
- *                                    DNS_LOCAL_HOSTLIST_ELEM("host_ip6", IPADDR6_INIT_HOST(123, 234, 345, 456)}
- *
- *  Instead, you can also use an external function:
- *  \#define DNS_LOOKUP_LOCAL_EXTERN(name, namelen, addr, dns_addrtype) my_lookup_function(name, namelen, addr, dns_addrtype)
- *  with function signature:
- *  extern err_t my_lookup_function(const char *name, size_t namelen, ip_addr_t *addr, u8_t dns_addrtype)
- *  that looks up the IP address and returns ERR_OK if found (LWIP_DNS_ADDRTYPE_xxx is passed in dns_addrtype).
- */
-#if !defined DNS_LOCAL_HOSTLIST || defined __DOXYGEN__
-#define DNS_LOCAL_HOSTLIST              0
-#endif /* DNS_LOCAL_HOSTLIST */
-
-/** If this is turned on, the local host-list can be dynamically changed
- *  at runtime. */
-#if !defined DNS_LOCAL_HOSTLIST_IS_DYNAMIC || defined __DOXYGEN__
-#define DNS_LOCAL_HOSTLIST_IS_DYNAMIC   0
-#endif /* DNS_LOCAL_HOSTLIST_IS_DYNAMIC */
-
-/** Set this to 1 to enable querying ".local" names via mDNS
- *  using a One-Shot Multicast DNS Query */
-#if !defined LWIP_DNS_SUPPORT_MDNS_QUERIES || defined __DOXYGEN__
-#define LWIP_DNS_SUPPORT_MDNS_QUERIES   0
 #endif
 /**
  * @}
@@ -1548,31 +1234,6 @@
 #define LWIP_TCP_PCB_NUM_EXT_ARGS       0
 #endif
 
-/** LWIP_ALTCP==1: enable the altcp API.
- * altcp is an abstraction layer that prevents applications linking against the
- * tcp.h functions but provides the same functionality. It is used to e.g. add
- * SSL/TLS or proxy-connect support to an application written for the tcp callback
- * API without that application knowing the protocol details.
- *
- * With LWIP_ALTCP==0, applications written against the altcp API can still be
- * compiled but are directly linked against the tcp.h callback API and then
- * cannot use layered protocols.
- *
- * See @ref altcp_api
- */
-#if !defined LWIP_ALTCP || defined __DOXYGEN__
-#define LWIP_ALTCP                      0
-#endif
-
-/** LWIP_ALTCP_TLS==1: enable TLS support for altcp API.
- * This needs a port of the functions in altcp_tls.h to a TLS library.
- * A port to ARM mbedtls is provided with lwIP, see apps/altcp_tls/ directory
- * and LWIP_ALTCP_TLS_MBEDTLS option.
- */
-#if !defined LWIP_ALTCP_TLS || defined __DOXYGEN__
-#define LWIP_ALTCP_TLS                  0
-#endif
-
 /**
  * @}
  */
@@ -1672,13 +1333,6 @@
  */
 #if !defined LWIP_NETIF_HOSTNAME || defined __DOXYGEN__
 #define LWIP_NETIF_HOSTNAME             0
-#endif
-
-/**
- * LWIP_NETIF_API==1: Support netif api (in netifapi.c)
- */
-#if !defined LWIP_NETIF_API || defined __DOXYGEN__
-#define LWIP_NETIF_API                  0
 #endif
 
 /**
@@ -2763,61 +2417,6 @@
  * @}
  */
 
-/**
- * @defgroup lwip_opts_dhcpv6 DHCPv6
- * @ingroup lwip_opts_ipv6
- * @{
- */
-/**
- * LWIP_IPV6_DHCP6==1: enable DHCPv6 stateful/stateless address autoconfiguration.
- */
-#if !defined LWIP_IPV6_DHCP6 || defined __DOXYGEN__
-#define LWIP_IPV6_DHCP6                 0
-#endif
-
-/**
- * LWIP_IPV6_DHCP6_STATEFUL==1: enable DHCPv6 stateful address autoconfiguration.
- * (not supported, yet!)
- */
-#if !defined LWIP_IPV6_DHCP6_STATEFUL || defined __DOXYGEN__
-#define LWIP_IPV6_DHCP6_STATEFUL        0
-#endif
-
-/**
- * LWIP_IPV6_DHCP6_STATELESS==1: enable DHCPv6 stateless address autoconfiguration.
- */
-#if !defined LWIP_IPV6_DHCP6_STATELESS || defined __DOXYGEN__
-#define LWIP_IPV6_DHCP6_STATELESS       LWIP_IPV6_DHCP6
-#endif
-
-/**
- * LWIP_DHCP6_GETS_NTP==1: Request NTP servers via DHCPv6. For each
- * response packet, a callback is called, which has to be provided by the port:
- * void dhcp6_set_ntp_servers(u8_t num_ntp_servers, ip_addr_t* ntp_server_addrs);
-*/
-#if !defined LWIP_DHCP6_GET_NTP_SRV || defined __DOXYGEN__
-#define LWIP_DHCP6_GET_NTP_SRV          0
-#endif
-
-/**
- * The maximum of NTP servers requested
- */
-#if !defined LWIP_DHCP6_MAX_NTP_SERVERS || defined __DOXYGEN__
-#define LWIP_DHCP6_MAX_NTP_SERVERS      1
-#endif
-
-/**
- * LWIP_DHCP6_MAX_DNS_SERVERS > 0: Request DNS servers via DHCPv6.
- * DNS servers received in the response are passed to DNS via @ref dns_setserver()
- * (up to the maximum limit defined here).
- */
-#if !defined LWIP_DHCP6_MAX_DNS_SERVERS || defined __DOXYGEN__
-#define LWIP_DHCP6_MAX_DNS_SERVERS      DNS_MAX_SERVERS
-#endif
-/**
- * @}
- */
-
 /*
    ---------------------------------------
    ---------- Hook options ---------------
@@ -3167,159 +2766,6 @@
 #endif
 
 /**
- * LWIP_HOOK_DHCP_APPEND_OPTIONS(netif, dhcp, state, msg, msg_type, options_len_ptr):
- * Called from various dhcp functions when sending a DHCP message.
- * This hook is called just before the DHCP message trailer is added, so the
- * options are at the end of a DHCP message.
- * Signature:\code{.c}
- *   void my_hook(struct netif *netif, struct dhcp *dhcp, u8_t state, struct dhcp_msg *msg,
- *                u8_t msg_type, u16_t *options_len_ptr);
- * \endcode
- * Arguments:
- * - netif: struct netif that the packet will be sent through
- * - dhcp: struct dhcp on that netif
- * - state: current dhcp state (dhcp_state_enum_t as an u8_t)
- * - msg: struct dhcp_msg that will be sent
- * - msg_type: dhcp message type to be sent (u8_t)
- * - options_len_ptr: pointer to the current length of options in the dhcp_msg "msg"
- *                    (must be increased when options are added!)
- *
- * Options need to appended like this:
- *   LWIP_ASSERT("dhcp option overflow", *options_len_ptr + option_len + 2 <= DHCP_OPTIONS_LEN);
- *   msg->options[(*options_len_ptr)++] = &lt;option_number&gt;;
- *   msg->options[(*options_len_ptr)++] = &lt;option_len&gt;;
- *   msg->options[(*options_len_ptr)++] = &lt;option_bytes&gt;;
- *   [...]
- */
-#ifdef __DOXYGEN__
-#define LWIP_HOOK_DHCP_APPEND_OPTIONS(netif, dhcp, state, msg, msg_type, options_len_ptr)
-#endif
-
-/**
- * LWIP_HOOK_DHCP_PARSE_OPTION(netif, dhcp, state, msg, msg_type, option, len, pbuf, option_value_offset):
- * Called from dhcp_parse_reply when receiving a DHCP message.
- * This hook is called for every option in the received message that is not handled internally.
- * Signature:\code{.c}
- *   void my_hook(struct netif *netif, struct dhcp *dhcp, u8_t state, struct dhcp_msg *msg,
- *                u8_t msg_type, u8_t option, u8_t option_len, struct pbuf *pbuf, u16_t option_value_offset);
- * \endcode
- * Arguments:
- * - netif: struct netif that the packet will be sent through
- * - dhcp: struct dhcp on that netif
- * - state: current dhcp state (dhcp_state_enum_t as an u8_t)
- * - msg: struct dhcp_msg that was received
- * - msg_type: dhcp message type received (u8_t, ATTENTION: only valid after
- *             the message type option has been parsed!)
- * - option: option value (u8_t)
- * - len: option data length (u8_t)
- * - pbuf: pbuf where option data is contained
- * - option_value_offset: offset in pbuf where option data begins
- *
- * A nice way to get the option contents is pbuf_get_contiguous():
- *  u8_t buf[32];
- *  u8_t *ptr = (u8_t*)pbuf_get_contiguous(p, buf, sizeof(buf), LWIP_MIN(option_len, sizeof(buf)), offset);
- */
-#ifdef __DOXYGEN__
-#define LWIP_HOOK_DHCP_PARSE_OPTION(netif, dhcp, state, msg, msg_type, option, len, pbuf, offset)
-#endif
-
-/**
- * LWIP_HOOK_DHCP6_APPEND_OPTIONS(netif, dhcp6, state, msg, msg_type, options_len_ptr, max_len):
- * Called from various dhcp6 functions when sending a DHCP6 message.
- * This hook is called just before the DHCP6 message is sent, so the
- * options are at the end of a DHCP6 message.
- * Signature:\code{.c}
- *   void my_hook(struct netif *netif, struct dhcp6 *dhcp, u8_t state, struct dhcp6_msg *msg,
- *                u8_t msg_type, u16_t *options_len_ptr);
- * \endcode
- * Arguments:
- * - netif: struct netif that the packet will be sent through
- * - dhcp6: struct dhcp6 on that netif
- * - state: current dhcp6 state (dhcp6_state_enum_t as an u8_t)
- * - msg: struct dhcp6_msg that will be sent
- * - msg_type: dhcp6 message type to be sent (u8_t)
- * - options_len_ptr: pointer to the current length of options in the dhcp6_msg "msg"
- *                    (must be increased when options are added!)
- *
- * Options need to appended like this:
- *   u8_t *options = (u8_t *)(msg + 1);
- *   LWIP_ASSERT("dhcp option overflow", sizeof(struct dhcp6_msg) + *options_len_ptr + newoptlen <= max_len);
- *   options[(*options_len_ptr)++] = &lt;option_data&gt;;
- *   [...]
- */
-#ifdef __DOXYGEN__
-#define LWIP_HOOK_DHCP6_APPEND_OPTIONS(netif, dhcp6, state, msg, msg_type, options_len_ptr, max_len)
-#endif
-
-/**
- * LWIP_HOOK_SOCKETS_SETSOCKOPT(s, sock, level, optname, optval, optlen, err)
- * Called from socket API to implement setsockopt() for options not provided by lwIP.
- * Core lock is held when this hook is called.
- * Signature:\code{.c}
- *   int my_hook(int s, struct lwip_sock *sock, int level, int optname, const void *optval, socklen_t optlen, int *err)
- * \endcode
- * Arguments:
- * - s: socket file descriptor
- * - sock: internal socket descriptor (see lwip/priv/sockets_priv.h)
- * - level: protocol level at which the option resides
- * - optname: option to set
- * - optval: value to set
- * - optlen: size of optval
- * - err: output error
- * Return values:
- * - 0: Hook has not consumed the option, code continues as normal (to internal options)
- * - != 0: Hook has consumed the option, 'err' is returned
- */
-#ifdef __DOXYGEN__
-#define LWIP_HOOK_SOCKETS_SETSOCKOPT(s, sock, level, optname, optval, optlen, err)
-#endif
-
-/**
- * LWIP_HOOK_SOCKETS_GETSOCKOPT(s, sock, level, optname, optval, optlen, err)
- * Called from socket API to implement getsockopt() for options not provided by lwIP.
- * Core lock is held when this hook is called.
- * Signature:\code{.c}
- *   int my_hook(int s, struct lwip_sock *sock, int level, int optname, void *optval, socklen_t *optlen, int *err)
- * \endcode
- * Arguments:
- * - s: socket file descriptor
- * - sock: internal socket descriptor (see lwip/priv/sockets_priv.h)
- * - level: protocol level at which the option resides
- * - optname: option to get
- * - optval: value to get
- * - optlen: size of optval
- * - err: output error
- * Return values:
- * - 0: Hook has not consumed the option, code continues as normal (to internal options)
- * - != 0: Hook has consumed the option, 'err' is returned
- */
-#ifdef __DOXYGEN__
-#define LWIP_HOOK_SOCKETS_GETSOCKOPT(s, sock, level, optname, optval, optlen, err)
-#endif
-
-/**
- * LWIP_HOOK_NETCONN_EXTERNAL_RESOLVE(name, addr, addrtype, err)
- * Called from netconn APIs (not usable with callback apps) allowing an
- * external DNS resolver (which uses sequential API) to handle the query.
- * Signature:\code{.c}
- *   int my_hook(const char *name, ip_addr_t *addr, u8_t addrtype, err_t *err)
- * \endcode
- * Arguments:
- * - name: hostname to resolve
- * - addr: output host address
- * - addrtype: type of address to query
- * - err: output error
- * Return values:
- * - 0: Hook has not consumed hostname query, query continues into DNS module
- * - != 0: Hook has consumed the query
- *
- * err must also be checked to determine if the hook consumed the query, but
- * the query failed
- */
-#ifdef __DOXYGEN__
-#define LWIP_HOOK_NETCONN_EXTERNAL_RESOLVE(name, addr, addrtype, err)
-#endif
-/**
  * @}
  */
 
@@ -3543,53 +2989,12 @@
 #endif
 
 /**
- * SLIP_DEBUG: Enable debugging in slipif.c.
- */
-#if !defined SLIP_DEBUG || defined __DOXYGEN__
-#define SLIP_DEBUG                      LWIP_DBG_OFF
-#endif
-
-/**
- * DHCP_DEBUG: Enable debugging in dhcp.c.
- */
-#if !defined DHCP_DEBUG || defined __DOXYGEN__
-#define DHCP_DEBUG                      LWIP_DBG_OFF
-#endif
-
-/**
- * AUTOIP_DEBUG: Enable debugging in autoip.c.
- */
-#if !defined AUTOIP_DEBUG || defined __DOXYGEN__
-#define AUTOIP_DEBUG                    LWIP_DBG_OFF
-#endif
-
-/**
- * ACD_DEBUG: Enable debugging in acd.c.
- */
-#if !defined ACD_DEBUG || defined __DOXYGEN__
-#define ACD_DEBUG                       LWIP_DBG_OFF
-#endif
-
-/**
- * DNS_DEBUG: Enable debugging for DNS.
- */
-#if !defined DNS_DEBUG || defined __DOXYGEN__
-#define DNS_DEBUG                       LWIP_DBG_OFF
-#endif
-
-/**
  * IP6_DEBUG: Enable debugging for IPv6.
  */
 #if !defined IP6_DEBUG || defined __DOXYGEN__
 #define IP6_DEBUG                       LWIP_DBG_OFF
 #endif
 
-/**
- * DHCP6_DEBUG: Enable debugging in dhcp6.c.
- */
-#if !defined DHCP6_DEBUG || defined __DOXYGEN__
-#define DHCP6_DEBUG                     LWIP_DBG_OFF
-#endif
 /**
  * @}
  */

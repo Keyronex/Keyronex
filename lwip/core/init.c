@@ -44,22 +44,16 @@
 #include "lwip/memp.h"
 #include "lwip/pbuf.h"
 #include "lwip/netif.h"
-#include "lwip/sockets.h"
 #include "lwip/ip.h"
 #include "lwip/raw.h"
 #include "lwip/udp.h"
 #include "lwip/priv/tcp_priv.h"
 #include "lwip/igmp.h"
-#include "lwip/dns.h"
 #include "lwip/timeouts.h"
 #include "lwip/etharp.h"
 #include "lwip/ip6.h"
 #include "lwip/nd6.h"
 #include "lwip/mld6.h"
-#include "lwip/api.h"
-
-#include "netif/ppp/ppp_opts.h"
-#include "netif/ppp/ppp_impl.h"
 
 #ifndef LWIP_SKIP_PACKING_CHECK
 
@@ -91,14 +85,8 @@ PACK_STRUCT_END
 #if (!LWIP_UDP && LWIP_UDPLITE)
 #error "If you want to use UDP Lite, you have to define LWIP_UDP=1 in your lwipopts.h"
 #endif
-#if (!LWIP_UDP && LWIP_DHCP)
-#error "If you want to use DHCP, you have to define LWIP_UDP=1 in your lwipopts.h"
-#endif
 #if (!LWIP_UDP && !LWIP_RAW && LWIP_MULTICAST_TX_OPTIONS)
 #error "If you want to use LWIP_MULTICAST_TX_OPTIONS, you have to define LWIP_UDP=1 and/or LWIP_RAW=1 in your lwipopts.h"
-#endif
-#if (!LWIP_UDP && LWIP_DNS)
-#error "If you want to use DNS, you have to define LWIP_UDP=1 in your lwipopts.h"
 #endif
 #if !MEMP_MEM_MALLOC /* MEMP_NUM_* checks are disabled when not using the pool allocator */
 #if (LWIP_ARP && ARP_QUEUEING && (MEMP_NUM_ARP_QUEUE<=0))
@@ -110,9 +98,6 @@ PACK_STRUCT_END
 #if (LWIP_UDP && (MEMP_NUM_UDP_PCB<=0))
 #error "If you want to use UDP, you have to define MEMP_NUM_UDP_PCB>=1 in your lwipopts.h"
 #endif
-#if (LWIP_TCP && (MEMP_NUM_TCP_PCB<=0))
-#error "If you want to use TCP, you have to define MEMP_NUM_TCP_PCB>=1 in your lwipopts.h"
-#endif
 #if (LWIP_IGMP && (MEMP_NUM_IGMP_GROUP<=1))
 #error "If you want to use IGMP, you have to define MEMP_NUM_IGMP_GROUP>1 in your lwipopts.h"
 #endif
@@ -121,9 +106,6 @@ PACK_STRUCT_END
 #endif
 #if (LWIP_IGMP && !LWIP_IPV4)
 #error "IGMP needs LWIP_IPV4 enabled in your lwipopts.h"
-#endif
-#if ((LWIP_NETCONN || LWIP_SOCKET) && (MEMP_NUM_TCPIP_MSG_API<=0))
-#error "If you want to use Sequential API, you have to define MEMP_NUM_TCPIP_MSG_API>=1 in your lwipopts.h"
 #endif
 /* There must be sufficient timeouts, taking into account requirements of the subsystems. */
 #if LWIP_TIMERS && (MEMP_NUM_SYS_TIMEOUT < LWIP_NUM_SYS_TIMEOUT_INTERNAL)
@@ -169,32 +151,8 @@ PACK_STRUCT_END
 #if (LWIP_TCP && LWIP_TCP_SACK_OUT && (LWIP_TCP_MAX_SACK_NUM < 1))
 #error "LWIP_TCP_MAX_SACK_NUM must be greater than 0"
 #endif
-#if (LWIP_NETIF_API && (NO_SYS==1))
-#error "If you want to use NETIF API, you have to define NO_SYS=0 in your lwipopts.h"
-#endif
-#if ((LWIP_SOCKET || LWIP_NETCONN) && (NO_SYS==1))
-#error "If you want to use Sequential API, you have to define NO_SYS=0 in your lwipopts.h"
-#endif
-#if (LWIP_PPP_API && (NO_SYS==1))
-#error "If you want to use PPP API, you have to define NO_SYS=0 in your lwipopts.h"
-#endif
-#if (LWIP_PPP_API && (PPP_SUPPORT==0))
-#error "If you want to use PPP API, you have to enable PPP_SUPPORT in your lwipopts.h"
-#endif
-#if (((!LWIP_DHCP) || (!LWIP_AUTOIP)) && LWIP_DHCP_AUTOIP_COOP)
-#error "If you want to use DHCP/AUTOIP cooperation mode, you have to define LWIP_DHCP=1 and LWIP_AUTOIP=1 in your lwipopts.h"
-#endif
-#if (((!LWIP_DHCP) || (!LWIP_ARP) || (!LWIP_ACD)) && LWIP_DHCP_DOES_ACD_CHECK)
-#error "If you want to use DHCP ACD checking, you have to define LWIP_DHCP=1, LWIP_ARP=1 and LWIP_ACD=1 in your lwipopts.h"
-#endif
-#if (!LWIP_ARP && LWIP_AUTOIP)
-#error "If you want to use AUTOIP, you have to define LWIP_ARP=1 in your lwipopts.h"
-#endif
 #if (LWIP_TCP && ((LWIP_EVENT_API && LWIP_CALLBACK_API) || (!LWIP_EVENT_API && !LWIP_CALLBACK_API)))
 #error "One and exactly one of LWIP_EVENT_API and LWIP_CALLBACK_API has to be enabled in your lwipopts.h"
-#endif
-#if (LWIP_ALTCP && LWIP_EVENT_API)
-#error "The application layered tcp API does not work with LWIP_EVENT_API"
 #endif
 #if (MEM_CUSTOM_ALLOCATOR && !(defined(MEM_CUSTOM_FREE) && defined(MEM_CUSTOM_MALLOC) && defined(MEM_CUSTOM_CALLOC)))
 #error "All of MEM_CUSTOM_FREE/MEM_CUSTOM_MALLOC/MEM_CUSTOM_CALLOC must be provided if MEM_CUSTOM_ALLOCATOR is enabled in your lwipopts.h"
@@ -208,24 +166,6 @@ PACK_STRUCT_END
 #if (PBUF_POOL_BUFSIZE <= MEM_ALIGNMENT)
 #error "PBUF_POOL_BUFSIZE must be greater than MEM_ALIGNMENT or the offset may take the full first pbuf"
 #endif
-#if (DNS_LOCAL_HOSTLIST && !DNS_LOCAL_HOSTLIST_IS_DYNAMIC && !(defined(DNS_LOCAL_HOSTLIST_INIT)))
-#error "you have to define define DNS_LOCAL_HOSTLIST_INIT {{'host1', 0x123}, {'host2', 0x234}} to initialize DNS_LOCAL_HOSTLIST"
-#endif
-#if PPP_SUPPORT && !PPPOS_SUPPORT && !PPPOE_SUPPORT && !PPPOL2TP_SUPPORT
-#error "PPP_SUPPORT needs at least one of PPPOS_SUPPORT, PPPOE_SUPPORT or PPPOL2TP_SUPPORT turned on"
-#endif
-#if PPP_SUPPORT && !PPP_IPV4_SUPPORT && !PPP_IPV6_SUPPORT
-#error "PPP_SUPPORT needs PPP_IPV4_SUPPORT and/or PPP_IPV6_SUPPORT turned on"
-#endif
-#if PPP_SUPPORT && PPP_IPV4_SUPPORT && !LWIP_IPV4
-#error "PPP_IPV4_SUPPORT needs LWIP_IPV4 turned on"
-#endif
-#if PPP_SUPPORT && PPP_IPV6_SUPPORT && !LWIP_IPV6
-#error "PPP_IPV6_SUPPORT needs LWIP_IPV6 turned on"
-#endif
-#if PPP_SUPPORT && CCP_SUPPORT && !MPPE_SUPPORT
-#error "CCP_SUPPORT needs MPPE_SUPPORT turned on"
-#endif
 #if !LWIP_ETHERNET && (LWIP_ARP || PPPOE_SUPPORT)
 #error "LWIP_ETHERNET needs to be turned on for LWIP_ARP or PPPOE_SUPPORT"
 #endif
@@ -234,17 +174,6 @@ PACK_STRUCT_END
 #endif
 #if LWIP_TCP && LWIP_NETIF_TX_SINGLE_PBUF && !TCP_OVERSIZE
 #error "LWIP_NETIF_TX_SINGLE_PBUF needs TCP_OVERSIZE enabled to create single-pbuf TCP packets"
-#endif
-#if LWIP_NETCONN && LWIP_TCP
-#if NETCONN_COPY != TCP_WRITE_FLAG_COPY
-#error "NETCONN_COPY != TCP_WRITE_FLAG_COPY"
-#endif
-#if NETCONN_MORE != TCP_WRITE_FLAG_MORE
-#error "NETCONN_MORE != TCP_WRITE_FLAG_MORE"
-#endif
-#endif /* LWIP_NETCONN && LWIP_TCP */
-#if LWIP_NETCONN_FULLDUPLEX && !LWIP_NETCONN_SEM_PER_THREAD
-#error "For LWIP_NETCONN_FULLDUPLEX to work, LWIP_NETCONN_SEM_PER_THREAD is required"
 #endif
 
 
@@ -284,9 +213,6 @@ PACK_STRUCT_END
 #error "lwip_sanity_check: WARNING: MEMP_NUM_NETCONN cannot be 0 when using sockets!"
 #endif
 #else /* MEMP_MEM_MALLOC */
-#if MEMP_NUM_NETCONN > (MEMP_NUM_TCP_PCB+MEMP_NUM_TCP_PCB_LISTEN+MEMP_NUM_UDP_PCB+MEMP_NUM_RAW_PCB)
-#error "lwip_sanity_check: WARNING: MEMP_NUM_NETCONN should be less than the sum of MEMP_NUM_{TCP,RAW,UDP}_PCB+MEMP_NUM_TCP_PCB_LISTEN. If you know what you are doing, define LWIP_DISABLE_MEMP_SANITY_CHECKS to 1 to disable this error."
-#endif
 #endif /* LWIP_NETCONN || LWIP_SOCKET */
 #endif /* !LWIP_DISABLE_MEMP_SANITY_CHECKS */
 #if MEM_USE_POOLS
@@ -377,9 +303,6 @@ lwip_init(void)
 #if LWIP_IGMP
   igmp_init();
 #endif /* LWIP_IGMP */
-#if LWIP_DNS
-  dns_init();
-#endif /* LWIP_DNS */
 #if PPP_SUPPORT
   ppp_init();
 #endif

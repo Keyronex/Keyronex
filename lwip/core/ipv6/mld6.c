@@ -224,7 +224,7 @@ mld6_remove_group(struct netif *netif, struct mld_group *group)
  * @param inp the netif on which this packet was received
  */
 void
-mld6_input(struct pbuf *p, struct netif *inp)
+mld6_input(struct ip_globals *ip_data, struct pbuf *p, struct netif *inp)
 {
   struct mld_header *mld_hdr;
   struct mld_group *group;

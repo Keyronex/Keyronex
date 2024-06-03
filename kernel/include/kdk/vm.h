@@ -194,6 +194,12 @@ vm_mdl_t *vm_mdl_create(void *address, size_t size);
 /*! @brief Get the physical address of an offset in an MDL. */
 paddr_t vm_mdl_paddr(vm_mdl_t *mdl, voff_t off);
 
+/*! @brief Copy data into an MDL. */
+void vm_mdl_copy_into(vm_mdl_t *mdl, voff_t offset, void *data, size_t len);
+
+/*! @brief Get number of physically contiguous bytes at offset in an MDL. */
+size_t vm_mdl_contig_bytes(vm_mdl_t *mdl, voff_t offset);
+
 /*!
  * @brief Add a region of memory to the VMM's management.
  */

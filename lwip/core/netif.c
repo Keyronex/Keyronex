@@ -74,18 +74,6 @@
 
 #include "netif/ethernet.h"
 
-#if LWIP_AUTOIP
-#include "lwip/autoip.h"
-#endif /* LWIP_AUTOIP */
-#if LWIP_DHCP
-#include "lwip/dhcp.h"
-#endif /* LWIP_DHCP */
-#if LWIP_ACD
-#include "lwip/acd.h"
-#endif /* LWIP_ACD */
-#if LWIP_IPV6_DHCP6
-#include "lwip/dhcp6.h"
-#endif /* LWIP_IPV6_DHCP6 */
 #if LWIP_IPV6_MLD
 #include "lwip/mld6.h"
 #endif /* LWIP_IPV6_MLD */
@@ -365,9 +353,6 @@ netif_add(struct netif *netif,
   netif->num = netif_num;
   netif->input = input;
 
-#if LWIP_ACD
-  netif->acd_list = NULL;
-#endif /* LWIP_ACD */
   NETIF_RESET_HINTS(netif);
 #if ENABLE_LOOPBACK
   netif->loop_first = NULL;
@@ -486,10 +471,6 @@ netif_do_set_ipaddr(struct netif *netif, const ip4_addr_t *ipaddr, ip_addr_t *ol
 
     LWIP_DEBUGF(NETIF_DEBUG | LWIP_DBG_STATE, ("netif_set_ipaddr: netif address being changed\n"));
     netif_do_ip_addr_changed(old_addr, &new_addr);
-
-#if LWIP_ACD
-    acd_netif_ip_addr_changed(netif, old_addr, &new_addr);
-#endif /* LWIP_ACD */
 
     mib2_remove_ip4(netif);
     mib2_remove_route_ip4(0, netif);
@@ -1024,14 +1005,6 @@ netif_set_link_up(struct netif *netif)
   if (!(netif->flags & NETIF_FLAG_LINK_UP)) {
     netif_set_flags(netif, NETIF_FLAG_LINK_UP);
 
-#if LWIP_DHCP
-    dhcp_network_changed_link_up(netif);
-#endif /* LWIP_DHCP */
-
-#if LWIP_AUTOIP
-    autoip_network_changed_link_up(netif);
-#endif /* LWIP_AUTOIP */
-
     netif_issue_reports(netif, NETIF_REPORT_TYPE_IPV4 | NETIF_REPORT_TYPE_IPV6);
 #if LWIP_IPV6
     nd6_restart_netif(netif);
@@ -1061,14 +1034,6 @@ netif_set_link_down(struct netif *netif)
 
   if (netif->flags & NETIF_FLAG_LINK_UP) {
     netif_clear_flags(netif, NETIF_FLAG_LINK_UP);
-
-#if LWIP_AUTOIP
-    autoip_network_changed_link_down(netif);
-#endif /* LWIP_AUTOIP */
-
-#if LWIP_ACD
-    acd_network_changed_link_down(netif);
-#endif /* LWIP_ACD */
 
 #if LWIP_IPV6 && LWIP_ND6_ALLOW_RA_UPDATES
     netif->mtu6 = netif->mtu;
@@ -1105,11 +1070,11 @@ netif_set_link_callback(struct netif *netif, netif_status_callback_fn link_callb
 /**
  * @ingroup netif
  * Send an IP packet to be received on the same netif (loopif-like).
- * The pbuf is copied and added to an internal queue which is fed to 
+ * The pbuf is copied and added to an internal queue which is fed to
  * netif->input by netif_poll().
  * In multithreaded mode, the call to netif_poll() is queued to be done on the
  * TCP/IP thread.
- * In callback mode, the user has the responsibility to call netif_poll() in 
+ * In callback mode, the user has the responsibility to call netif_poll() in
  * the main loop of their application.
  *
  * @param netif the lwip network interface structure

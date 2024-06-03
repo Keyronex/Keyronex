@@ -53,7 +53,6 @@
 #include "lwip/priv/raw_priv.h"
 #include "lwip/udp.h"
 #include "lwip/priv/tcp_priv.h"
-#include "lwip/autoip.h"
 #include "lwip/stats.h"
 #include "lwip/prot/iana.h"
 
@@ -405,7 +404,7 @@ return_noroute:
 
 /** Return true if the current input packet should be accepted on this netif */
 static int
-ip4_input_accept(struct netif *netif)
+ip4_input_accept(struct ip_globals *ip_data, struct netif *netif)
 {
   LWIP_DEBUGF(IP_DEBUG, ("ip_input: iphdr->dest 0x%"X32_F" netif->ip_addr 0x%"X32_F" (0x%"X32_F", 0x%"X32_F", 0x%"X32_F")\n",
                          ip4_addr_get_u32(ip4_current_dest_addr()), ip4_addr_get_u32(netif_ip4_addr(netif)),
@@ -469,6 +468,8 @@ ip4_input(struct pbuf *p, struct netif *inp)
 #if LWIP_RAW
   raw_input_state_t raw_status;
 #endif /* LWIP_RAW */
+  struct ip_globals ip_globals;
+  struct ip_globals *ip_data = &ip_globals;
 
   LWIP_ASSERT_CORE_LOCKED();
 
@@ -546,8 +547,8 @@ ip4_input(struct pbuf *p, struct netif *inp)
 #endif
 
   /* copy IP addresses to aligned ip_addr_t */
-  ip_addr_copy_from_ip4(ip_data.current_iphdr_dest, iphdr->dest);
-  ip_addr_copy_from_ip4(ip_data.current_iphdr_src, iphdr->src);
+  ip_addr_copy_from_ip4(ip_data->current_iphdr_dest, iphdr->dest);
+  ip_addr_copy_from_ip4(ip_data->current_iphdr_src, iphdr->src);
 
   /* match packet against an interface, i.e. is this packet for us? */
   if (ip4_addr_ismulticast(ip4_current_dest_addr())) {
@@ -574,7 +575,7 @@ ip4_input(struct pbuf *p, struct netif *inp)
   } else {
     /* start trying with inp. if that's not acceptable, start walking the
        list of configured netifs. */
-    if (ip4_input_accept(inp)) {
+    if (ip4_input_accept(ip_data, inp)) {
       netif = inp;
     } else {
       netif = NULL;
@@ -591,7 +592,7 @@ ip4_input(struct pbuf *p, struct netif *inp)
             /* we checked that before already */
             continue;
           }
-          if (ip4_input_accept(netif)) {
+          if (ip4_input_accept(ip_data, netif)) {
             break;
           }
         }
@@ -714,14 +715,14 @@ ip4_input(struct pbuf *p, struct netif *inp)
   ip4_debug_print(p);
   LWIP_DEBUGF(IP_DEBUG, ("ip4_input: p->len %"U16_F" p->tot_len %"U16_F"\n", p->len, p->tot_len));
 
-  ip_data.current_netif = netif;
-  ip_data.current_input_netif = inp;
-  ip_data.current_ip4_header = iphdr;
-  ip_data.current_ip_header_tot_len = IPH_HL_BYTES(iphdr);
+  ip_data->current_netif = netif;
+  ip_data->current_input_netif = inp;
+  ip_data->current_ip4_header = iphdr;
+  ip_data->current_ip_header_tot_len = IPH_HL_BYTES(iphdr);
 
 #if LWIP_RAW
   /* raw input did not eat the packet? */
-  raw_status = raw_input(p, inp);
+  raw_status = raw_input(ip_data, p, inp);
   if (raw_status != RAW_INPUT_EATEN)
 #endif /* LWIP_RAW */
   {
@@ -734,19 +735,19 @@ ip4_input(struct pbuf *p, struct netif *inp)
       case IP_PROTO_UDPLITE:
 #endif /* LWIP_UDPLITE */
         MIB2_STATS_INC(mib2.ipindelivers);
-        udp_input(p, inp);
+        udp_input(ip_data, p, inp);
         break;
 #endif /* LWIP_UDP */
 #if LWIP_TCP
       case IP_PROTO_TCP:
         MIB2_STATS_INC(mib2.ipindelivers);
-        tcp_input(p, inp);
+        tcp_input(ip_data, p, inp);
         break;
 #endif /* LWIP_TCP */
 #if LWIP_ICMP
       case IP_PROTO_ICMP:
         MIB2_STATS_INC(mib2.ipindelivers);
-        icmp_input(p, inp);
+        icmp_input(ip_data, p, inp);
         break;
 #endif /* LWIP_ICMP */
 #if LWIP_IGMP
@@ -782,10 +783,10 @@ ip4_input(struct pbuf *p, struct netif *inp)
   }
 
   /* @todo: this is not really necessary... */
-  ip_data.current_netif = NULL;
-  ip_data.current_input_netif = NULL;
-  ip_data.current_ip4_header = NULL;
-  ip_data.current_ip_header_tot_len = 0;
+  ip_data->current_netif = NULL;
+  ip_data->current_input_netif = NULL;
+  ip_data->current_ip4_header = NULL;
+  ip_data->current_ip_header_tot_len = 0;
   ip4_addr_set_any(ip4_current_src_addr());
   ip4_addr_set_any(ip4_current_dest_addr());
 

@@ -27,13 +27,15 @@ enum {
 static uint32_t
 lapic_read(kcpu_t *cpu, uint32_t reg)
 {
-	return *(uint32_t *)P2V((cpu->cpucb.lapic_base & 0xfffff000) + reg);
+	return *(volatile uint32_t *)P2V(
+	    (cpu->cpucb.lapic_base & 0xfffff000) + reg);
 }
 
 static void
 lapic_write(kcpu_t *cpu, uint32_t reg, uint32_t val)
 {
-	uint32_t *addr = (uint32_t*)P2V((cpu->cpucb.lapic_base & 0xfffff000) + reg);
+	volatile uint32_t *addr = (volatile uint32_t *)P2V(
+	    (cpu->cpucb.lapic_base & 0xfffff000) + reg);
 	*addr = val;
 }
 
@@ -114,6 +116,8 @@ send_ipi(uint32_t lapic_id, uint8_t intr)
 {
 	lapic_write(curcpu(), kLAPICRegICR1, lapic_id << 24);
 	lapic_write(curcpu(), kLAPICRegICR0, intr);
+	while (lapic_read(curcpu(), kLAPICRegICR0) & 1 << 12)
+		;
 }
 
 void

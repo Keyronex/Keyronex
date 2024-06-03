@@ -13,7 +13,7 @@ lwip_sources = files(
 
         'netif/ethernet.c',
 
-        'api/tcpip.c', 'api/err.c', 'api/netifapi.c'
+        'api/err.c',
 )
 
 lwip_includes = include_directories('include')

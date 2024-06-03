@@ -63,7 +63,8 @@
 #endif
 
 /* Forward declarations */
-static void icmp6_send_response(struct pbuf *p, u8_t code, u32_t data, u8_t type);
+static void icmp6_send_response(struct ip_globals *ip_data, struct pbuf *p,
+    u8_t code, u32_t data, u8_t type);
 static void icmp6_send_response_with_addrs(struct pbuf *p, u8_t code, u32_t data,
     u8_t type, const ip6_addr_t *src_addr, const ip6_addr_t *dest_addr);
 static void icmp6_send_response_with_addrs_and_netif(struct pbuf *p, u8_t code, u32_t data,
@@ -80,7 +81,7 @@ static void icmp6_send_response_with_addrs_and_netif(struct pbuf *p, u8_t code, 
  * @param inp the netif on which this packet was received
  */
 void
-icmp6_input(struct pbuf *p, struct netif *inp)
+icmp6_input(struct ip_globals *ip_data,struct pbuf *p, struct netif *inp)
 {
   struct icmp6_hdr *icmp6hdr;
   struct pbuf *r;
@@ -118,7 +119,7 @@ icmp6_input(struct pbuf *p, struct netif *inp)
   case ICMP6_TYPE_RA: /* Router advertisement */
   case ICMP6_TYPE_RD: /* Redirect */
   case ICMP6_TYPE_PTB: /* Packet too big */
-    nd6_input(p, inp);
+    nd6_input(ip_data, p, inp);
     return;
   case ICMP6_TYPE_RS:
 #if LWIP_IPV6_FORWARD
@@ -129,7 +130,7 @@ icmp6_input(struct pbuf *p, struct netif *inp)
   case ICMP6_TYPE_MLQ:
   case ICMP6_TYPE_MLR:
   case ICMP6_TYPE_MLD:
-    mld6_input(p, inp);
+    mld6_input(ip_data, p, inp);
     return;
 #endif
   case ICMP6_TYPE_EREQ:
@@ -217,9 +218,10 @@ icmp6_input(struct pbuf *p, struct netif *inp)
  * @param c ICMPv6 code for the unreachable type
  */
 void
-icmp6_dest_unreach(struct pbuf *p, enum icmp6_dur_code c)
+icmp6_dest_unreach(struct ip_globals *ip_data, struct pbuf *p,
+    enum icmp6_dur_code c)
 {
-  icmp6_send_response(p, c, 0, ICMP6_TYPE_DUR);
+  icmp6_send_response(ip_data, p, c, 0, ICMP6_TYPE_DUR);
 }
 
 /**
@@ -233,9 +235,9 @@ icmp6_dest_unreach(struct pbuf *p, enum icmp6_dur_code c)
  * @param mtu the maximum mtu that we can accept
  */
 void
-icmp6_packet_too_big(struct pbuf *p, u32_t mtu)
+icmp6_packet_too_big(struct ip_globals *ip_data, struct pbuf *p, u32_t mtu)
 {
-  icmp6_send_response(p, 0, mtu, ICMP6_TYPE_PTB);
+  icmp6_send_response(ip_data, p, 0, mtu, ICMP6_TYPE_PTB);
 }
 
 /**
@@ -249,9 +251,10 @@ icmp6_packet_too_big(struct pbuf *p, u32_t mtu)
  * @param c ICMPv6 code for the time exceeded type
  */
 void
-icmp6_time_exceeded(struct pbuf *p, enum icmp6_te_code c)
+icmp6_time_exceeded(struct ip_globals *ip_data, struct pbuf *p,
+    enum icmp6_te_code c)
 {
-  icmp6_send_response(p, c, 0, ICMP6_TYPE_TE);
+  icmp6_send_response(ip_data, p, c, 0, ICMP6_TYPE_TE);
 }
 
 /**
@@ -289,10 +292,10 @@ icmp6_time_exceeded_with_addrs(struct pbuf *p, enum icmp6_te_code c,
  * @param pointer the pointer to the byte where the parameter is found
  */
 void
-icmp6_param_problem(struct pbuf *p, enum icmp6_pp_code c, const void *pointer)
+icmp6_param_problem(struct ip_globals *ip_data, struct pbuf *p, enum icmp6_pp_code c, const void *pointer)
 {
   u32_t pointer_u32 = (u32_t)((const u8_t *)pointer - (const u8_t *)ip6_current_header());
-  icmp6_send_response(p, c, pointer_u32, ICMP6_TYPE_PP);
+  icmp6_send_response(ip_data, p, c, pointer_u32, ICMP6_TYPE_PP);
 }
 
 /**
@@ -306,7 +309,7 @@ icmp6_param_problem(struct pbuf *p, enum icmp6_pp_code c, const void *pointer)
  * @param type Type of the ICMPv6 header
  */
 static void
-icmp6_send_response(struct pbuf *p, u8_t code, u32_t data, u8_t type)
+icmp6_send_response(struct ip_globals *ip_data, struct pbuf *p, u8_t code, u32_t data, u8_t type)
 {
   const struct ip6_addr *reply_src, *reply_dest;
   struct netif *netif = ip_current_netif();

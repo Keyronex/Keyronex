@@ -269,7 +269,7 @@ ip6_reass_remove_oldest_datagram(struct ip6_reassdata *ipr, int pbufs_needed)
  *         IPv6 Header if reassembly is complete
  */
 struct pbuf *
-ip6_reass(struct pbuf *p)
+ip6_reass(struct ip_globals *ip_data, struct pbuf *p)
 {
   struct ip6_reassdata *ipr, *ipr_prev;
   struct ip6_reass_helper *iprh, *iprh_tmp, *iprh_prev=NULL;
@@ -362,7 +362,7 @@ ip6_reass(struct pbuf *p)
      * Eventually, we will replace it when we get the first fragment
      * (it might be this one, in any case, it is done later). */
     /* need to use the none-const pointer here: */
-    ipr->iphdr = ip_data.current_ip6_header;
+    ipr->iphdr = ip_data->current_ip6_header;
 #if IPV6_FRAG_COPYHEADER
     MEMCPY(&ipr->src, &ip6_current_header()->src, sizeof(ipr->src));
     MEMCPY(&ipr->dest, &ip6_current_header()->dest, sizeof(ipr->dest));
@@ -522,7 +522,7 @@ ip6_reass(struct pbuf *p)
   /* Remember IPv6 header if this is the first fragment. */
   if (start == 0) {
     /* need to use the none-const pointer here: */
-    ipr->iphdr = ip_data.current_ip6_header;
+    ipr->iphdr = ip_data->current_ip6_header;
     /* Make a backup of the part of the packet data that we are about to
      * overwrite, so that we can restore the original later. */
     MEMCPY(ipr->orig_hdr, p->payload, sizeof(*iprh));

@@ -622,7 +622,7 @@ void kputc(int ch, void *unused);
 /*! @brief Kernel assertion - prints out on PAC console. */
 #define kassert(...) {						\
 	if (!(__VA_ARGS__)) {					\
-		kfatal("nanokernel assertion failed:\n\t%s\n",	\
+		kfatal("kernel assertion failed:\n\t%s\n",	\
 		    #__VA_ARGS__);				\
 	}							\
 }

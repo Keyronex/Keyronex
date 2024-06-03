@@ -177,10 +177,10 @@ cont:
 		    iop->stack_current > -1);
 		frame = iop_stack_current(iop);
 
-		if (!SLIST_EMPTY(&frame->associated_iops)) {
+		if (!SLIST_EMPTY(&iop->associated_iops)) {
 			/* begin running associated IOPs */
 			kdprintf("Beginning associated IOP 1.\n");
-			iop = SLIST_FIRST(&frame->associated_iops);
+			iop = SLIST_FIRST(&iop->associated_iops);
 			kassert(!iop->begun);
 			goto start;
 		}
@@ -242,37 +242,43 @@ cont:
 		frame = iop_stack_current(iop);
 
 		if (iop->stack_current == -1) {
-			/*! if the last frame we completed was the zeroth entry
+			/*!
+			 * if the last frame we completed was the zeroth entry
 			 * on the stack, the IOP has now been approved by all
-			 * the completions and we can complete it altogether. */
+			 * the completions and we can complete it altogether.
+			 */
 
-			/* if this has a master IOP, atomically decrement number
+			/*
+			 * if this has a master IOP, atomically decrement number
 			 * of pending associated IOPs in the master. if that =
 			 * 0, continue master iop. otherwise, and try to start
 			 * next associated IOP if not yet started and exists
 			 */
 			if (iop->master_iop != NULL) {
-				iop_frame_t *master_frame = iop_stack_current(
-				    iop->master_iop);
+				iop_t *master_iop = iop->master_iop;
 				uint8_t n_pending = __atomic_sub_fetch(
-				    &master_frame->n_pending_associated_iops, 1,
+				    &master_iop->n_pending_associated_iops, 1,
 				    __ATOMIC_SEQ_CST);
 				if (n_pending == 0) {
-					/* there are no more pending associated
+					/*
+					 * there are no more pending associated
 					 * IOPs. We set res to -1, direction to
 					 * up, and increment stack_current. Then
 					 * we jump to the start. This causes the
 					 * function to invoke any completion
 					 * associated with the frame that
 					 * associated these IOPs with the master
-					 * IOP. */
+					 * IOP.
+					 */
 					res = -1;
 					iop->master_iop->direction = kIOPUp;
 					iop->master_iop->stack_count++;
 					goto start;
 				} else {
-					/* We may need to start the next
-					 * associated IOP. */
+					/*
+					 * We may need to start the next
+					 * associated IOP.
+					 */
 					iop_t *next = SLIST_NEXT(iop,
 					    associated_iops_link);
 					if (!next->begun) {
@@ -293,7 +299,7 @@ cont:
 		}
 
 		/*! associated IOPs should all be gone */
-		kassert(SLIST_EMPTY(&frame->associated_iops));
+		kassert(SLIST_EMPTY(&iop->associated_iops));
 
 		r = [frame->dev completeIOP: iop];
 
