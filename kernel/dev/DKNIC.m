@@ -126,22 +126,31 @@ freeRXPBuf(struct pbuf *p)
 	return &p->pbuf.pbuf;
 }
 
-- (BOOL)queueReceivedDataForProcessing:(void *)data
+- (void)queueReceivedDataForProcessing:(void *)data
 				length:(size_t)length
 				    id:(uint16_t)id
 {
+	struct pbuf_rx *p;
+
+#if TRACE_RX
 	struct ethframe {
 		uint8_t dst[6];
 		uint8_t src[6];
 		uint16_t type;
 	} *header = data;
-	struct pbuf_rx *p;
 
-#if TRACE_RX
 	kprintf("(DEST " MAC_FMT " SRC " MAC_FMT " TYPE %x)\n",
 	    MAC_ARGS(header->dst), MAC_ARGS(header->src),
 	    lwip_ntohs(header->type));
 #endif
+
+	if (m_kdbAttached) {
+		memcpy(kdb_udp_rx_pbuf.payload, data, length);
+		kdb_udp_rx_pbuf.len = kdb_udp_rx_pbuf.tot_len = length;
+		[self completeProcessingOfRxIndex:id locked:YES];
+		kdbudp_check_packet();
+		return;
+	}
 
 	p = &m_rxPbufs[id];
 
@@ -153,11 +162,7 @@ freeRXPBuf(struct pbuf *p)
 	p->locked = false;
 	p->netif = &m_netif;
 
-	if (m_kdbAttached)
-		return kdbudp_check_packet(&p->pbuf.pbuf);
-
 	ksk_packet_in(p);
-	return NO;
 }
 
 - (void)submitPacket:(struct pbuf *)pkt
@@ -170,7 +175,7 @@ freeRXPBuf(struct pbuf *p)
 	kfatal("Subclass responsibility\n");
 }
 
-- (struct pbuf *)debuggerPoll
+- (BOOL)debuggerPoll
 {
 	kfatal("Subclass responsibility\n");
 }

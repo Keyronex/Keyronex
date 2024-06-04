@@ -45,7 +45,7 @@ struct pbuf_rx {
 /*! DKNIC: set link up/down */
 - (void)setLinkUp:(BOOL)up speed:(size_t)mbits fullDuplex:(BOOL)duplex;
 /*! DKNIC: submit packet data for eventual processing. YES = break processing */
-- (BOOL)queueReceivedDataForProcessing:(void *)data
+- (void)queueReceivedDataForProcessing:(void *)data
 				length:(size_t)length
 				    id:(uint16_t)id;
 
@@ -58,7 +58,7 @@ struct pbuf_rx {
 - (void)completeProcessingOfRxIndex:(size_t)index locked:(BOOL)isLocked;
 
 /*! subclass: poll for a received packet on behalf of kernel debugger */
-- (struct pbuf *)debuggerPoll;
+- (BOOL)debuggerPoll;
 /*! subclass: transmit a packet on behalf of kernel debugger */
 - (void)debuggerTransmit:(struct pbuf *)pbuf;
 

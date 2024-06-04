@@ -2,6 +2,7 @@
 #include "dev/9pSockTransport.h"
 #include "dev/E1000.h"
 #include "dev/amd64/IOAPIC.h"
+#include "kdb/kdb_udp.h"
 #include "kdk/amd64.h"
 #include "kdk/kmem.h"
 #include "kdk/nanokern.h"
@@ -208,6 +209,12 @@ e1000_read_mac(vaddr_t base, uint8_t *out)
 
 	desc = &m_rxDescs[index];
 
+	if (index != m_rxNextTail) {
+		kprintf("For FUCK sake, Index != rxNextTail!! %zu != %zu!\n",
+		    index, m_rxNextTail);
+		for (;;)
+			;
+	}
 	kassert(index == m_rxNextTail);
 
 	m_rxNextTail = (m_rxNextTail + 1) % E1000_NDESCS;
@@ -219,18 +226,22 @@ e1000_read_mac(vaddr_t base, uint8_t *out)
 		ke_spinlock_release(&m_rxLock, ipl);
 }
 
-- (struct pbuf *)debuggerPoll
+- (BOOL)debuggerPoll
 {
 	struct rx_desc *desc = &m_rxDescs[m_rxHead];
 	void *data = (void *)P2V(desc->address);
 	size_t id = m_rxHead;
 
-	while (m_rxDescs[m_rxHead].status & 0x0)
+	while (!(m_rxDescs[m_rxHead].status & 0x1))
 		;
 
-	m_rxHead = (m_rxHead + 1) % E1000_NDESCS;
+	memcpy(kdb_udp_rx_pbuf.payload, data, desc->length);
+	kdb_udp_rx_pbuf.len = kdb_udp_rx_pbuf.tot_len = desc->length;
 
-	kfatal("Implement me\n");
+	m_rxHead = (m_rxHead + 1) % E1000_NDESCS;
+	[self completeProcessingOfRxIndex:id locked:YES];
+
+	return YES;
 }
 
 - (void)rxDeferredProcessing
@@ -240,14 +251,12 @@ e1000_read_mac(vaddr_t base, uint8_t *out)
 		struct rx_desc *desc = &m_rxDescs[m_rxHead];
 		void *data = (void *)P2V(desc->address);
 		size_t id = m_rxHead;
-		BOOL do_break;
 
 		m_rxHead = (m_rxHead + 1) % E1000_NDESCS;
 
-		do_break = [super queueReceivedDataForProcessing:data
-							  length:desc->length
-							      id:id];
-		(void)do_break;
+		[super queueReceivedDataForProcessing:data
+					       length:desc->length
+						   id:id];
 	}
 	ke_spinlock_release_nospl(&m_rxLock);
 }
