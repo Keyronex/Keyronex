@@ -12,7 +12,6 @@ kernel_sources += files(
 	'Ext2FS.m',
 	'FBTerminal.m',
 	'PCIBus.m',
-	'PS2Keyboard.m',
 	'SimpleFB.m',
 	'buf.c',
 	'iop.m',
@@ -31,7 +30,8 @@ kernel_sources += [
 
 if (cpu != 'm68k')
 	kernel_sources += [
-		files('acpi/DKACPIPlatform.m', 'acpi/uacpi_integration.m', 'E1000.m'),
+		files('acpi/DKACPIPlatform.m', 'acpi/uacpi_integration.m', 'E1000.m',
+			'PS2Keyboard.m',),
 		uacpi_sources,
 	]
 	freestanding_c_args += [ '-DUACPI_FORMATTED_LOGGING=1' ]

@@ -25,7 +25,15 @@
 
 	m_rxPbufs = kmem_alloc(sizeof(struct pbuf_rx) * m_queueLength);
 
-	m_kdbAttached = true;
+	if (strcmp([self devName], kdb_devname) == 0) {
+		kassert(kdb_nic == NULL);
+		kdb_nic = self;
+
+		m_kdbAttached = true;
+		DKDevLog(self, "Using for Kernel Debugger accesss");
+	} else {
+		m_kdbAttached = false;
+	}
 }
 
 static err_t
@@ -47,8 +55,8 @@ netifInit(struct netif *nic)
 	nic->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP |
 	    NETIF_FLAG_LINK_UP;
 
-	nic->name[0] = 'v';
-	nic->name[1] = 't';
+	nic->name[0] = 'e';
+	nic->name[1] = 'm';
 	nic->output = etharp_output;
 	nic->linkoutput = netifOutput;
 

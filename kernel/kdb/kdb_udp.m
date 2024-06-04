@@ -60,6 +60,8 @@ dk_mac_address_t kdb_remote_mac;
 char kdb_udp_rx_buf[2048];
 struct pbuf kdb_udp_rx_pbuf = { .payload = kdb_udp_rx_buf };
 
+const char *kdb_devname = "none";
+
 md_intr_frame_t *kdb_saved_frame;
 
 DKNIC *kdb_nic;
@@ -304,6 +306,7 @@ process_query(char *cmd)
 static void
 send_registers(void)
 {
+#ifdef __amd64__
 	struct __attribute__((packed)) gdb_regs {
 		uint64_t rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp, r8, r9, r10, r11, r12, r13, r14, r15, rip;
 		uint32_t eflags, cs, ss, ds, es, fs;
@@ -355,6 +358,7 @@ send_registers(void)
 	    HEX_32_ARGS(regs.eflags), HEX_32_ARGS(regs.cs),
 	    HEX_32_ARGS(regs.ss), HEX_32_ARGS(regs.ds), HEX_32_ARGS(regs.es),
 	    HEX_32_ARGS(regs.fs));
+#endif
 }
 
 static void
@@ -417,7 +421,9 @@ kdbudp_check_packet(void)
 		splx(ipl);
 		return 0;
 	} else if (do_gdb_packet(&kdb_udp_rx_pbuf)) {
+#ifdef __amd64__
 		asm("int $255");
+#endif
 		splx(ipl);
 		return 1;
 	} else {
