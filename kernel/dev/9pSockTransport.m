@@ -16,62 +16,20 @@
 
 #define PROVIDER ((DKDevice *)m_provider)
 
-#if 1
-struct socknode;
-
-struct socknode *new_tcpnode(void);
-
-#endif
-
 static int counter = 0;
 static kmutex_t sock_mutex = KMUTEX_INITIALIZER(sock_mutex);
 
 @implementation Socket9pPort
 
-+ (BOOL)probeWithProvider:(DKDevice *)provider
-{
-	[[self alloc] initWithProvider:provider];
-	return YES;
-}
-
-#if 0
-#define HOST 0xc0a8b27d
-#else
-#define HOST 0x0a000202
-#endif
-
-- (void)connect
-{
-	iop_t *iop = iop_new(keysock_dev);
-	struct sockaddr_storage sa;
-	struct sockaddr_in *sin = &sa;
-
-	sin->sin_family = AF_INET;
-	sin->sin_addr.s_addr = __builtin_bswap32(HOST);
-	sin->sin_port = __builtin_bswap16(564);
-
-	iop->stack[0].vnode = (void *)m_socket;
-	iop->stack[0].dev = keysock_dev;
-	iop->stack[0].function = kIOPTypeConnect;
-	iop->stack[0].mdl = NULL;
-	iop->stack[0].connect.sockaddr = &sa;
-
-	iop_send_sync(iop);
-}
-
-- (instancetype)initWithProvider:(DKDevice *)provider
+- (instancetype)initWithConnectedSocket:(struct socknode *)socket;
 {
 	self = [super initWithProvider:keysock_dev];
 
 	kmem_asprintf(obj_name_ptr(self), "socket-9p-%u", counter++);
-	m_socket = new_tcpnode();
-
-	[self connect];
+	m_socket = socket;
 
 	[self registerDevice];
 	DKLogAttach(self);
-
-	[NinepFS probeWithProvider:self];
 
 	return self;
 }

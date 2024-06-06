@@ -5,9 +5,13 @@
 #include "ddk/DKVirtIOTransport.h"
 #include "dev/safe_endian.h"
 
-
 @interface VirtIO9pPort : DKDevice <DKVirtIODelegate> {
-    @public
+@public
+	TAILQ_TYPE_ENTRY(VirtIO9pPort) m_tagListEntry;
+
+@protected
+	char m_tagName[64];
+
 	struct virtio_queue m_reqQueue;
 
 	/*! I/O packets waiting for submission. */
@@ -20,6 +24,8 @@
 	/*! Virtio requests currently running. */
 	TAILQ_HEAD(, vio9p_req) in_flight_reqs;
 }
+
++ (VirtIO9pPort *)forTag:(const char *)tag;
 
 @end
 

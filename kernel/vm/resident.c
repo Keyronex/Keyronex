@@ -708,6 +708,7 @@ vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
 	switch (page->use) {
 	case kPageUsePML1:
 	case kPageUsePML2: {
+		vmstat.n_table_pageouts++;
 		kassert(vmp_pte_characterise(pte) == kPTEKindTrans);
 		vmp_md_swap_table_pointers(page->process->vm, dirpage, pte,
 		    page->drumslot);

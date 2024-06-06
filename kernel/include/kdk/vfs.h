@@ -77,7 +77,8 @@ struct vnode_ops {
 };
 
 struct vfs_ops {
-	vnode_t (*root)(vfs_t *vfs);
+	int (*mount)(namecache_handle_t over, const char *params);
+	/* vnode_t (*root)(vfs_t *vfs); */
 };
 
 vnode_t *vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops,

@@ -62,7 +62,7 @@ struct vm_stat {
 	    nprocpgtable, nprotopgtable, nkwired;
 
 	/*! pagings in and out */
-	size_t n_table_pageins;
+	size_t n_table_pageins, n_table_pageouts;
 };
 
 enum vm_page_use {

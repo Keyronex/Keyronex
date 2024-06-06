@@ -9,6 +9,7 @@
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
+#include "kdk/queue.h"
 
 struct virtio_9p_config {
 	/* length of the tag name */
@@ -28,21 +29,24 @@ struct vio9p_req {
 	uint16_t first_desc_id;
 };
 
-@interface VirtIO9pPort (Private)
-- (void)request:(int)reqType
-	 blocks:(io_blksize_t)blocks
-       atOffset:(io_blkoff_t)offset
-	withMDL:(vm_mdl_t *)mdl
-	    iop:(iop_t *)iop;
-@end
+#define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)
 
 void processVirtQueue(struct virtio_queue *queue, id delegate);
 
-#define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)
-
+TAILQ_TYPE_HEAD(, VirtIO9pPort) tag_list = TAILQ_HEAD_INITIALIZER(tag_list);
 static int counter = 0;
 
 @implementation VirtIO9pPort
+
++ (VirtIO9pPort *)forTag:(const char *)tag
+{
+	VirtIO9pPort *port;
+	TAILQ_FOREACH (port, &tag_list, m_tagListEntry) {
+		if(strcmp(port->m_tagName, tag) == 0)
+			return port;
+	}
+	return NULL;
+}
 
 + (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
@@ -52,9 +56,9 @@ static int counter = 0;
 
 - (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
-	int r;
 	volatile struct virtio_9p_config *cfg;
-	char tagname[64] = { 0 };
+	size_t tag_len;
+	int r;
 
 	self = [super initWithProvider:provider];
 
@@ -91,12 +95,15 @@ static int counter = 0;
 	for (int i = 0; i < nrequests; i++)
 		TAILQ_INSERT_TAIL(&free_reqs, &m_requests[i], queue_entry);
 
-	[self registerDevice];
-	memcpy(tagname, (const void *)cfg->tag,
-	    MIN2(from_leu16(cfg->tag_len), 63));
-	DKLogAttachExtra(self, "Tag: %s\n", tagname);
+	tag_len = MIN2(from_leu16(cfg->tag_len), 63);
 
-	[NinepFS probeWithProvider:self];
+	memcpy(m_tagName, (const void *)cfg->tag, tag_len);
+	m_tagName[tag_len] = '\0';
+	TAILQ_INSERT_TAIL(&tag_list, self, m_tagListEntry);
+
+	[self registerDevice];
+
+	DKLogAttachExtra(self, "Tag: %s\n", m_tagName);
 
 	return self;
 }

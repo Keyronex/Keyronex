@@ -4,6 +4,15 @@
 #include "kdk/nanokern.h"
 
 /*!
+ * Boot-time configuration.
+ *
+ * @var ex_boot_config::root Root FS mount info.
+ */
+struct ex_boot_config {
+	const char *root;
+};
+
+/*!
  * Work to be carried out by a worker queue.
  */
 typedef struct ex_work {
@@ -51,6 +60,7 @@ void ps_exit_this_thread(void);
 
 #define ex_curproc() containerof(curproc(), eprocess_t, kprocess)
 
+extern struct ex_boot_config boot_config;
 extern eprocess_t *kernel_process;
 
 #endif /* KRX_KDK_EXECUTIVE_H */

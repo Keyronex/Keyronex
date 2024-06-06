@@ -9,7 +9,7 @@
 	struct socknode *m_socket;
 }
 
-+ (BOOL)probeWithProvider:(DKDevice *)provider;
+- (instancetype)initWithConnectedSocket:(struct socknode *)socket;
 
 @end
 

@@ -26,6 +26,8 @@ obj_class_t process_class, file_class;
 
 kthread_t *user_init_thread;
 
+extern struct vfs_ops ninep_vfsops;
+
 #if 0
 static void
 test_anon(void)
@@ -175,7 +177,8 @@ user_init(void *arg)
 	kfatal("Unreached\n");
 }
 
-static void pagefile_init(void)
+static void
+pagefile_init(void)
 {
 	int r;
 	namecache_handle_t pagefile;
@@ -189,11 +192,28 @@ static void pagefile_init(void)
 	nchandle_release(pagefile);
 }
 
+static void
+mount_root(void)
+{
+	const char *how = boot_config.root;
+
+	if (how == NULL) {
+		kfatal("No root FS specified.\n");
+	} else if (strncmp(how, "9p:", 3) == 0) {
+		ninep_vfsops.mount((namecache_handle_t) {}, how + 3);
+	} else {
+		kfatal("Can't handle it\n");
+	}
+}
+
 void
 ex_init(void *)
 {
 	int r;
 	void ddk_init(void), ddk_autoconf(void), ubc_init(void);
+
+	process_class = obj_new_type("process");
+	file_class = obj_new_type("file");
 
 	vmp_paging_init();
 	ubc_init();
@@ -210,9 +230,7 @@ ex_init(void *)
 	test_anon();
 #endif
 
-	process_class = obj_new_type("process");
-	file_class = obj_new_type("file");
-
+	mount_root();
 	pagefile_init();
 
 #if 0
@@ -428,6 +446,10 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 
 	case kKrxFileSeek:
 		return krx_file_seek(arg1, arg2);
+
+
+	case kKrxThreadExit:
+		kfatal("ThreadExit\n");
 
 	case kKrxForkThread:
 		return krx_fork_thread(arg1, arg2);
