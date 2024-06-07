@@ -124,7 +124,7 @@ process_past_callbacks(void *arg)
 	struct ki_rcu_per_cpu_data *rcpu = arg;
 
 	while (!TAILQ_EMPTY(&rcpu->past_callbacks)) {
-		krcu_head_t *head = TAILQ_FIRST(&rcpu->past_callbacks);
+		krcu_entry_t *head = TAILQ_FIRST(&rcpu->past_callbacks);
 		TAILQ_REMOVE(&rcpu->past_callbacks, head, queue_entry);
 		head->callback(head->arg);
 	}
@@ -143,7 +143,7 @@ ki_rcu_per_cpu_init(struct ki_rcu_per_cpu_data *data)
 }
 
 void
-ke_rcu_call(krcu_head_t *head, krcu_callback_t callback, void *arg)
+ke_rcu_call(krcu_entry_t *head, krcu_callback_t callback, void *arg)
 {
 	ipl_t ipl = spldpc();
 	head->callback = callback;
@@ -162,7 +162,7 @@ static void set_event(void *arg)
 void ke_rcu_synchronise(void)
 {
 	kevent_t ev;
-	krcu_head_t head;
+	krcu_entry_t head;
 	ke_event_init(&ev, false);
 	ke_rcu_call(&head, set_event, &ev);
 	ke_wait(&ev, "ke_rcu_synchronise", false, false, -1);
