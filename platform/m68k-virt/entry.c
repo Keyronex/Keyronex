@@ -23,6 +23,8 @@ struct bootinfo_item {
 	uint32_t data[0];
 };
 
+struct ex_boot_config boot_config = { .root = "9p:trans=virtio,server=sysroot,aname=/" };
+
 static void
 parse_bootinfo(uint8_t *ptr)
 {

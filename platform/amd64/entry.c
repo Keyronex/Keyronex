@@ -71,6 +71,10 @@ static volatile struct limine_smp_request smp_request = {
 	.revision = 0
 };
 
+struct ex_boot_config boot_config = {
+	.root = "9p:trans=virtio,server=sysroot,aname=/"
+};
+
 static void
 serial_init()
 {

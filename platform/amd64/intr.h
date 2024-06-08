@@ -15,6 +15,7 @@ enum {
 	kIntVecLAPICTimer = 224,
 	/*! unfilterable */
 	kIntVecIPIInvlPG = 240,
+	kIntVecEnterDebugger = 255,
 };
 
 void lapic_eoi(void);

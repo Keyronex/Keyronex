@@ -135,6 +135,13 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		lapic_eoi();
 		break;
 
+	case kIntVecEnterDebugger: {
+		extern void kdb_enter(md_intr_frame_t *frame);
+		kdb_enter(frame);
+		break;
+	}
+
+
 	default: {
 		entries = &intr_entries[num];
 
