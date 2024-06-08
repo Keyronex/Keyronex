@@ -33,6 +33,9 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 	vm_page_t *vpml4;
 	vnode_t *vnode = vnode_alloc();
 
+	kprintf(" -VN-  CREATE in vnode_new (rc == 1)\n");
+	vnode->refcount = 1;
+
 	vnode->type = type;
 	vnode->fs_data = fs_data;
 	vnode->ops = ops;
@@ -95,3 +98,46 @@ vfs_insert(vfs_t *vfs)
 	ke_mutex_release(&vfs_lock);
 }
 #endif
+
+void
+vfs_unmount(namecache_handle_t nch)
+{
+	kfatal("Unmount!\n");
+}
+
+vnode_t *
+vn_retain(vnode_t *vnode)
+{
+	uint32_t count = __atomic_fetch_add(&vnode->refcount, 1,
+	    __ATOMIC_RELAXED);
+	if (count == 0)
+		kprintf("ref from 0\n");
+	kassert(count < 0xfffffff0);
+	return vnode;
+}
+
+void
+vn_release(vnode_t *vnode)
+{
+	while (true) {
+		uint32_t old_count = __atomic_load_n(&vnode->refcount,
+		    __ATOMIC_RELAXED);
+		if (old_count > 1) {
+			if (__atomic_compare_exchange_n(&vnode->refcount,
+				&old_count, old_count - 1, false,
+				__ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+				return;
+			}
+		} else if (old_count == 1) {
+			if (splget() >= kIPLDPC) {
+				kfatal("just call obj_release in a worker");
+				return;
+			} else {
+				kprintf(" -VN-   FREE %p\n", vnode);
+				return;
+			}
+		} else {
+			kassert("unreached\n");
+		}
+	}
+}

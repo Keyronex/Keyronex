@@ -83,6 +83,7 @@ window_replace(ubc_window_t *window)
 	vaddr_t window_addr = ubc_window_addr(window);
 
 	window->refcnt++;
+	kprintf(" -VN- reTAIN in window_replace\n");
 	vn_retain(window->vnode);
 	TAILQ_REMOVE(&ubc_lruqueue, window, queue_entry);
 	RB_REMOVE(ubc_window_tree, &window->vnode->ubc_windows, window);
@@ -109,6 +110,7 @@ window_replace(ubc_window_t *window)
 	}
 
 	vmp_release_pfn_lock(kIPLAST);
+	kprintf(" -VN- reLEASE in window_replace\n");
 	vn_release(window->vnode);
 	ke_mutex_release(&kernel_procstate.ws_mutex);
 

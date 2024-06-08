@@ -223,7 +223,7 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum, kmutex_t *to_release)
 		vnode_t *vnode;
 		if (inode->busy)
 			kfatal("wait here\n");
-		vnode = obj_retain(inode->vnode);
+		vnode = vn_retain(inode->vnode);
 		ke_mutex_release(&fs->queue_lock);
 		return vnode;
 	}

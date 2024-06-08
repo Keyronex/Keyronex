@@ -98,7 +98,7 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 		/* don't check version, it's just mtime... */
 		kassert(
 		    found->qid.path == qid.path && found->qid.type == qid.type);
-		obj_retain(found->vnode);
+		vn_retain(found->vnode);
 		ke_mutex_release(&fs->node_cache_lock);
 		return 1;
 	}

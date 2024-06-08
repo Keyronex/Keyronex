@@ -229,6 +229,7 @@ vmp_writeback(void *)
 					 * would have been made.
 					 */
 					/* todo: defer til PFN lock released */
+					kprintf(" -VN- reLEASE in writeback daemon\n");
 					vn_release(obj->file.vnode);
 				}
 			}

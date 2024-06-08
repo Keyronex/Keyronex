@@ -79,8 +79,11 @@ nc_free(struct namecache *ncp)
 {
 	kassert(ncp->mutex.owner == NULL);
 	kassert(RB_EMPTY(&ncp->entries));
-	obj_release(ncp->vp);
-	ncp->vp = NULL;
+	if (ncp->vp != NULL) {
+		kprintf(" -VN- reLEASE in nc_free()\n");
+		vn_release(ncp->vp);
+		ncp->vp = NULL;
+	}
 	kmem_strfree(ncp->name);
 	kmem_free(ncp, sizeof(*ncp));
 	return NULL;
@@ -115,8 +118,8 @@ nc_release_internal(struct namecache *ncp, bool nested)
 		kassert(ncp->refcnt == 0);
 		TAILQ_INSERT_TAIL(&lru_queue, ncp, lru_entry);
 		ncstat.inactive++;
+		ke_mutex_release(&ncp->mutex);
 		if (!nested) {
-			ke_mutex_release(&ncp->mutex);
 			if (ncstat.inactive > ncstat.max_inactive)
 				nc_trim_lru();
 			ke_mutex_release(&lru_mutex);
@@ -128,16 +131,9 @@ nc_release_internal(struct namecache *ncp, bool nested)
 }
 
 static void
-nc_trim_lru(void)
+do_trim(namecache_t *ncp)
 {
-	struct namecache *ncp, *parent;
-
-loop:
-	if (ncstat.inactive <= ncstat.max_inactive)
-		return;
-
-	ncp = TAILQ_FIRST(&lru_queue);
-	TAILQ_REMOVE(&lru_queue, ncp, lru_entry);
+	namecache_t *parent;
 
 	/*
 	 * Assumptions:
@@ -162,8 +158,24 @@ loop:
 	kassert(ncp->parent == parent);
 	kassert(ncp->refcnt == 0);
 	RB_REMOVE(namecache_rb, &ncp->parent->entries, ncp);
+	ke_mutex_release(&ncp->mutex);
 	nc_free(ncp);
-	nc_release_internal(ncp->parent, true);
+	nc_release_internal(parent, true);
+}
+
+static void
+nc_trim_lru(void)
+{
+	struct namecache *ncp;
+
+loop:
+	if (ncstat.inactive <= ncstat.max_inactive)
+		return;
+
+	ncp = TAILQ_FIRST(&lru_queue);
+	TAILQ_REMOVE(&lru_queue, ncp, lru_entry);
+
+	do_trim(ncp);
 
 	goto loop;
 }
@@ -213,6 +225,7 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 		found->key = key.key;
 		found->parent = nc_retain(nc);
 		found->n_mounts_over = 0;
+		found->vfsp = nc->vfsp;
 		RB_INIT(&found->entries);
 		RB_INSERT(namecache_rb, &nc->entries, found);
 
@@ -257,11 +270,35 @@ nc_make_root(vfs_t *vfs, vnode_t *vnode)
 	ncp->key = 0;
 	ncp->refcnt = 1;
 	ncp->n_mounts_over = 0;
+	ncp->parent = NULL;
+	ncp->vfsp = vfs;
 	RB_INIT(&ncp->entries);
 	ncp->vp = vnode;
 
 	root_nch.nc = ncp;
 	root_nch.vfs = vfs;
+}
+
+void
+nc_release_subtree(namecache_t *vfsncp)
+{
+	namecache_t *ncp, *tmp;
+	vfs_t *vfs = vfsncp->vfsp;
+	bool found_one;
+
+	ke_wait(&lru_mutex, "nc_retain:lru_mutex", false, false, -1);
+	do {
+		found_one = false;
+
+		TAILQ_FOREACH_SAFE (ncp, &lru_queue, lru_entry, tmp) {
+			if (ncp->vfsp == vfs) {
+				TAILQ_REMOVE(&lru_queue, ncp, lru_entry);
+				found_one = true;
+				do_trim(ncp);
+			}
+		}
+	} while (found_one);
+	ke_mutex_release(&lru_mutex);
 }
 
 enum nodeKind { kRoot, kChild, kLastChild };

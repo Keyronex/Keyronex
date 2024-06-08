@@ -55,25 +55,6 @@ test_anon(void)
 
 #if 0
 static void
-test_namecache(void)
-{
-	namecache_handle_t hdl = nchandle_retain(root_nch), out;
-
-	kprintf("Before any lookups\n");
-	nc_dump();
-
-	int r = vfs_lookup(hdl, &out, "A/B/C/D.txt", 0);
-	kprintf("\nAfter looking up A/B/C/D.txt (ret %d)...\n", r);
-	nc_dump();
-
-	r = vfs_lookup(hdl, &out, "E/F/G.TXT", 0);
-	kprintf("\nAfter looking up E/F/G.TXT (ret %d)...\n", r);
-	nc_dump();
-}
-#endif
-
-#if 0
-static void
 test_file_write(void)
 {
 	namecache_handle_t hdl;
@@ -156,6 +137,37 @@ test_unmap(void)
 }
 #endif
 
+static void test_fs_refcounts(void) {
+	namecache_handle_t hdl = root_nch, out;
+
+	kprintf("Before any lookups\n");
+	nc_dump();
+
+	int r = vfs_lookup(hdl, &out, "/usr/bin/posix_server", 0);
+	kprintf("\nAfter looking up /usr/bin/posix_server (ret %d)...\n", r);
+	nc_dump();
+
+	nchandle_release(out);
+	kprintf("\nAfter release posix_server (ret %d)...\n", r);
+	nc_dump();
+
+	r = vfs_lookup(hdl, &out, "/usr/lib/nonexistent", 0);
+	kprintf("\nAfter looking up /usr/lib/nonexistent (ret %d)...\n", r);
+	nc_dump();
+
+	nc_release_subtree(root_nch.nc);
+	kprintf("\nAfter releasing the subtree...\n");
+	nc_dump();
+
+	kfatal("Stop here\n");
+}
+
+static void
+test_unmount(void)
+{
+	vfs_unmount(root_nch);
+}
+
 void
 user_init(void *arg)
 {
@@ -187,7 +199,7 @@ pagefile_init(void)
 	if (r != 0)
 		kfatal("Failed to look up /pagefile\n");
 
-	obj_retain(pagefile.nc->vp);
+	vn_retain(pagefile.nc->vp);
 	vm_pagefile_add(pagefile.nc->vp);
 	nchandle_release(pagefile);
 }
@@ -231,6 +243,9 @@ ex_init(void *)
 #endif
 
 	mount_root();
+
+	test_fs_refcounts();
+
 	pagefile_init();
 
 #if 0

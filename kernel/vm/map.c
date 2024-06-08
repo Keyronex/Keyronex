@@ -112,6 +112,7 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 
 			if (entry->object != NULL) {
 				kassert(entry->object->file.vnode != NULL);
+				kprintf(" -VN- reLEASE in vm_ps_deallocate\n");
 				vn_release(entry->object->file.vnode);
 			}
 

@@ -110,7 +110,7 @@ obj_retain(void *object)
 {
 	struct object_header *hdr = header_from_object(object);
 	uint32_t count = __atomic_fetch_add(&hdr->refcount, 1,
-	    __ATOMIC_SEQ_CST);
+	    __ATOMIC_RELAXED);
 	kassert(count != 0 && count < 0xfffffff0);
 	return object;
 }
@@ -123,7 +123,7 @@ obj_release(void *object)
 
 	while (true) {
 		uint32_t old_count = __atomic_load_n(&hdr->refcount,
-		    __ATOMIC_ACQUIRE);
+		    __ATOMIC_RELAXED);
 		if (old_count > 1) {
 			if (__atomic_compare_exchange_n(&hdr->refcount,
 				&old_count, old_count - 1, false,

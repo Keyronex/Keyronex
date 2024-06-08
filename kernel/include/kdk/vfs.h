@@ -10,16 +10,17 @@ RB_HEAD(ubc_window_tree, ubc_window);
 
 /* TODO: make away with `uint8_t name_len`; it duplicates part of RB key. */
 typedef struct namecache {
-	kmutex_t mutex;			  /*!< namespace lock */
-	uint32_t refcnt;		  /*!< count of retaining references */
-	uint8_t name_len;		  /*!< length of name, max 255 */
-	uint8_t n_mounts_over;		  /*!< count of mounts made on this */
-	uint32_t unused : 24;		  /*!< can become flags in the future */
+	kmutex_t mutex;	       /*!< namespace lock */
+	uint32_t refcnt;       /*!< count of retaining references */
+	uint8_t name_len;      /*!< length of name, max 255 */
+	uint8_t n_mounts_over; /*!< count of mounts made on this */
+	uint32_t unused : 24;  /*!< can become flags in the future */
+	struct vnode *vp;      /*!< underlying vnode or NULL if a negative */
+	struct vfs *vfsp;      /*!< VFS it belongs to, non-retaining. */
 	TAILQ_ENTRY(namecache) lru_entry; /*!< linkage in LRU list*/
 	RB_ENTRY(namecache) rb_entry;	  /*!< linkage in parent->entries */
 	RB_HEAD(namecache_rb, namecache) entries; /*!< (m) names in directory */
 	struct namecache *parent; /*!< (l to read) parent directory namecache */
-	struct vnode *vp;	  /*!< underlying vnode or NULL if a negative */
 	char *name;		  /*!< filename */
 	uint64_t key;		  /*!< rb key: len << 32 | hash(name) */
 	uint64_t unused2; /*!< could use this space to store an inline name? */
@@ -39,6 +40,8 @@ typedef struct vattr {
 } vattr_t;
 
 typedef struct vnode {
+	uint32_t refcount;
+
 	vtype_t type;
 	struct vnode_ops *ops;
 	uintptr_t fs_data;
@@ -93,16 +96,8 @@ vnode_t *vnode_alloc(void);
 int ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size,
     bool write);
 
-static inline vnode_t *
-vn_retain(vnode_t *vnode)
-{
-	return vnode;
-}
-
-static inline void
-vn_release(vnode_t *vnode)
-{
-}
+vnode_t *vn_retain(vnode_t *vnode);
+void vn_release(vnode_t *vnode);
 
 static inline bool
 vn_has_cache(vnode_t *vnode)
@@ -117,6 +112,9 @@ enum lookup_flags {
 
 /*! Find the VFS mounted over a given nch. */
 vfs_t *vfs_find(namecache_handle_t nch);
+
+/*! @brief Unmount a mountpoint. */
+void vfs_unmount(namecache_handle_t nch);
 
 /*! @brief Look up a pathname. */
 int vfs_lookup(namecache_handle_t start, namecache_handle_t *out,

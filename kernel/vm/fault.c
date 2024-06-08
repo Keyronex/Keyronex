@@ -397,7 +397,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 					 * written.
 					 */
 					kprintf(
-					    "Vnode %p has its first dirty page, retaining\n",
+					    " -VN- reTAIN Vnode %p has its first dirty page\n",
 					    area_info.object->file.vnode);
 					vn_retain(area_info.object->file.vnode);
 				}
