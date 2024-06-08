@@ -15,7 +15,8 @@ while getopts "9dknr:spq:" optchar; do
 	*) usage ;;
 esac done
 
-QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
+#QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
+QEMU_EXE=/ws/Compilers/qemu-8.0.4/bld/qemu-system-x86_64
 qemu_args="$qemu_args -s"
 
 virtio_9p_arg="-device virtio-9p-pci,fsdev=sysroot,mount_tag=sysroot \
@@ -47,8 +48,8 @@ virtio_disk_arg="-device virtio-blk-pci,drive=drive0,id=virtblk0     -drive file
 # AHCI?
 #
 
-${QEMU_EXE} -smp 4 -hda test.img -M q35 \
+${QEMU_EXE} -smp 4 -hda test.img -m 128 -M q35 \
   -cdrom build/amd64/barebones.iso \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
-  ${qemu_args}
+  ${qemu_args}  -net tap,ifname=tap0,script=no,downscript=no -net nic,model=e1000e

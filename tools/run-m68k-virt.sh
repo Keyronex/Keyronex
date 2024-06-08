@@ -36,7 +36,7 @@ if [ "$virtio_9p" = "1" ]; then
 	qemu_args="${qemu_args} -${virtio_9p_arg}"
 fi
 
-qemu-system-m68k -M virt \
+qemu-system-m68k -M virt -m 10 \
   -kernel build/m68k/pkg-builds/kernel/loader/m68k-virt-loader/keyronex-loader-m68k-virt \
   -initrd build/m68k/pkg-builds/kernel/platform/m68k-virt/keyronex \
   ${virtio_gpu_arg} \
