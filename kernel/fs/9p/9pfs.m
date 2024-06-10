@@ -510,6 +510,7 @@ out:
 	m_state->vfs = vfs;
 	vfs->device = self;
 	vfs->vfs_data = (uintptr_t)m_state;
+	vfs->file_refcnt = 0;
 
 	r = [self negotiateVersion];
 	if (r != 0)

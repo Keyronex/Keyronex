@@ -59,6 +59,8 @@ typedef struct vnode {
 } vnode_t;
 
 typedef struct vfs {
+	/*! atomic - lowest bit = pending unnount */
+	uint32_t file_refcnt;
 	/*! entry on vfs hash */
 	LIST_ENTRY(vfs) vfs_hash_entry;
 	/*! root namecache node */
@@ -120,6 +122,16 @@ void vfs_unmount(namecache_handle_t nch);
 int vfs_lookup(namecache_handle_t start, namecache_handle_t *out,
     const char *path, enum lookup_flags flags);
 
+/*!
+ * @brief Try to retain a reference to a VFS.
+ * @retval -1 Can't retain (VFS is probably being unmounted)
+ * @retval 0 Retained successfully
+ */
+int vfs_try_retain(vfs_t *vfs);
+
+/*! @brief Release a reference on a VFS. */
+void vfs_release(vfs_t *vfs);
+
 /*! @brief Retain a retained or (if refcnt = 0) LOCKED namecache. */
 struct namecache *nc_retain(struct namecache *nc);
 /*! @brief Release a retained, UNLOCKED namecache. */
@@ -133,6 +145,9 @@ void nc_dump(void);
 static inline namecache_handle_t
 nchandle_retain(namecache_handle_t in)
 {
+	int r;
+	r = vfs_try_retain(in.nc->vp->vfs);
+	kassert(r == 0);
 	nc_retain(in.nc);
 	return in;
 }
@@ -140,7 +155,9 @@ nchandle_retain(namecache_handle_t in)
 static inline namecache_handle_t
 nchandle_release(namecache_handle_t in)
 {
+	vfs_t *vfs = in.nc->vp->vfs;
 	nc_release(in.nc);
+	vfs_release(vfs);
 	return (namecache_handle_t) { NULL, NULL };
 }
 

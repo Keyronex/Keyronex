@@ -155,7 +155,7 @@ static void test_fs_refcounts(void) {
 	kprintf("\nAfter looking up /usr/lib/nonexistent (ret %d)...\n", r);
 	nc_dump();
 
-	nc_release_subtree(root_nch.nc);
+	nc_release(root_nch.nc);
 	kprintf("\nAfter releasing the subtree...\n");
 	nc_dump();
 

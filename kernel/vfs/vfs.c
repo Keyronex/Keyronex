@@ -141,3 +141,32 @@ vn_release(vnode_t *vnode)
 		}
 	}
 }
+
+int
+vfs_try_retain(vfs_t *vfs)
+{
+	uint32_t current = __atomic_load_n(&vfs->file_refcnt, __ATOMIC_ACQUIRE);
+	while (current != 1) {
+		uint32_t desired = current + 2;
+
+		if (current & 1)
+			kfatal("Unexpected value of VFS refcnt %d\n", current);
+
+		if (__atomic_compare_exchange_n(&vfs->file_refcnt, &current,
+			desired, 0, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+			kprintf(" -VFS- reTAIN %p to %d\n", vfs, desired);
+			return 0;
+		}
+	}
+
+	kprintf(" -VFS- reTAIN %p FAILED\n", vfs);
+	return -1;
+}
+
+void
+vfs_release(vfs_t *vfs)
+{
+	uint32_t ret = __atomic_fetch_sub(&vfs->file_refcnt, 2,
+	    __ATOMIC_RELEASE);
+	kprintf(" -VFS- reLEASE %p to %d\n", vfs, ret - 2);
+}

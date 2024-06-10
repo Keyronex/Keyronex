@@ -14,6 +14,20 @@ struct namepart {
 	bool must_be_dir;
 };
 
+static inline namecache_handle_t
+nchandle_retain_novfs(namecache_handle_t in)
+{
+	nc_retain(in.nc);
+	return in;
+}
+
+static inline namecache_handle_t
+nchandle_release_novfs(namecache_handle_t in)
+{
+	nc_release(in.nc);
+	return (namecache_handle_t) { NULL, NULL };
+}
+
 static int
 split_path(struct lookup *out, char *path, struct namepart *after)
 {
@@ -76,10 +90,14 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 	pathlen = strlen(path) + 1;
 	split_path(&state, pathcpy, NULL);
 
-	if (*path == '/')
-		nch = nchandle_retain(root_nch);
-	else
-		nch = nchandle_retain(start);
+	if (*path == '/') {
+		nch = nchandle_retain_novfs(root_nch);
+	} else
+		nch = nchandle_retain_novfs(start);
+
+	r = vfs_try_retain(nch.nc->vp->vfs);
+	/* if we can refer to an nc, an unmount shouldn't be in progress! */
+	kassert(r == 0);
 
 	for (np = TAILQ_FIRST(&state.components); np != NULL;
 	     np = TAILQ_NEXT(np, tailq_entry)) {
@@ -96,8 +114,12 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 			/* note: figure out mount locking... */
 			while (nch.nc == nch.vfs->root_ncp) {
 				namecache_handle_t next = nch.vfs->nchcovered;
-				nchandle_retain(next);
-				nchandle_release(nch);
+				if (vfs_try_retain(next.nc->vp->vfs) != 0)
+					kfatal("Interrupted by unmount?\n");
+				/* should reconsider the mountpoint traversal */
+				nchandle_retain_novfs(next);
+				nchandle_release_novfs(nch);
+				vfs_release(nch.nc->vp->vfs);
 				nch = next;
 			}
 		}
@@ -115,9 +137,15 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 			vfs = vfs_find(nch);
 			if (vfs != NULL) {
 				namecache_handle_t vfsroot;
+
+				r = vfs_try_retain(vfs);
+				if (r != 0)
+					continue;
+
 				vfsroot.nc = nc_retain(vfs->root_ncp);
 				vfsroot.vfs = vfs;
-				nchandle_release(next_nch);
+				vfs_release(next_nch.nc->vp->vfs);
+				nchandle_release_novfs(next_nch);
 				next_nch = vfsroot;
 			} else
 				break;
@@ -156,7 +184,7 @@ vfs_lookup(namecache_handle_t start, namecache_handle_t *out, const char *path,
 		} else
 #endif
 		{
-			nchandle_release(nch);
+			nchandle_release_novfs(nch);
 			nch = next_nch;
 		}
 	}
@@ -174,8 +202,10 @@ out:
 
 	if (r == 0)
 		*out = nch;
-	else
-		nchandle_release(nch);
+	else {
+		vfs_release(nch.nc->vp->vfs);
+		nchandle_release_novfs(nch);
+	}
 
 	return r;
 }
