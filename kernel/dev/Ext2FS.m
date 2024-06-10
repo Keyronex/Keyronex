@@ -236,7 +236,7 @@ vnode_for_inum(struct ext2fs_state *fs, uint32_t inum, kmutex_t *to_release)
 
 	load_inode(fs, inode, inum);
 	ke_mutex_init(&inode->rwlock);
-	inode->vnode = vnode_alloc();
+	//inode->vnode = vnode_alloc(); /* FIXME */
 	inode->vnode->type = inode->busy = false;
 	inode->vnode->fs_data = (uintptr_t)inode;
 

@@ -95,6 +95,8 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 		anon = false;
 		frame->dev = vnode->vfs->device;
 		frame->vnode = vnode;
+		/* retain a reference on the vnode  */
+		vn_retain(vnode);
 		break;
 
 	default:
@@ -196,7 +198,7 @@ vmp_writeback(void *)
 		}
 
 		if (nio_prepared != 0)
-			kprintf("nio_prepared == %d\n", nio_prepared);
+			kprintf("nio_prepared == %zu\n", nio_prepared);
 
 		if (!vmp_writer_should_run())
 			ke_event_clear(&vmp_writer_event);
@@ -223,18 +225,27 @@ vmp_writeback(void *)
 					 * sets anyway) so the vnode can be
 					 * released.
 					 *
-					 * if they were dirtied in the meantime,
-					 * there is no problem - in the fault
-					 * handler, the needful adjustment
-					 * would have been made.
+					 * if they were dirtied again in the
+					 * meantime, there is no problem - in
+					 * the fault handler, the needful
+					 * adjustment would have been made.
 					 */
-					/* todo: defer til PFN lock released */
-					kprintf(" -VN- reLEASE in writeback daemon\n");
+					vmp_release_pfn_lock(ipl);
+					kprintf(" -VN- reLEASE (0 dirty))\n");
+					/* x-ref vnode dirty refcount */
 					vn_release(obj->file.vnode);
+				} else {
+					vmp_release_pfn_lock(ipl);
 				}
+
+				/*
+				 * release the reference we took on vnode in
+				 * prepare_cluster_write()
+				 */
+				kprintf(" -VN- reLEASE in writeback daemon\n");
+				vn_release(obj->file.vnode);
 			}
 		}
-		vmp_release_pfn_lock(ipl);
 
 #if 0
 		reclaim_all_pages();

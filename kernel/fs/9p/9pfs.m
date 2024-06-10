@@ -511,6 +511,8 @@ out:
 	vfs->device = self;
 	vfs->vfs_data = (uintptr_t)m_state;
 	vfs->file_refcnt = 0;
+	ke_spinlock_init(&vfs->vnode_list_lock);
+	TAILQ_INIT(&vfs->vnode_list);
 
 	r = [self negotiateVersion];
 	if (r != 0)
@@ -537,6 +539,11 @@ out:
 }
 
 @end
+
+static int ninep_sync(vfs_t *vfs)
+{
+
+}
 
 struct mount_args {
 	enum {
@@ -646,4 +653,5 @@ static struct vnode_ops ninep_vnops = {
 
 struct vfs_ops ninep_vfsops = {
 	.mount = ninep_mount,
+	.sync = ninep_sync,
 };

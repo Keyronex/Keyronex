@@ -211,6 +211,20 @@ ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size, bool write)
 }
 
 void
+ubc_remove_vfs(vfs_t *vfs)
+{
+	ipl_t ipl = ke_spinlock_acquire(&ubc_lock);
+	for (size_t i = 0; i < window_count; i++) {
+		ubc_window_t *win = &window_array[i];
+		if (win->vnode != NULL && win->vnode->vfs == vfs) {
+			kassert(win->refcnt == 0);
+			window_replace(win);
+		}
+	}
+	ke_spinlock_release(&ubc_lock, ipl);
+}
+
+void
 ubc_init(void)
 {
 	window_count = 2;

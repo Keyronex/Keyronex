@@ -33,7 +33,16 @@ typedef struct namecache_handle {
 	struct vfs *vfs;
 } namecache_handle_t;
 
-typedef enum vtype { VNON, VREG, VDIR, VCHR, VLNK, VSOCK, VFIFO } vtype_t;
+typedef enum vtype {
+	VNON,
+	VREG,
+	VDIR,
+	VCHR,
+	VLNK,
+	VSOCK,
+	VFIFO,
+	VITER_MARKER
+} vtype_t;
 
 typedef struct vattr {
 	enum vtype type;
@@ -41,6 +50,9 @@ typedef struct vattr {
 
 typedef struct vnode {
 	uint32_t refcount;
+
+	/*! entry in vfs::vnode_list */
+	TAILQ_ENTRY(vnode) vnode_list_entry;
 
 	vtype_t type;
 	struct vnode_ops *ops;
@@ -59,6 +71,8 @@ typedef struct vnode {
 } vnode_t;
 
 typedef struct vfs {
+	/*! Deferred-kmem_free RCU entry. */
+	krcu_entry_t free_rcu_entry;
 	/*! atomic - lowest bit = pending unnount */
 	uint32_t file_refcnt;
 	/*! entry on vfs hash */
@@ -71,32 +85,37 @@ typedef struct vfs {
 	DKDevice *device;
 	/*! operations vector */
 	struct vfs_ops *ops;
+
+	/* vnode list lock */
+	kspinlock_t vnode_list_lock;
+	/* all vnodes of this vfs list */
+	TAILQ_HEAD(, vnode) vnode_list;
+
 	/*! per-fs data */
 	uintptr_t vfs_data;
 } vfs_t;
+
+typedef struct vfs_vnode_iter {
+	vnode_t end_marker_vn;
+	vnode_t *next_vn;
+	vfs_t *vfs;
+} vfs_vnode_iter_t;
 
 struct vnode_ops {
 	io_off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte,
 	    size_t bytes_read, io_off_t seqno);
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
+	void (*inactive)(vnode_t *vn);
 };
 
 struct vfs_ops {
 	int (*mount)(namecache_handle_t over, const char *params);
-	/* vnode_t (*root)(vfs_t *vfs); */
+	int (*sync)(vfs_t *vfs);
 };
 
 vnode_t *vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops,
     kmutex_t *rwlock, kmutex_t *paging_rwlock, uintptr_t fs_data);
 void vnode_setup_cache(vnode_t *vnode);
-
-/*!
- * Allocate a vnode.
- */
-vnode_t *vnode_alloc(void);
-
-int ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size,
-    bool write);
 
 vnode_t *vn_retain(vnode_t *vnode);
 void vn_release(vnode_t *vnode);
@@ -106,6 +125,17 @@ vn_has_cache(vnode_t *vnode)
 {
 	return vnode->object != NULL;
 }
+
+void vfs_vn_iter_init(vfs_vnode_iter_t *it, vfs_t *vfs);
+vnode_t *vfs_vn_iter_next(vfs_vnode_iter_t *it);
+void vfs_vn_iter_destroy(vfs_vnode_iter_t *it);
+
+/*! Write bytes to a given address */
+int ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size,
+    bool write);
+
+/*! @brief Remove all windows for given VFS from cache. */
+void ubc_remove_vfs(vfs_t *vfs);
 
 enum lookup_flags {
 	kLookupNoFollowFinalSymlink = 1 << 1,
@@ -132,6 +162,9 @@ int vfs_try_retain(vfs_t *vfs);
 /*! @brief Release a reference on a VFS. */
 void vfs_release(vfs_t *vfs);
 
+/*! @brief Synch dirty buffers of all files in a VFS. */
+void vfs_fsync_all(vfs_t *vfs);
+
 /*! @brief Retain a retained or (if refcnt = 0) LOCKED namecache. */
 struct namecache *nc_retain(struct namecache *nc);
 /*! @brief Release a retained, UNLOCKED namecache. */
@@ -139,6 +172,7 @@ struct namecache *nc_release(struct namecache *nc);
 /*! @brief Look up a filename within a retained, UNLOCKED namecache. */
 int nc_lookup(struct namecache *nc, struct namecache **out, const char *name);
 
+void nc_remove_vfs(vfs_t *vfs);
 void nc_make_root(vfs_t *vfs, vnode_t *vnode);
 void nc_dump(void);
 

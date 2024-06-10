@@ -1,5 +1,6 @@
 
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/nanokern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
@@ -32,6 +33,7 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 	vm_object_t *obj;
 	vm_page_t *vpml4;
 	vnode_t *vnode = vnode_alloc();
+	ipl_t ipl;
 
 	kprintf(" -VN-  CREATE in vnode_new (rc == 1)\n");
 	vnode->refcount = 1;
@@ -54,6 +56,10 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 		obj->vpml4 = vmp_page_paddr(vpml4);
 		vnode->object = obj;
 	}
+
+	ipl = ke_spinlock_acquire(&vfs->vnode_list_lock);
+	TAILQ_INSERT_TAIL(&vfs->vnode_list, vnode, vnode_list_entry);
+	ke_spinlock_release(&vfs->vnode_list_lock, ipl);
 
 	return vnode;
 }
@@ -169,4 +175,89 @@ vfs_release(vfs_t *vfs)
 	uint32_t ret = __atomic_fetch_sub(&vfs->file_refcnt, 2,
 	    __ATOMIC_RELEASE);
 	kprintf(" -VFS- reLEASE %p to %d\n", vfs, ret - 2);
+}
+
+void
+vfs_vn_iter_init(vfs_vnode_iter_t *it, vfs_t *vfs)
+{
+	ipl_t ipl;
+
+	it->end_marker_vn.type = VITER_MARKER;
+	it->vfs = vfs;
+
+	ipl = ke_spinlock_acquire(&vfs->vnode_list_lock);
+	TAILQ_INSERT_TAIL(&vfs->vnode_list, &it->end_marker_vn,
+	    vnode_list_entry);
+	it->next_vn = TAILQ_FIRST(&vfs->vnode_list);
+	vn_retain(it->next_vn);
+	ke_spinlock_release(&vfs->vnode_list_lock, ipl);
+}
+
+/*! @brief get next vnode of a vfs from an iterator, returns retained */
+vnode_t *
+vfs_vn_iter_next(vfs_vnode_iter_t *it)
+{
+	ipl_t ipl;
+	vnode_t *vn;
+
+	if (it->next_vn == NULL)
+		return NULL;
+
+	ipl = ke_spinlock_acquire(&it->vfs->vnode_list_lock);
+
+	/* we retained this (as needed for our return) when we set this */
+	vn = it->next_vn;
+
+	/* skip other markers but stop on our own */
+	do {
+		it->next_vn = TAILQ_NEXT(it->next_vn, vnode_list_entry);
+		/* we must always reach our own marker, not NULL */
+		kassert(it->next_vn != NULL);
+	} while (it->next_vn->type == VITER_MARKER &&
+	    it->next_vn != &it->end_marker_vn);
+
+	if (it->next_vn == &it->end_marker_vn)
+		it->next_vn = NULL;
+	else
+		vn_retain(it->next_vn);
+
+	ke_spinlock_release(&it->vfs->vnode_list_lock, ipl);
+
+	return vn;
+}
+
+void
+vfs_vn_iter_destroy(vfs_vnode_iter_t *it)
+{
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&it->vfs->vnode_list_lock);
+	TAILQ_REMOVE(&it->vfs->vnode_list, &it->end_marker_vn,
+	    vnode_list_entry);
+	ke_spinlock_release(&it->vfs->vnode_list_lock, ipl);
+
+	if (it->next_vn != NULL)
+		vn_release(it->next_vn);
+}
+
+void
+vn_fsync(vnode_t *vn)
+{
+	kprintf("Do fsync\n");
+}
+
+void
+vfs_fsync_all(vfs_t *vfs)
+{
+	vfs_vnode_iter_t it;
+	vnode_t *vn;
+
+	vfs_vn_iter_init(&it, vfs);
+
+	while ((vn = vfs_vn_iter_next(&it))) {
+		vn_fsync(vn);
+		vn_release(vn);
+	}
+
+	vfs_vn_iter_destroy(&it);
 }

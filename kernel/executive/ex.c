@@ -138,25 +138,33 @@ test_unmap(void)
 #endif
 
 static void test_fs_refcounts(void) {
-	namecache_handle_t hdl = root_nch, out;
+	namecache_handle_t hdl = root_nch, write_test, nonexist;
+	int r;
 
 	kprintf("Before any lookups\n");
 	nc_dump();
 
-	int r = vfs_lookup(hdl, &out, "/usr/bin/posix_server", 0);
-	kprintf("\nAfter looking up /usr/bin/posix_server (ret %d)...\n", r);
+	kprintf("\nLooking up /etc/write_test (ret %d)...\n", r);
+	r = vfs_lookup(hdl, &write_test, "/etc/write_test", 0);
 	nc_dump();
 
-	nchandle_release(out);
-	kprintf("\nAfter release posix_server (ret %d)...\n", r);
+	kprintf("\nLooking up /usr/lib/nonexistent (ret %d)...\n", r);
+	r = vfs_lookup(hdl, &nonexist, "/usr/lib/nonexistent", 0);
 	nc_dump();
 
-	r = vfs_lookup(hdl, &out, "/usr/lib/nonexistent", 0);
-	kprintf("\nAfter looking up /usr/lib/nonexistent (ret %d)...\n", r);
-	nc_dump();
+	kprintf("\nDoing a write to write_test.\n");
+	const char *test = "I have been written to a file!!\n";
+	ubc_io(write_test.nc->vp, (vaddr_t)test, 0, strlen(test) + 1, true);
+	nchandle_release(write_test);
 
-	nc_release(root_nch.nc);
-	kprintf("\nAfter releasing the subtree...\n");
+	kprintf("\nPurging the UBC:\n");
+	ubc_remove_vfs(root_nch.vfs);
+
+	kprintf("\nSyncing the VFS:\n");
+	vfs_fsync_all(root_nch.vfs);
+
+	kprintf("\nReleasing the subtree...\n");
+	nc_remove_vfs(root_nch.vfs);
 	nc_dump();
 
 	kfatal("Stop here\n");

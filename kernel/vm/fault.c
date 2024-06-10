@@ -399,6 +399,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 					kprintf(
 					    " -VN- reTAIN Vnode %p has its first dirty page\n",
 					    area_info.object->file.vnode);
+					/* x-ref vnode dirty refcount */
 					vn_retain(area_info.object->file.vnode);
 				}
 			}

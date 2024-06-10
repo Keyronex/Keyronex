@@ -280,10 +280,9 @@ nc_make_root(vfs_t *vfs, vnode_t *vnode)
 }
 
 void
-nc_release_subtree(namecache_t *vfsncp)
+nc_remove_vfs(vfs_t *vfs)
 {
 	namecache_t *ncp, *tmp;
-	vfs_t *vfs = vfsncp->vfsp;
 	bool found_one;
 
 	ke_wait(&lru_mutex, "nc_retain:lru_mutex", false, false, -1);
