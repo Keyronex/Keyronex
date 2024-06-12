@@ -377,6 +377,8 @@ krx_vm_map(vaddr_t hint, size_t size, int prot, int flags, int handle,
 	if (!(flags & MAP_ANON)) {
 		struct file *file = ex_curproc()->handles[handle];
 		obj = file->nch.nc->vp->object;
+	} else if (flags & MAP_ANON && flags & MAP_SHARED) {
+		kfatal("Implement anon shared\n");
 	}
 
 	r = vm_ps_map_object_view(ex_curproc()->vm, obj, &hint, size, offset,

@@ -244,8 +244,10 @@ vmp_writeback(void *)
 				 */
 				kprintf(" -VN- reLEASE in writeback daemon\n");
 				vn_release(obj->file.vnode);
+				ipl = vmp_acquire_pfn_lock();
 			}
 		}
+		vmp_release_pfn_lock(ipl);
 
 #if 0
 		reclaim_all_pages();

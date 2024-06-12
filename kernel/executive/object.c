@@ -22,6 +22,7 @@ struct type_object_with_header {
 };
 
 static struct type_object_with_header types[255];
+obj_class_t anon_class;
 
 static inline struct object_header *
 header_from_object(void *object)
@@ -86,6 +87,7 @@ obj_init(void)
 	}
 
 	obj_new_type("Type");
+	anon_class = obj_new_type("Anonymous");
 }
 
 int

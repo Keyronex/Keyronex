@@ -55,6 +55,8 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 		vm_page_alloc(&vpml4, 0, kPageUseVPML4, false);
 		obj->vpml4 = vmp_page_paddr(vpml4);
 		vnode->object = obj;
+		ke_mutex_init(&obj->map_entry_list_lock);
+		LIST_INIT(&obj->map_entry_list);
 	}
 
 	ipl = ke_spinlock_acquire(&vfs->vnode_list_lock);
@@ -243,7 +245,9 @@ vfs_vn_iter_destroy(vfs_vnode_iter_t *it)
 void
 vn_fsync(vnode_t *vn)
 {
+	ke_wait(vn->rwlock, "vn_fsync:vn->rwlock", false, false, -1);
 	kprintf("Do fsync\n");
+	ke_mutex_release(vn->rwlock);
 }
 
 void

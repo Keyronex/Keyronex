@@ -57,6 +57,8 @@ typedef struct vm_map_entry {
 	vm_object_t *object;
 	/*! Entry in vm_procstate::map_entry_rbtree */
 	RB_ENTRY(vm_map_entry) rb_entry;
+	/*! Entry in vm_object::map_entry_list */
+	LIST_ENTRY(vm_map_entry) object_entry;
 	/*! Start and end vitrual address. */
 	vaddr_t start, end;
 } vm_map_entry_t;
@@ -154,8 +156,15 @@ struct vm_object {
 			size_t n_dirty_pages;
 		} file;
 		struct {
+			struct ex_memory_object *object;
+			size_t size; /*!< size in bytes */
 		} anon;
 	};
+
+	/*! Protects map_entry_list. */
+	kmutex_t map_entry_list_lock;
+	/*! All mappings of this object. (please see map.c for notes) */
+	LIST_HEAD(, vm_map_entry) map_entry_list;
 };
 
 typedef TAILQ_HEAD(, vm_page) page_queue_t;
