@@ -54,7 +54,7 @@ connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err)
 {
 	struct socknode *so = (void *)arg;
 	iop_t *iop = so->connect_iop;
-	iop->status = err_to_errno(err);
+	iop->result.result = err_to_errno(err);
 	iop_continue(iop, kIOPRetCompleted);
 	return ERR_OK;
 }
@@ -74,13 +74,13 @@ dispatch_connect(iop_t *iop)
 	ipl = ke_spinlock_acquire(&so->lock);
 
 	if (so->tcpcb->state == SYN_SENT) {
-		iop->status = EALREADY;
+		iop->result.result = EALREADY;
 		goto fail;
 	} else if (so->tcpcb->state == LISTEN) {
-		iop->status = EOPNOTSUPP;
+		iop->result.result = EOPNOTSUPP;
 		goto fail;
 	} else if (so->tcpcb->state != CLOSED) {
-		iop->status = EISCONN;
+		iop->result.result = EISCONN;
 		goto fail;
 	}
 
@@ -90,7 +90,7 @@ dispatch_connect(iop_t *iop)
 	err = tcp_connect(so->tcpcb, &ip, port, connected_cb);
 	UNLOCK_TCP_SOCK_NOSPL(so->tcpcb);
 	if (err != ERR_OK) {
-		iop->status = err_to_errno(err);
+		iop->result.result = err_to_errno(err);
 		goto fail;
 	}
 

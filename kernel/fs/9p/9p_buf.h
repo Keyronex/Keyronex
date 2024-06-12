@@ -62,7 +62,7 @@ enum ninep_getattr_mask {
 	k9pGetattrGen = 0x1000ULL,
 	k9pGetattrDataVersion = 0x2000ULL,
 
-	k9pGetattrBasic = 0x7ffULL, /* all up to blocks */
+	k9pGetattrBasic = 0x7ffULL, /* all up to & including blocks */
 	k9pGetattrAll = 0x3fffULL,  /* all */
 };
 

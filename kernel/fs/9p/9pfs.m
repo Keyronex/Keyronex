@@ -42,6 +42,8 @@ struct ninep_node {
 	fid_t fid, paging_fid;
 	vnode_t *vnode; /* ninep_nodes always have an associated vnode */
 
+	vattr_t vattr; /*!< cached attributes */
+
 	kmutex_t rwlock, paging_rwlock;
 };
 
@@ -61,6 +63,8 @@ struct ninepfs_state {
 
 static int counter = 0;
 static struct vnode_ops ninep_vnops;
+
+static int do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr);
 
 static int64_t
 node_cmp(struct ninep_node *x, struct ninep_node *y)
@@ -88,6 +92,7 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 {
 	struct ninep_node key, *found;
 	vtype_t vtype;
+	int r;
 
 	key.qid = qid;
 
@@ -127,7 +132,17 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	found->vnode = vnode_new(fs->vfs, vtype, &ninep_vnops /* ops */,
 	    &found->rwlock, &found->paging_rwlock, (uintptr_t)found);
 
+	ke_wait(&found->rwlock, "", false, false, -1);
+
 	ke_mutex_release(&fs->node_cache_lock);
+
+	r = do_getattr(fs, fid, &found->vattr);
+
+	/* todo: mark the vnode bad so waiters can see... */
+	if (r != 0)
+		kfatal("node_for_qid: getattr fail\n");
+
+	ke_mutex_release(&found->rwlock);
 
 	*out = found;
 
@@ -247,6 +262,84 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	ninep_buf_free(buf_out);
 
 	return r;
+}
+
+static int
+do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
+{
+	iop_t *iop;
+	struct ninep_buf *buf_in, *buf_out;
+
+	uint64_t valid;
+	struct ninep_qid qid;
+	uint64_t nlink, blocks;
+
+	int r;
+
+	/* size[4] Tgetattr tag[2] fid[4] request_mask[8] */
+	buf_in = ninep_buf_alloc("Fl");
+	/*
+	 * size[4] Rgetattr tag[2] valid[8] qid[13] mode[4] uid[4] gid[4]
+	 *       nlink[8] rdev[8] size[8] blksize[8] blocks[8]
+	 *       atime_sec[8] atime_nsec[8] mtime_sec[8] mtime_nsec[8]
+	 *       ctime_sec[8] ctime_nsec[8] btime_sec[8] btime_nsec[8]
+	 *       gen[8] data_version[8]
+	 */
+	buf_out = ninep_buf_alloc("lQdddlllllllllllllll");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pGetattr;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addu64(buf_in, k9pGetattrBasic);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pGetattr + 1:
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		ninep_buf_free(buf_out);
+		r = -err;
+		kassert(r != 0);
+		kfatal("Fucked it up!\n");
+		break;
+	}
+
+	default:
+		kfatal("Unexpected ninep result")
+	}
+
+	ninep_buf_getu64(buf_out, &valid);
+	kassert(valid == k9pGetattrBasic);
+	ninep_buf_getqid(buf_out, &qid);
+	ninep_buf_getu32(buf_out, &vattr->mode);
+	ninep_buf_getu32(buf_out, &vattr->uid);
+	ninep_buf_getu32(buf_out, &vattr->gid);
+	ninep_buf_getu64(buf_out, &nlink);
+	ninep_buf_getu64(buf_out, &vattr->rdev);
+	ninep_buf_getu64(buf_out, &vattr->size);
+	ninep_buf_getu64(buf_out, &vattr->blocksize);
+	ninep_buf_getu64(buf_out, &blocks);
+	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->atim.tv_sec);
+	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->atim.tv_nsec);
+	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->mtim.tv_sec);
+	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->mtim.tv_nsec);
+	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->ctim.tv_sec);
+	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->ctim.tv_nsec);
+
+	vattr->fileid = qid.path;
+	vattr->type = mode_to_vtype(vattr->mode);
+	vattr->nlink = nlink;
+	vattr->disksize = blocks * vattr->blocksize;
+
+	return 0;
 }
 
 int

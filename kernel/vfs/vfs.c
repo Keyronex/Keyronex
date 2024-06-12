@@ -18,6 +18,36 @@ LIST_HEAD(vfs_hash_bucket, vfs) vfs_hash[MNT_HASH_NBUCKETS];
 
 obj_class_t vnode_class;
 
+enum vtype
+mode_to_vtype(mode_t mode)
+{
+	switch (mode & S_IFMT) {
+	case S_IFDIR:
+		return VDIR;
+
+	case S_IFCHR:
+		return VCHR;
+
+	case S_IFBLK:
+		return VNON;
+
+	case S_IFREG:
+		return VREG;
+
+	case S_IFIFO:
+		return VNON;
+
+	case S_IFLNK:
+		return VLNK;
+
+	case S_IFSOCK:
+		return VSOCK;
+
+	default:
+		return VNON;
+	}
+}
+
 vnode_t *
 vnode_alloc(void)
 {

@@ -1,8 +1,12 @@
 #ifndef KRX_KDK_VFS_H
 #define KRX_KDK_VFS_H
 
+#include <sys/stat.h>
+
+#include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "dev.h"
 
@@ -45,7 +49,20 @@ typedef enum vtype {
 } vtype_t;
 
 typedef struct vattr {
-	enum vtype type;
+	enum vtype type;      /*!< vnode type */
+	mode_t mode;	      /*!< mode and type */
+	nlink_t nlink;	      /*!< number of links to file */
+	uid_t uid;	      /*!< owning user*/
+	gid_t gid;	      /*!< owning group*/
+	dev_t fsid;	      /*!< fs unique id */
+	ino_t fileid;	      /*!< file unique id */
+	uint64_t size;	      /*!< size in bytes */
+	uint64_t blocksize;   /*!< fs block size  */
+	struct timespec atim, /*!< last access time */
+	    mtim,	      /*!< last modified time */
+	    ctim;	      /*!< creation time */
+	dev_t rdev;	      /*!< represented device */
+	uint64_t disksize;    /*!< on-disk size in bytes */
 } vattr_t;
 
 typedef struct vnode {
@@ -175,6 +192,8 @@ int nc_lookup(struct namecache *nc, struct namecache **out, const char *name);
 void nc_remove_vfs(vfs_t *vfs);
 void nc_make_root(vfs_t *vfs, vnode_t *vnode);
 void nc_dump(void);
+
+vtype_t mode_to_vtype(mode_t mode);
 
 static inline namecache_handle_t
 nchandle_retain(namecache_handle_t in)

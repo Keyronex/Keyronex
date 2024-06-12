@@ -150,6 +150,7 @@ struct vm_object {
 		kAnon,
 	} kind;
 	paddr_t vpml4;
+	size_t size; /*< or, highest byte to be written back */
 	union {
 		struct {
 			struct vnode *vnode;
@@ -157,7 +158,6 @@ struct vm_object {
 		} file;
 		struct {
 			struct ex_memory_object *object;
-			size_t size; /*!< size in bytes */
 		} anon;
 	};
 

@@ -132,6 +132,11 @@ typedef enum iop_direction {
 	kIOPUp,
 } iop_direction_t;
 
+typedef struct io_result {
+	uintptr_t result; /*! 0 or errno */
+	uintptr_t count; /*! count of bytes dealt with, if relevant */
+} io_result_t;
+
 /*!
  * I/O packet
  */
@@ -144,7 +149,7 @@ typedef struct iop {
 	/*! Linkage in a device queue. */
 	TAILQ_ENTRY(iop) dev_queue_entry;
 
-	uintptr_t status; /*! Success/failure status. */
+	io_result_t result;
 
 	unsigned
 	    /*! Has the IOP started running? */
