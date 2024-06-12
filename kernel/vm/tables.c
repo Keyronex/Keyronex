@@ -518,8 +518,6 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 	ipl_t ipl;
 	int r;
 
-	eprocess_t *ps = kernel_process;
-
 	KE_WAIT(&vmps->ws_mutex, false, false, -1);
 	ipl = vmp_acquire_pfn_lock();
 

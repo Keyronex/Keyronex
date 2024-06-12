@@ -18,10 +18,8 @@
  * pte so that it can be consulted afterwards - we need to decide on whether we
  * will be needing this. We will do if we permit expulsion of busy pages, which
  * is not currently possible because the page isn't added to a working set until
- * after the fault was completed, and because we don't have unmapping, but when
- * we do, we might elect to wait for busy pages to not be busy before proceeding
- * with it. That may require thought to square with the creation of some kind
- * of mapping list lock separate from the working set lock.
+ * after the fault was completed, and because while unmapping, we are currently
+ * going to wait for busy pages to not be busy before proceeding with unmapping.
  */
 
 struct fault_info {
