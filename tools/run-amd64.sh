@@ -15,8 +15,8 @@ while getopts "9dknr:spq:" optchar; do
 	*) usage ;;
 esac done
 
-#QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
-QEMU_EXE=/ws/Compilers/qemu-8.0.4/bld/qemu-system-x86_64
+QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
+#QEMU_EXE=/ws/Compilers/qemu-8.0.4/bld/qemu-system-x86_64
 qemu_args="$qemu_args -s"
 
 virtio_9p_arg="-device virtio-9p-pci,fsdev=sysroot,mount_tag=sysroot \

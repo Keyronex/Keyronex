@@ -139,7 +139,7 @@ struct type *name##_SPLAY_INSERT(struct name *, struct type *);		\
 struct type *name##_SPLAY_REMOVE(struct name *, struct type *);		\
 									\
 /* Finds the node with the same key as elm */				\
-static __unused __inline struct type *					\
+static krx_unused __inline struct type *					\
 name##_SPLAY_FIND(struct name *head, struct type *elm)			\
 {									\
 	if (SPLAY_EMPTY(head))						\
@@ -150,7 +150,7 @@ name##_SPLAY_FIND(struct name *head, struct type *elm)			\
 	return (NULL);							\
 }									\
 									\
-static __unused __inline struct type *					\
+static krx_unused __inline struct type *					\
 name##_SPLAY_NEXT(struct name *head, struct type *elm)			\
 {									\
 	name##_SPLAY(head, elm);					\
@@ -164,7 +164,7 @@ name##_SPLAY_NEXT(struct name *head, struct type *elm)			\
 	return (elm);							\
 }									\
 									\
-static __unused __inline struct type *					\
+static krx_unused __inline struct type *					\
 name##_SPLAY_MIN_MAX(struct name *head, int val)			\
 {									\
 	name##_SPLAY_MINMAX(head, val);					\
@@ -412,7 +412,7 @@ struct {								\
 #define	RB_PROTOTYPE(name, type, field, cmp)				\
 	RB_PROTOTYPE_INTERNAL(name, type, field, cmp,)
 #define	RB_PROTOTYPE_STATIC(name, type, field, cmp)			\
-	RB_PROTOTYPE_INTERNAL(name, type, field, cmp, __unused static)
+	RB_PROTOTYPE_INTERNAL(name, type, field, cmp, krx_unused static)
 #define RB_PROTOTYPE_INTERNAL(name, type, field, cmp, attr)		\
 	RB_PROTOTYPE_RANK(name, type, attr)				\
 	RB_PROTOTYPE_INSERT_COLOR(name, type, attr);			\
@@ -472,7 +472,7 @@ struct {								\
 #define	RB_GENERATE(name, type, field, cmp)				\
 	RB_GENERATE_INTERNAL(name, type, field, cmp,)
 #define	RB_GENERATE_STATIC(name, type, field, cmp)			\
-	RB_GENERATE_INTERNAL(name, type, field, cmp, __unused static)
+	RB_GENERATE_INTERNAL(name, type, field, cmp, krx_unused static)
 #define RB_GENERATE_INTERNAL(name, type, field, cmp, attr)		\
 	RB_GENERATE_RANK(name, type, field, attr)			\
 	RB_GENERATE_INSERT_COLOR(name, type, field, attr)		\
