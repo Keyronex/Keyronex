@@ -250,7 +250,7 @@ void vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
  * @retval 0 PTE wired with no locks released.
  * @retval 1 PTE wired but locks were released at least once.
  */
-int vmp_wire_pte(struct eprocess *ps, vaddr_t vaddr, paddr_t prototype,
+int vmp_wire_pte(struct eprocess *ps, vaddr_t vaddr, vm_object_t *object,
     struct vmp_pte_wire_state *state, bool create);
 void vmp_pte_wire_state_release(struct vmp_pte_wire_state *state,
     bool prototype);

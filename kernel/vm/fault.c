@@ -58,7 +58,7 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 	struct vmp_pte_wire_state object_state;
 	int r;
 
-	r = vmp_wire_pte(process, object_byteoffset, object->vpml4,
+	r = vmp_wire_pte(process, object_byteoffset, object,
 	    &object_state, true);
 	kassert(r == 0);
 
@@ -317,7 +317,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	ipl = vmp_acquire_pfn_lock();
 	r = vmp_wire_pte(process, vaddr, 0, &state, true);
-	if (r != kVMFaultRetOK) {
+	if (r < 0) {
 		kfatal("Failed to wire PTE\n");
 		/* map mutex unlocked, PFNDB unlocked, and at IPL 0 */
 		return r;
