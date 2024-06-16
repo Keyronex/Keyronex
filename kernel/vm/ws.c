@@ -198,7 +198,7 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool shared)
 
 			ws->limit = MIN2(ws->limit + WS_EXPANSION_COUNT,
 			    ws->capacity);
-			kprintf("WS limit raised to %d\n", ws->limit);
+			kprintf("WS limit raised to %zu\n", ws->limit);
 		}
 
 		/* take an entry from the freelist */

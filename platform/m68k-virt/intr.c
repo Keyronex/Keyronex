@@ -9,6 +9,8 @@
 #include "vm/vmp.h"
 #include "executive/exp.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 void
 md_raise_dpc_interrupt(void)
 {

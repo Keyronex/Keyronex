@@ -635,7 +635,7 @@ out:
 
 static int ninep_sync(vfs_t *vfs)
 {
-
+	return 0;
 }
 
 struct mount_args {
@@ -729,6 +729,8 @@ ninep_mount(namecache_handle_t over, const char *argstr)
 		iop->stack[0].connect.sockaddr = &sa;
 
 		iop_send_sync(iop);
+
+		(void)r;
 
 		port = [[Socket9pPort alloc] initWithConnectedSocket:sock];
 	}

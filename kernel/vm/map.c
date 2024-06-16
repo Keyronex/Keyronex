@@ -139,10 +139,8 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 {
 	vm_map_entry_t *entry, *tmp;
 	vaddr_t end = start + size;
-	kwaitresult_t w;
 
 	ex_rwlock_acquire_write(&vmps->map_lock, "vm_ps_deallocate:vmps->map_lock");
-	kassert(w == kKernWaitStatusOK);
 
 	RB_FOREACH_SAFE (entry, vm_map_entry_rbtree, &vmps->vad_queue, tmp) {
 		if ((entry->start < start && entry->end <= start) ||

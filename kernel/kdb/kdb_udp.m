@@ -2,6 +2,8 @@
 #include "dev/safe_endian.h"
 #include "kdk/kmem.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 #define KDB_IP 0x0a00020f /* 10.0.2.15 */
 
 #define ETHERTYPE_IP 0x0800

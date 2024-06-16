@@ -144,12 +144,14 @@ static void test_fs_refcounts(void) {
 	kprintf("Before any lookups\n");
 	nc_dump();
 
-	kprintf("\nLooking up /etc/write_test (ret %d)...\n", r);
+	kprintf("\nLooking up /etc/write_test...\n");
 	r = vfs_lookup(hdl, &write_test, "/etc/write_test", 0);
+	kassert(r == 0);
 	nc_dump();
 
-	kprintf("\nLooking up /usr/lib/nonexistent (ret %d)...\n", r);
+	kprintf("\nLooking up /usr/lib/nonexistent...\n");
 	r = vfs_lookup(hdl, &nonexist, "/usr/lib/nonexistent", 0);
+	kassert(r < 0);
 	nc_dump();
 
 	kprintf("\nDoing a write to write_test.\n");
@@ -253,6 +255,7 @@ ex_init(void *)
 	mount_root();
 
 	test_fs_refcounts();
+	test_unmount();
 
 	pagefile_init();
 

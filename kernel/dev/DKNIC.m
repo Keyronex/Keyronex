@@ -50,6 +50,8 @@ netifInit(struct netif *nic)
 {
 	DKNIC *self = (DKNIC *)nic->state;
 
+	(void)self;
+
 	nic->mtu = 2048;
 	nic->hwaddr_len = ETHARP_HWADDR_LEN;
 	nic->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP |
@@ -81,7 +83,7 @@ netifInit(struct netif *nic)
 	ipl_t ipl;
 
 	if (up)
-		DKDevLog(self, "Link up (%luMb %s Duplex)\n", mbits,
+		DKDevLog(self, "Link up (%zuMb %s Duplex)\n", mbits,
 		    duplex ? "Full" : "Half");
 	else
 		DKDevLog(self, "Link down\n");
