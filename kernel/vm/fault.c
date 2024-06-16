@@ -47,19 +47,156 @@ vmp_pager_state_release(struct vmp_pager_state *state)
 }
 
 static int
-vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
+do_file_read(eprocess_t *process, vm_procstate_t *vmps,
+    struct fault_info *area_info, struct vmp_pte_wire_state *state,
+    struct vmp_pte_wire_state *object_state, vaddr_t vaddr)
+{
+	vm_object_t *object = area_info->object;
+	size_t object_byteoffset = area_info->offset * PGSIZE +
+	    (vaddr - area_info->start);
+	pgoff_t object_pgoffset = object_byteoffset / PGSIZE;
+	vm_mdl_t *mdl;
+	iop_t *iop;
+	struct vmp_pager_state *pgstate;
+	vm_page_t *page;
+	int r;
+
+	r = vmp_page_alloc_locked(&page, kPageUseFileShared, false);
+	if (r != 0) {
+		vmp_pte_wire_state_release(object_state, true);
+		vmp_pte_wire_state_release(state, false);
+		vmp_release_pfn_lock(kIPLAST);
+		return -kVMFaultRetPageShortage;
+	}
+
+	pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
+	kassert(r == 0);
+
+	pgstate->refcnt = 1;
+	pgstate->vpfn = (vaddr / PGSIZE);
+	pgstate->length = 1;
+	ke_event_init(&pgstate->event, false);
+
+	page->pager_request = pgstate;
+	page->owner = object;
+	page->offset = object_pgoffset;
+	page->dirty = false;
+	page->referent_pte = V2P((vaddr_t)object_state->pte);
+
+	/* create busy PTEs in both the prototype pagetable and the process */
+	vmp_md_pte_create_busy(object_state->pte, page->pfn);
+	vmp_pagetable_page_noswap_pte_created(process->vm,
+	    object_state->pgtable_pages[0], true);
+
+	vmp_md_pte_create_busy(state->pte, page->pfn);
+	vmp_pagetable_page_noswap_pte_created(process->vm, state->pgtable_pages[0],
+	    true);
+
+	/* additional retains to keep PTE and proto PTE pointers valid */
+	vmp_page_retain_locked(object_state->pgtable_pages[0]);
+	vmp_page_retain_locked(state->pgtable_pages[0]);
+
+	vmp_pte_wire_state_release(object_state, true);
+	vmp_pte_wire_state_release(state, false);
+	vmp_release_pfn_lock(kIPLAST);
+	if (area_info->map_lock_held) {
+		area_info->map_lock_held = false;
+		ex_rwlock_release_read(&vmps->map_lock);
+	}
+	ke_mutex_release(&vmps->ws_mutex);
+
+	mdl = &pgstate->mdl;
+	mdl->nentries = 1;
+	mdl->offset = 0;
+	mdl->write = true;
+	mdl->pages[0] = page;
+	iop = iop_new_vnode_read(object->file.vnode, mdl, PGSIZE,
+	    object_byteoffset);
+
+	iop_send_sync(iop);
+	iop_free(iop);
+
+	/*
+	 * we don't need the map_lock, any unmapper will be waiting on our busy
+	 * page
+	 */
+
+	KE_WAIT(&vmps->ws_mutex, false, false, -1);
+	vmp_acquire_pfn_lock();
+
+	switch (vmp_pte_characterise(object_state->pte)) {
+	case kPTEKindZero:
+		kfatal("Not working yet\n"); /* pager state */
+		/* not used yet, but could be useful for e.g. file truncation */
+		kassert(page->use == kPageUseDeleted && page->refcnt == 1);
+		vmp_page_release_locked(page);
+		vmp_page_release_locked(object_state->pgtable_pages[0]);
+		vmp_page_release_locked(state->pgtable_pages[0]);
+
+		vmp_release_pfn_lock(kIPLAST);
+
+		return kVMFaultRetRetry;
+
+	case kPTEKindValid:
+	case kPTEKindSwap:
+	case kPTEKindTrans:
+		/*
+		 * we might end up permitting this in the future. (for anons)
+		 * should be treated like the case of finding a zero PTE?
+		 * i.e. give up on it all.
+		 * for now it's impossible, but let's be certain
+		 */
+		kfatal("Impossible\n");
+
+	case kPTEKindBusy:
+		/* fall out */
+		break;
+
+	default:
+		kfatal("Invalid Object PTE state\n");
+	}
+	kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state->pte)) == page);
+	vmp_md_pte_create_hw(object_state->pte, page->pfn, true, true);
+
+	/*
+	 * the process PTE must still be busy - we wait for busy PTEs to become
+	 * unbusy when unmapping etc. there is nothing else that can change its
+	 * state, as it is not on the working set list yet.
+	 *
+	 * it could be worthwhile in the future to have the page-in state
+	 * structure include a flag (perhaps one for each page in the cluster?)
+	 * to be set if a busy PTE was gotten rid of. this would make it so that
+	 * operations like unmap would not have to wait on the busy page.
+	 */
+	kassert(vmp_pte_characterise(state->pte) == kPTEKindBusy);
+	vmp_md_pte_create_hw(state->pte, page->pfn, false, true);
+
+	/* release references we took to preserve the pages containing PTEs */
+	vmp_page_release_locked(object_state->pgtable_pages[0]);
+	vmp_page_release_locked(state->pgtable_pages[0]);
+
+	vmp_release_pfn_lock(kIPLAST);
+
+	/* now release waiters */
+	ke_event_signal(&pgstate->event);
+	vmp_pager_state_release(pgstate);
+
+	return 0;
+}
+
+static int
+vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
     struct fault_info *area_info, struct vmp_pte_wire_state *state,
     vaddr_t vaddr)
 {
 	vm_object_t *object = area_info->object;
 	size_t object_byteoffset = area_info->offset * PGSIZE +
 	    (vaddr - area_info->start);
-	pgoff_t object_pgoffset = object_byteoffset / PGSIZE;
 	struct vmp_pte_wire_state object_state;
 	int r;
 
-	r = vmp_wire_pte(process, object_byteoffset, object,
-	    &object_state, true);
+	r = vmp_wire_pte(process, object_byteoffset, object, &object_state,
+	    true);
 	kassert(r == 0);
 
 	switch (vmp_pte_characterise(object_state.pte)) {
@@ -70,7 +207,8 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 
 		vmp_page_retain_locked(page);
 		vmp_md_pte_create_hw(pte, page->pfn, false, true);
-		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
+		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
+		    true);
 		vmp_pte_wire_state_release(&object_state, true);
 		vmp_pte_wire_state_release(state, false);
 		vmp_release_pfn_lock(kIPLAST);
@@ -115,129 +253,41 @@ vmp_do_file_fault(eprocess_t *process, vm_procstate_t *vmps,
 
 	case kPTEKindZero:
 		/* fall out */
+		break;
+
+	default:
+		kfatal("Unexpected object PTE state\n");
 	}
 
-	/* not in the cache - try to read it in */
-	vm_mdl_t *mdl;
-	iop_t *iop;
-	struct vmp_pager_state *pgstate;
-	vm_page_t *page;
+	if (object->kind == kFile) {
+		r = do_file_read(process, vmps, area_info, state, &object_state,
+		    vaddr);
+		if (r != 0)
+			return r;
+	} else {
+		pte_t *pte = state->pte;
+		vm_page_t *pml1_page = state->pgtable_pages[0];
+		vm_page_t *page;
 
-	r = vmp_page_alloc_locked(&page, kPageUseFileShared, false);
-	if (r != 0) {
+		r = vmp_page_alloc_locked(&page, kPageUseAnonShared, false);
+		if (r != 0) {
+			vmp_pte_wire_state_release(&object_state, true);
+			vmp_pte_wire_state_release(state, false);
+			vmp_release_pfn_lock(kIPLAST);
+			return -kVMFaultRetPageShortage;
+		}
+
+		vmp_md_pte_create_hw(pte, page->pfn, false, true);
+
+		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
+		    true);
+		vmp_pagetable_page_noswap_pte_created(process->vm,
+		    object_state.pgtable_pages[0], true);
+
 		vmp_pte_wire_state_release(&object_state, true);
 		vmp_pte_wire_state_release(state, false);
 		vmp_release_pfn_lock(kIPLAST);
-		return -kVMFaultRetPageShortage;
 	}
-
-	pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
-	kassert(r == 0);
-
-	pgstate->refcnt = 1;
-	pgstate->vpfn = (vaddr / PGSIZE);
-	pgstate->length = 1;
-	ke_event_init(&pgstate->event, false);
-
-	page->pager_request = pgstate;
-	page->owner = object;
-	page->offset = object_pgoffset;
-	page->dirty = false;
-	page->referent_pte = V2P((vaddr_t)object_state.pte);
-
-	/* create busy PTEs in both the prototype pagetable and the process */
-	vmp_md_pte_create_busy(object_state.pte, page->pfn);
-	vmp_pagetable_page_noswap_pte_created(process->vm,
-	    object_state.pgtable_pages[0], true);
-
-	vmp_md_pte_create_busy(state->pte, page->pfn);
-	vmp_pagetable_page_noswap_pte_created(process->vm, state->pgtable_pages[0],
-	    true);
-
-	/* additional retains to keep PTE and proto PTE pointers valid */
-	vmp_page_retain_locked(object_state.pgtable_pages[0]);
-	vmp_page_retain_locked(state->pgtable_pages[0]);
-
-	vmp_pte_wire_state_release(&object_state, true);
-	vmp_pte_wire_state_release(state, false);
-	vmp_release_pfn_lock(kIPLAST);
-	if (area_info->map_lock_held) {
-		area_info->map_lock_held = false;
-		ex_rwlock_release_read(&vmps->map_lock);
-	}
-	ke_mutex_release(&vmps->ws_mutex);
-
-	mdl = &pgstate->mdl;
-	mdl->nentries = 1;
-	mdl->offset = 0;
-	mdl->write = true;
-	mdl->pages[0] = page;
-	iop = iop_new_vnode_read(object->file.vnode, mdl, PGSIZE,
-	    object_byteoffset);
-
-	iop_send_sync(iop);
-	iop_free(iop);
-
-	/*
-	 * we don't need the map_lock, any unmapper will be waiting on our busy
-	 * page
-	 */
-
-	KE_WAIT(&vmps->ws_mutex, false, false, -1);
-	vmp_acquire_pfn_lock();
-
-	switch (vmp_pte_characterise(object_state.pte)) {
-	case kPTEKindZero:
-		kfatal("Not working yet\n"); /* pager state */
-		/* not used yet, but could be useful for e.g. file truncation */
-		kassert(page->use == kPageUseDeleted && page->refcnt == 1);
-		vmp_page_release_locked(page);
-		vmp_page_release_locked(object_state.pgtable_pages[0]);
-		vmp_page_release_locked(state->pgtable_pages[0]);
-
-		vmp_release_pfn_lock(kIPLAST);
-
-		return kVMFaultRetRetry;
-
-	case kPTEKindValid:
-	case kPTEKindSwap:
-	case kPTEKindTrans:
-		/*
-		 * we might end up permitting this in the future. (for anons)
-		 * should be treated like the case of finding a zero PTE?
-		 * i.e. give up on it all.
-		 * for now it's impossible, but let's be certain
-		 */
-		kfatal("Impossible\n");
-
-	case kPTEKindBusy:
-		/* fall out */
-	}
-	kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state->pte)) == page);
-	vmp_md_pte_create_hw(object_state.pte, page->pfn, true, true);
-
-	/*
-	 * the process PTE must still be busy - we wait for busy PTEs to become
-	 * unbusy when unmapping etc. there is nothing else that can change its
-	 * state, as it is not on the working set list yet.
-	 *
-	 * it could be worthwhile in the future to have the page-in state
-	 * structure include a flag (perhaps one for each page in the cluster?)
-	 * to be set if a busy PTE was gotten rid of. this would make it so that
-	 * operations like unmap would not have to wait on the busy page.
-	 */
-	kassert(vmp_pte_characterise(state->pte) == kPTEKindBusy);
-	vmp_md_pte_create_hw(state->pte, page->pfn, false, true);
-
-	/* release references we took to preserve the pages containing PTEs */
-	vmp_page_release_locked(object_state.pgtable_pages[0]);
-	vmp_page_release_locked(state->pgtable_pages[0]);
-
-	vmp_release_pfn_lock(kIPLAST);
-
-	/* now release waiters */
-	ke_event_signal(&pgstate->event);
-	vmp_pager_state_release(pgstate);
 
 	/* this effectively steals the reference we have on the page */
 	r = vmp_wsl_insert(vmps, vaddr, true);
@@ -441,7 +491,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			r = 0;
 		}
 	} else if (pte_kind == kPTEKindZero) {
-		r = vmp_do_file_fault(process, vmps, &area_info, &state, vaddr);
+		r = vmp_do_obj_fault(process, vmps, &area_info, &state, vaddr);
 		/* pfn lock was released */
 	} else if (pte_kind == kPTEKindTrans) {
 		vm_page_t *page = vm_pfn_to_page(
