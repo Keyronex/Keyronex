@@ -83,6 +83,7 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 	case kPageUsePML2:
 	case kPageUsePML3:
 	case kPageUsePML4:
+	case kPageUseAnonShared:
 		kassert(vmp_pte_characterise(page_pte) == kPTEKindTrans);
 		anon = true;
 		frame->dev = pagefile.vnode->vfs->device;
@@ -129,7 +130,7 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 	return 0;
 }
 
-void vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use);
+void vmp_page_steal(vm_page_t *page, enum vm_page_use new_use);
 
 void
 reclaim_all_pages(void)
@@ -143,7 +144,7 @@ reclaim_all_pages(void)
 			break;
 
 		TAILQ_REMOVE(&vm_pagequeue_standby, page, queue_link);
-		vmp_page_reclaim(page, kPageUseDeleted);
+		vmp_page_steal(page, kPageUseDeleted);
 	}
 
 	vmp_release_pfn_lock(ipl);

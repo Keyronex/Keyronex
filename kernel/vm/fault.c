@@ -77,7 +77,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	}
 
 	r = vmp_page_alloc_locked(&page,
-	    drumslot ? kPageUseAnonShared : kPageUseFileShared, false);
+	    drumslot != 0 ? kPageUseAnonShared : kPageUseFileShared, false);
 	if (r != 0) {
 		vmp_pte_wire_state_release(object_state, true);
 		vmp_pte_wire_state_release(state, false);
@@ -98,6 +98,9 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	page->offset = object_pgoffset;
 	page->dirty = false;
 	page->referent_pte = V2P((vaddr_t)object_state->pte);
+	if (drumslot != 0) {
+		page->drumslot = drumslot;
+	}
 
 	/*
 	 * create busy PTEs in the prototype page table; new (i.e. pte was
@@ -424,7 +427,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		 * writeable. Possibilities:
 		 * - this page is legally writeable but is not set
 		 * writeable because of dirty-bit emulation.
-		 * - this is a CoW page
+		 * - this is a CoW page - either object or forked.
 		 */
 
 		if (old_page->use == kPageUseAnonPrivate) {

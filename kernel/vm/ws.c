@@ -369,8 +369,8 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		 * we need to replace this with a transition PTE then.
 		 * used_ptes and noswap_ptes count is as such unchanged.
 		 */
-#if 0
-		/* could be referenced elsewhere... */
+#if 0 /* bad check - could be referenced elsewhere... */
+
 		kassert(page->refcnt == 1);
 #endif
 		kassert(page->referent_pte == V2P(pte));
@@ -380,6 +380,7 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		break;
 	}
 
+	case kPageUseAnonShared:
 	case kPageUseFileShared:
 		(void)became_dirty; /* could do refcnt stuff here */
 		vmp_md_pte_create_zero(pte);

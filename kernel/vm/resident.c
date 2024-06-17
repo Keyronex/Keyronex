@@ -43,7 +43,7 @@ struct vmp_pregion {
 	vm_page_t pages[0];
 };
 
-void vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use);
+void vmp_page_steal(vm_page_t *page, enum vm_page_use new_use);
 
 #define BUDDY_ORDERS 16
 static page_queue_t buddy_queue[BUDDY_ORDERS];
@@ -67,6 +67,7 @@ update_page_use_stats(enum vm_page_use use, int value)
 
 	switch (use) {
 		CASE(kPageUseDeleted, ndeleted);
+		CASE(kPageUseAnonShared, nanonshare);
 		CASE(kPageUseAnonPrivate, nanonprivate);
 		CASE(kPageUseFileShared, nfileshared);
 		CASE(kPageUseKWired, nkwired);
@@ -307,7 +308,7 @@ vmp_pages_alloc_locked(vm_page_t **out, size_t order, enum vm_page_use use,
 			return -1;
 		else if (page != NULL) {
 			TAILQ_REMOVE(&vm_pagequeue_standby, page, queue_link);
-			vmp_page_reclaim(page, kPageUseDeleted);
+			vmp_page_steal(page, kPageUseDeleted);
 		}
 	}
 
@@ -536,6 +537,8 @@ vmp_page_release_locked(vm_page_t *page)
 
 		case kPageUsePML1:
 		case kPageUsePML2:
+		case kPageUsePML3:
+		case kPageUseAnonShared:
 		case kPageUseAnonPrivate: {
 			pte_t *thepte = (pte_t *)P2V(page->referent_pte);
 			kassert(vmp_pte_characterise(thepte) == kPTEKindTrans);
@@ -585,6 +588,8 @@ vm_page_use_str(enum vm_page_use use)
 		return "pfndb";
 	case kPageUseAnonPrivate:
 		return "anon_priv";
+	case kPageUseAnonShared:
+		return "anon_shar";
 	case kPageUseFileShared:
 		return "file";
 
@@ -693,7 +698,7 @@ vm_page_alloc(vm_page_t **out, size_t order, enum vm_page_use use, bool must)
 }
 
 void
-vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
+vmp_page_steal(vm_page_t *page, enum vm_page_use new_use)
 {
 	pte_t *pte;
 	vm_page_t *dirpage;
@@ -707,7 +712,8 @@ vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
 
 	switch (page->use) {
 	case kPageUsePML1:
-	case kPageUsePML2: {
+	case kPageUsePML2:
+	case kPageUsePML3: {
 		vmstat.n_table_pageouts++;
 		kassert(vmp_pte_characterise(pte) == kPTEKindTrans);
 		vmp_md_swap_table_pointers(page->process->vm, dirpage, pte,
@@ -715,6 +721,7 @@ vmp_page_reclaim(vm_page_t *page, enum vm_page_use new_use)
 		break;
 	}
 
+	case kPageUseAnonShared:
 	case kPageUseAnonPrivate: {
 		kassert(vmp_pte_characterise(pte) == kPTEKindTrans);
 		vmp_md_pte_create_swap(pte, page->drumslot);
