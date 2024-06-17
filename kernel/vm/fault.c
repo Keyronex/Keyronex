@@ -31,6 +31,8 @@ struct fault_info {
 	bool ws_lock_held;
 };
 
+extern vnode_t *pagefile_vnode;
+
 void
 vmp_pager_state_retain(struct vmp_pager_state *state)
 {
@@ -55,13 +57,27 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	size_t object_byteoffset = area_info->offset * PGSIZE +
 	    (vaddr - area_info->start);
 	pgoff_t object_pgoffset = object_byteoffset / PGSIZE;
+	io_off_t file_byteoffset;
+	vnode_t *vnode;
 	vm_mdl_t *mdl;
 	iop_t *iop;
 	struct vmp_pager_state *pgstate;
 	vm_page_t *page;
+	pfn_t drumslot;
 	int r;
 
-	r = vmp_page_alloc_locked(&page, kPageUseFileShared, false);
+	if (object->kind == kFile) {
+		vnode = object->file.vnode;
+		drumslot = 0;
+		file_byteoffset = object_byteoffset;
+	} else {
+		vnode = pagefile_vnode;
+		drumslot = vmp_md_soft_pte_pfn(object_state->pte);
+		file_byteoffset = drumslot * PGSIZE;
+	}
+
+	r = vmp_page_alloc_locked(&page,
+	    drumslot ? kPageUseAnonShared : kPageUseFileShared, false);
 	if (r != 0) {
 		vmp_pte_wire_state_release(object_state, true);
 		vmp_pte_wire_state_release(state, false);
@@ -83,14 +99,18 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	page->dirty = false;
 	page->referent_pte = V2P((vaddr_t)object_state->pte);
 
-	/* create busy PTEs in both the prototype pagetable and the process */
+	/*
+	 * create busy PTEs in the prototype page table; new (i.e. pte was
+	 * previously zero) only if drumslot = 0 (meaning this is not anon.)
+	 */
 	vmp_md_pte_create_busy(object_state->pte, page->pfn);
 	vmp_pagetable_page_noswap_pte_created(process->vm,
-	    object_state->pgtable_pages[0], true);
+	    object_state->pgtable_pages[0], drumslot == 0);
 
+	/* and also in the process page table */
 	vmp_md_pte_create_busy(state->pte, page->pfn);
-	vmp_pagetable_page_noswap_pte_created(process->vm, state->pgtable_pages[0],
-	    true);
+	vmp_pagetable_page_noswap_pte_created(process->vm,
+	    state->pgtable_pages[0], drumslot == 0);
 
 	/* additional retains to keep PTE and proto PTE pointers valid */
 	vmp_page_retain_locked(object_state->pgtable_pages[0]);
@@ -110,8 +130,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	mdl->offset = 0;
 	mdl->write = true;
 	mdl->pages[0] = page;
-	iop = iop_new_vnode_read(object->file.vnode, mdl, PGSIZE,
-	    object_byteoffset);
+	iop = iop_new_vnode_read(vnode, mdl, PGSIZE, file_byteoffset);
 
 	iop_send_sync(iop);
 	iop_free(iop);
@@ -247,8 +266,20 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 	}
 
 	case kPTEKindSwap:
+		r = do_file_read(process, vmps, area_info, state, &object_state,
+		    vaddr);
+		if (r != 0)
+			return r;
+
+		r = vmp_wsl_insert(vmps, vaddr, true);
+		if (r == NIL_WSE) {
+			kfatal("Working set insertion failed - evict!!\n");
+		}
+
+		return 0;
+
 	case kPTEKindTrans:
-		/* these may become possible with anonymous objects */
+		/* currently impossible? */
 		kfatal("impossible\n");
 
 	case kPTEKindZero:
@@ -561,8 +592,6 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		ke_mutex_release(&vmps->ws_mutex);
 		ex_rwlock_release_read(&vmps->map_lock);
 		area_info.map_lock_held = false;
-
-		extern vnode_t *pagefile_vnode;
 
 		mdl = &pgstate->mdl;
 		mdl->nentries = 1;
