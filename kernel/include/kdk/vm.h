@@ -74,6 +74,7 @@ enum vm_page_use {
 	kPageUseKWired,
 	kPageUseAnonPrivate,
 	kPageUseFileShared,
+	kPageUseAnonShared,
 
 	/*! Page is a pagetable (leaf). */
 	kPageUsePML1,
