@@ -571,8 +571,10 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 			vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
 			ki_tlb_flush_vaddr_globally(addr);
 
-			if (page->use == kPageUseAnonPrivate)
+			if (page->use == kPageUseAnonPrivate) {
+				vmps->n_anonymous--;
 				vmp_page_delete_locked(page);
+			}
 
 			vmp_page_release_locked(page);
 
@@ -588,8 +590,13 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 			vmp_md_pte_create_zero(pte);
 			vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
 
-			if (page->use == kPageUseAnonPrivate)
+			/* aren't trans PTEs always anon? let's test */
+			kassert(page->use == kPageUseAnonPrivate);
+
+			if (page->use == kPageUseAnonPrivate) {
+				vmps->n_anonymous--;
 				vmp_page_delete_locked(page);
+			}
 
 			break;
 		}
@@ -600,9 +607,14 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 		case kPTEKindSwap: {
 			vm_page_t *pte_page = vm_paddr_to_page(
 			    PGROUNDDOWN(V2P(pte)));
+
 			vmp_md_pte_create_zero(pte);
 			vmp_pagetable_page_pte_deleted(vmps, pte_page, true);
 			/* TODO: free swap slot! */
+
+			/* swaps are always for anonymous pages */
+			vmps->n_anonymous--;
+
 			break;
 		}
 

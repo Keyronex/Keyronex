@@ -463,6 +463,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			vmp_md_pte_create_hw(pte, new_page->pfn, write, true);
 			vmp_pagetable_page_noswap_pte_created(vmps, pml1_page,
 			    true);
+			vmps->n_anonymous++;
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
 		} else {
@@ -509,6 +510,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		page->offset = vaddr / PGSIZE;
 		vmp_md_pte_create_hw(pte, page->pfn, write, true);
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
+		vmps->n_anonymous++;
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(ipl);
 

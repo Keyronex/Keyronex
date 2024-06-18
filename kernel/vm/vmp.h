@@ -85,6 +85,9 @@ struct vmp_wsl {
 
 /*!
  * Per-process state.
+ * (n_anonymous is supposedly protected by ws_mutex, but effectively also by
+ * map_lock held exclusive, because the creation of new anonymous pages happens
+ * only while the map lock is held in the fault handler.)
  */
 typedef struct vm_procstate {
 	/*! Working set list lock. */
@@ -97,6 +100,9 @@ typedef struct vm_procstate {
 	struct vmp_wsl wsl;
 	/*! VAD tree. */
 	RB_HEAD(vm_map_entry_rbtree, vm_map_entry) vad_queue;
+
+	/*! Count of private anonymous pages, including paged-out ones. */
+	size_t n_anonymous;
 
 	/*! Entry in the trimming queue. Protected by trimmer lock. */
 	TAILQ_ENTRY(vm_procstate) balance_set_entry;
@@ -134,7 +140,7 @@ struct vmp_pager_state {
 
 struct vmp_forkpage {
 	pte_t pte;
-	uint32_t refcount;
+	uintptr_t refcount;
 };
 
 struct vmp_filepage {

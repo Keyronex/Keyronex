@@ -275,6 +275,9 @@ vm_ps_init(eprocess_t *ps)
 	RB_INIT(&vmps->vad_queue);
 	vmp_wsl_init(vmps, &vmps->wsl);
 
+	vmps->n_anonymous = 0;
+
 	vmp_md_ps_init(ps);
 	vmp_add_to_balance_set(vmps);
+	vmps->last_trim_counter = 0;
 }
