@@ -3,11 +3,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "kdk/nanokern.h"
 
 struct id_allocator {
 	uint8_t *bitmap;
 	size_t max;
 	size_t rotor;
+	kspinlock_t lock;
 };
 
 #define STATIC_IDALLOC_INITIALISER(BITMAP_, MAX_) { \

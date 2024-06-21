@@ -7,6 +7,14 @@
 #include "kdk/vfs.h"
 #include "object.h"
 
+/* process.c */
+bool ex_thread_inactive(void *ptr);
+
+/*!
+ * the inactive procedure should return true if the object was deleted, false
+ * if it was not, and a deferred refcount drop must now be carried out.
+ */
+
 struct type_object {
 	/*! all objects of this type */
 	LIST_HEAD(, object_header) objects;
@@ -14,6 +22,10 @@ struct type_object {
 	uint32_t count;
 	/*! guards objects */
 	kmutex_t mutex;
+	/*! can inactive() be called at DPC level? */
+	bool inactive_at_dpc_level;
+	/*! inactive: refcount is at 1 and a release was attempted */
+	bool (*inactive)(void *obj);
 };
 
 struct type_object_with_header {
@@ -22,7 +34,7 @@ struct type_object_with_header {
 };
 
 static struct type_object_with_header types[255];
-obj_class_t anon_class;
+obj_class_t process_class, thread_class, file_class, anon_class;
 
 static inline struct object_header *
 header_from_object(void *object)
@@ -43,7 +55,9 @@ new_common(struct object_header *hdr, struct type_object *type,
 	kassert(splget() < kIPLDPC);
 	obj_retain(type);
 	ke_wait(&type->mutex, "new_common:type->mutex", false, false, -1);
+#if 0
 	LIST_INSERT_HEAD(&type->objects, hdr, list_link);
+#endif
 	type->count++;
 	hdr->name = name == NULL ? NULL : strdup(name);
 	hdr->size = size;
@@ -52,9 +66,11 @@ new_common(struct object_header *hdr, struct type_object *type,
 }
 
 obj_class_t
-obj_new_type(const char *name)
+obj_new_type(const char *name, obj_inactive_fn_t inactive,
+    bool inactive_at_dpc_level)
 {
 	obj_class_t type_index = (uint8_t)-1;
+	struct type_object *type;
 
 	for (int i = 0; i < 255; i++)
 		if (types[i].header.class == (uint8_t)-1) {
@@ -70,6 +86,10 @@ obj_new_type(const char *name)
 
 	new_common(&types[type_index].header, &types[0].object, name,
 	    sizeof(struct type_object));
+	type = &types[type_index].object;
+
+	type->inactive = inactive;
+	type->inactive_at_dpc_level = inactive_at_dpc_level;
 
 	kprintf("obj_new_type: new type %s defined (id %d)\n", name,
 	    type_index);
@@ -86,8 +106,14 @@ obj_init(void)
 		types[i].header.class = (uint8_t)-1;
 	}
 
-	obj_new_type("Type");
-	anon_class = obj_new_type("Anonymous");
+	obj_new_type("Type", NULL, false);
+	anon_class = obj_new_type("Anonymous", NULL, false);
+	process_class = obj_new_type("process", NULL, false);
+	thread_class = obj_new_type("thread", ex_thread_inactive, true);
+	file_class = obj_new_type("file", NULL, false);
+
+	kassert(process_class == 2);
+	kassert(thread_class == 3);
 }
 
 int
@@ -100,6 +126,7 @@ obj_new(void *ptr_out, obj_class_t klass, size_t size, const char *name)
 	obj_retain((type_obj));
 
 	hdr = kmem_alloc(sizeof(struct object_header) + size);
+	hdr->class = klass;
 	new_common(hdr, &types[klass].object, name, size);
 
 	*(void **)ptr_out = object_from_header(hdr);
@@ -122,6 +149,7 @@ void
 obj_release(void *object)
 {
 	struct object_header *hdr = header_from_object(object);
+	struct type_object *type = &types[hdr->class].object;
 
 	while (true) {
 		uint32_t old_count = __atomic_load_n(&hdr->refcount,
@@ -133,14 +161,28 @@ obj_release(void *object)
 				return;
 			}
 		} else if (old_count == 1) {
-			if (splget() >= kIPLDPC) {
+			/*
+			 * we defer the reference count drop to the inactive()
+			 * routine for the 1 -> 0 case.
+			 */
+			if (splget() >= kIPLDPC &&
+			    !types[hdr->class].object.inactive_at_dpc_level) {
+				/*
+				 * can't call this inactive routine frmo DPC
+				 * level - so post it to a worker thread.
+				 */
 				kfatal("just call obj_release in a worker");
+				return;
 			} else {
-#if 0
-				if (do the release(obj))
+				if (type->inactive(object))
 					return;
-#endif
+				/* inactive succeeded - object is no more. */
 			}
+			/*
+			 * inactive didn't free the object because more
+			 * references appeared in the intervening period. so
+			 * loop again.
+			 */
 		} else {
 			kassert("unreached\n");
 		}

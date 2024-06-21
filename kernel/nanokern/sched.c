@@ -1,5 +1,6 @@
 #include "kdk/kmem.h"
 #include "kdk/nanokern.h"
+#include "kdk/object.h"
 #include "kdk/queue.h"
 #include "kdk/vm.h"
 #include "ki.h"
@@ -29,8 +30,9 @@ done_thread_dpc(void *)
 	ipl = ke_spinlock_acquire(&done_lock);
 	while ((thread = TAILQ_FIRST(&done_queue)) != NULL) {
 		TAILQ_REMOVE(&done_queue, thread, queue_link);
-		vm_kfree((vaddr_t)thread->kstack_base, KSTACK_SIZE / PGSIZE, 0);
-		kmem_free(thread, sizeof(*thread));
+		ke_spinlock_release(&done_lock, ipl);
+		obj_release(thread);
+		ipl = ke_spinlock_acquire(&done_lock);
 	}
 	ke_spinlock_release(&done_lock, ipl);
 }
@@ -216,6 +218,32 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
 	thread->process = proc;
 	ke_timer_init(&thread->wait_timer);
 	thread->wait_result = kKernWaitStatusOK;
-	ipl = ke_acquire_scheduler_lock();
-	ke_release_scheduler_lock(ipl);
+	ipl = ke_spinlock_acquire(&proc->lock);
+	proc->thread_count++;
+	LIST_INSERT_HEAD(&proc->thread_list, thread, list_link);
+	ke_spinlock_release(&proc->lock, ipl);
+}
+
+void
+ke_thread_deinit(kthread_t *thread)
+{
+	kprocess_t *proc = thread->process;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&proc->lock);
+	kassert(thread->state == kThreadStateDone);
+	/* unlink from process thread list */
+	LIST_REMOVE(thread, list_link);
+	if (--proc->thread_count == 0)
+		proc->state = kProcessStateTerminated;
+	ke_spinlock_release(&proc->lock, ipl);
+}
+
+void
+ke_process_init(kprocess_t *proc)
+{
+	ke_spinlock_init(&proc->lock);
+	LIST_INIT(&proc->thread_list);
+	proc->thread_count = 0;
+	proc->state = kProcessStateLive;
 }

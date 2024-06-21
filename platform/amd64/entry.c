@@ -236,6 +236,7 @@ _start(void)
 	vmp_kernel_init();
 	kmem_init();
 	obj_init();
+	ps_early_init(&thread0);
 	smp_init();
 	ntcompat_init();
 

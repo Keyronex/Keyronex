@@ -1,5 +1,6 @@
 #include <sys/mman.h>
 
+#include <abi-bits/errno.h>
 #include <keyronex/syscall.h>
 #include <stdint.h>
 
@@ -21,11 +22,9 @@ int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
 int krx_futex_wait(int *u_pointer, int expected, nanosecs_t ns);
 int krx_futex_wake(int *u_pointer);
 
+extern obj_class_t file_class;
 kthread_t *ex_init_thread;
-obj_class_t process_class, file_class;
-
 kthread_t *user_init_thread;
-
 extern struct vfs_ops ninep_vfsops;
 
 #if 0
@@ -234,9 +233,6 @@ ex_init(void *)
 	int r;
 	void ddk_init(void), ddk_autoconf(void), ubc_init(void);
 
-	process_class = obj_new_type("process");
-	file_class = obj_new_type("file");
-
 	vmp_paging_init();
 	ubc_init();
 	ddk_init();
@@ -366,6 +362,9 @@ krx_file_seek(int handle, io_off_t offset)
 	struct file *file;
 
 	file = ex_curproc()->handles[handle];
+	if (handle == 0)
+		return -ENOENT;
+
 	file->offset = offset;
 	return file->offset;
 }
@@ -430,6 +429,12 @@ krx_fork_thread(uintptr_t entry, uintptr_t stack)
 	return thread->tid;
 }
 
+static void
+krx_thread_exit(void)
+{
+	ps_exit_this_thread();
+}
+
 uintptr_t
 ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
     uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
@@ -475,9 +480,8 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 	case kKrxFileSeek:
 		return krx_file_seek(arg1, arg2);
 
-
 	case kKrxThreadExit:
-		kfatal("ThreadExit\n");
+		krx_thread_exit();
 
 	case kKrxForkThread:
 		return krx_fork_thread(arg1, arg2);

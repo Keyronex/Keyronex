@@ -113,6 +113,7 @@ cstart(struct handover *handover)
 	vmp_kernel_init();
 	kmem_init();
 	obj_init();
+	ps_early_init(&thread0);
 
 	ps_create_kernel_thread(&ex_init_thread, "ex_init", ex_init, NULL);
 	ke_thread_resume(ex_init_thread);

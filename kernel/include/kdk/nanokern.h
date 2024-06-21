@@ -323,12 +323,25 @@ typedef struct kthread {
 	uintptr_t tid;
 } kthread_t;
 
+typedef enum kprocess_state {
+	/*! Process is live and contains (or will contain) threads. */
+	kProcessStateLive,
+	/*! Process has no remaining threads and has ended. */
+	kProcessStateTerminated,
+} kprocess_state_t;
+
 /*!
  * (~) = invariant from creation
- * (D) = dispatcher lock
+ * (l) = lock
  */
 typedef struct kprocess {
-	/*! (D) threads of process */
+	/*! process lock */
+	kspinlock_t lock;
+	/*! (l) thread count; when it *drops* to 0, process terminates */
+	uint32_t thread_count;
+	/*! (l) process state */
+	kprocess_state_t state;
+	/*! (l) threads of process */
 	LIST_HEAD(, kthread) thread_list;
 } kprocess_t;
 
@@ -522,6 +535,7 @@ void ke_mutex_release(kmutex_t *mutex);
  */
 #define ke_mutex_assert_held(MUTEX) (kassert((MUTEX)->owner == curthread()))
 
+void ke_process_init(kprocess_t *proc);
 
 /*!
  * @brief Initialise a kernel semaphore.
@@ -569,6 +583,8 @@ void ke_timer_cancel(ktimer_t *timer);
 void ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg);
 
 void ke_thread_resume(kthread_t *thread);
+
+void ke_thread_deinit(kthread_t *thread);
 
 kwaitresult_t ke_wait(void *object, const char *reason, bool isuserwait,
     bool alertable, nanosecs_t timeout);

@@ -30,6 +30,7 @@
 
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
+#include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "vmp.h"
@@ -122,8 +123,13 @@ vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object, vaddr_t *vaddrp
 	map_entry->flags.max_protection = max_protection;
 	map_entry->object = object;
 
-	if (object)
+	if (object) {
 		object_map_list_insert(object, map_entry);
+		if (object->kind == kFile)
+			vn_retain(object->file.vnode);
+		else
+			obj_retain(object->anon.object);
+	}
 
 	RB_INSERT(vm_map_entry_rbtree, &vmps->vad_queue, map_entry);
 
@@ -179,8 +185,8 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 			kassert(r == entry->end - entry->start);
 
 			ke_wait(&entry->object->map_entry_list_lock,
-			    "vm_ps_map_objcet_view:obj->map_entry_list_lock",
-			    false, false, -1);
+			    "vm_deallocate:obj->map_entry_list_lock", false,
+			    false, -1);
 			entry->end = start;
 			ke_mutex_release(&entry->object->map_entry_list_lock);
 
@@ -200,8 +206,8 @@ vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 			kassert(r == entry->end - entry->start);
 
 			ke_wait(&entry->object->map_entry_list_lock,
-			    "vm_ps_map_objcet_view:obj->map_entry_list_lock",
-			    false, false, -1);
+			    "vm_deallocate:obj->map_entry_list_lock", false,
+			    false, -1);
 			entry->start = end;
 			ke_mutex_release(&entry->object->map_entry_list_lock);
 

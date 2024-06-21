@@ -410,6 +410,12 @@ out:
 	return r;
 }
 
+void
+ninep_inactive(vnode_t *dvn)
+{
+	kfatal("Implement me\n");
+}
+
 @implementation NinepFS
 
 - (iop_return_t)dispatchIOP:(iop_t *)iop
@@ -744,6 +750,7 @@ ninep_mount(namecache_handle_t over, const char *argstr)
 
 static struct vnode_ops ninep_vnops = {
 	.lookup = ninep_lookup,
+	.inactive = ninep_inactive,
 };
 
 struct vfs_ops ninep_vfsops = {
