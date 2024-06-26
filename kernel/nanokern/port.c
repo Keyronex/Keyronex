@@ -111,9 +111,6 @@ ke_port_dequeue(kport_t *kport)
 
 	if (thread->port == kport) {
 		kport->n_processing--;
-	} else {
-		/* try to fire up another thread on this port? */
-		kfatal("todo");
 	}
 
 	if (obj->signalled > 0 &&
