@@ -216,8 +216,9 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
 	thread->name = name;
 	thread->timeslice = 5;
 	thread->process = proc;
+	thread->port = NULL;
+	thread->port_msg = NULL;
 	ke_timer_init(&thread->wait_timer);
-	thread->wait_result = kKernWaitStatusOK;
 	ipl = ke_spinlock_acquire(&proc->lock);
 	proc->thread_count++;
 	LIST_INSERT_HEAD(&proc->thread_list, thread, list_link);

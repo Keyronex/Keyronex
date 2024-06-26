@@ -21,6 +21,26 @@ bool ki_cpu_hardclock(md_intr_frame_t *frame, void *arg);
 void ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread);
 
 /*!
+ * @brief Release a thread for processing a port.
+ *
+ * This will decrement the count of threads currently processing on this port,
+ * and try to release a waiting thread to process data on the port.
+ *
+ * To be called when a thread which was processing data on a port goes away or
+ * has to sleep to wait for resources.
+ *
+ * @param wb_queue Queue of threads which should be passed to ki_wake_waiters.
+ * @retval True if at least one thread was woken.
+ */
+bool ki_port_thread_release(kport_t *kport, kwaitblock_queue_t *wb_queue);
+
+/*!
+ * @brief Wake a waiting thread.
+ * \pre Scheduler lock held
+ */
+void ki_wake_waiter(kthread_t *thread);
+
+/*!
  * @brief Wake waiters previously queued up by ki_signal()
  * \pre Scheduler lock held
  */
@@ -31,6 +51,15 @@ void ki_wake_waiters(kwaitblock_queue_t *queue);
  * \pre Object lock held
  */
 void ki_signal(kdispatchheader_t *hdr, kwaitblock_queue_t *wakeQueue);
+
+enum ki_satisfy_attempt_result {
+	kDidSatisfyPreWait,
+	kDidSatisfyWait,
+	kWasAlreadySatisfied,
+};
+
+/*! @brief Try to satisfy a waitblock. */
+enum ki_satisfy_attempt_result ki_waitblock_try_to_satisfy(kwaitblock_t *wb);
 
 void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu,
     kprocess_t *proc, const char *name);

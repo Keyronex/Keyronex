@@ -71,7 +71,7 @@ typedef enum kwaitblockstatus {
 	kWaitBlockStatusAcquired,
 } kwaitblockstatus_t;
 
-typedef TAILQ_HEAD(, kwaitblock) kwaitblock_queue_t;
+typedef TAILQ_HEAD(kwaitblock_queue, kwaitblock) kwaitblock_queue_t;
 
 typedef struct kwaitblock {
 	/*! link in kdispatchheader_t::waitblock_queue  */
@@ -95,6 +95,7 @@ typedef enum kdispatchobjecttype {
 	kDispatchTimer,
 	kDispatchMsgQueue,
 	kDispatchEvent,
+	kDispatchPort,
 } kdispatchobjecttype_t;
 
 typedef struct kdispatchheader {
@@ -194,6 +195,19 @@ typedef struct kmsgqueue {
 	void **messages;
 } kmsgqueue_t;
 
+TAILQ_HEAD(kport_msg_queue, kport_msg);
+
+typedef struct kport_msg {
+	TAILQ_ENTRY(kport_msg) queue_entry;
+} kport_msg_t;
+
+typedef struct kport {
+	kdispatchheader_t hdr;
+	struct kport_msg_queue queue;
+	size_t n_processing;
+	size_t max_n_processing;
+} kport_t;
+
 TAILQ_HEAD(kthread_queue, kthread);
 
 struct runqueue {
@@ -282,6 +296,9 @@ typedef enum kthread_state {
  * (D) => dispatcher lock
  */
 typedef struct kthread {
+	/*! (~) name */
+	const char *name;
+
 	/*! (~) process to which it belongs */
 	struct kprocess *process;
 	/*! entry in run/waitqueue */
@@ -307,15 +324,17 @@ typedef struct kthread {
 	bool iswaitall;
 	/* number of objects being waited on */
 	size_t nwaits;
-	/*! proximate cause of wakeup (only OK or Timeout used) */
-	kwaitresult_t wait_result;
 	/*! wait timeout timer */
 	ktimer_t wait_timer;
-	/*! name */
-	const char *name;
 	/*! wait reason */
 	const char *wait_reason;
+	/*! internal wait status information */
 	kinternalwaitstatus_t wait_status;
+
+	/*! port this thread is currently processing a message on */
+	struct kport *port;
+	/*! message received on port */
+	struct kport_msg *port_msg;
 
 	/* TCB */
 	uintptr_t tcb;

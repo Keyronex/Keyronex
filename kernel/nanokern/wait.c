@@ -3,23 +3,27 @@
  * Created on Wed Jan 17 2023.
  */
 
-#include "kdk/nanokern.h"
 #include "kdk/libkern.h"
+#include "kdk/nanokern.h"
+#include "kdk/queue.h"
 #include "kdk/vm.h"
 #include "ki.h"
+
+void
+ki_wake_waiter(kthread_t *thread)
+{
+	kassert(ke_spinlock_held(&scheduler_lock));
+	kassert(thread->state == kThreadStateWaiting);
+	thread->state = kThreadStateRunnable;
+	ki_thread_resume_locked(thread);
+}
 
 void
 ki_wake_waiters(kwaitblock_queue_t *queue)
 {
 	kwaitblock_t *wb;
-
-	TAILQ_FOREACH (wb, queue, queue_entry) {
-		kthread_t *thread = wb->thread;
-
-		kassert(thread->state == kThreadStateWaiting);
-		thread->state = kThreadStateRunnable;
-		ki_thread_resume_locked(thread);
-	}
+	TAILQ_FOREACH (wb, queue, queue_entry)
+		ki_wake_waiter(wb->thread);
 }
 
 void
@@ -30,20 +34,59 @@ ki_object_acquire(kdispatchheader_t *hdr, kthread_t *thread)
 		hdr->signalled--;
 		break;
 	}
+
 	case kDispatchMutex: {
 		kmutex_t *mtx = (kmutex_t *)hdr;
 		hdr->signalled--;
 		mtx->owner = thread;
 		break;
 	}
-	case kDispatchTimer: {
+
+	case kDispatchTimer:
 		/* epsilon, timers remain signalled until reset */
-	}
+		break;
 
 	case kDispatchEvent:
-	case kDispatchMsgQueue: {
+	case kDispatchMsgQueue:
 		/* epsilon, msgqueues remain signalled until posted */
+		break;
+
+	default:
+		kfatal("Invalid kernel object type\n");
 	}
+}
+
+enum ki_satisfy_attempt_result
+ki_waitblock_try_to_satisfy(kwaitblock_t *wb)
+{
+
+	kinternalwaitstatus_t expectPreparing, expectWaiting;
+
+	while (true) {
+		expectPreparing = kInternalWaitStatusPreparing;
+		expectWaiting = kInternalWaitStatusWaiting;
+
+		if (__atomic_compare_exchange_n(wb->waiter_status,
+			&expectPreparing, kInternalWaitStatusSatisfied, false,
+			__ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+			/* satisfied a wait pre-wait */
+			wb->block_status = kWaitBlockStatusAcquired;
+			return kDidSatisfyPreWait;
+		} else if (__atomic_compare_exchange_n(wb->waiter_status,
+			       &expectWaiting, kInternalWaitStatusSatisfied,
+			       false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+			/* satisfied a wait mid-wait */
+
+			/* thread is for waking */
+			wb->block_status = kWaitBlockStatusAcquired;
+			return kDidSatisfyWait;
+		} else if (__atomic_load_n(wb->waiter_status,
+			       __ATOMIC_ACQUIRE) ==
+		    kInternalWaitStatusSatisfied) {
+			/* wait already satisfied by someone else */
+			wb->block_status = kWaitBlockStatusDeactivated;
+			return kWasAlreadySatisfied;
+		}
 	}
 }
 
@@ -51,45 +94,24 @@ void
 ki_signal(kdispatchheader_t *hdr, kwaitblock_queue_t *wakeQueue)
 {
 	while (!TAILQ_EMPTY(&hdr->waitblock_queue) && hdr->signalled > 0) {
-		kinternalwaitstatus_t expectPreparing, expectWaiting;
-		kthread_t *thread;
 		kwaitblock_t *wb;
+		int r;
 
 		wb = TAILQ_FIRST(&hdr->waitblock_queue);
 		TAILQ_REMOVE(&hdr->waitblock_queue, wb, queue_entry);
-		thread = wb->thread;
 
-		while (true) {
-			expectPreparing = kInternalWaitStatusPreparing;
-			expectWaiting = kInternalWaitStatusWaiting;
+		r = ki_waitblock_try_to_satisfy(wb);
+		switch (r) {
+		case kDidSatisfyWait:
+			TAILQ_INSERT_TAIL(wakeQueue, wb, queue_entry);
+			/* fallthrough */
 
-			if (__atomic_compare_exchange_n(wb->waiter_status,
-				&expectPreparing, kInternalWaitStatusSatisfied,
-				false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-				/* satisfied a wait pre-wait */
+		case kDidSatisfyPreWait:
+			ki_object_acquire(hdr, wb->thread);
+			break;
 
-				wb->block_status = kWaitBlockStatusAcquired;
-				// if (!wb->isWaitAll)
-				ki_object_acquire(hdr, thread);
-				break;
-			} else if (__atomic_compare_exchange_n(
-				       wb->waiter_status, &expectWaiting,
-				       kInternalWaitStatusSatisfied, false,
-				       __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-				/* satisfied a wait mid-wait */
-
-				/* thread is for waking */
-				TAILQ_INSERT_TAIL(wakeQueue, wb, queue_entry);
-				wb->block_status = kWaitBlockStatusAcquired;
-				ki_object_acquire(hdr, thread);
-				break;
-			} else if (__atomic_load_n(wb->waiter_status,
-				       __ATOMIC_ACQUIRE) ==
-			    kInternalWaitStatusSatisfied) {
-				/* wait already satisfied by someone else */
-				wb->block_status = kWaitBlockStatusDeactivated;
-				break;
-			}
+		case kWasAlreadySatisfied:
+			break;
 		}
 	}
 }
@@ -187,23 +209,30 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 		return satisfier == -1 ? kKernWaitStatusTimedOut : satisfier;
 	}
 
-	kinternalwaitstatus_t expected = kInternalWaitStatusPreparing;
-
 	if (timeout != 0 && timeout != -1)
 		ke_timer_set(&timer, timeout);
 
 	ke_acquire_scheduler_lock();
+	kinternalwaitstatus_t expected = kInternalWaitStatusPreparing;
 	if (__atomic_compare_exchange_n(status, &expected,
 		kInternalWaitStatusWaiting, false, __ATOMIC_ACQ_REL,
 		__ATOMIC_ACQUIRE)) {
 		kassert(ipl < kIPLDPC);
 		thread->wait_reason = reason;
 		thread->state = kThreadStateWaiting;
+		if (thread->port != NULL) {
+			kwaitblock_queue_t wb_queue;
+			TAILQ_INIT(&wb_queue);
+			ki_port_thread_release(thread->port, &wb_queue);
+			ki_wake_waiters(&wb_queue);
+		}
 		ki_reschedule();
 	} else {
 		/* wait was terminated early. check what happened */
 		ke_release_scheduler_lock(kIPLDPC);
 	}
+
+	/* at this point, we either slept or wait was early-terminated */
 
 	thread->wait_reason = NULL;
 
