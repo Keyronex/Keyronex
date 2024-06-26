@@ -32,6 +32,7 @@ of Keyronex:
   - [x] Remote-Copy-Update (RCU) mechanism.
   - [x] Time management.
   - [x] Process/thread distinction with pre-emptive scheduling of threads.
+  - [x] Kernel Ports, an efficient basis for message queues.
   - [ ] (incomplete) Balance set management.
 
 - Virtual Memory
