@@ -17,9 +17,9 @@ struct object_header {
 	obj_class_t class;
 };
 
-struct file {
+typedef struct file {
 	namecache_handle_t nch;
 	io_off_t offset;
-};
+} file_t;
 
 #endif /* KRX_EXECUTIVE_OBJECT_H */

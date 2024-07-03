@@ -16,6 +16,8 @@
 
 #define kNThreadWaitBlocks 4
 
+#define KRX_RCU
+
 #define NS_PER_S 1000000000
 #define NS_PER_MS 1000000
 
@@ -332,9 +334,9 @@ typedef struct kthread {
 	kinternalwaitstatus_t wait_status;
 
 	/*! port this thread is currently processing a message on */
-	struct kport *port;
+	kport_t *port;
 	/*! message received on port */
-	struct kport_msg *port_msg;
+	kport_msg_t *port_msg;
 
 	/* TCB */
 	uintptr_t tcb;
@@ -620,6 +622,17 @@ void ke_rcu_call(krcu_entry_t *head, krcu_callback_t callback, void *arg);
 void ke_rcu_synchronise(void);
 #define ke_rcu_read_lock() spldpc()
 #define ke_rcu_read_unlock(IPL_) splx(IPL_)
+
+/*! void ke_rcu_assign_pointer(T KRX_RCU *ptr, T value) */
+#define ke_rcu_assign_pointer(PTR, VAL) \
+	__atomic_store_n(&(PTR), VAL, __ATOMIC_RELEASE);
+
+/*! T *ke_rcu_dereference(T KRX_RCU *ptr) */
+#define ke_rcu_dereference(PTR) __atomic_load_n(&(PTR), __ATOMIC_CONSUME);
+
+/*! T ke_rcu_exchange_pointer(T KRX_RCU *ptr, T value) */
+#define ke_rcu_exchange_pointer(PTR, VAL) \
+	__atomic_exchange_n(PTR, VAL, __ATOMIC_ACQ_REL);
 
 /* Kernel putc. */
 void kputc(int ch, void *unused);

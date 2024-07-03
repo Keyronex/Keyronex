@@ -39,6 +39,8 @@ int obj_new(void *ptr_out, obj_class_t klass, size_t size, const char *name);
 
 /*! @brief Retain a pointer to an object. */
 void *obj_retain(void *object);
+/*! @brief Try to retain a pointer to an object if its refcount is not 0. */
+void * obj_tryretain_rcu(void *object);
 /*! @brief Release a pointer to an object. */
 void obj_release(void *object);
 

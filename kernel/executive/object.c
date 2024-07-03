@@ -144,6 +144,24 @@ obj_retain(void *object)
 	return object;
 }
 
+/*! @brief Retains an object only if its refcount is not 0. */
+void *
+obj_tryretain_rcu(void *object)
+{
+	struct object_header *hdr = header_from_object(object);
+	while (true) {
+		uint32_t count = __atomic_load_n(&hdr->refcount,
+		    __ATOMIC_RELAXED);
+		if (count == 0) {
+			return NULL;
+		}
+		if (__atomic_compare_exchange_n(&hdr->refcount, &count,
+			count + 1, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+			return object;
+		}
+	}
+}
+
 /*! @brief Release a pointer to an object. */
 void
 obj_release(void *object)

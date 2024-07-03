@@ -116,3 +116,8 @@ ex_thread_inactive(void *ptr)
 
 	return true;
 }
+
+bool ex_proc_inactive(void *ptr)
+{
+	eprocess_t *proc = ptr;
+}
