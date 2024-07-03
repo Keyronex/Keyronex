@@ -1,7 +1,7 @@
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vm.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "vm/vmp_dynamics.h"
 #include "vmp.h"
 

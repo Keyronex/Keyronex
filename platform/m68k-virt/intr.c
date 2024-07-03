@@ -2,10 +2,10 @@
 
 #include "goldfish.h"
 #include "kdk/m68k.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/queue.h"
 #include "kdk/vm.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "vm/vmp.h"
 #include "executive/exp.h"
 

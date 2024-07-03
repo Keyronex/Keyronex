@@ -1,7 +1,7 @@
 #ifndef KRX_KDK_LIBKERN_CSHIM_H
 #define KRX_KDK_LIBKERN_CSHIM_H
 
-#include <kdk/nanokern.h>
+#include <kdk/kern.h>
 #include <kdk/kmem.h>
 #include <kdk/libkern.h>
 

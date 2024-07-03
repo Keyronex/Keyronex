@@ -1,5 +1,5 @@
 #include "goldfish.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 
 #define VIRT_GF_RTC_IRQ_BASE PIC_IRQ(6, 1)
 

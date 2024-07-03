@@ -1,7 +1,7 @@
 #include "kdk/executive.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "vmp.h"
 
 int vmp_md_enter_kwired(vaddr_t virt, paddr_t phys);

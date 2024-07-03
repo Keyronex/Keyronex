@@ -3,9 +3,9 @@
 #include "intr.h"
 #include "kdk/amd64.h"
 #include "kdk/amd64/regs.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vm.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "vm/vmp.h"
 
 typedef struct {

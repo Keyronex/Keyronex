@@ -8,7 +8,7 @@
 #include "kdk/libkern.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "vm/vmp.h"
 
 struct exec_package {

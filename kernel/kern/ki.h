@@ -1,7 +1,7 @@
 #ifndef KRX_NANOKERN_KI_H
 #define KRX_NANOKERN_KI_H
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 /*!
  * Upcall from MD to Ke - process the DPC queue on a CPU.

@@ -3,7 +3,7 @@
 
 #include <keyronex/syscall.h>
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 void ex_init(void *);
 

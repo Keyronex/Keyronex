@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 static uint64_t timer_hz;
 

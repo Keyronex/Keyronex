@@ -1,7 +1,7 @@
 #ifndef KRX_VIRT68K_GOLDFISH_H
 #define KRX_VIRT68K_GOLDFISH_H
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 #define PIC_IRQ(pic, irq) (((pic)-1) * 32 + ((irq)-1))
 

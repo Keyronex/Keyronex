@@ -1,6 +1,6 @@
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/misc.h"
 
 #define BIT_SET(BITMAP_, I_) (BITMAP_)[(I_) / 8] |= (1 << ((I_) % 8))

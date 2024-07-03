@@ -1,7 +1,7 @@
 #ifndef KRX_KDK_DEV_H
 #define KRX_KDK_DEV_H
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vm.h"
 
 /*! Count of blocks. */

@@ -5,7 +5,7 @@
 #include "kdb/kdb_udp.h"
 #include "kdk/amd64.h"
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "net/keysock_dev.h"

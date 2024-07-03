@@ -10,7 +10,7 @@
  * the expired patents.
  */
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 struct rcu_state {
 	kspinlock_t lock;

@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/executive.h"
 
 #ifdef __cplusplus

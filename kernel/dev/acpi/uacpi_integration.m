@@ -2,7 +2,7 @@
 #include "kdk/amd64.h"
 #include "kdk/amd64/portio.h"
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vm.h"
 #include "uacpi/kernel_api.h"
 #include "uacpi/status.h"

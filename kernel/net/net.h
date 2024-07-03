@@ -2,7 +2,7 @@
 #define KRX_NET_NET_H
 
 #include "dev/DKNIC.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 struct pbuf;
 struct socknode;

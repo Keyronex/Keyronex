@@ -2,7 +2,7 @@
 #define KRX_DEV_BUF_H
 
 #include "kdk/dev.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 /*!
  * A block buffer.

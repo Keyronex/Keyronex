@@ -2,7 +2,7 @@
 #define KRX_VM_VMP_H
 
 #include "kdk/executive.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vm.h"
 
 typedef union pte pte_t;

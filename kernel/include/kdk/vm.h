@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/port.h"
 #include "kdk/queue.h"
 #include "kdk/tree.h"

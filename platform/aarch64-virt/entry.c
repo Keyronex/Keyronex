@@ -2,9 +2,9 @@
 #include <stdint.h>
 
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/object.h"
-#include "nanokern/aarch64/cpu.h"
+#include "kern/aarch64/cpu.h"
 #include "vm/vmp.h"
 
 static volatile struct limine_dtb_request dtb_request = {

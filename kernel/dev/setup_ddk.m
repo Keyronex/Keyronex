@@ -2,7 +2,7 @@
 
 #include "ddk/DKDevice.h"
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "ntcompat/ntcompat.h"
 
 enum nodeKind { kRoot, kChild, kLastChild };

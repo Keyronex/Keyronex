@@ -1,7 +1,7 @@
 #include <stdint.h>
 
 #include "goldfish.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 enum gfpic_reg {
 	kGFPICRegStatus = 0x00,

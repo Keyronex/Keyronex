@@ -10,7 +10,7 @@
 #include "kdk/endian.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/object.h"
 
 #define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)

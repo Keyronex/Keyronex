@@ -6,7 +6,7 @@
 #include "arch/sys_arch.h"
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
 

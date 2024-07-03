@@ -1,7 +1,7 @@
 #ifndef KRX_KDK_EXECUTIVE_H
 #define KRX_KDK_EXECUTIVE_H
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 /*!
  * Boot-time configuration.

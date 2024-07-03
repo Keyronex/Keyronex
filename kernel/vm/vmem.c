@@ -89,7 +89,7 @@
 
 #include "kdk/vmem.h"
 #ifdef _KERNEL
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "kdk/vmem_impl.h"

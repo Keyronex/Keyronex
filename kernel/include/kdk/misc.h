@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 struct id_allocator {
 	uint8_t *bitmap;

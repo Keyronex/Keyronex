@@ -4,7 +4,7 @@
 #include <dirent.h>
 
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 #define DIRENT_RECLEN(NAMELEN) \
 	ROUNDUP(offsetof(struct dirent, d_name[0]) + 1 + NAMELEN, 8)

@@ -1,6 +1,6 @@
 #include "dev/DKNIC.h"
 #include "kdk/dev.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "lwip/init.h"
 #include "lwip/timeouts.h"
 #include "kdk/kmem.h"

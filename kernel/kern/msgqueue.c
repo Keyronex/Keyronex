@@ -4,7 +4,7 @@
  */
 
 #include "kdk/kmem.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/queue.h"
 #include "ki.h"
 

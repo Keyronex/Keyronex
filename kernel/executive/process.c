@@ -1,10 +1,10 @@
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
 #include "kdk/misc.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "object.h"
 #include "vm/vmp.h"
 

@@ -1,6 +1,6 @@
 #include "kdk/libkern.h"
 #include "kdk/m68k.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/port.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"

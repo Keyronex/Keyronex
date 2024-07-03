@@ -3,7 +3,7 @@
  * Created on Wed Jan 17 2023.
  */
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "ki.h"
 
 void

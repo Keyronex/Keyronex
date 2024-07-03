@@ -1,6 +1,6 @@
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "ntcompat/ntcompat.h"
 #include "ntcompat/win_types.h"
 

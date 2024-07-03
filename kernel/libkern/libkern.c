@@ -3,7 +3,7 @@
  * Created in 2022.
  */
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/libkern.h"
 #include "kdk/kmem.h"
 

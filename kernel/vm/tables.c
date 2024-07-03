@@ -2,10 +2,10 @@
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 #include "vmp.h"
 
 #define PAGETABLE_PAGING 1

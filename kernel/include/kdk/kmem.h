@@ -22,7 +22,7 @@
 #include <sys/queue.h>
 #define mutex_t int
 #else
-#include "./nanokern.h"
+#include "./kern.h"
 #endif
 
 #ifdef __cplusplus

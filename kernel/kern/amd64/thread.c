@@ -2,8 +2,8 @@
 #include "kdk/amd64/regs.h"
 #include "kdk/executive.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
-#include "nanokern/ki.h"
+#include "kdk/kern.h"
+#include "kern/ki.h"
 #include "vm/vmp.h"
 
 void

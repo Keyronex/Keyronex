@@ -2,7 +2,7 @@
 #define KRX_DDK_DKDEVICE_H
 
 #include "DKObject.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/queue.h"
 #include "kdk/dev.h"
 

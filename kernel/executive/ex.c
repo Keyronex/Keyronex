@@ -8,7 +8,7 @@
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
@@ -270,6 +270,8 @@ ex_init(void *)
 	r = ps_thread_create(&user_init_thread, "user init thread 0", user_init,
 	    NULL, initps);
 	kassert(r == 0);
+
+	obj_release(initps);
 
 	ke_thread_resume(user_init_thread);
 

@@ -3,7 +3,7 @@
 
 #include <abi-bits/errno.h>
 
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/libkern.h"
 
 #undef errno
@@ -11,13 +11,17 @@
 
 #if 0
 #define LWIP_DEBUG 1
+#if 0
 #define MEMP_DEBUG LWIP_DBG_ON
 #define TIMERS_DEBUG LWIP_DBG_ON
+#endif
 #define TCP_DEBUG                       LWIP_DBG_ON
 #define TCP_INPUT_DEBUG LWIP_DBG_ON
 #define TCP_OUTPUT_DEBUG LWIP_DBG_ON
+#if 0
 #define ETHARP_DEBUG                    LWIP_DBG_ON
 #define PBUF_DEBUG                      LWIP_DBG_ON
+#endif
 #define IP_DEBUG                        LWIP_DBG_ON
 #define TCPIP_DEBUG                     LWIP_DBG_ON
 #define UDP_DEBUG                       LWIP_DBG_ON

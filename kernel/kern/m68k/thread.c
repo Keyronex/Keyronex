@@ -1,6 +1,6 @@
 #include "kdk/executive.h"
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 void
 md_cpu_init(kcpu_t *cpu)

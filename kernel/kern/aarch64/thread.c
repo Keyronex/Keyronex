@@ -1,5 +1,5 @@
 #include "kdk/libkern.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 
 extern void thread_trampoline();
 

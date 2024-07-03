@@ -4,10 +4,10 @@
  */
 
 #include "kdk/amd64/portio.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/vm.h"
 #include "intr.h"
-#include "nanokern/ki.h"
+#include "kern/ki.h"
 
 enum {
 	kLAPICRegEOI = 0xb0,

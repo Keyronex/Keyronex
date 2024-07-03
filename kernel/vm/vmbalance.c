@@ -8,7 +8,7 @@
  */
 
 #include "kdk/executive.h"
-#include "kdk/nanokern.h"
+#include "kdk/kern.h"
 #include "kdk/queue.h"
 #include "kdk/vm.h"
 #include "vm/vmp_dynamics.h"
