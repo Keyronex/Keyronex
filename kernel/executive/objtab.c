@@ -8,19 +8,16 @@
  */
 
 #include "exp.h"
+#include "kdk/executive.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "object.h"
 
 #define KRX_RCU
 
-#define DESCNUM_NULL -1
-
-typedef uint32_t descnum_t;
 typedef uint32_t bitmap_32_t;
-typedef void *obj_t;
 
 struct objtab_entries {
 	krcu_entry_t rcu_entry;
@@ -31,8 +28,19 @@ struct objtab_entries {
 	bitmap_32_t *cloexec;	  /*!< bitmap of close-on-exec objects */
 };
 
-struct objtab_table {
+/*!
+ * The object space structure.
+ *
+ * update_lock is used to serialize updates to objptrs corresponding to
+ * allocated desciptor numbers against resizes.
+ *
+ * write_lock is used to serialize allocations/frees of descriptor numbers and
+ * all changes to open/cloexec.
+ */
+struct ex_object_space {
 	kmutex_t write_lock;
+	kspinlock_t update_lock;
+	kevent_t resize_event;
 
 	struct objtab_entries KRX_RCU *entries;
 };
@@ -67,11 +75,11 @@ bit32_nelem(size_t n_bits)
 	return (n_bits + 31) / 32;
 }
 
-file_t *
-descnum_to_obj(struct objtab_table *table, descnum_t descnum)
+obj_t *
+ex_object_space_lookup(ex_object_space_t *table, descnum_t descnum)
 {
 	ipl_t ipl;
-	file_t *right = NULL;
+	obj_t *right = NULL;
 	struct objtab_entries *entries;
 
 	if (descnum < 0)
@@ -103,13 +111,19 @@ descnum_to_obj(struct objtab_table *table, descnum_t descnum)
 }
 
 static struct objtab_entries *
-resize_entries(struct objtab_entries *entries, size_t new_capacity)
+resize_entries(ex_object_space_t *table, struct objtab_entries *entries,
+    size_t new_capacity)
 {
 	struct objtab_entries *new_entries;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&table->update_lock);
+	ke_event_clear(&table->resize_event);
+	ke_spinlock_release(&table->update_lock, ipl);
 
 	new_entries = kmem_alloc(sizeof(*new_entries));
 	if (new_entries == NULL)
-		return NULL;
+		goto fail_entries;
 
 	new_entries->capacity = new_capacity;
 	new_entries->n_open = entries->n_open;
@@ -143,16 +157,26 @@ resize_entries(struct objtab_entries *entries, size_t new_capacity)
 	memset(new_entries->cloexec + bit32_nelem(entries->capacity), 0,
 	    bit32_size(new_capacity) - bit32_size(entries->capacity));
 
+	ipl = ke_spinlock_acquire(&table->update_lock);
+	ke_event_signal(&table->resize_event);
+	ke_spinlock_release(&table->update_lock, ipl);
+
 fail:
 	kmem_free(new_entries->objptrs, new_capacity * sizeof(file_t *));
 	kmem_free(new_entries->open, bit32_size(new_capacity));
 	kmem_free(new_entries->cloexec, bit32_size(new_capacity));
+fail_entries:
 	kmem_free(new_entries, sizeof(*new_entries));
+
+	ipl = ke_spinlock_acquire(&table->update_lock);
+	ke_event_signal(&table->resize_event);
+	ke_spinlock_release(&table->update_lock, ipl);
+
 	return NULL;
 }
 
 static descnum_t
-descnum_alloc_locked(struct objtab_table *table, bool cloexec)
+descnum_alloc_locked(ex_object_space_t *table, bool cloexec)
 {
 	struct objtab_entries *entries = table->entries;
 	descnum_t descnum = -1;
@@ -190,4 +214,73 @@ descnum_alloc_locked(struct objtab_table *table, bool cloexec)
 	entries->n_open++;
 
 	return descnum;
+}
+
+descnum_t
+ex_object_space_reserve(ex_object_space_t *table, bool cloexec)
+{
+	descnum_t descnum;
+
+	ke_wait(&table->write_lock, "ex_object_space_reserve", false, false,
+	    -1);
+	descnum = descnum_alloc_locked(table, cloexec);
+	ke_mutex_release(&table->write_lock);
+
+	return descnum;
+}
+
+/*! @brief Insert an entry into a already reserved slot in an object space. */
+void
+ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum,
+    obj_t *obj)
+{
+	ipl_t ipl;
+	struct objtab_entries *entries;
+
+	while (true) {
+		ipl = ke_spinlock_acquire(&table->update_lock);
+
+		/* this is fine - the update lock serialises things. */
+		if (!table->resize_event.hdr.signalled) {
+			ke_spinlock_release(&table->update_lock, ipl);
+			ke_wait(&table->resize_event,
+			    "ex_object_space_reserved_insert", false, false,
+			    -1);
+			continue;
+		}
+	}
+
+	entries = ke_rcu_dereference(table->entries);
+
+	kassert_dbg(descnum < entries->capacity);
+	kassert_dbg(bit32_test(entries->open, descnum));
+
+	ke_rcu_assign_pointer(entries->objptrs[descnum], obj);
+
+	ke_spinlock_release(&table->update_lock, ipl);
+}
+
+/*! @brief Free an index in an object space. Returns prior value (if any). */
+obj_t *
+ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum)
+{
+	obj_t *right;
+	struct objtab_entries *entries;
+
+	ke_wait(&table->write_lock, "ex_object_space_free_index", false, false,
+	    -1);
+
+	entries = ke_rcu_dereference(table->entries);
+
+	kassert_dbg(descnum < entries->capacity);
+	kassert_dbg(bit32_test(entries->open, descnum));
+
+	right = ke_rcu_exchange_pointer(entries->objptrs[descnum], NULL);
+	bit32_clear(entries->open, descnum);
+	bit32_clear(entries->cloexec, descnum);
+	entries->n_open--;
+
+	ke_mutex_release(&table->write_lock);
+
+	return right;
 }

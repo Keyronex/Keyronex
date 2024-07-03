@@ -1,7 +1,7 @@
 /*!
  * @file anon.c
  * @brief Implements the "Memory Object" object type, a wrapper for
- * vm_object_ts.
+ * `vm_object_t`s.
  */
 
 #include "kdk/kern.h"
@@ -13,7 +13,13 @@ typedef struct ex_memory_object {
 	vm_object_t obj;
 } ex_memory_object_t;
 
-extern obj_class_t anonymous_class;
+obj_class_t anonymous_class;
+
+void
+exp_memory_obj_init(void)
+{
+	anonymous_class = obj_new_type("Memory Object", NULL, true);
+}
 
 int
 ex_memory_object_new(ex_memory_object_t *out, size_t size)

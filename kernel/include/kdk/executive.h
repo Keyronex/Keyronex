@@ -4,6 +4,26 @@
 #include "kdk/kern.h"
 
 /*!
+ * @brief Errno value.
+ *
+ * This is the return type of all executive services. Successful results are
+ * indicated by a zero value, unsuccessful results by an errno.
+ */
+typedef uintptr_t errno_t;
+
+/*! @brief Descriptor number indexing into an object table. */
+typedef uint32_t descnum_t;
+
+/*! @brief NULL-equivalent object descriptor number. */
+#define DESCNUM_NULL (descnum_t) - 1
+
+/*! @brief Generic object pointer. */
+typedef void obj_t;
+
+/*! @brief An object space. */
+typedef struct ex_object_space ex_object_space_t;
+
+/*!
  * Boot-time configuration.
  *
  * @var ex_boot_config::root Root FS mount info.
@@ -35,7 +55,20 @@ typedef struct eprocess {
 	kprocess_t kprocess;
 	struct vm_procstate *vm;
 	void *handles[64];
+	ex_object_space_t *objspace;
 } eprocess_t;
+
+/*! @brief Resolve an object descriptor number within a space. */
+obj_t *ex_object_space_lookup(ex_object_space_t *table, descnum_t descnum);
+
+/*! @brief Reserve an entry within an object space. */
+descnum_t ex_object_space_reserve(ex_object_space_t *table, bool cloexec);
+
+/*! @brief Insert an entry into a already reserved slot in an object space. */
+void ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum, obj_t *obj);
+
+/*! @brief Free an index in an object space. Returns prior value (if any). */
+obj_t *ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum);
 
 int ex_work_enqueue(ex_work_t *work);
 

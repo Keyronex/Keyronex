@@ -2,6 +2,18 @@
 #include "kdk/queue.h"
 #include "ki.h"
 
+void
+ke_port_init(kport_t *port)
+{
+	port->hdr.type = kDispatchPort;
+	port->hdr.signalled = 0;
+	ke_spinlock_init(&port->hdr.spinlock);
+	TAILQ_INIT(&port->hdr.waitblock_queue);
+	TAILQ_INIT(&port->queue);
+	port->n_processing = 0;
+	port->max_n_processing = 1;
+}
+
 static struct kport_msg *
 do_port_acquire(kport_t *kport, struct kport_msg *msg, kthread_t *thread)
 {

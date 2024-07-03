@@ -519,6 +519,11 @@ void ke_event_init(kevent_t *ev, bool signalled);
 void ke_event_signal(kevent_t *ev);
 
 /*!
+ * @brief Test if an event is signalled.
+ */
+bool ke_event_is_signalled(kevent_t *ev);
+
+/*!
  * @brief Clear a kernel event, resetting it to nonsignalled state.
  * @returns the previous signal state of the event.
  */
@@ -555,6 +560,11 @@ void ke_mutex_release(kmutex_t *mutex);
  * @brief Assert the mutex is held by the current thread.
  */
 #define ke_mutex_assert_held(MUTEX) (kassert((MUTEX)->owner == curthread()))
+
+/*!
+ * @brief Initialise a port.
+ */
+void ke_port_init(kport_t *port);
 
 void ke_process_init(kprocess_t *proc);
 
@@ -632,7 +642,7 @@ void ke_rcu_synchronise(void);
 
 /*! T ke_rcu_exchange_pointer(T KRX_RCU *ptr, T value) */
 #define ke_rcu_exchange_pointer(PTR, VAL) \
-	__atomic_exchange_n(PTR, VAL, __ATOMIC_ACQ_REL);
+	__atomic_exchange_n(&(PTR), VAL, __ATOMIC_ACQ_REL);
 
 /* Kernel putc. */
 void kputc(int ch, void *unused);
@@ -674,6 +684,8 @@ void kputc(int ch, void *unused);
 		    #__VA_ARGS__);				\
 	}							\
 }
+
+#define kassert_dbg(...) kassert(__VA_ARGS__)
 
 void ke_format_time(nanosecs_t nanosecs, char *out, size_t size);
 

@@ -1,2 +1,2 @@
-kernel_sources += files('ex.c', 'exec.c', 'futex.c', 'idalloc.c', 'objtab.c',
-	'object.c', 'process.c', 'worker.c')
+kernel_sources += files('anon_obj.c', 'ex.c', 'exec.c', 'futex.c', 'idalloc.c',
+	'objects.c', 'objman.c', 'objtab.c', 'port_obj.c', 'process.c', 'worker.c')
