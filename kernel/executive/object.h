@@ -1,6 +1,7 @@
 #ifndef KRX_EXECUTIVE_OBJECT_H
 #define KRX_EXECUTIVE_OBJECT_H
 
+#include "kdk/executive.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 
@@ -16,10 +17,5 @@ struct object_header {
 	/*! index into class_list */
 	obj_class_t class;
 };
-
-typedef struct file {
-	namecache_handle_t nch;
-	io_off_t offset;
-} file_t;
 
 #endif /* KRX_EXECUTIVE_OBJECT_H */

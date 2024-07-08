@@ -23,7 +23,7 @@ struct objtab_entries {
 	krcu_entry_t rcu_entry;
 	uint32_t capacity;	  /*!< capacity of rights array */
 	uint32_t n_open;	  /*!< number open or reserved */
-	file_t KRX_RCU **objptrs; /*!< array of object pointers */
+	obj_t KRX_RCU **objptrs; /*!< array of object pointers */
 	bitmap_32_t *open;	  /*!< bitmap of open or reserved objects */
 	bitmap_32_t *cloexec;	  /*!< bitmap of close-on-exec objects */
 };
@@ -40,7 +40,7 @@ struct objtab_entries {
 struct ex_object_space {
 	kmutex_t write_lock;
 	kspinlock_t update_lock;
-	kevent_t resize_event;
+	kevent_t resize_done_event;
 
 	struct objtab_entries KRX_RCU *entries;
 };
@@ -73,6 +73,58 @@ static inline uint32_t
 bit32_nelem(size_t n_bits)
 {
 	return (n_bits + 31) / 32;
+}
+
+ex_object_space_t *
+ex_object_space_create(void)
+{
+	ex_object_space_t *table;
+	struct objtab_entries *entries;
+	size_t capacity = 64;
+
+	table = kmem_alloc(sizeof(*table));
+	if (table == NULL)
+		return NULL;
+
+	ke_mutex_init(&table->write_lock);
+	ke_spinlock_init(&table->update_lock);
+	ke_event_init(&table->resize_done_event, true);
+
+	entries = kmem_alloc(sizeof(*entries));
+	if (entries == NULL)
+		goto fail_entries;
+
+	entries->capacity = capacity;
+	entries->n_open = 0;
+	entries->objptrs = kmem_alloc(capacity * sizeof(obj_t *));
+	if (entries->objptrs == NULL)
+		goto fail;
+
+	entries->open = kmem_alloc(bit32_size(capacity));
+	if (entries->open == NULL)
+		goto fail;
+
+	entries->cloexec = kmem_alloc(bit32_size(capacity));
+	if (entries->cloexec == NULL)
+		goto fail;
+
+	memset(entries->objptrs, 0, capacity * sizeof(obj_t *));
+	memset(entries->open, 0, bit32_size(capacity));
+	memset(entries->cloexec, 0, bit32_size(capacity));
+
+	ke_rcu_assign_pointer(table->entries, entries);
+
+	return table;
+
+fail:
+	kmem_free(entries->objptrs, capacity * sizeof(obj_t *));
+	kmem_free(entries->open, bit32_size(capacity));
+	kmem_free(entries->cloexec, bit32_size(capacity));
+	kmem_free(entries, sizeof(*entries));
+fail_entries:
+	kmem_free(table, sizeof(*table));
+
+	return NULL;
 }
 
 obj_t *
@@ -118,7 +170,7 @@ resize_entries(ex_object_space_t *table, struct objtab_entries *entries,
 	ipl_t ipl;
 
 	ipl = ke_spinlock_acquire(&table->update_lock);
-	ke_event_clear(&table->resize_event);
+	ke_event_clear(&table->resize_done_event);
 	ke_spinlock_release(&table->update_lock, ipl);
 
 	new_entries = kmem_alloc(sizeof(*new_entries));
@@ -131,7 +183,7 @@ resize_entries(ex_object_space_t *table, struct objtab_entries *entries,
 	new_entries->open = NULL;
 	new_entries->cloexec = NULL;
 
-	new_entries->objptrs = kmem_alloc(new_capacity * sizeof(file_t *));
+	new_entries->objptrs = kmem_alloc(new_capacity * sizeof(obj_t *));
 	if (new_entries->objptrs == NULL)
 		goto fail;
 
@@ -158,18 +210,18 @@ resize_entries(ex_object_space_t *table, struct objtab_entries *entries,
 	    bit32_size(new_capacity) - bit32_size(entries->capacity));
 
 	ipl = ke_spinlock_acquire(&table->update_lock);
-	ke_event_signal(&table->resize_event);
+	ke_event_signal(&table->resize_done_event);
 	ke_spinlock_release(&table->update_lock, ipl);
 
 fail:
-	kmem_free(new_entries->objptrs, new_capacity * sizeof(file_t *));
+	kmem_free(new_entries->objptrs, new_capacity * sizeof(obj_t *));
 	kmem_free(new_entries->open, bit32_size(new_capacity));
 	kmem_free(new_entries->cloexec, bit32_size(new_capacity));
-fail_entries:
 	kmem_free(new_entries, sizeof(*new_entries));
 
+fail_entries:
 	ipl = ke_spinlock_acquire(&table->update_lock);
-	ke_event_signal(&table->resize_event);
+	ke_event_signal(&table->resize_done_event);
 	ke_spinlock_release(&table->update_lock, ipl);
 
 	return NULL;
@@ -241,12 +293,14 @@ ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum,
 		ipl = ke_spinlock_acquire(&table->update_lock);
 
 		/* this is fine - the update lock serialises things. */
-		if (!table->resize_event.hdr.signalled) {
+		if (!table->resize_done_event.hdr.signalled) {
 			ke_spinlock_release(&table->update_lock, ipl);
-			ke_wait(&table->resize_event,
+			ke_wait(&table->resize_done_event,
 			    "ex_object_space_reserved_insert", false, false,
 			    -1);
 			continue;
+		} else {
+			break;
 		}
 	}
 

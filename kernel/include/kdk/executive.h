@@ -4,13 +4,31 @@
 #include "kdk/kern.h"
 
 /*!
- * @brief Errno value.
+ * @brief Descriptor number or negative errno value.
  *
- * This is the return type of all executive services. Successful results are
- * indicated by a zero or positive value, unsuccessful results by a negative
- * errno.
+ * This is the return type of most executive services that return a descriptor
+ * number. Successful results are indicated by a zero or positive value,
+ * unsuccessful results by a negative errno.
  */
-typedef int32_t ex_ret_t;
+typedef int32_t ex_desc_ret_t;
+
+/*!
+ * @brief Size or negative errno value.
+ *
+ * This is the return type of most executive services that return a size.
+ * Successful results are indicated by a zero or positive value, unsuccessful
+ * results by a negative errno.
+ */
+typedef intptr_t ex_size_ret_t;
+
+/*!
+ * @brief Offset or negative errno return value.
+ *
+ * This is the return type of most executive services that return an offset.
+ * Successful results are indicated by a zero or positive value, unsuccessful
+ * results by a negative errno.
+ */
+typedef intptr_t ex_off_ret_t;
 
 /*! @brief Descriptor number indexing into an object table. */
 typedef int32_t descnum_t;
@@ -55,9 +73,11 @@ typedef struct ex_rwlock {
 typedef struct eprocess {
 	kprocess_t kprocess;
 	struct vm_procstate *vm;
-	void *handles[64];
 	ex_object_space_t *objspace;
 } eprocess_t;
+
+/*! @brief Create a new handle table. */
+ex_object_space_t *ex_object_space_create(void);
 
 /*! @brief Resolve an object descriptor number within a space. */
 obj_t *ex_object_space_lookup(ex_object_space_t *table, descnum_t descnum);
@@ -92,6 +112,9 @@ int ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
 int ps_create_kernel_thread(kthread_t **out, const char *name,
     void (*fn)(void *), void *arg);
 void ps_exit_this_thread(void);
+
+size_t user_strlen(const char *user_str);
+int copyout_str(const char *ustr, char **out);
 
 #define ex_proc_from_kproc(KPROC) containerof((KPROC), eprocess_t, kprocess)
 #define ex_curproc() containerof(curproc(), eprocess_t, kprocess)

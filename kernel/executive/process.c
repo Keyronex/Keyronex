@@ -86,8 +86,7 @@ ps_process_create(eprocess_t **out, bool fork)
 		kfatal("handle this\n");
 
 	vm_ps_init(proc);
-	for (int i = 0; i < 64; i++)
-		proc->handles[i] = NULL;
+	proc->objspace = ex_object_space_create();
 
 	*out = proc;
 

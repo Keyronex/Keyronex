@@ -20,7 +20,7 @@ exp_port_obj_init(void)
 	port_class = obj_new_type("Port", NULL, true);
 }
 
-ex_ret_t
+ex_desc_ret_t
 ex_service_port_new(eprocess_t *proc)
 {
 	int r;

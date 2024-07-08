@@ -20,6 +20,8 @@ void run_over(void){
 
 int main(int argc, char *argv[])
 {
+	std::cout << "Hello, I'm the POSIX server!!\n";
+
 	mapping = (char*)mmap(NULL, 16 * 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	assert(mapping != NULL);
 
