@@ -20,8 +20,8 @@ exp_port_obj_init(void)
 	port_class = obj_new_type("Port", NULL, true);
 }
 
-errno_t
-ex_service_port_new(eprocess_t *proc, descnum_t *out)
+ex_ret_t
+ex_service_port_new(eprocess_t *proc)
 {
 	int r;
 	descnum_t descnum;
@@ -29,18 +29,16 @@ ex_service_port_new(eprocess_t *proc, descnum_t *out)
 
 	descnum = ex_object_space_reserve(proc->objspace, false);
 	if (descnum == DESCNUM_NULL)
-		return EMFILE;
+		return -EMFILE;
 
 	r = obj_new(&port, port_class, sizeof(kport_t), "a port");
 	if (r != 0) {
 		ex_object_space_free_index(proc->objspace, descnum);
-		return ENOMEM;
+		return -ENOMEM;
 	}
 
 	ke_port_init(port);
 	ex_object_space_reserved_insert(proc->objspace, descnum, port);
 
-	*out = descnum;
-
-	return 0;
+	return descnum;
 }

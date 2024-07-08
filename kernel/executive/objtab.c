@@ -197,7 +197,7 @@ descnum_alloc_locked(ex_object_space_t *table, bool cloexec)
 		old_capacity = entries->capacity;
 		new_capacity = old_capacity * 2;
 
-		new_entries = resize_entries(entries, new_capacity);
+		new_entries = resize_entries(table, entries, new_capacity);
 		if (new_entries == NULL)
 			return -1;
 

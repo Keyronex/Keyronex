@@ -7,15 +7,16 @@
  * @brief Errno value.
  *
  * This is the return type of all executive services. Successful results are
- * indicated by a zero value, unsuccessful results by an errno.
+ * indicated by a zero or positive value, unsuccessful results by a negative
+ * errno.
  */
-typedef uintptr_t errno_t;
+typedef int32_t ex_ret_t;
 
 /*! @brief Descriptor number indexing into an object table. */
-typedef uint32_t descnum_t;
+typedef int32_t descnum_t;
 
 /*! @brief NULL-equivalent object descriptor number. */
-#define DESCNUM_NULL (descnum_t) - 1
+#define DESCNUM_NULL (descnum_t)-1
 
 /*! @brief Generic object pointer. */
 typedef void obj_t;
