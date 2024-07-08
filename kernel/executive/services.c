@@ -150,19 +150,22 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 
 	case kKrxFileOpen:
 		return ex_service_file_open(ex_curproc(),
-		    (const char *)arg1); // krx_file_open((const char *)arg1);
+		    (const char *)arg1);
+
+	case kKrxFileClose:
+		return ex_service_file_close(ex_curproc(), arg1);
 
 	case kKrxFileReadCached:
 		return ex_service_file_read_cached(ex_curproc(), arg1, arg2,
-		    arg3); // krx_file_read_cached(arg1, arg2, arg3);
+		    arg3);
 
 	case kKrxFileWriteCached:
 		return ex_service_file_write_cached(ex_curproc(), arg1, arg2,
-		    arg3); // krx_file_write_cached(arg1, arg2, arg3);
+		    arg3);
 
 	case kKrxFileSeek:
-		return ex_service_file_seek(ex_curproc(), arg1,
-		    arg2); // krx_file_seek(arg1, arg2);
+		return ex_service_file_seek(ex_curproc(), arg1, arg2,
+		    arg3);
 
 	case kKrxThreadExit:
 		krx_thread_exit();

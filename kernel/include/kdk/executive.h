@@ -89,7 +89,8 @@ descnum_t ex_object_space_reserve(ex_object_space_t *table, bool cloexec);
 void ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum, obj_t *obj);
 
 /*! @brief Free an index in an object space. Returns prior value (if any). */
-obj_t *ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum);
+int ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum,
+    obj_t **old);
 
 int ex_work_enqueue(ex_work_t *work);
 

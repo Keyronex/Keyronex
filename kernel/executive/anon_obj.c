@@ -18,7 +18,7 @@ obj_class_t anonymous_class;
 void
 exp_memory_obj_init(void)
 {
-	anonymous_class = obj_new_type("Memory Object", NULL, true);
+	anonymous_class = obj_new_type("Memory Object", NULL);
 }
 
 int

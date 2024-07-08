@@ -10,7 +10,7 @@ obj_class_t device_class;
 
 + (void)load
 {
-	device_class = obj_new_type("Device", NULL, false);
+	device_class = obj_new_type("Device", NULL);
 }
 
 + (instancetype)alloc

@@ -7,6 +7,8 @@
  * @brief Object descriptor table management.
  */
 
+#include <sys/errno.h>
+
 #include "exp.h"
 #include "kdk/executive.h"
 #include "kdk/kern.h"
@@ -281,7 +283,6 @@ ex_object_space_reserve(ex_object_space_t *table, bool cloexec)
 	return descnum;
 }
 
-/*! @brief Insert an entry into a already reserved slot in an object space. */
 void
 ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum,
     obj_t *obj)
@@ -314,9 +315,9 @@ ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum,
 	ke_spinlock_release(&table->update_lock, ipl);
 }
 
-/*! @brief Free an index in an object space. Returns prior value (if any). */
-obj_t *
-ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum)
+int
+ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum,
+    obj_t **out)
 {
 	obj_t *right;
 	struct objtab_entries *entries;
@@ -326,15 +327,19 @@ ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum)
 
 	entries = ke_rcu_dereference(table->entries);
 
-	kassert_dbg(descnum < entries->capacity);
-	kassert_dbg(bit32_test(entries->open, descnum));
+	if (descnum >= entries->capacity || !bit32_test(entries->open, descnum)) {
+		kfatal("%d is not open!\n", descnum);
+		return -EBADF;
+	}
 
-	right = ke_rcu_exchange_pointer(entries->objptrs[descnum], NULL);
+	entries->n_open--;
 	bit32_clear(entries->open, descnum);
 	bit32_clear(entries->cloexec, descnum);
-	entries->n_open--;
+	right = ke_rcu_exchange_pointer(entries->objptrs[descnum], NULL);
 
 	ke_mutex_release(&table->write_lock);
 
-	return right;
+	*out = right;
+
+	return 0;
 }

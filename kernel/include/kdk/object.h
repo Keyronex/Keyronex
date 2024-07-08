@@ -14,7 +14,7 @@ typedef struct handle {
 	void *object;
 } handle_t;
 
-typedef bool (*obj_inactive_fn_t)(void *);
+typedef void (*obj_free_fn_t)(void *);
 
 /*! @brief Set up the object manager. */
 void obj_init(void);
@@ -24,8 +24,7 @@ void obj_init(void);
  *
  * @param name Name of the class to create.
  */
-obj_class_t obj_new_type(const char *name, obj_inactive_fn_t inactive,
-    bool inactive_at_dpc_level);
+obj_class_t obj_new_type(const char *name, obj_free_fn_t free);
 
 /*!
  * @brief Create a new object instance.

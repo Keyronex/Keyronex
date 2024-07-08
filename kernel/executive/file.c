@@ -9,13 +9,16 @@
 
 #include <sys/errno.h>
 
+#include <abi-bits/seek-whence.h>
+
 #include "kdk/executive.h"
+#include "kdk/file.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "object.h"
-#include "kdk/file.h"
 
 /* objman.c */
 extern obj_class_t file_class;
@@ -41,6 +44,20 @@ copyout_str(const char *ustr, char **out)
 	return 0;
 }
 
+void
+ex_file_free(obj_t *obj)
+{
+#if 0
+	file_t *file = file;
+	if (file->nch.nc != NULL)
+		nchandle_release(file->nch);
+	else
+	 	vn_release(file->vnode);
+#else
+	(void)obj;
+#endif
+}
+
 ex_desc_ret_t
 ex_service_file_open(eprocess_t *proc, const char *upath)
 {
@@ -64,8 +81,10 @@ ex_service_file_open(eprocess_t *proc, const char *upath)
 
 		r = obj_new(&file, file_class, sizeof(struct file), NULL);
 		kassert(r == 0);
+		ke_spinlock_init(&file->lock);
 		file->nch = nch;
 		file->offset = 0;
+		file->vnode = nch.nc->vp;
 
 		descnum = ex_object_space_reserve(proc->objspace, false);
 		if (descnum == DESCNUM_NULL)
@@ -76,6 +95,20 @@ ex_service_file_open(eprocess_t *proc, const char *upath)
 		return descnum;
 	} else
 		return r;
+}
+
+ex_desc_ret_t
+ex_service_file_close(eprocess_t *proc, descnum_t handle)
+{
+	int r;
+	obj_t *old;
+
+	r = ex_object_space_free_index(proc->objspace, handle, &old);
+	if (r != 0)
+		return r;
+
+	obj_release(old);
+	return 0;
 }
 
 ex_size_ret_t
@@ -92,7 +125,7 @@ ex_service_file_read_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf,
 
 	file = obj;
 
-	r = ubc_io(file->nch.nc->vp, ubuf, file->offset, count, false);
+	r = ubc_io(file->vnode, ubuf, file->offset, count, false);
 	kassert(r >= 0);
 	file->offset += r;
 	obj_release(file);
@@ -107,17 +140,23 @@ ex_service_file_write_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf, s
 }
 
 ex_off_ret_t
-ex_service_file_seek(eprocess_t *proc, descnum_t handle, io_off_t offset)
+ex_service_file_seek(eprocess_t *proc, descnum_t handle, io_off_t offset,
+    int whence)
 {
 	void *obj;
 	struct file *file;
+	ipl_t ipl;
+
+	kassert(whence == SEEK_SET);
 
 	obj = ex_object_space_lookup(proc->objspace, handle);
 	if (obj == NULL)
 		return -EBADF;
 
 	file = obj;
+	ipl = ke_spinlock_acquire(&file->lock);
 	file->offset = offset;
+	ke_spinlock_release(&file->lock, ipl);
 	obj_release(file);
 
 	return file->offset;

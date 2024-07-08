@@ -100,16 +100,13 @@ ps_early_init(kthread_t *thread0)
 }
 
 bool
-ex_thread_inactive(void *ptr)
+ex_thread_free(void *ptr)
 {
 	kthread_t *thread = ptr;
 	eprocess_t *proc = ex_proc_from_kproc(thread->process);
 
 	vm_kfree((vaddr_t)thread->kstack_base, KSTACK_SIZE / PGSIZE, 0);
 	ke_thread_deinit(thread);
-
-	/* we are now unlinked from our process; is our refcnt still 1? */
-	/* ... ask obj manager to tell us if refcnt is 1, if so, free ourself */
 
 	obj_release(proc);
 

@@ -17,7 +17,7 @@ obj_class_t port_class;
 void
 exp_port_obj_init(void)
 {
-	port_class = obj_new_type("Port", NULL, true);
+	port_class = obj_new_type("Port", NULL);
 }
 
 ex_desc_ret_t
@@ -33,7 +33,7 @@ ex_service_port_new(eprocess_t *proc)
 
 	r = obj_new(&port, port_class, sizeof(kport_t), "a port");
 	if (r != 0) {
-		ex_object_space_free_index(proc->objspace, descnum);
+		ex_object_space_free_index(proc->objspace, descnum, NULL);
 		return -ENOMEM;
 	}
 
