@@ -133,7 +133,7 @@ typedef enum iop_direction {
 } iop_direction_t;
 
 typedef struct io_result {
-	uintptr_t result; /*! 0 or errno */
+	uintptr_t result; /*! 0 or errno or -1 (eof) */
 	uintptr_t count; /*! count of bytes dealt with, if relevant */
 } io_result_t;
 

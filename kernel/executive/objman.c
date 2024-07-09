@@ -9,7 +9,8 @@
 #include "object.h"
 
 /* process.c */
-bool ex_thread_free(void *ptr);
+void ex_thread_free(void *ptr);
+void ex_proc_free(void *ptr);
 
 /*!
  * the inactive procedure should return true if the object was deleted, false
@@ -24,7 +25,7 @@ struct type_object {
 	/*! guards objects */
 	kmutex_t mutex;
 	/*! free the object */
-	bool (*free)(void *obj);
+	void (*free)(void *obj);
 };
 
 struct type_object_with_header {
@@ -105,7 +106,7 @@ obj_init(void)
 
 	obj_new_type("Type", NULL);
 	anon_class = obj_new_type("Anonymous", NULL);
-	process_class = obj_new_type("process", NULL);
+	process_class = obj_new_type("process", ex_proc_free);
 	thread_class = obj_new_type("thread", ex_thread_free);
 	file_class = obj_new_type("file", ex_file_free);
 

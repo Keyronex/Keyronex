@@ -122,7 +122,7 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 		char *msg;
 		int r;
 
-		r = copyout_str((const char *)arg1, &msg);
+		r = copyin_str((const char *)arg1, &msg);
 		kassert(r == 0);
 		kprintf("[libc]: %s\n", msg);
 		kmem_strfree(msg);

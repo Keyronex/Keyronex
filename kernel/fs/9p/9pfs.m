@@ -748,7 +748,14 @@ ninep_mount(namecache_handle_t over, const char *argstr)
 	return 0;
 }
 
+static int
+ninep_seek(vnode_t *vn, io_off_t old_offset, io_off_t *new_offset)
+{
+	return 0;
+}
+
 static struct vnode_ops ninep_vnops = {
+	.seek = ninep_seek,
 	.lookup = ninep_lookup,
 	.inactive = ninep_inactive,
 };

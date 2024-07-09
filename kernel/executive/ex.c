@@ -223,6 +223,15 @@ mount_root(void)
 	}
 }
 
+static void
+setup_kcon(eprocess_t *initps)
+{
+	ex_console_init();
+	ex_console_open(initps);
+	ex_console_open(initps);
+	ex_console_open(initps);
+}
+
 void
 ex_init(void *)
 {
@@ -246,8 +255,10 @@ ex_init(void *)
 
 	mount_root();
 
+#if 0
 	test_fs_refcounts();
 	test_unmount();
+#endif
 
 	pagefile_init();
 
@@ -267,6 +278,7 @@ ex_init(void *)
 	    NULL, initps);
 	kassert(r == 0);
 
+	setup_kcon(initps);
 	obj_release(initps);
 
 	ke_thread_resume(user_init_thread);

@@ -1,6 +1,7 @@
 #include "ddk/DKDevice.h"
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/SimpleFB.h"
+#include "dev/Null.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "limine.h"
@@ -42,6 +43,7 @@ extern struct bootinfo bootinfo;
 	DKLogAttach(self);
 
 	[KeySock probeWithProvider:self];
+	[Null probeWithProvider:self];
 	[SimpleFB probeWithProvider:self
 			    address:V2P(fb->address)
 			      width:fb->width

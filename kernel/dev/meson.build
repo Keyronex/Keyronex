@@ -11,6 +11,7 @@ kernel_sources += files(
 	'DOSFS.m',
 	'Ext2FS.m',
 	'FBTerminal.m',
+	'Null.m',
 	'PCIBus.m',
 	'SimpleFB.m',
 	'buf.c',

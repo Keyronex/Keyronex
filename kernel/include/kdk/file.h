@@ -15,6 +15,7 @@ typedef struct file {
 	io_off_t offset;
 } file_t;
 
+file_t *ex_file_new(void);
 void ex_file_free(obj_t *file);
 ex_desc_ret_t ex_service_file_open(eprocess_t *proc, const char *upath);
 ex_desc_ret_t ex_service_file_close(eprocess_t *proc, descnum_t handle);

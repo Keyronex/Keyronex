@@ -99,7 +99,7 @@ ps_early_init(kthread_t *thread0)
 	ke_process_init(&kernel_process->kprocess);
 }
 
-bool
+void
 ex_thread_free(void *ptr)
 {
 	kthread_t *thread = ptr;
@@ -109,11 +109,11 @@ ex_thread_free(void *ptr)
 	ke_thread_deinit(thread);
 
 	obj_release(proc);
-
-	return true;
 }
 
-bool ex_proc_inactive(void *ptr)
+bool
+ex_proc_free(void *ptr)
 {
 	eprocess_t *proc = ptr;
+	kprintf("free process <%s>\n", obj_name(ptr));
 }

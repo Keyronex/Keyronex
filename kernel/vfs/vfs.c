@@ -89,9 +89,11 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 		LIST_INIT(&obj->map_entry_list);
 	}
 
-	ipl = ke_spinlock_acquire(&vfs->vnode_list_lock);
-	TAILQ_INSERT_TAIL(&vfs->vnode_list, vnode, vnode_list_entry);
-	ke_spinlock_release(&vfs->vnode_list_lock, ipl);
+	if (vfs != NULL) {
+		ipl = ke_spinlock_acquire(&vfs->vnode_list_lock);
+		TAILQ_INSERT_TAIL(&vfs->vnode_list, vnode, vnode_list_entry);
+		ke_spinlock_release(&vfs->vnode_list_lock, ipl);
+	}
 
 	return vnode;
 }

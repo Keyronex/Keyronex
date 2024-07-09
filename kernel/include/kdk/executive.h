@@ -115,7 +115,7 @@ int ps_create_kernel_thread(kthread_t **out, const char *name,
 void ps_exit_this_thread(void);
 
 size_t user_strlen(const char *user_str);
-int copyout_str(const char *ustr, char **out);
+int copyin_str(const char *ustr, char **out);
 
 #define ex_proc_from_kproc(KPROC) containerof((KPROC), eprocess_t, kprocess)
 #define ex_curproc() containerof(curproc(), eprocess_t, kprocess)
