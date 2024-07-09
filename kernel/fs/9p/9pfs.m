@@ -754,7 +754,25 @@ ninep_seek(vnode_t *vn, io_off_t old_offset, io_off_t *new_offset)
 	return 0;
 }
 
+io_result_t
+genfs_ubc_read(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
+{
+	int r = ubc_io(vnode, user_addr, off, size, false);
+	kassert(r >= 0);
+	return (io_result_t) { .result = 0, .count = r };
+}
+
+io_result_t
+genfs_ubc_write(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
+{
+	int r = ubc_io(vnode, user_addr, off, size, true);
+	kassert(r >= 0);
+	return (io_result_t) { .result = 0, .count = r };
+}
+
 static struct vnode_ops ninep_vnops = {
+	.cached_read = genfs_ubc_read,
+	.cached_write = genfs_ubc_write,
 	.seek = ninep_seek,
 	.lookup = ninep_lookup,
 	.inactive = ninep_inactive,

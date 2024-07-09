@@ -66,7 +66,7 @@ ex_file_new(void)
 
 	r = obj_new(&file, file_class, sizeof(struct file), NULL);
 	kassert(r == 0);
-	ke_spinlock_init(&file->lock);
+	ke_mutex_init(&file->offset_mutex);
 	file->offset = 0;
 
 	return file;
@@ -128,6 +128,7 @@ ex_service_file_read_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf,
 {
 	void *obj;
 	struct file *file;
+	io_result_t ret;
 	int r;
 
 	obj = ex_object_space_lookup(proc->objspace, handle);
@@ -135,10 +136,18 @@ ex_service_file_read_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf,
 		return -EBADF;
 
 	file = obj;
-
-	r = ubc_io(file->vnode, ubuf, file->offset, count, false);
+	if (file->vnode->ops->cached_read != NULL) {
+		ke_wait(&file->offset_mutex, "offset_mutex", false, false, -1);
+		ret = file->vnode->ops->cached_read(file->vnode, ubuf,
+		    file->offset, count);
+		kassert(ret.result == 0);
+		r = ret.count;
+		file->offset += r;
+		ke_mutex_release(&file->offset_mutex);
+	} else {
+		r = -1;
+	}
 	kassert(r >= 0);
-	file->offset += r;
 	obj_release(file);
 
 	return r;
@@ -149,6 +158,7 @@ ex_service_file_write_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf, s
 {
 	void *obj;
 	struct file *file;
+	io_result_t ret;
 	int r;
 
 	obj = ex_object_space_lookup(proc->objspace, handle);
@@ -157,9 +167,12 @@ ex_service_file_write_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf, s
 
 	file = obj;
 	if (file->vnode->ops->cached_write != NULL) {
-		file->vnode->ops->cached_write(file->vnode, ubuf, file->offset,
-		    count);
-		r = 0;
+		ke_wait(&file->offset_mutex, "offset_mutex", false, false, -1);
+		ret = file->vnode->ops->cached_write(file->vnode, ubuf,
+		    file->offset, count);
+		kassert(ret.result == 0);
+		r = ret.count;
+		ke_mutex_release(&file->offset_mutex);
 	} else {
 		r = -1;
 	}
@@ -176,8 +189,7 @@ ex_service_file_seek(eprocess_t *proc, descnum_t handle, io_off_t offset,
 {
 	void *obj;
 	struct file *file;
-	ipl_t ipl;
-	io_off_t old_offset, new_offset;
+	io_off_t new_offset;
 	int r;
 
 	obj = ex_object_space_lookup(proc->objspace, handle);
@@ -185,14 +197,7 @@ ex_service_file_seek(eprocess_t *proc, descnum_t handle, io_off_t offset,
 		return -EBADF;
 
 	file = obj;
-
-	switch (whence) {
-	case SEEK_SET:
-	}
-
-	ipl = ke_spinlock_acquire(&file->lock);
-	old_offset = file->offset;
-	ke_spinlock_release(&file->lock, ipl);
+	ke_wait(&file->offset_mutex, "offset_mutex", false, false, -1);
 
 	switch (whence) {
 	case SEEK_SET:
@@ -200,20 +205,19 @@ ex_service_file_seek(eprocess_t *proc, descnum_t handle, io_off_t offset,
 		break;
 
 	case SEEK_CUR:
-		new_offset = old_offset + offset;
+		new_offset = file->offset + offset;
 		break;
 
 	default:
 		kfatal("Unimplemented\n");
 	}
 
-	r = file->vnode->ops->seek(file->vnode, old_offset, &new_offset);
+	r = file->vnode->ops->seek(file->vnode, file->offset, &new_offset);
 	if (r != 0) {
-		ke_spinlock_acquire(&file->lock);
 		file->offset = new_offset;
-		ke_spinlock_release(&file->lock, ipl);
 	}
 
+	ke_mutex_release(&file->offset_mutex);
 	obj_release(file);
 
 	return r;

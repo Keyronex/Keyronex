@@ -9,9 +9,9 @@
  * @brief Open File object.
  */
 typedef struct file {
-	kspinlock_t lock;
 	namecache_handle_t nch;
 	vnode_t *vnode;
+	kmutex_t offset_mutex;
 	io_off_t offset;
 } file_t;
 
