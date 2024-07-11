@@ -63,7 +63,7 @@ ps_create_kernel_thread(kthread_t **out, const char *name, void (*fn)(void *),
 void
 ps_exit_this_thread(void)
 {
-	ke_acquire_scheduler_lock();
+	ke_spinlock_acquire(&curthread()->lock);
 	curthread()->state = kThreadStateDone;
 	ki_reschedule();
 	kfatal("Unreached\n");

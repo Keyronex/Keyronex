@@ -25,10 +25,8 @@ ke_event_signal(kevent_t *ev)
 	ev->hdr.signalled = 1;
 	ki_signal(&ev->hdr, &queue);
 	ke_spinlock_release_nospl(&ev->hdr.spinlock);
-
-	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
-	ke_release_scheduler_lock(ipl);
+	splx(ipl);
 }
 
 bool
@@ -76,9 +74,8 @@ ke_msgq_post(kmsgqueue_t *msgq, void *msg)
 	ki_signal(&msgq->hdr, &queue);
 	ke_spinlock_release_nospl(&msgq->hdr.spinlock);
 
-	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
-	ke_release_scheduler_lock(ipl);
+	splx(ipl);
 }
 
 int

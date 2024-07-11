@@ -64,12 +64,6 @@ enum ki_satisfy_attempt_result ki_waitblock_try_to_satisfy(kwaitblock_t *wb);
 void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu,
     kprocess_t *proc, const char *name);
 
-/*!
- * @brief Resume a thread.
- * @pre Scheduler lock held.
- */
-void ki_thread_resume_locked(kthread_t *thread);
-
 void ki_timer_enqueue_locked(ktimer_t *callout);
 bool ki_timer_dequeue_locked(ktimer_t *callout);
 

@@ -29,7 +29,6 @@ ke_mutex_release(kmutex_t *mtx)
 	ki_signal(&mtx->hdr, &queue);
 	ke_spinlock_release_nospl(&mtx->hdr.spinlock);
 
-	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
-	ke_release_scheduler_lock(ipl);
+	splx(ipl);
 }

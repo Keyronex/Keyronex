@@ -155,9 +155,7 @@ timer_expiry_dpc(void *arg)
 			ke_dpc_enqueue(timer->dpc);
 		ke_spinlock_release_nospl(&timer->hdr.spinlock);
 
-		ke_spinlock_acquire_nospl(&scheduler_lock);
 		ki_wake_waiters(&waiters_queue);
-		ke_spinlock_release_nospl(&scheduler_lock);
 	}
 }
 

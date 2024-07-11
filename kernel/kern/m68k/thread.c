@@ -20,7 +20,7 @@ md_switch(kthread_t *old_thread)
 static void
 thread_trampoline(void (*func)(void *), void *arg)
 {
-	ke_spinlock_release_nospl(&scheduler_lock);
+	ke_spinlock_release_nospl(&curcpu()->old_thread->lock);
 	splx(kIPL0);
 	func(arg);
 }

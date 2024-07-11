@@ -87,9 +87,8 @@ ke_port_enqueue(kport_t *kport, struct kport_msg *msg)
 
 	if (do_release_threads(kport, msg, &wb_queue)) {
 		ke_spinlock_release_nospl(&kport->hdr.spinlock);
-		ke_acquire_scheduler_lock();
 		ki_wake_waiters(&wb_queue);
-		ke_release_scheduler_lock(ipl);
+		splx(ipl);
 		return;
 	}
 
@@ -114,9 +113,7 @@ ke_port_dequeue(kport_t *kport)
 	if (thread->port != kport) {
 		kwaitblock_queue_t wb_queue = TAILQ_HEAD_INITIALIZER(wb_queue);
 		ki_port_thread_release(thread->port, &wb_queue);
-		ke_acquire_scheduler_lock();
 		ki_wake_waiters(&wb_queue);
-		ke_release_scheduler_lock(kIPLDPC);
 	}
 
 	ke_spinlock_acquire_nospl(&obj->spinlock);
@@ -145,7 +142,7 @@ ke_port_dequeue(kport_t *kport)
 		return msg;
 	}
 
-	ke_acquire_scheduler_lock();
+	ke_spinlock_acquire_nospl(&thread->lock);
 	kinternalwaitstatus_t expected = kInternalWaitStatusPreparing;
 	if (__atomic_compare_exchange_n(status, &expected,
 		kInternalWaitStatusWaiting, false, __ATOMIC_ACQ_REL,
@@ -156,7 +153,7 @@ ke_port_dequeue(kport_t *kport)
 		ki_reschedule();
 	} else {
 		/* wait was terminated early. check what happened */
-		ke_release_scheduler_lock(kIPLDPC);
+		ke_spinlock_release_nospl(&thread->lock);
 	}
 
 	/* by this point, wait was early-terminated or we slept. */

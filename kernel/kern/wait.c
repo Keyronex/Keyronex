@@ -12,10 +12,9 @@
 void
 ki_wake_waiter(kthread_t *thread)
 {
-	kassert(ke_spinlock_held(&scheduler_lock));
 	kassert(thread->state == kThreadStateWaiting);
 	thread->state = kThreadStateRunnable;
-	ki_thread_resume_locked(thread);
+	ke_thread_resume(thread);
 }
 
 void
@@ -212,7 +211,7 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	if (timeout != 0 && timeout != -1)
 		ke_timer_set(&timer, timeout);
 
-	ke_acquire_scheduler_lock();
+	ke_spinlock_acquire_nospl(&thread->lock);
 	kinternalwaitstatus_t expected = kInternalWaitStatusPreparing;
 	if (__atomic_compare_exchange_n(status, &expected,
 		kInternalWaitStatusWaiting, false, __ATOMIC_ACQ_REL,
@@ -229,7 +228,7 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 		ki_reschedule();
 	} else {
 		/* wait was terminated early. check what happened */
-		ke_release_scheduler_lock(kIPLDPC);
+		ke_spinlock_release_nospl(&thread->lock);
 	}
 
 	/* at this point, we either slept or wait was early-terminated */

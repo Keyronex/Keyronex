@@ -17,9 +17,8 @@ timer_dpc(void *arg)
 	ki_signal(&timer->hdr, &queue);
 	ke_spinlock_release_nospl(&timer->hdr.spinlock);
 
-	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
-	ke_release_scheduler_lock(ipl);
+	splx(ipl);
 }
 
 void

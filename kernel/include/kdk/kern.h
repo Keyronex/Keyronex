@@ -234,12 +234,17 @@ struct ki_rcu_per_cpu_data {
 	kdpc_t past_callbacks_dpc;
 };
 
+
+struct ki_scheduler {
+	kspinlock_t lock;
+	struct kthread_queue runqueue;
+};
+
 /*!
  * Locking:
  * (~) = invariant
  * (d) = IPL high + kcpu_t::dpc_lock
- * (D) = dispatcher_lock
- * (r) = runqueue->lock
+ * (r) = kcpu_t::sched_lock
  * (!) = atomic
  */
 typedef struct kcpu {
@@ -248,11 +253,14 @@ typedef struct kcpu {
 	/*! (~) */
 	int num;
 
+	/*! scheduling lock */
+	kspinlock_t sched_lock;
 	/*! (r) ready threads queues */
-	struct runqueue runqueue;
-
-	/*! (d) current thread */
+	struct kthread_queue runqueue;
+	/*! (r) current thread */
 	struct kthread *curthread;
+	/*! (r) previous thread - may be stale! */
+	struct kthread *old_thread;
 	/* (~) this core's idle thread */
 	struct kthread *idle_thread;
 	/* (!) reason for reschedule if any */
@@ -295,11 +303,14 @@ typedef enum kthread_state {
 /*!
  * (~) => invariant from creation
  * (!) => atomic
- * (D) => dispatcher lock
+ * (D) => last_cpu->sched_lock
+ * (t) => thread lock
  */
 typedef struct kthread {
 	/*! (~) name */
 	const char *name;
+
+	kspinlock_t lock;
 
 	/*! (~) process to which it belongs */
 	struct kprocess *process;
@@ -311,9 +322,9 @@ typedef struct kthread {
 	md_pcb_t pcb;
 	/*! Kernel stack base. */
 	void *kstack_base;
-	/*! (D) CPU this thread last ran on */
+	/*! (?) CPU this thread last ran on */
 	struct kcpu *last_cpu;
-	/*! (D) current or soon-to-happen thread state */
+	/*! (?) current or soon-to-happen thread state */
 	kthread_state_t state;
 	/*! (!) remaining timeslice */
 	int8_t timeslice;
@@ -491,20 +502,6 @@ ke_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 	ke_spinlock_release_nospl(lock);
 	splx(oldipl);
 }
-
-/*! @brief Acquire the dispatcher database lock. */
-#define ke_acquire_dispatcher_lock() ke_spinlock_acquire(&dispatcher_lock)
-
-/*! @brief Release the dispatcher database lock. */
-#define ke_release_dispatcher_lock(IPL) \
-	ke_spinlock_release(&dispatcher_lock, IPL)
-
-/*! @brief Acquire the scheduler lock. */
-#define ke_acquire_scheduler_lock() ke_spinlock_acquire(&scheduler_lock)
-
-/*! @brief Release the scheduler  lock. */
-#define ke_release_scheduler_lock(IPL) \
-	ke_spinlock_release(&scheduler_lock, IPL)
 
 void ke_dpc_enqueue(kdpc_t *dpc);
 
@@ -699,7 +696,6 @@ extern kcpu_t *cpus[1];
 /*! NUmber of CPUs in system. */
 extern size_t ncpus;
 
-extern kspinlock_t scheduler_lock;
 extern kspinlock_t pac_console_lock;
 
 #endif /* KRX_PAC_PAC_H */

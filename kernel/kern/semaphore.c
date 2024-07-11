@@ -35,9 +35,8 @@ ke_semaphore_release(ksemaphore_t *sem, unsigned adjustment)
 	ki_signal(&sem->hdr, &queue);
 	ke_spinlock_release_nospl(&sem->hdr.spinlock);
 
-	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
-	ke_release_scheduler_lock(ipl);
+	splx(ipl);
 }
 
 void
@@ -52,7 +51,6 @@ ke_semaphore_release_maxone(ksemaphore_t *sem)
 	ki_signal(&sem->hdr, &queue);
 	ke_spinlock_release_nospl(&sem->hdr.spinlock);
 
-	ke_acquire_scheduler_lock();
 	ki_wake_waiters(&queue);
-	ke_release_scheduler_lock(ipl);
+	splx(ipl);
 }
