@@ -174,7 +174,7 @@ cont:
 		/* travelling down the stack. */
 		iop->stack_current++;
 		kassert(iop->stack_current < iop->stack_count &&
-		    iop->stack_current > -1);
+		    iop->stack_current > -2);
 		frame = iop_stack_current(iop);
 
 		if (!SLIST_EMPTY(&iop->associated_iops)) {

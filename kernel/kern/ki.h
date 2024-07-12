@@ -63,11 +63,13 @@ enum ki_satisfy_attempt_result ki_waitblock_try_to_satisfy(kwaitblock_t *wb);
 
 void ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu,
     kprocess_t *proc, const char *name);
+void ki_thread_resume_locked(kthread_t *thread);
 
 void ki_timer_enqueue_locked(ktimer_t *callout);
 bool ki_timer_dequeue_locked(ktimer_t *callout);
 
 void md_send_invlpg_ipi(kcpu_t *cpu);
+void md_send_dpc_ipi(kcpu_t *cpu);
 void md_raise_dpc_interrupt(void);
 void md_cpu_init(kcpu_t *cpu);
 

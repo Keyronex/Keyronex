@@ -277,10 +277,10 @@ ex_init(void *)
 	r = ps_thread_create(&user_init_thread, "user init thread 0", user_init,
 	    NULL, initps);
 	kassert(r == 0);
+	user_init_thread->user = true;
 
 	setup_kcon(initps);
 	obj_release(initps);
-
 	ke_thread_resume(user_init_thread);
 
 	ps_exit_this_thread();

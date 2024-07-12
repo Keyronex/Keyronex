@@ -25,9 +25,11 @@ void intr_init(void);
 /* misc.c */
 void setup_cpu_gdt(kcpu_t *cpu);
 
+extern uintptr_t idle_mask;
 struct kcpu bootstrap_cpu;
 struct kthread thread0;
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
+kthread_t **threads;
 
 // The Limine requests can be placed anywhere, but it is important that
 // the compiler does not optimise them away, so, usually, they should
@@ -110,6 +112,9 @@ common_init(struct limine_smp_info *smpi)
 	kthread_t *thread = cpu->curthread;
 	char *name;
 
+	/* set it up immediately to avoid problems */
+	wrmsr(kAMD64MSRGSBase, (uintptr_t)&threads[cpu->num]);
+
 	idt_load();
 	cpu->cpucb.lapic_base = rdmsr(kAMD64MSRAPICBase);
 	lapic_enable(0xff);
@@ -154,9 +159,6 @@ ap_init(struct limine_smp_info *smpi)
 
 	write_cr3(kernel_process->vm->md.table);
 
-	/* set it up immediately to avoid problems */
-	wrmsr(kAMD64MSRGSBase, (uintptr_t)&cpus[cpu->num]);
-
 	common_init(smpi);
 	/* this is now that CPU's idle thread loop */
 	hcf();
@@ -168,6 +170,7 @@ smp_init()
 	struct limine_smp_response *smpr = smp_request.response;
 
 	cpus = kmem_alloc(sizeof(kcpu_t *) * smpr->cpu_count);
+	threads = kmem_alloc(sizeof(kthread_t*) * smpr->cpu_count);
 
 	kprintf("%lu cpus\n", smpr->cpu_count);
 	ncpus = smpr->cpu_count;
@@ -179,6 +182,7 @@ smp_init()
 			smpi->extra_argument = (uint64_t)&bootstrap_cpu;
 			bootstrap_cpu.num = i;
 			cpus[i] = &bootstrap_cpu;
+			threads[i] = &thread0;
 			common_init(smpi);
 		} else {
 			kcpu_t *cpu = kmem_alloc(sizeof *cpu);
@@ -187,6 +191,8 @@ smp_init()
 			cpu->num = i;
 			cpu->curthread = thread;
 			cpus[i] = cpu;
+			threads[i] = thread;
+			thread->last_cpu = cpu;
 
 			smpi->extra_argument = (uint64_t)cpu;
 			smpi->goto_address = ap_init;
@@ -195,6 +201,9 @@ smp_init()
 
 	while (cpus_up != smpr->cpu_count)
 		__asm__("pause");
+
+	kassert(ncpus <= 64);
+	idle_mask = (1 << ncpus) - 1;
 }
 
 // The following will be our kernel's entry point.
@@ -203,7 +212,7 @@ smp_init()
 void
 _start(void)
 {
-	void *pcpu0 = &bootstrap_cpu;
+	kthread_t *pthread0 = &thread0;
 
 	serial_init();
 
@@ -211,8 +220,8 @@ _start(void)
 	    "Keyronex-lite/amd64 (" __DATE__ " " __TIME__ ")\r\n");
 
 	/* set up initial threading structures */
-	wrmsr(kAMD64MSRGSBase, (uint64_t)&pcpu0);
-	ki_cpu_init(curcpu(), &thread0);
+	wrmsr(kAMD64MSRGSBase, (uint64_t)&pthread0);
+	ki_cpu_init(&bootstrap_cpu, &thread0);
 	thread0.last_cpu = &bootstrap_cpu;
 	thread0.state = kThreadStateRunning;
 	thread0.timeslice = 5;
@@ -220,7 +229,7 @@ _start(void)
 
 	intr_init();
 
-	curcpu()->cpucb.lapic_base = rdmsr(kAMD64MSRAPICBase);
+	bootstrap_cpu.cpucb.lapic_base = rdmsr(kAMD64MSRAPICBase);
 	lapic_enable(0xff);
 
 	struct limine_memmap_entry **entries = memmap_request.response->entries;

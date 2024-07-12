@@ -12,8 +12,10 @@ kcpu_t *cpus[1] = { &bootstrap_cpu };
 #endif
 size_t ncpus;
 
+uintptr_t idle_mask = 1;
 kspinlock_t done_lock = KSPINLOCK_INITIALISER;
 struct kthread_queue done_queue = TAILQ_HEAD_INITIALIZER(done_queue);
+extern kthread_t **threads;
 
 void md_raise_dpc_interrupt(void);
 void timer_expiry_dpc(void*);
@@ -39,20 +41,20 @@ void
 ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 {
 	md_cpu_init(cpu);
-	curcpu()->dpc_int = false;
-	curcpu()->dpc_lock = (kspinlock_t)KSPINLOCK_INITIALISER;
-	TAILQ_INIT(&curcpu()->dpc_queue);
-	curcpu()->nanos = 0;
-	curcpu()->reschedule_reason = kRescheduleReasonNone;
-	curcpu()->idle_thread = idle_thread;
-	curcpu()->curthread = idle_thread;
-	TAILQ_INIT(&curcpu()->timer_queue);
-	curcpu()->done_thread_dpc.cpu = NULL;
-	curcpu()->done_thread_dpc.arg = curcpu();
-	curcpu()->done_thread_dpc.callback = done_thread_dpc;
-	curcpu()->timer_expiry_dpc.cpu = NULL;
-	curcpu()->timer_expiry_dpc.arg = curcpu();
-	curcpu()->timer_expiry_dpc.callback = timer_expiry_dpc;
+	cpu->dpc_int = false;
+	cpu->dpc_lock = (kspinlock_t)KSPINLOCK_INITIALISER;
+	TAILQ_INIT(&cpu->dpc_queue);
+	cpu->nanos = 0;
+	cpu->reschedule_reason = kRescheduleReasonNone;
+	cpu->idle_thread = idle_thread;
+	cpu->curthread = idle_thread;
+	TAILQ_INIT(&cpu->timer_queue);
+	cpu->done_thread_dpc.cpu = NULL;
+	cpu->done_thread_dpc.arg = cpu;
+	cpu->done_thread_dpc.callback = done_thread_dpc;
+	cpu->timer_expiry_dpc.cpu = NULL;
+	cpu->timer_expiry_dpc.arg = cpu;
+	cpu->timer_expiry_dpc.callback = timer_expiry_dpc;
 
 	ki_rcu_per_cpu_init(&cpu->rcu_cpustate);
 }
@@ -110,6 +112,8 @@ ki_dispatch_dpcs(kcpu_t *cpu)
 			ki_reschedule();
 			/* IPL remains at dpc but old thread lock was dropped */
 			splx(ipl);
+			/* curcpu() can have changed, if rescheduled. */
+			cpu = curcpu();
 		}
 	}
 }
@@ -171,9 +175,11 @@ ki_reschedule(void)
 	next = next_thread(cpu);
 	next->state = kThreadStateRunning;
 	next->timeslice = 5;
+	next->last_cpu = cpu;
 	cpu->curthread = next;
 	cpu->reschedule_reason = kRescheduleReasonNone;
 	cpu->old_thread = old_thread;
+	threads[cpu->num] = next;
 	ke_spinlock_release_nospl(&cpu->sched_lock);
 
 	(void)drop;
@@ -184,22 +190,54 @@ ki_reschedule(void)
 		return;
 	}
 
-	/* activate VM map... */
+	if (next == cpu->idle_thread) {
+		__atomic_fetch_or(&idle_mask, (1 << cpu->num), __ATOMIC_RELAXED);
+	} else {
+		__atomic_fetch_and(&idle_mask, ~(1 << cpu->num), __ATOMIC_RELAXED);
+	}
+
+	/* do the machine-specific switching of state */
 	md_switch(old_thread);
 
+	/* by this point, curcpu() can have changed. */
+
 	/* we are being returned to - drop the old thread lock */
-	ke_spinlock_release_nospl(&cpu->old_thread->lock);
+	ke_spinlock_release_nospl(&curcpu()->old_thread->lock);
 }
 
 void
 ki_thread_resume_locked(kthread_t *thread)
 {
-	ipl_t ipl = ke_spinlock_acquire(&curcpu()->sched_lock);
-	kassert(ipl == kIPLDPC);
-	TAILQ_INSERT_HEAD(&curcpu()->runqueue, thread, queue_link);
-	curcpu()->reschedule_reason = kRescheduleReasonPreempted;
+#if SMP
+	kcpu_t *chosen = NULL;
+	uintptr_t idle = __atomic_load_n(&idle_mask, __ATOMIC_RELAXED);
+
+	kassert(splget() == kIPLDPC);
+
+	if (idle & (1 << curcpu()->num)) {
+		chosen = curcpu();
+	} else if (idle != 0) {
+		chosen = cpus[__builtin_ctz(idle)];
+	} else {
+		chosen = curcpu();
+	}
+#else
+	kcpu_t *chosen = curcpu();
+#endif
+
+	ke_spinlock_acquire_nospl(&chosen->sched_lock);
+	TAILQ_INSERT_HEAD(&chosen->runqueue, thread, queue_link);
+	chosen->reschedule_reason = kRescheduleReasonPreempted;
+	ke_spinlock_release_nospl(&chosen->sched_lock);
+
+#if SMP
+	if (chosen == curcpu())
+		md_raise_dpc_interrupt();
+	else
+		md_send_dpc_ipi(chosen);
+#else
 	md_raise_dpc_interrupt();
-	ke_spinlock_release_nospl(&curcpu()->sched_lock);
+#endif
 }
 
 void
@@ -216,7 +254,8 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
 {
 	ipl_t ipl;
 	ke_spinlock_init(&thread->lock);
-	thread->last_cpu = &bootstrap_cpu;
+	thread->user = false;
+	thread->last_cpu = last_cpu;
 	thread->timeslice = 0;
 	thread->name = name;
 	thread->timeslice = 5;

@@ -25,6 +25,23 @@ int main(int argc, char *argv[])
 	mapping = (char*)mmap(NULL, 16 * 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	assert(mapping != NULL);
 
+
+	std::thread t2(
+	    [](std::string msg) {
+		    syscall1(kKrxDebugMessage, (uintptr_t)msg.c_str(), NULL);
+		    for (;;) ;
+	    },
+	    "Hello world from thread 2!");
+
+	std::thread t3(
+	    [](std::string msg) {
+		    syscall1(kKrxDebugMessage, (uintptr_t)msg.c_str(), NULL);
+		    for (;;) ;
+	    },
+	    "Hello world from thread 3!");
+
+	for (;;) ;
+
 #if 0
 	std::thread t2(
 	    [](std::string msg) {

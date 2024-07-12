@@ -48,8 +48,10 @@ lapic_eoi()
 void
 lapic_enable(uint8_t spurvec)
 {
+	ipl_t ipl = spldpc();
 	lapic_write(curcpu(), kLAPICRegSpurious,
 	    lapic_read(curcpu(), kLAPICRegSpurious) | (1 << 8) | spurvec);
+	splx(ipl);
 }
 
 /* setup PIC to run oneshot for 1/hz sec */
@@ -105,10 +107,12 @@ lapic_timer_calibrate(void)
 void
 lapic_timer_start()
 {
+	ipl_t ipl = spldpc();
 	lapic_write(curcpu(), kLAPICRegTimer,
 	    kLAPICTimerPeriodic | kIntVecLAPICTimer);
 	lapic_write(curcpu(), kLAPICRegTimerInitial,
 	    curcpu()->cpucb.lapic_tps / KERN_HZ);
+	splx(ipl);
 }
 
 static void
@@ -124,6 +128,12 @@ void
 md_send_invlpg_ipi(kcpu_t *cpu)
 {
 	send_ipi(cpu->cpucb.lapic_id, kIntVecIPIInvlPG);
+}
+
+void md_send_dpc_ipi(kcpu_t *cpu)
+{
+	cpu->dpc_int = true;
+	send_ipi(cpu->cpucb.lapic_id, kIntVecDPC);
 }
 
 void md_raise_dpc_interrupt()

@@ -11,6 +11,7 @@
 
 #include "kdk/executive.h"
 #include "kdk/file.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/vfs.h"
@@ -68,6 +69,7 @@ console_write(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 {
 	char *buf;
 	int r;
+	ipl_t ipl;
 
 	(void)vnode;
 	(void)off;
@@ -78,8 +80,10 @@ console_write(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 		return io_result(-r, 0);
 	}
 
+	ipl = ke_spinlock_acquire_at(&pac_console_lock, kIPLHigh);
 	for (int i = 0; i < size; i++)
 		kputc(buf[i], NULL);
+	ke_spinlock_release(&pac_console_lock, ipl);
 
 	kmem_free(buf, size);
 

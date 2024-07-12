@@ -342,6 +342,9 @@ wse_evict(struct vmp_wsl *ws, wse_t *wse)
 	kassert(r == 0);
 	kassert(vmp_md_pte_is_valid(pte));
 
+	if (vaddr == 0x4d0000 || vaddr == 0x408000)
+		kprintf("!!!Evicting 0x%lx\n", vaddr);
+
 	pte_page = vm_paddr_to_page(PGROUNDDOWN(V2P(pte)));
 
 	vmp_page_evict(ws->vmps, pte, pte_page, vaddr);

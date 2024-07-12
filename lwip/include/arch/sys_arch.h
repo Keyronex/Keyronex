@@ -21,8 +21,8 @@ extern size_t lwprot_nest;
 static inline ipl_t
 sys_arch_protect(void)
 {
-	kthread_t *thread = curthread();
 	ipl_t ipl = spldpc();
+	kthread_t *thread = curthread();
 
 	if (__atomic_load_n(&lwprot_thread, __ATOMIC_ACQUIRE) != thread) {
 		kthread_t *expected = NULL;

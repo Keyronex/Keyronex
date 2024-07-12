@@ -6,20 +6,43 @@
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
+extern void asm_swtch(void *old, void *new);
+
 void
 md_cpu_init(kcpu_t *cpu)
 {
 }
 
+static inline void
+fxsave(uint8_t *state)
+{
+	asm volatile("fxsave %0" : "+m"(*state) : : "memory");
+}
+
+static inline void
+fxrstor(uint8_t *state)
+{
+	asm volatile("fxrstor %0" : : "m"(*state) : "memory");
+}
+
 void
 md_switch(kthread_t *old_thread)
 {
-	extern void asm_swtch(void * old, void * new);
+	kthread_t *new_thread = curthread();
+
 	write_cr3(ex_curproc()->vm->md.table);
-	wrmsr(kAMD64MSRFSBase, curthread()->tcb);
-	curcpu()->cpucb.tss->rsp0 = ((uintptr_t)(curthread()->kstack_base)) +
+
+	wrmsr(kAMD64MSRFSBase, new_thread->tcb);
+
+	curcpu()->cpucb.tss->rsp0 = ((uintptr_t)(new_thread->kstack_base)) +
 	    KSTACK_SIZE;
-	asm_swtch(&old_thread->pcb, &curthread()->pcb);
+
+	if (old_thread->user)
+		fxsave(old_thread->pcb.fpu);
+	if (new_thread->user)
+		fxrstor(new_thread->pcb.fpu);
+
+	asm_swtch(&old_thread->pcb, &new_thread->pcb);
 }
 
 static void

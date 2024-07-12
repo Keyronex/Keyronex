@@ -309,6 +309,8 @@ typedef enum kthread_state {
 typedef struct kthread {
 	/*! (~) name */
 	const char *name;
+	/*! (~) is it a userland thread? */
+	bool user;
 
 	kspinlock_t lock;
 
@@ -322,9 +324,9 @@ typedef struct kthread {
 	md_pcb_t pcb;
 	/*! Kernel stack base. */
 	void *kstack_base;
-	/*! (?) CPU this thread last ran on */
+	/*! (t?) CPU this thread last ran on */
 	struct kcpu *last_cpu;
-	/*! (?) current or soon-to-happen thread state */
+	/*! (t, sometimes?) current or soon-to-happen thread state */
 	kthread_state_t state;
 	/*! (!) remaining timeslice */
 	int8_t timeslice;
@@ -377,10 +379,13 @@ typedef struct kprocess {
 	LIST_HEAD(, kthread) thread_list;
 } kprocess_t;
 
-/*! @brief Get kprocess of this core's currently-running thread. */
-#define curproc() curcpu()->curthread->process
-/*! @brief Get this core's currently-running kthread. */
-#define curthread() curcpu()->curthread
+/*! @brief Get pointer to this core. */
+#define curcpu() ({		      \
+	kassert(splget() >= kIPLDPC); \
+	curthread()->last_cpu;        \
+})
+/*! @brief Get pointer to current kprocess. */
+#define curproc() curthread()->process
 
 /*!
  * Machine-dependent routines.
@@ -421,6 +426,8 @@ ipl_t splget(void);
  */
 
 #define spldpc() splraise(kIPLDPC)
+
+extern kspinlock_t idle_lock;
 
 #if 1 // SMP == 1
 /*! @brief Determine if a spinlock is held. */

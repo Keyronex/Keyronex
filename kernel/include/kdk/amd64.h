@@ -89,6 +89,8 @@ struct intr_entry {
 
 typedef struct md_pcb {
 	uint64_t rbp, rbx, r12, r13, r14, r15, rdi, rsi, rsp;
+
+	uint8_t fpu[512];
 } md_pcb_t;
 
 typedef struct md_cpucb {
@@ -102,10 +104,10 @@ typedef struct md_cpucb {
 	struct tss *tss;
 } md_cpucb_t;
 
-static inline struct kcpu *
-curcpu()
+static inline struct kthread *
+curthread()
 {
-	struct kcpu *val;
+	struct kthread *val;
 	asm volatile("mov %%gs:0, %0" : "=r"(val));
 	return val;
 }
