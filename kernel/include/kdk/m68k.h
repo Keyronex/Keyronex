@@ -138,7 +138,8 @@ hcf(void)
 }
 
 extern struct kcpu bootstrap_cpu;
+extern struct kthread **threads;
 
-#define curcpu() (&bootstrap_cpu)
+#define curthread() bootstrap_cpu.curthread
 
 #endif /* KRX_KDK_M68K_H */

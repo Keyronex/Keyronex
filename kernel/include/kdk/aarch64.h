@@ -75,6 +75,4 @@ hcf(void)
 
 extern struct kcpu bootstrap_cpu;
 
-#define curcpu() (&bootstrap_cpu)
-
 #endif /* KRX_KDK_AARCH64_H */

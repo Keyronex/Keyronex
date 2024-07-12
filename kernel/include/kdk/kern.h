@@ -381,7 +381,6 @@ typedef struct kprocess {
 
 /*! @brief Get pointer to this core. */
 #define curcpu() ({		      \
-	kassert(splget() >= kIPLDPC); \
 	curthread()->last_cpu;        \
 })
 /*! @brief Get pointer to current kprocess. */

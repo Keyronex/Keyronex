@@ -16,6 +16,7 @@ kcpu_t bootstrap_cpu;
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
 struct bootinfo bootinfo;
 struct kthread thread0;
+kthread_t **threads;
 
 struct bootinfo_item {
 	uint16_t tag;
@@ -79,6 +80,8 @@ void
 cstart(struct handover *handover)
 {
 	gftty_init();
+	thread0.last_cpu = &bootstrap_cpu;
+	bootstrap_cpu.curthread = &thread0;
 	kprintf("Keyronex-lite/virt68k: " __DATE__ " " __TIME__ "\n");
 
 	fb_base = (void *)handover->fb_base;
@@ -108,12 +111,15 @@ cstart(struct handover *handover)
 	asm("movec %0, %%dtt0" ::"d"(0));
 	asm("movec %0, %%itt0" ::"d"(0));
 
-	gfrtc_oneshot(NS_PER_S / KERN_HZ);
-
 	vmp_kernel_init();
 	kmem_init();
 	obj_init();
 	ps_early_init(&thread0);
+
+	threads = kmem_alloc(sizeof(kthread_t *) * 1);
+	threads[0] = &thread0;
+
+	gfrtc_oneshot(NS_PER_S / KERN_HZ);
 
 	ps_create_kernel_thread(&ex_init_thread, "ex_init", ex_init, NULL);
 	ke_thread_resume(ex_init_thread);
