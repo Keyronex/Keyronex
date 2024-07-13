@@ -18,6 +18,9 @@
 
 /* exec.c */
 int load_server(vnode_t *server_vnode, vnode_t *ld_vnode);
+/* console.c */
+void ex_console_init(void);
+ex_desc_ret_t ex_console_open(eprocess_t *proc);
 
 kthread_t *ex_init_thread;
 kthread_t *user_init_thread;

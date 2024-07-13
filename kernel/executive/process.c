@@ -111,9 +111,10 @@ ex_thread_free(void *ptr)
 	obj_release(proc);
 }
 
-bool
+void
 ex_proc_free(void *ptr)
 {
 	eprocess_t *proc = ptr;
-	kprintf("free process <%s>\n", obj_name(ptr));
+	kprintf("free process <%s>\n", obj_name(proc));
+
 }
