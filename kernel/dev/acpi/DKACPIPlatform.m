@@ -162,7 +162,7 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	r = uacpi_initialize(&params);
 	kassert(r == UACPI_STATUS_OK);
 
-	uacpi_table *madt;
+	uacpi_table madt;
 	r = uacpi_table_find_by_signature("APIC", &madt);
 	kassert(r == UACPI_STATUS_OK);
 
@@ -173,11 +173,11 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 		isa_intr_overrides[i].gsi = i;
 	}
 
-	madt_walk((acpi_madt_t *)P2V(madt->phys_addr), parse_ioapics, self);
-	madt_walk((acpi_madt_t *)P2V(madt->phys_addr), parse_isa_overrides,
+	madt_walk((acpi_madt_t *)madt.virt_addr, parse_ioapics, self);
+	madt_walk((acpi_madt_t *)madt.virt_addr, parse_isa_overrides,
 	    self);
 #elif defined(__aarch64__)
-	madt_walk((acpi_madt_t *)P2V(madt->phys_addr), parse_giccs, NULL);
+	madt_walk((acpi_madt_t *)madt.virt_addr, parse_giccs, NULL);
 #endif
 
 

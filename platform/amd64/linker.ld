@@ -36,15 +36,15 @@ SECTIONS
     .eh_frame_hdr : { *(.eh_frame_hdr) }
     .eh_frame : { *(.eh_frame) }
 
-    /* Move to the next memory page for .data */
-    . += CONSTANT(MAXPAGESIZE);
-
     .init_array : {
         PROVIDE (init_array_start = .);
         KEEP (*(SORT (.init_array.*)))
         KEEP (*(.init_array))
         PROVIDE (init_array_end = .);
     }
+
+    /* Move to the next memory page for .data */
+    . += CONSTANT(MAXPAGESIZE);
 
     .data : {
         *(.data .data.*)

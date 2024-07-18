@@ -133,7 +133,7 @@ MAKE_HANDLER asm_el1t_irq, c_el1t_irq
 MAKE_HANDLER asm_el1t_fiq, c_el1t_fiq
 MAKE_HANDLER asm_el1t_error, c_el1t_error
 
-MAKE_HANDLER sm_el1h_sync, c_el1_sync
+MAKE_HANDLER asm_el1h_sync, c_el1_sync
 MAKE_HANDLER asm_el1h_intr, c_el1_intr
 MAKE_HANDLER asm_el1h_fiq, c_el1_fiq
 MAKE_HANDLER asm_el1h_error, c_el1_error
