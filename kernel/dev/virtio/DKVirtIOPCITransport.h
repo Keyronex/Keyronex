@@ -5,7 +5,7 @@
 #include "ddk/virtio_pcireg.h"
 #include "dev/PCIBus.h"
 
-#if defined(__arch64__) || defined(__amd64__)
+#if defined(__aarch64__) || defined(__amd64__)
 @interface DKVirtIOPCITransport
     : DKDevice <DKVirtIOTransport, DKPCIDeviceDelegate> {
     @public

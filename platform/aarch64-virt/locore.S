@@ -3,7 +3,7 @@
 	\asm_label:
 		.cfi_startproc simple
 		.cfi_signal_frame
-		sub sp, sp, #272
+		sub sp, sp, #288
 		.cfi_def_cfa %sp, 0
 
 		stp x0, x1, [sp, #8 * 0]
@@ -53,10 +53,22 @@
 		.cfi_offset x29, 232
 		str x30, [sp, #8 * 30]
 		.cfi_offset x30, 240
+
 		mrs x0, elr_el1
 		str x0, [sp, #248]
+#		.cfi_offset ???, 248
 
-		.cfi_val_offset sp, 272
+		mrs x0, spsr_el1
+		str x0, [sp, #256]
+#		.cfi_offset ???, 256
+
+		mrs x0, esr_el1
+		str x0, [sp, #264]
+
+		mrs x0, far_el1
+		str x0, [sp, #272]
+
+		.cfi_val_offset sp, 288
 
 		mov x0, sp
 		bl \c_func
@@ -64,52 +76,52 @@
 		ldp x0, x1, [sp, #8 * 0]
 		.cfi_restore x0
 		.cfi_restore x1
-		ldp x2, x3, [sp, #8 * 1]
+		ldp x2, x3, [sp, #8 * 2]
 		.cfi_restore x2
 		.cfi_restore x3
-		ldp x4, x5, [sp, #8 * 2]
+		ldp x4, x5, [sp, #8 * 4]
 		.cfi_restore x4
 		.cfi_restore x5
-		ldp x6, x7, [sp, #8 * 3]
+		ldp x6, x7, [sp, #8 * 6]
 		.cfi_restore x6
 		.cfi_restore x7
-		ldp x8, x9, [sp, #8 * 4]
+		ldp x8, x9, [sp, #8 * 7]
 		.cfi_restore x8
 		.cfi_restore x9
-		ldp x10, x11, [sp, #8 * 5]
+		ldp x10, x11, [sp, #8 * 10]
 		.cfi_restore x10
 		.cfi_restore x11
-		ldp x12, x13, [sp, #8 * 6]
+		ldp x12, x13, [sp, #8 * 12]
 		.cfi_restore x12
 		.cfi_restore x13
-		ldp x14, x15, [sp, #8 * 7]
+		ldp x14, x15, [sp, #8 * 14]
 		.cfi_restore x14
 		.cfi_restore x15
-		ldp x16, x17, [sp, #8 * 8]
+		ldp x16, x17, [sp, #8 * 16]
 		.cfi_restore x16
 		.cfi_restore x17
-		ldp x18, x19, [sp, #8 * 9]
+		ldp x18, x19, [sp, #8 * 18]
 		.cfi_restore x18
 		.cfi_restore x19
-		ldp x20, x21, [sp, #8 * 10]
+		ldp x20, x21, [sp, #8 * 20]
 		.cfi_restore x20
 		.cfi_restore x21
-		ldp x22, x23, [sp, #8 * 11]
+		ldp x22, x23, [sp, #8 * 22]
 		.cfi_restore x22
 		.cfi_restore x23
-		ldp x24, x25, [sp, #8 * 12]
+		ldp x24, x25, [sp, #8 * 24]
 		.cfi_restore x24
 		.cfi_restore x25
-		ldp x26, x27, [sp, #8 * 13]
+		ldp x26, x27, [sp, #8 * 26]
 		.cfi_restore x26
 		.cfi_restore x27
-		ldp x28, x29, [sp, #8 * 14]
+		ldp x28, x29, [sp, #8 * 28]
 		.cfi_restore x28
 		.cfi_restore x29
-		ldr x30, [sp, #8 * 15]
+		ldr x30, [sp, #8 * 30]
 		.cfi_restore x30
 
-		add sp, sp, #272
+		add sp, sp, #288
 		.cfi_restore sp
 
 		eret
@@ -121,7 +133,7 @@ MAKE_HANDLER asm_el1t_irq, c_el1t_irq
 MAKE_HANDLER asm_el1t_fiq, c_el1t_fiq
 MAKE_HANDLER asm_el1t_error, c_el1t_error
 
-MAKE_HANDLER asm_el1h_sync, c_el1_sync
+MAKE_HANDLER sm_el1h_sync, c_el1_sync
 MAKE_HANDLER asm_el1h_intr, c_el1_intr
 MAKE_HANDLER asm_el1h_fiq, c_el1_fiq
 MAKE_HANDLER asm_el1h_error, c_el1_error

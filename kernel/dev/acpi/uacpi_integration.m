@@ -1,6 +1,3 @@
-
-#include "kdk/amd64.h"
-#include "kdk/amd64/portio.h"
 #include "kdk/kmem.h"
 #include "kdk/kern.h"
 #include "kdk/vm.h"
@@ -10,6 +7,7 @@
 
 #ifdef AMD64
 #include "dev/amd64/IOAPIC.h"
+#include "kdk/amd64/portio.h"
 #endif
 
 #ifdef AMD64
@@ -110,29 +108,33 @@ pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
 	outl(0xCF8, address);
 	outl(0xCFC + (offset & 3), value);
 }
-#elif 0
+#else
 uint8_t
 pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
+	kfatal("implement me!\n");
 }
 
 uint16_t
 pci_readw(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
+	kfatal("implement me!\n");
 }
 
 uint32_t
 pci_readl(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
+	kfatal("implement me!\n");
 }
 
 void
 pci_writeb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint8_t value)
 {
+	kfatal("implement me!\n");
 }
 
 void
@@ -145,6 +147,7 @@ void
 pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint32_t value)
 {
+	kfatal("implement me!\n");
 }
 #endif
 
@@ -211,6 +214,7 @@ uacpi_kernel_free(void *ptr)
 void *
 uacpi_kernel_map(uacpi_phys_addr physical, uacpi_size length)
 {
+	kprintf("mapping 0x%zx length 0x%lx\n", physical, length);
 	return (void *)P2V(physical);
 }
 
@@ -223,6 +227,7 @@ uacpi_status
 uacpi_kernel_raw_memory_read(uacpi_phys_addr address, uacpi_u8 byte_width,
     uacpi_u64 *out)
 {
+	kprintf("reading 0x%zx length 0x%x\n", address, byte_width);
 	kfatal("Implement me\n");
 }
 
@@ -230,6 +235,7 @@ uacpi_status
 uacpi_kernel_raw_memory_write(uacpi_phys_addr address, uacpi_u8 byte_width,
     uacpi_u64 in)
 {
+	kprintf("writing 0x%zx length 0x%x\n", address, byte_width);
 	kfatal("Implement me\n");
 }
 
@@ -425,6 +431,7 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
 	entry->handler = handler;
 	entry->ctx = ctx;
 
+#ifdef __amd64__
 	r = [IOApic handleGSI:isa_intr_overrides[irq].gsi
 		  withHandler:uacpi_intr_handler
 		     argument:entry
@@ -432,6 +439,10 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
 	      isEdgeTriggered:isa_intr_overrides[irq].edge
 		   atPriority:kIPLHigh
 			entry:&entry->entry];
+#else
+	kprintf("uacpi_install_interrupt_handler\n");
+	r = 0;
+#endif
 
 	kassert (r == 0);
 

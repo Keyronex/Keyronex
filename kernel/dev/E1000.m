@@ -1,14 +1,17 @@
 #include "ddk/virtio_pcireg.h"
 #include "dev/9pSockTransport.h"
 #include "dev/E1000.h"
-#include "dev/amd64/IOAPIC.h"
 #include "kdb/kdb_udp.h"
-#include "kdk/amd64.h"
 #include "kdk/kmem.h"
 #include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "net/keysock_dev.h"
+
+#if defined(__amd64__)
+#include "kdk/amd64.h"
+#include "dev/amd64/IOAPIC.h"
+#endif
 
 @interface
 E1000 (Private)
@@ -511,6 +514,7 @@ link_dpc(void *arg)
 	e1000_write(m_reg, kE1000RegRCTL,
 	    kE1000RctlEN | kE1000RctlBAM | kE1000RctlSZ_2048 | kE1000RctlSECRC);
 
+#if defined(__amd64__)
 	r = [IOApic handleGSI:m_pciInfo.gsi
 		  withHandler:e1000_handler
 		     argument:self
@@ -518,6 +522,9 @@ link_dpc(void *arg)
 	      isEdgeTriggered:m_pciInfo.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
+#else
+	r = -1;
+#endif
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
 		[self release];

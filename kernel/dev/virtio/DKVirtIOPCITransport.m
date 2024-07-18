@@ -8,10 +8,12 @@
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 
-#if defined(__arch64__) || defined(__amd64__)
+#if defined (__amd64__)
 #include "kdk/amd64.h"
 #include "dev/amd64/IOAPIC.h"
+#endif
 
+#if defined(__aarch64__) || defined(__amd64__)
 @interface
 DKVirtIOPCITransport (Private)
 - (instancetype)initWithPCIBus:(PCIBus *)provider
@@ -260,6 +262,7 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 {
 	int r = 0;
 
+#if defined(__amd64__)
 	r = [IOApic handleGSI:m_pciInfo.gsi
 		  withHandler:vitrio_handler
 		     argument:self
@@ -267,6 +270,9 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 	      isEdgeTriggered:m_pciInfo.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
+#else
+	r = -1;
+#endif
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
 		return r;

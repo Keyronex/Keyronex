@@ -16,7 +16,7 @@
 #include "ntcompat/win_types.h"
 #include "vm/vmp.h"
 
-#if defined(__arch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined (__amd64__)
 #if 0
 #include "lai/host.h"
 #endif
@@ -51,7 +51,7 @@ getAccessRanges(struct pci_dev_info *info)
 	PACCESS_RANGE accessranges = (PACCESS_RANGE)kmem_alloc(
 	    sizeof(ACCESS_RANGE) * 7);
 
-#if defined(__arch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined (__amd64__)
 	for (size_t i = 0; i < 6; i++) {
 		size_t off = kBaseAddress0 + sizeof(uint32_t) * i;
 		uint64_t base;
@@ -163,7 +163,7 @@ srb_deferred_completion_callback(void *arg)
 		if (!matched)
 			continue;
 
-#if defined(__arch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined (__amd64__)
 		pci_writew(INFO_ARGS(info), kCommand,
 		    pci_readw(INFO_ARGS(info), kCommand) &
 			~(0x1 | 0x2));
@@ -183,7 +183,7 @@ srb_deferred_completion_callback(void *arg)
 		packPci(info->seg, info->bus, info->slot, info->fun,
 		    &pcfg->SystemIoBusNumber, &pcfg->SlotNumber);
 
-#if defined(__arch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined (__amd64__)
 		pci_writew(INFO_ARGS(info), kCommand,
 		    pci_readw(INFO_ARGS(info), kCommand) | (0x1 | 0x2));
 #endif

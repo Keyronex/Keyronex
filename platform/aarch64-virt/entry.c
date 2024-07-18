@@ -7,6 +7,11 @@
 #include "kern/aarch64/cpu.h"
 #include "vm/vmp.h"
 
+volatile struct limine_framebuffer_request framebuffer_request = {
+	.id = LIMINE_FRAMEBUFFER_REQUEST,
+	.revision = 0
+};
+
 static volatile struct limine_dtb_request dtb_request = {
 	.id = LIMINE_DTB_REQUEST,
 	.revision = 0
@@ -35,10 +40,15 @@ static volatile struct limine_smp_request smp_request = {
 	.revision = 0
 };
 
+struct ex_boot_config boot_config = {
+	.root = "9p:trans=virtio,server=sysroot,aname=/"
+};
+
 volatile uint8_t *uart = (uint8_t *)0x09000000;
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
 kcpu_t bootstrap_cpu;
 struct kthread thread0;
+kthread_t **threads;
 
 void
 pac_putc(int c, void *ctx)
@@ -89,23 +99,20 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 	kfatal("Implement me\n");
 }
 
-#if 0
-void vmp_md_enter_kwired(void)
-{
-	kfatal("Implement this\n");
-}
-#endif
-
-void
-vmp_md_unenter_kwired(void)
-{
-	kfatal("Implement this\n");
-}
-
 void
 _start()
 {
 	kprintf("Keyronex-lite/aarch64: " __DATE__ " " __TIME__ "\n");
+
+	__asm__ volatile(
+	    "mov x0, sp\n"
+	    "msr SPSel, #1\n"
+	    "mov sp, x0\n"
+	    :
+	    :
+	    : "x0");
+
+	thread0.last_cpu = &bootstrap_cpu;
 
 	if (hhdm_request.response->offset != HHDM_BASE) {
 		/* we expect HHDM begins there for now for simplicity */
@@ -154,6 +161,14 @@ _start()
 	kmem_init();
 	obj_init();
 
+	void intr_setup(void);
+	intr_setup();
+
+	threads = kmem_alloc(sizeof(kthread_t *) * 1);
+	threads[0] = &thread0;
+	cpus = kmem_alloc(sizeof(kcpu_t *) * 1);
+	cpus[0] = &bootstrap_cpu;
+
 	void ddk_init(void), ddk_autoconf(void);
 	ddk_init();
 	ddk_autoconf();
@@ -161,8 +176,6 @@ _start()
 	struct id_aa64pfr0_el1 pfr = read_id_aa64pfr0_el1();
 	void intr_setup(void);
 	intr_setup();
-	*(char *)0xdeaddeafbeef = '\b';
-
 
 	for (;;)
 		;

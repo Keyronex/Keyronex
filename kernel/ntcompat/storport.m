@@ -86,7 +86,7 @@ StorPortGetBusData(
 	uint16_t seg;
 	uint8_t bus, slot, fun;
 	unpackPci(SystemIoBusNumber, SlotNumber, &seg, &bus, &slot, &fun);
-#if defined(__arch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined (__amd64__)
 	for (int i = 0; i < Length; i++)
 		out[i] = pci_readb(seg, bus, slot, fun, i);
 #else

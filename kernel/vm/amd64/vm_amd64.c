@@ -75,13 +75,6 @@ vmp_md_translate(vaddr_t addr)
 	return paddr;
 }
 
-void
-vmp_md_enter_kwired(void)
-{
-	kfatal("Implement me\n");
-}
-
-
 void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     vm_page_t *tablepage, pte_t *dirpte, enum vmp_table_old_state old_state)
 {

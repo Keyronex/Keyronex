@@ -24,7 +24,9 @@ enum tg0_granule {
 
 /*! page table entry, hardware */
 typedef struct __attribute__((packed)) pte_hw {
-	uint64_t valid : 1, reserved_must_be_1 : 1,
+	uint64_t valid : 1,
+	    /* must = 1 */
+	    reserved_must_be_1 : 1,
 	    /* attribute index */
 	    attrindx : 3,
 	    /* nonsecure */
@@ -36,7 +38,11 @@ typedef struct __attribute__((packed)) pte_hw {
 	    /* access flag */
 	    af : 1,
 	    /* nonglobal */
-	    ng : 1, page : 36, reserved_0 : 4,
+	    ng : 1,
+	    /* page frame number */
+	    pfn : 36,
+	    /* reserved, must = 0 */
+	    reserved_0 : 4,
 	    /* does this form part of a contiguous set of entries */
 	    contiguous : 1,
 	    /* privileged execute never */
@@ -46,6 +52,13 @@ typedef struct __attribute__((packed)) pte_hw {
 	    /* for us to use */
 	    reserved_soft : 4, ignored : 5;
 } pte_hw_t;
+
+struct __attribute__((packed)) table_entry {
+	uint64_t valid : 1, is_table : 1,
+	    ignored : 10, /* 12 for 16kib, 14 for 64 kib */
+	    next_level : 36, reserved_0 : 4, ignored_2 : 7, pxntable : 1,
+	    xntable : 1, aptable : 2, nstable : 1;
+};
 
 struct __attribute__((packed)) tcr_el1 {
 	uint64_t t0sz : 6, reserved_0 : 1, epd0 : 1, irgn0 : 2, orgn0 : 2,

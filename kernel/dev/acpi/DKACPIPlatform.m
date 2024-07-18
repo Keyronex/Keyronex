@@ -166,13 +166,13 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	r = uacpi_table_find_by_signature("APIC", &madt);
 	kassert(r == UACPI_STATUS_OK);
 
+#if defined(__amd64__)
 	for (int i = 0; i < 16; i++) {
 		isa_intr_overrides[i].gsi = i;
 		isa_intr_overrides[i].lopol = i;
 		isa_intr_overrides[i].gsi = i;
 	}
 
-#if defined(__amd64__)
 	madt_walk((acpi_madt_t *)P2V(madt->phys_addr), parse_ioapics, self);
 	madt_walk((acpi_madt_t *)P2V(madt->phys_addr), parse_isa_overrides,
 	    self);
