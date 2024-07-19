@@ -7,7 +7,7 @@ typedef uint64_t pml4e_t, pdpte_t, pde_t;
 
 extern vm_procstate_t kernel_procstate;
 
-static inline void *
+static inline paddr_t
 read_ttbr0_el1(void)
 {
 	void *res;
@@ -15,7 +15,7 @@ read_ttbr0_el1(void)
 	return res;
 }
 
-static inline void *
+static inline paddr_t
 read_ttbr1_el1(void)
 {
 	void *res;
@@ -24,7 +24,7 @@ read_ttbr1_el1(void)
 }
 
 static inline void
-write_ttbr0_el1(void *val)
+write_ttbr0_el1(paddr_t val)
 {
 	asm("msr ttbr0_el1, %0" : : "r"(val));
 	asm("isb");
@@ -33,12 +33,17 @@ write_ttbr0_el1(void *val)
 }
 
 static inline void
-write_ttbr1_el1(void *val)
+write_ttbr1_el1(paddr_t val)
 {
 	asm("msr ttbr1_el1, %0" : : "r"(val));
 	asm("isb");
 	asm("dsb sy");
 	asm("tlbi vmalle1is");
+}
+
+void vmp_set_ttbr1(void)
+{
+	write_ttbr1_el1(kernel_procstate.md.table);
 }
 
 void

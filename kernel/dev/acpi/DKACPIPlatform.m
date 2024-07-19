@@ -168,7 +168,8 @@ gtdt_walk(void)
 
 	gtdt = (void *)table.virt_addr;
 
-	kprintf("GTDT: %p\n", gtdt);
+	kprintf("GTDT: %p/ EL1 NS: GSIV %u, Flags 0x%x\n", gtdt,
+	    gtdt->nonsecure_el1_interrupt, gtdt->nonsecure_el1_flags);
 }
 #endif
 
@@ -218,7 +219,7 @@ gtdt_walk(void)
 	uacpi_namespace_node *sb;
 	int r;
 
-	DKDevLog(self, "Carrying out second-stage initialisation");
+	DKDevLog(self, "ACPI second-stage init");
 
 	r = uacpi_namespace_load();
 	kassert(r == UACPI_STATUS_OK);

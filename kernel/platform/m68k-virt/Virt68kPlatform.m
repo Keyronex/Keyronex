@@ -30,7 +30,6 @@ extern struct bootinfo bootinfo;
 - (instancetype)init
 {
 	extern id platformDevice;
-	volatile uint8_t *virtio_base = (void *)bootinfo.virtio_base;
 
 	self = [super init];
 	kmem_asprintf(obj_name_ptr(self), "virt68k-platform");
@@ -41,13 +40,18 @@ extern struct bootinfo bootinfo;
 	    bootinfo.qemu_version >> 16 & 0xff,
 	    bootinfo.qemu_version >> 8 & 0xff);
 
+	return self;
+}
+
+- (void)secondStageInit
+{
+	volatile uint8_t *virtio_base = (void *)bootinfo.virtio_base;
+
 	for (int i = 0; i < 128; i++) {
 		[DKVirtIOMMIOTransport probeWithProvider:self
-						 mmio:virtio_base + 0x200 * i
-						 interrupt:32 + i];
+						    mmio:virtio_base + 0x200 * i
+					       interrupt:32 + i];
 	}
-
-	return self;
 }
 
 @end

@@ -11,6 +11,8 @@
 #include "executive/exp.h"
 #include "vm/vmp.h"
 
+void ddk_init(void), ddk_early_init(void);
+
 static size_t memory_size = 0;
 kcpu_t bootstrap_cpu;
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
@@ -115,6 +117,8 @@ cstart(struct handover *handover)
 	kmem_init();
 	obj_init();
 	ps_early_init(&thread0);
+	ddk_init();
+	ddk_early_init();
 
 	threads = kmem_alloc(sizeof(kthread_t *) * 1);
 	threads[0] = &thread0;

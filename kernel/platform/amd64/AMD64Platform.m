@@ -42,8 +42,6 @@ extern struct bootinfo bootinfo;
 	[self registerDevice];
 	DKLogAttach(self);
 
-	[KeySock probeWithProvider:self];
-	[Null probeWithProvider:self];
 	[SimpleFB probeWithProvider:self
 			    address:V2P(fb->address)
 			      width:fb->width
@@ -56,6 +54,8 @@ extern struct bootinfo bootinfo;
 
 - (void)secondStageInit
 {
+	[KeySock probeWithProvider:self];
+	[Null probeWithProvider:self];
 	[[DKACPIPlatform instance] secondStageInit];
 }
 

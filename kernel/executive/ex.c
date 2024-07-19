@@ -239,11 +239,10 @@ void
 ex_init(void *)
 {
 	int r;
-	void ddk_init(void), ddk_autoconf(void), ubc_init(void);
+	void ddk_autoconf(void), ubc_init(void);
 
 	vmp_paging_init();
 	ubc_init();
-	ddk_init();
 #if 0
 	pe_load(module_request.response->modules[3]->path,module_request.response->modules[3]->address);
 #endif
