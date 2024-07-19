@@ -49,7 +49,7 @@ extern struct bootinfo bootinfo;
 			      width:fb->width
 			     height:fb->height
 			      pitch:fb->pitch];
-	//[DKACPIPlatform probeWithProvider:self rsdp:rsdp_request.response->address];
+	[DKACPIPlatform probeWithProvider:self rsdp:rsdp_request.response->address];
 
 	return self;
 }

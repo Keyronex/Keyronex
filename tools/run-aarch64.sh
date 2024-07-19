@@ -22,12 +22,12 @@ fi
 virtio_disk_arg=
 virtio_trace_arg=--trace "virtio_*"
 
-$qemu_exe -M virt,gic-version=max \
-  -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+$qemu_exe -M virt -cpu cortex-a72 -smp 2 \
+  -device ramfb -device qemu-xhci -device usb-kbd \
+  -m 2G \
+  -bios OVMF.fd \
   -boot menu=on,splash-time=0 \
-  -cpu cortex-a72 \
-  -smp 12 \
-  -device ramfb \
   -cdrom build/aarch64/barebones.iso \
+  -boot d \
   -s \
   ${qemu_args}

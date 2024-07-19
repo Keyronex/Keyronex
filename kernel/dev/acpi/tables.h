@@ -1,6 +1,8 @@
 #ifndef KRX_ACPI_TABLES_H
 #define KRX_ACPI_TABLES_H
 
+#include "DKAACPIPlatform.h"
+
 typedef struct {
 	acpi_header_t header;
 	uint32_t lapic_addr;
@@ -48,10 +50,20 @@ typedef struct {
 	uint64_t gicr_base_addr;
 	uint64_t mpidr;
 	uint8_t processor_power_efficiency_class;
-	uint8_t reserved_0; /* must bezero */
+	uint8_t reserved_0; /* must be zero */
 	uint16_t spe_overflow_interrupt;
 	uint16_t trbe_interrupt;
 } __attribute__((packed)) acpi_madt_gicc_t;
+
+typedef struct {
+	acpi_madt_entry_header_t header;
+	uint16_t reserved;
+	uint32_t gic_id;
+	uint64_t physical_base_address;
+	uint32_t system_vector_base;
+	uint8_t gic_version;
+	uint32_t reserved_0 : 24;
+} __attribute__((packed)) acpi_madt_gicd_t;
 
 typedef struct acpi_gas_t {
 	uint8_t address_space;
@@ -127,5 +139,27 @@ typedef struct acpi_fadt_t {
 	acpi_gas_t sleep_control_reg;
 	acpi_gas_t sleep_status_reg;
 } __attribute__((packed)) acpi_fadt_t;
+
+typedef struct acpi_table_gtdt {
+	acpi_header_t header;
+	uint64_t counter_block_address;
+	uint32_t reserved;
+	uint32_t secure_el1_interrupt;
+	uint32_t secure_el1_flags;
+	uint32_t nonsecure_el1_interrupt;
+	uint32_t nonsecure_el1_flags;
+	uint32_t virtual_timer_interrupt;
+	uint32_t virtual_timer_flags;
+	uint32_t nonsecure_el2_interrupt;
+	uint32_t nonsecure_el2_flags;
+	uint64_t counter_read_block_address;
+	uint32_t platform_timer_count;
+	uint32_t platform_timer_offset;
+} __attribute__((packed)) acpi_table_gtdt_t;
+
+/* Is it edge triggered? */
+#define ACPI_GTDT_INTERRUPT_MODE (1)
+/*! Is it active low? */
+#define ACPI_GTDT_INTERRUPT_POLARITY (1 << 1)
 
 #endif /* KRX_ACPI_TABLES_H */

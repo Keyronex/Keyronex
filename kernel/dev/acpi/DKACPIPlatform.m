@@ -126,6 +126,7 @@ parse_isa_overrides(acpi_madt_entry_header_t *item, void *arg)
 	override->edge = (intr->flags & 0x8) == 0x8 ? 0x1 : 0x0;
 }
 #elif defined(__aarch64__)
+
 static void
 parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 {
@@ -135,8 +136,39 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 		return;
 
 	gicc = (void *)item;
-	kprintf("Found a GICC: GIC interface num %d, ACPI UID %d\n",
-	    gicc->cpu_interface_number, gicc->acpi_process_uid);
+	kprintf("Found a GICC: "
+		"GIC interface num %d, ACPI UID %d base address 0x%zx\n",
+	    gicc->cpu_interface_number, gicc->acpi_process_uid,
+	    gicc->physical_base_addr);
+}
+
+static void
+parse_gicds(acpi_madt_entry_header_t *item, void *arg)
+{
+	acpi_madt_gicd_t *gicd;
+
+	if (item->type != 0xc)
+		return;
+
+	gicd = (void *)item;
+	kprintf("Found a GICD: GIC version num %d, base address 0x%zx\n",
+	    gicd->gic_version, gicd->physical_base_address);
+}
+
+static void
+gtdt_walk(void)
+{
+	uacpi_table table;
+	acpi_table_gtdt_t *gtdt;
+	int r;
+
+	r = uacpi_table_find_by_signature("GTDT", &table);
+	if (r != 0)
+		kfatal("No GTDT table found!\n");
+
+	gtdt = (void *)table.virt_addr;
+
+	kprintf("GTDT: %p\n", gtdt);
 }
 #endif
 
@@ -178,8 +210,9 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	    self);
 #elif defined(__aarch64__)
 	madt_walk((acpi_madt_t *)madt.virt_addr, parse_giccs, NULL);
+	madt_walk((acpi_madt_t *)madt.virt_addr, parse_gicds, NULL);
+	gtdt_walk();
 #endif
-
 
 	r = uacpi_namespace_load();
 	kassert(r == UACPI_STATUS_OK);
