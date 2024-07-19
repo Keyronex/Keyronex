@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "../../platform/m68k-virt/handover.h"
+#include "../../kernel/platform/m68k-virt/handover.h"
 #include "../../kernel/vm/m68k/mmu_040.h"
 #include "../../vendor/include/kdk/elf.h"
 

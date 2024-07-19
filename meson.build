@@ -96,12 +96,7 @@ if not headers_only
 	subdir('lwip')
 	subdir('vendor/objfwrt')
 	subdir('kernel')
-	if (arch == 'amd64')
-		subdir('platform/amd64')
-	elif (arch == 'm68k')
-		subdir('platform/m68k-virt')
+	if (arch == 'm68k')
 		subdir('loader/m68k-virt-loader')
-	elif (arch == 'aarch64')
-		subdir('platform/aarch64-virt')
 	endif
 endif

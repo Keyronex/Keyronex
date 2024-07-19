@@ -9,3 +9,11 @@ subdir('vm')
 subdir('net')
 subdir('kern')
 subdir('ntcompat')
+
+if (arch == 'amd64')
+	subdir('platform/amd64')
+elif (arch == 'm68k')
+	subdir('platform/m68k-virt')
+elif (arch == 'aarch64')
+	subdir('platform/aarch64-virt')
+endif

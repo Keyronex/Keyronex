@@ -1,4 +1,4 @@
-file build/amd64/pkg-builds/kernel/platform/amd64/keyronex
+file build/amd64/pkg-builds/kernel/kernel/platform/amd64/keyronex
 add-symbol-file build/amd64/system-root/usr/bin/posix_server
 add-symbol-file -o 0x40000000 build/amd64/system-root/usr/lib/ld.so
 target remote localhost:1234
