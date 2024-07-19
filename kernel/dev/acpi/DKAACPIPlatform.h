@@ -59,6 +59,9 @@ typedef struct {
 @interface DKACPIPlatform : DKDevice
 
 + (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp;
++ (instancetype)instance;
+
+- (void)secondStageInit;
 
 @end
 

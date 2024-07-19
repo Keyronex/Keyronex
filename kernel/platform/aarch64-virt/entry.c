@@ -169,9 +169,9 @@ _start()
 	cpus = kmem_alloc(sizeof(kcpu_t *) * 1);
 	cpus[0] = &bootstrap_cpu;
 
-	void ddk_init(void), ddk_autoconf(void);
+	void ddk_init(void), ddk_early_init(void);
 	ddk_init();
-	ddk_autoconf();
+	ddk_early_init();
 
 	struct id_aa64pfr0_el1 pfr = read_id_aa64pfr0_el1();
 	void intr_setup(void);

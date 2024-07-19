@@ -71,12 +71,18 @@ void ddk_init(void)
 }
 
 void
-ddk_autoconf(void)
+ddk_early_init(void)
 {
-	kprintf("ddk_init: probing platform device...\n");
+	kprintf("ddk_early_init: probing platform device...\n");
 	kassert(platformDeviceClass != nil);
 	[platformDeviceClass probe];
+}
 
-	kprintf("ddk_init: device tree after autoconf:\n");
+void
+ddk_autoconf(void)
+{
+	kprintf("ddk_autoconf: starting second-stage initialisation...\n");
+	[platformDevice secondStageInit];
+	kprintf("ddk_autoconf: device tree after autoconf:\n");
 	printTree(platformDevice, indent, kRoot);
 }

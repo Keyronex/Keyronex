@@ -172,9 +172,6 @@ gtdt_walk(void)
 }
 #endif
 
-- (void)handleMADTEntry:(acpi_madt_entry_header_t *)entry
-{
-}
 
 - (instancetype)initWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
 {
@@ -182,7 +179,6 @@ gtdt_walk(void)
 		.rsdp = V2P(rsdp),
 		.log_level = UACPI_LOG_INFO,
 	};
-	uacpi_namespace_node *sb;
 	int r;
 
 	self = [super initWithProvider:provider];
@@ -214,6 +210,16 @@ gtdt_walk(void)
 	gtdt_walk();
 #endif
 
+	return self;
+}
+
+- (void)secondStageInit
+{
+	uacpi_namespace_node *sb;
+	int r;
+
+	DKDevLog(self, "Carrying out second-stage initialisation");
+
 	r = uacpi_namespace_load();
 	kassert(r == UACPI_STATUS_OK);
 	r = uacpi_namespace_initialize();
@@ -225,10 +231,7 @@ gtdt_walk(void)
 	kassert(sb != NULL);
 
 	uacpi_namespace_for_each_node_depth_first(sb, iteration_callback, self);
-
-	return self;
 }
-
 
 + (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
 {
@@ -240,6 +243,11 @@ gtdt_walk(void)
 	[[self alloc] initWithProvider:provider rsdp:rsdp];
 
 	return YES;
+}
+
++ (instancetype)instance
+{
+	return acpiplatform;
 }
 
 @end

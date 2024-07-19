@@ -54,4 +54,9 @@ extern struct bootinfo bootinfo;
 	return self;
 }
 
+- (void)secondStageInit
+{
+	[[DKACPIPlatform instance] secondStageInit];
+}
+
 @end
