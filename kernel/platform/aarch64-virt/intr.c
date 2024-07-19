@@ -1,7 +1,9 @@
 #include <stdint.h>
 
+#include "kdk/aarch64.h"
 #include "kdk/kern.h"
 #include "kdk/vm.h"
+#include "kern/ki.h"
 
 static uint64_t timer_hz;
 
@@ -12,8 +14,7 @@ write_vbar_el1(void *addr)
 }
 
 /* GIC stuff */
-volatile uintptr_t gicd_base = P2V(0x8000000);
-volatile uintptr_t gicc_base = P2V(0x8010000);
+uintptr_t gicd_base = 0x0;
 
 enum {
 	kGICD_CTLR = 0x0000,
@@ -46,13 +47,13 @@ gicd_write_isenabler(int gsiv, uint32_t value)
 
 uint32_t gicc_read(uint32_t reg)
 {
-	return *(volatile uint32_t*)(gicc_base + reg);
+	return *(volatile uint32_t *)(curcpu()->cpucb.gicc_base + reg);
 }
 
 void
 gicc_write(uint32_t reg, uint32_t value)
 {
-	*(volatile uint32_t *)(gicc_base + reg) = value;
+	*(volatile uint32_t *)(curcpu()->cpucb.gicc_base + reg) = value;
 }
 
 void gicc_write_ctlr(uint32_t value)
@@ -160,6 +161,67 @@ intr_init(void)
 {
 	extern void *vectors;
 	write_vbar_el1(&vectors);
+}
+
+bool
+ki_disable_interrupts(void)
+{
+	uint64_t daif;
+	asm volatile("mrs %0, daif" : "=r"(daif));
+	asm volatile("msr daifset, #0xf");
+	return (daif & 0xf) == 0;
+}
+
+void
+ki_set_interrupts(bool enable)
+{
+	if (enable)
+		asm volatile("msr daifclr, #0xf");
+	else
+		asm volatile("msr daifset, #0xf");
+}
+
+ipl_t
+splraise(ipl_t ipl)
+{
+	bool x = ki_disable_interrupts();
+	ipl_t old = curcpu()->cpucb.ipl;
+	kassert(ipl >= old);
+	curcpu()->cpucb.ipl = ipl;
+	if (ipl < kIPLHigh)
+		ki_set_interrupts(x);
+	return old;
+}
+
+void
+splx(ipl_t to)
+{
+	bool x = ki_disable_interrupts();
+	kcpu_t *cpu = curcpu();
+	ipl_t old = cpu->cpucb.ipl;
+	kassert(to <= old);
+
+	if (old >= kIPLDPC && to < kIPLDPC) {
+		cpu->cpucb.ipl = kIPLDPC;
+		ki_set_interrupts(x);
+		ki_dispatch_dpcs(cpu);
+		x = ki_disable_interrupts();
+		cpu = curcpu(); /* could have migrated! */
+	}
+
+	cpu->cpucb.ipl = to;
+
+	if (to < kIPLHigh)
+		ki_set_interrupts(x);
+}
+
+ipl_t
+splget(void)
+{
+	bool x = ki_disable_interrupts();
+	ipl_t old = curcpu()->cpucb.ipl;
+	ki_set_interrupts(x);
+	return old;
 }
 
 #if 0

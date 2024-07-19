@@ -113,6 +113,7 @@ ap_init(struct limine_smp_info *smpi)
 #if defined(__amd64__)
 #define SMPR_BSP_ID bsp_lapic_id
 #define SMPI_ID lapic_id
+#define KCPU_ID lapic_id
 #elif defined(__aarch64__)
 #define SMPR_BSP_ID bsp_mpidr
 #define SMPI_ID mpidr
@@ -135,6 +136,8 @@ smp_init()
 #if !defined(__m68k__)
 	for (size_t i = 0; i < ncpus; i++) {
 		struct limine_smp_info *smpi = smpr->cpus[i];
+
+		kprintf("%zu: SMPI ID %lx\n", i, smpi->SMPI_ID);
 
 		if (smpi->SMPI_ID == smpr->SMPR_BSP_ID) {
 			smpi->extra_argument = (uint64_t)&bootstrap_cpu;

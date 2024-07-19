@@ -1,12 +1,14 @@
 #include <limine.h>
 #include <stdint.h>
 
-#include "kdk/kmem.h"
+#include "gic.h"
 #include "kdk/kern.h"
+#include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "kern/aarch64/cpu.h"
 #include "vm/vmp.h"
 
+void gicc_for_mpidr(uint32_t mpidr);
 void intr_init(void);
 void vmp_set_ttbr1(void);
 
@@ -18,24 +20,6 @@ pac_putc(int c, void *ctx)
 	if (c == '\n')
 		*uart = '\r';
 	*uart = c;
-}
-
-ipl_t
-splraise(ipl_t ipl)
-{
-	return kIPL0;
-}
-
-void
-splx(ipl_t ipl)
-{
-	(void)ipl;
-}
-
-ipl_t
-splget(void)
-{
-	return kIPL0;
 }
 
 void
@@ -64,12 +48,24 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 void
 plat_first_init(void)
 {
+	asm volatile("mov x0, sp\n"
+		     "msr SPSel, #1\n"
+		     "mov sp, x0\n"
+		     :
+		     :
+		     : "x0");
 	intr_init();
 }
 
 void
 plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
 {
+	asm volatile("mov x0, sp\n"
+		     "msr SPSel, #1\n"
+		     "mov sp, x0\n"
+		     :
+		     :
+		     : "x0");
 	vmp_set_ttbr1();
 	intr_init();
 	kprintf("AP early init..\n");
@@ -79,6 +75,7 @@ void
 plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi)
 {
+	cpu->cpucb.mpidr = smpi->mpidr;
 }
 
 void

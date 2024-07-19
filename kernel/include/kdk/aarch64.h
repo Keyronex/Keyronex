@@ -76,6 +76,8 @@ typedef struct md_pcb {
 
 typedef struct md_cpucb {
 	ipl_t ipl;
+	uint32_t mpidr;
+	uintptr_t gicc_base;
 } md_cpucb_t;
 
 static inline __attribute__((noreturn)) void
