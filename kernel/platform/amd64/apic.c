@@ -132,12 +132,10 @@ md_send_invlpg_ipi(kcpu_t *cpu)
 
 void md_send_dpc_ipi(kcpu_t *cpu)
 {
-	cpu->dpc_int = true;
 	send_ipi(cpu->cpucb.lapic_id, kIntVecDPC);
 }
 
 void md_raise_dpc_interrupt()
 {
-	curcpu()->dpc_int = true;
 	send_ipi(curcpu()->cpucb.lapic_id, kIntVecDPC);
 }

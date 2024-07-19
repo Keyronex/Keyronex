@@ -266,8 +266,6 @@ typedef struct kcpu {
 	/* (!) reason for reschedule if any */
 	enum kreschedule_reason reschedule_reason;
 
-	/*! (!) DPC interrupt requested*/
-	bool dpc_int;
 	/*! Lock on dpc_queue. */
 	kspinlock_t dpc_lock;
 	/*! (d) DPCs awaiting execution */

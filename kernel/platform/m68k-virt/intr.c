@@ -14,7 +14,7 @@
 void
 md_raise_dpc_interrupt(void)
 {
-	curcpu()->dpc_int = true;
+	curcpu()->cpucb.dpc_int = true;
 }
 
 ipl_t
@@ -44,7 +44,10 @@ splx_internal(ipl_t to, bool do_dpcs, bool do_hardware)
 	}
 	if (to < kIPLDPC && do_dpcs) {
 		curcpu()->cpucb.ipl = kIPLDPC;
-		ki_dispatch_dpcs(curcpu());
+		while (curcpu()->cpucb.dpc_int) {
+			curcpu()->cpucb.dpc_int = 0;
+			ki_dispatch_dpcs(curcpu());
+		}
 	}
 	curcpu()->cpucb.ipl = to;
 }

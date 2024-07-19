@@ -117,6 +117,7 @@ typedef struct md_pcb {
 } md_pcb_t;
 
 typedef struct md_cpucb {
+	int dpc_int;
 	ipl_t ipl;
 } md_cpucb_t;
 

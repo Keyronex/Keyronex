@@ -25,7 +25,7 @@ pac_putc(int c, void *ctx)
 void
 md_raise_dpc_interrupt(void)
 {
-	curcpu()->dpc_int = true;
+	curcpu()->cpucb.dpc_int = true;
 }
 
 void

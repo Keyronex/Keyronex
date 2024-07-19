@@ -41,7 +41,6 @@ void
 ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 {
 	md_cpu_init(cpu);
-	cpu->dpc_int = false;
 	cpu->dpc_lock = (kspinlock_t)KSPINLOCK_INITIALISER;
 	TAILQ_INIT(&cpu->dpc_queue);
 	cpu->nanos = 0;
@@ -83,38 +82,33 @@ void
 ki_dispatch_dpcs(kcpu_t *cpu)
 {
 	kassert(splget() == kIPLDPC);
-	while (cpu->dpc_int) {
-		cpu->dpc_int = false;
-		while (true) {
-			ipl_t ipl;
-			kdpc_t *dpc;
+	while (true) {
+		ipl_t ipl;
+		kdpc_t *dpc;
 
-			ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock,
-			    kIPLHigh);
-			dpc = TAILQ_FIRST(&curcpu()->dpc_queue);
-			if (dpc != NULL) {
-				TAILQ_REMOVE(&curcpu()->dpc_queue, dpc,
-				    queue_entry);
-				dpc->cpu = NULL;
-			} else {
-				ke_spinlock_release(&curcpu()->dpc_lock, ipl);
-				break;
-			}
-
+		ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock, kIPLHigh);
+		dpc = TAILQ_FIRST(&curcpu()->dpc_queue);
+		if (dpc != NULL) {
+			TAILQ_REMOVE(&curcpu()->dpc_queue, dpc, queue_entry);
+			dpc->cpu = NULL;
+		} else {
 			ke_spinlock_release(&curcpu()->dpc_lock, ipl);
-			/* Now at IPL=dpc */
-
-			dpc->callback(dpc->arg);
+			break;
 		}
 
-		if (cpu->reschedule_reason != kRescheduleReasonNone) {
-			ipl_t ipl = ke_spinlock_acquire(&curthread()->lock);
-			ki_reschedule();
-			/* IPL remains at dpc but old thread lock was dropped */
-			splx(ipl);
-			/* curcpu() can have changed, if rescheduled. */
-			cpu = curcpu();
-		}
+		ke_spinlock_release(&curcpu()->dpc_lock, ipl);
+		/* Now at IPL=dpc */
+
+		dpc->callback(dpc->arg);
+	}
+
+	if (cpu->reschedule_reason != kRescheduleReasonNone) {
+		ipl_t ipl = ke_spinlock_acquire(&curthread()->lock);
+		ki_reschedule();
+		/* IPL remains at dpc but old thread lock was dropped */
+		splx(ipl);
+		/* curcpu() can have changed, if rescheduled. */
+		cpu = curcpu();
 	}
 }
 

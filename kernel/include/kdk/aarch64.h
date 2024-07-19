@@ -75,6 +75,7 @@ typedef struct md_pcb {
 } md_pcb_t;
 
 typedef struct md_cpucb {
+	int dpc_int;
 	ipl_t ipl;
 	uint32_t mpidr;
 	uintptr_t gicc_base;
