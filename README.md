@@ -1,8 +1,7 @@
 ![Keyronex Logo](docs/keyronex.svg)
 
-Keyronex is a hobby operating system. It runs to varying degrees on m68k (QEMU
-`virt` and Amiga), amd64, and AArch64 PCs. It makes no pretences to be anything
-novel or exciting, and doesn't do anything likely to be interesting to anyone.
+Keyronex is a hobby operating system. It makes no pretences to be anything novel
+or exciting, and doesn't do anything likely to be interesting to anyone.
 
 The long-term goal is to build a fairly competent operating system by the
 standards of the early 90s, with as much scalability and as many mod-cons as is
@@ -11,6 +10,16 @@ technical influences from both the Unix tradition (particularly Mach/NeXTSTEP,
 NetBSD, and Solaris) with influences from the VMS tradition (particularly
 OpenVMS itself, [Mintia], and Windows NT). Special attention has been given to
 the virtual memory system.
+
+Keyronex is a portable system:
+
+| Architecture | Platform     | Status         |
+|--------------|--------------|----------------|
+| amd64        | Generic ACPI | Well-supported |
+| m68k         | QEmu "Virt"  | Well-supported |
+| aarch64      | Generic ACPI | In development |
+| m68k         | Amiga        | Planned        |
+| riscv64      | Generic ACPI | Planned        |
 
 *[ This is a rewrite  branch which currently lacks features; the previous, more
 featured branch is `23-jul`, which features ports of such apps as the GNU
