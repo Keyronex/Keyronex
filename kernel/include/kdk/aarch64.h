@@ -88,7 +88,13 @@ hcf(void)
 		asm("wfi");
 }
 
-#define curthread() (&thread0)
+static inline struct kthread *
+curthread(void)
+{
+	struct kthread *thread;
+	asm volatile("mrs %0, tpidr_el1" : "=r"(thread));
+	return thread;
+}
 
 extern struct kthread thread0;
 extern struct kcpu bootstrap_cpu;

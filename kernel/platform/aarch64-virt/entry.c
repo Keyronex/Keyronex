@@ -34,18 +34,6 @@ md_cpu_init(kcpu_t *cpu)
 }
 
 void
-md_switch(kthread_t *old_thread)
-{
-	kfatal("Implement this\n");
-}
-
-void
-ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
-{
-	kfatal("Implement me\n");
-}
-
-void
 plat_first_init(void)
 {
 	asm volatile("mov x0, sp\n"
@@ -54,6 +42,8 @@ plat_first_init(void)
 		     :
 		     :
 		     : "x0");
+
+	asm volatile ("msr tpidr_el1, %0" : : "r" (&thread0) : "memory");
 	intr_init();
 }
 

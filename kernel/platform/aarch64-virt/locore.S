@@ -185,7 +185,7 @@ asm_swtch:
 	stp x25, x26, [x0, #64]
 	stp x27, x28, [x0, #80]
 	mov x2, sp
-	str x2, [x0, #88]
+	str x2, [x0, #96]
 
 	ldp x29, x30, [x1]
 	ldp x19, x20, [x1, #16]
@@ -200,7 +200,6 @@ asm_swtch:
 
 .global asm_thread_trampoline
 asm_thread_trampoline:
-	mov x0, xzr
-	bl splx
-	mov x0, x20
-	blr x19
+	mov x0, x19
+	mov x1, x20
+	bl thread_trampoline

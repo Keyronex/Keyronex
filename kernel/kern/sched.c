@@ -173,7 +173,11 @@ ki_reschedule(void)
 	cpu->curthread = next;
 	cpu->reschedule_reason = kRescheduleReasonNone;
 	cpu->old_thread = old_thread;
+#ifndef __aarch64__ /* FIXME! implementation detail! */
 	threads[cpu->num] = next;
+#else
+	asm volatile ("msr tpidr_el1, %0" : : "r" (next) : "memory");
+#endif
 	ke_spinlock_release_nospl(&cpu->sched_lock);
 
 	(void)drop;

@@ -75,7 +75,7 @@ struct thread_new_info {
 };
 
 static void
-thread_trampoline(void *arg)
+user_thread_trampoline(void *arg)
 {
 	struct thread_new_info info = *(struct thread_new_info *)arg;
 
@@ -94,7 +94,7 @@ krx_fork_thread(uintptr_t entry, uintptr_t stack)
 	info->entry = entry;
 	info->stack = stack;
 
-	r = ps_thread_create(&thread, "newthread", thread_trampoline, info,
+	r = ps_thread_create(&thread, "newthread", user_thread_trampoline, info,
 	    ex_curproc());
 	if (r != 0) {
 		kmem_free(info, sizeof(*info));

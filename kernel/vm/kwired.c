@@ -123,6 +123,7 @@ internal_freewired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 
 		page = vmp_pte_hw_page(pte, 1);
 		pte->value = 0x0;
+		/*! TODO: urgent! why is this not global?! */
 		ki_tlb_flush_vaddr_locally(addr);
 		vmp_pagetable_page_pte_deleted(&kernel_procstate,
 		    pte_wire.pgtable_pages[0], false);

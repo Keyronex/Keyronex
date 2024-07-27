@@ -204,6 +204,7 @@ splx(ipl_t to)
 	if (old >= kIPLDPC && to < kIPLDPC) {
 		cpu->cpucb.ipl = kIPLDPC;
 		while (cpu->cpucb.dpc_int) {
+			curcpu()->cpucb.dpc_int = 0;
 			ki_set_interrupts(x);
 			ki_dispatch_dpcs(cpu);
 			x = ki_disable_interrupts();
