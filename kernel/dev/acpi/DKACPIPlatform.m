@@ -30,9 +30,6 @@ struct pcie_ecam {
 	uint8_t start_bus, end_bus;
 };
 
-acpi_rsdt_t *rsdt = NULL;
-acpi_xsdt_t *xsdt = NULL;
-mcfg_t *mcfg = NULL;
 static DKACPIPlatform *acpiplatform = NULL;
 struct pcie_ecam *ecam;
 
@@ -81,13 +78,13 @@ iteration_callback(void *user, uacpi_namespace_node *node)
 }
 
 static void
-madt_walk(acpi_madt_t *madt,
-    void (*callback)(acpi_madt_entry_header_t *item, void *arg), void *arg)
+madt_walk(struct acpi_madt *madt,
+    void (*callback)(struct acpi_entry_hdr *item, void *arg), void *arg)
 {
-	for (uint8_t *item = &madt->entries[0]; item <
-	     (madt->entries + (madt->header.length - sizeof(acpi_madt_t)));) {
-		acpi_madt_entry_header_t *header = (acpi_madt_entry_header_t *)
-		    item;
+	for (char *item = (char *)&madt->entries[0];
+	     item < ((char *)madt->entries +
+			(madt->hdr.length - sizeof(struct acpi_madt)));) {
+		struct acpi_entry_hdr *header = (struct acpi_entry_hdr *)item;
 		callback(header, arg);
 		item += header->length;
 	}
@@ -95,31 +92,31 @@ madt_walk(acpi_madt_t *madt,
 
 #ifdef __amd64
 static void
-parse_ioapics(acpi_madt_entry_header_t *item, void *arg)
+parse_ioapics(struct acpi_entry_hdr *item, void *arg)
 {
-	acpi_madt_ioapic_t *ioapic;
+	struct acpi_madt_ioapic *ioapic;
 
 	if (item->type != 1)
 		return;
 
-	ioapic = (acpi_madt_ioapic_t *)item;
+	ioapic = (struct acpi_madt_ioapic *)item;
 	[[IOApic alloc] initWithProvider:arg
-				      id:ioapic->ioapic_id
-				 address:(paddr_t)ioapic->ioapic_addr
+				      id:ioapic->id
+				 address:(paddr_t)ioapic->address
 				 gsiBase:ioapic->gsi_base];
 }
 
 static void
-parse_isa_overrides(acpi_madt_entry_header_t *item, void *arg)
+parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
 {
-	acpi_madt_int_override_t *intr;
+	struct acpi_madt_interrupt_source_override *intr;
 	struct isa_intr_override *override;
 
 	if (item->type != 2)
 		return;
 
-	intr = (acpi_madt_int_override_t *)item;
-	override = &isa_intr_overrides[intr->irq_source];
+	intr = (struct acpi_madt_interrupt_source_override *)item;
+	override = &isa_intr_overrides[intr->source];
 
 	override->gsi = intr->gsi;
 	override->lopol = (intr->flags & 0x2) == 0x2 ? 0x1 : 0x0;
@@ -128,9 +125,9 @@ parse_isa_overrides(acpi_madt_entry_header_t *item, void *arg)
 #elif defined(__aarch64__)
 
 static void
-parse_giccs(acpi_madt_entry_header_t *item, void *arg)
+parse_giccs(struct acpi_entry_hdr *item, void *arg)
 {
-	acpi_madt_gicc_t *gicc;
+	struct acpi_madt_gicc *gicc;
 
 	if (item->type != 0xb)
 		return;
@@ -138,21 +135,20 @@ parse_giccs(acpi_madt_entry_header_t *item, void *arg)
 	gicc = (void *)item;
 	kprintf("Found a GICC: "
 		"GIC interface num %d, ACPI UID %d base address 0x%zx\n",
-	    gicc->cpu_interface_number, gicc->acpi_process_uid,
-	    gicc->physical_base_addr);
+	    gicc->interface_number, gicc->acpi_id, gicc->address);
 }
 
 static void
-parse_gicds(acpi_madt_entry_header_t *item, void *arg)
+parse_gicds(struct acpi_entry_hdr *item, void *arg)
 {
-	acpi_madt_gicd_t *gicd;
+	struct acpi_madt_gicd *gicd;
 
 	if (item->type != 0xc)
 		return;
 
 	gicd = (void *)item;
 	kprintf("Found a GICD: GIC version num %d, base address 0x%zx\n",
-	    gicd->gic_version, gicd->physical_base_address);
+	    gicd->gic_version, gicd->address);
 }
 
 static void
@@ -202,12 +198,12 @@ gtdt_walk(void)
 		isa_intr_overrides[i].gsi = i;
 	}
 
-	madt_walk((acpi_madt_t *)madt.virt_addr, parse_ioapics, self);
-	madt_walk((acpi_madt_t *)madt.virt_addr, parse_isa_overrides,
+	madt_walk((struct acpi_madt *)madt.virt_addr, parse_ioapics, self);
+	madt_walk((struct acpi_madt *)madt.virt_addr, parse_isa_overrides,
 	    self);
 #elif defined(__aarch64__)
-	madt_walk((acpi_madt_t *)madt.virt_addr, parse_giccs, NULL);
-	madt_walk((acpi_madt_t *)madt.virt_addr, parse_gicds, NULL);
+	madt_walk((struct acpi_madt *)madt.virt_addr, parse_giccs, NULL);
+	madt_walk((struct acpi_madt *)madt.virt_addr, parse_gicds, NULL);
 	gtdt_walk();
 #endif
 
@@ -219,7 +215,7 @@ gtdt_walk(void)
 	uacpi_namespace_node *sb;
 	int r;
 
-	DKDevLog(self, "ACPI second-stage init");
+	DKDevLog(self, "ACPI second-stage init\n");
 
 	r = uacpi_namespace_load();
 	kassert(r == UACPI_STATUS_OK);
@@ -236,11 +232,6 @@ gtdt_walk(void)
 
 + (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
 {
-	if (rsdp->Revision > 0)
-		xsdt = (acpi_xsdt_t *)P2V(((rsdp_desc2_t *)rsdp)->XsdtAddress);
-	else
-		rsdt = (acpi_rsdt_t *)P2V((uintptr_t)rsdp->RsdtAddress);
-
 	[[self alloc] initWithProvider:provider rsdp:rsdp];
 
 	return YES;
