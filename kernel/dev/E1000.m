@@ -486,6 +486,8 @@ link_dpc(void *arg)
 
 	m_reg = P2V(m_reg);
 
+	[PCIBus setMemorySpaceForInfo:info enabled:true];
+
 	r = e1000_read_mac(m_reg, m_mac);
 	if (r != 0) {
 		DKDevLog(self, "Failed to read MAC address\n");

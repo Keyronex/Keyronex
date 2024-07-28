@@ -1,16 +1,19 @@
+#include "ddk/DKDevice.h"
 #include "ddk/virtio_pcireg.h"
 #include "ddk/virtioreg.h"
 #include "dev/PCIBus.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
-#include "dev/virtio/VirtIODisk.h"
 #include "dev/virtio/VirtIO9pPort.h"
+#include "dev/virtio/VirtIODisk.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
+#include "kdk/vm.h"
+#include "vm/vmp.h"
 
-#if defined (__amd64__)
-#include "kdk/amd64.h"
+#if defined(__amd64__)
 #include "dev/amd64/IOAPIC.h"
+#include "kdk/amd64.h"
 #endif
 
 #if defined(__aarch64__) || defined(__amd64__)
@@ -65,8 +68,14 @@ dpc_handler(void *arg)
 	case VIRTIO_PCI_CAP_COMMON_CFG: {
 		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
-		m_commonCfg = (struct virtio_pci_common_cfg *)(P2V(phys));
-		kprintf("m_commonCfg: %p (phys %p)\n", m_commonCfg, phys);
+		vaddr_t virt;
+		int r;
+
+		r = vm_ps_map_physical_view(&kernel_procstate, &virt, PGSIZE,
+		    phys, kVMAll, kVMAll, false);
+		kassert(r == 0);
+
+		m_commonCfg = (struct virtio_pci_common_cfg *)virt;
 		break;
 	}
 
@@ -130,9 +139,11 @@ dpc_handler(void *arg)
 	DKLogAttach(self);
 
 	switch (info->deviceId) {
+#if 0
 	case 0x1001:
 		[VirtIODisk probeWithProvider:self];
 		break;
+#endif
 
 	case 0x1009:
 		[VirtIO9pPort probeWithProvider:self];
@@ -159,6 +170,7 @@ dpc_handler(void *arg)
 
 - (BOOL)exchangeFeatures:(uint64_t)required
 {
+
 	for (int i = 0; i < 2; i++) {
 		uint32_t requiredFeaturesPart = required >> (i * 32);
 
@@ -272,6 +284,7 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #else
+	DKDevLog(self, "Allocate an interrupt for GSI %d...\n", m_pciInfo.gsi);
 	r = -1;
 #endif
 	if (r < 0) {

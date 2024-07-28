@@ -189,10 +189,16 @@ vmp_pte_wire_state_release(struct vmp_pte_wire_state *state, bool prototype)
 	for (int i = 0; i < (prototype ? 4 : VMP_TABLE_LEVELS); i++) {
 		if (state->pgtable_pages[i] == NULL)
 			continue;
-		vmp_pagetable_page_pte_deleted(prototype ?
-			&kernel_procstate :
-			state->pgtable_pages[i]->process->vm,
-		    state->pgtable_pages[i], false);
+		if (prototype) {
+			vmp_pagetable_page_pte_deleted(&kernel_procstate,
+			    state->pgtable_pages[i], false);
+
+		} else {
+			kassert(state->pgtable_pages[i]->process != NULL);
+			vmp_pagetable_page_pte_deleted(
+			    state->pgtable_pages[i]->process->vm,
+			    state->pgtable_pages[i], false);
+		}
 	}
 }
 
@@ -241,6 +247,8 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, vm_object_t *obj,
 		indexes[1] = ((virta >> 12) & 0x1FF);
 		indexes[0] = 0;
 	}
+
+	memset(state->pgtable_pages, 0, sizeof(state->pgtable_pages));
 
 	/*
 	 * start by pinning root table with a valid-pte reference, to keep it

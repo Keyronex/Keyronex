@@ -148,7 +148,7 @@ vm_ps_map_physical_view(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size,
 	int r;
 	vm_map_entry_t *map_entry;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
-	pte_t *pte;
+	pte_t *pte = NULL;
 	struct vmp_pte_wire_state pte_wire;
 	ipl_t ipl;
 

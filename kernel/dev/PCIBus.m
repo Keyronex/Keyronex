@@ -57,10 +57,10 @@ static paddr_t ecam_base = -1;
 
 + (void)setMemorySpaceForInfo:(struct pci_dev_info *)info enabled:(BOOL)enabled
 {
-	if (enabled)
-		DISABLE_CMD_FLAG(info, (1 << 10));
+	if (!enabled)
+		DISABLE_CMD_FLAG(info, (1 << 1));
 	else
-		ENABLE_CMD_FLAG(info, (1 << 10));
+		ENABLE_CMD_FLAG(info, (1 << 1));
 }
 
 + (void)enumerateCapabilitiesForInfo:(struct pci_dev_info *)info
