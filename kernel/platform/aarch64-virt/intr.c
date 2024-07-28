@@ -109,6 +109,7 @@ c_el1_intr(md_intr_frame_t *frame)
 		}
 
 		ipl = splraise(ipl);
+
 		TAILQ_FOREACH (entry, entries, queue_entry) {
 			bool r = entry->handler(frame, entry->arg);
 			(void)r;
@@ -118,8 +119,8 @@ c_el1_intr(md_intr_frame_t *frame)
 	}
 	}
 	gengic_eoi(intr);
-	ki_disable_interrupts();
 	splx(ipl);
+	ki_disable_interrupts();
 }
 
 void

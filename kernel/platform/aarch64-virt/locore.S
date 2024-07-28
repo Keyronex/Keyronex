@@ -56,11 +56,10 @@
 
 		mrs x0, elr_el1
 		str x0, [sp, #248]
-#		.cfi_offset ???, 248
+		.cfi_offset 32, 248
 
 		mrs x0, spsr_el1
 		str x0, [sp, #256]
-#		.cfi_offset ???, 256
 
 		mrs x0, esr_el1
 		str x0, [sp, #264]
@@ -72,6 +71,19 @@
 
 		mov x0, sp
 		bl \c_func
+
+		ldr x0, [sp, #248]
+		msr elr_el1, x0
+		.cfi_restore 32
+
+		ldr x0, [sp, #256]
+		msr spsr_el1, x0
+
+		ldr x0, [sp, #264]
+		msr esr_el1, x0
+
+		ldr x0, [sp, #272]
+		msr far_el1, x0
 
 		ldp x0, x1, [sp, #8 * 0]
 		.cfi_restore x0
@@ -85,7 +97,7 @@
 		ldp x6, x7, [sp, #8 * 6]
 		.cfi_restore x6
 		.cfi_restore x7
-		ldp x8, x9, [sp, #8 * 7]
+		ldp x8, x9, [sp, #8 * 8]
 		.cfi_restore x8
 		.cfi_restore x9
 		ldp x10, x11, [sp, #8 * 10]
