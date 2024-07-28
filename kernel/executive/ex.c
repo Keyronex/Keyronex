@@ -6,9 +6,9 @@
 
 #include "exp.h"
 #include "kdk/executive.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
@@ -135,7 +135,9 @@ test_unmap(void)
 }
 #endif
 
-static void test_fs_refcounts(void) {
+static void
+test_fs_refcounts(void)
+{
 	namecache_handle_t hdl = root_nch, write_test, nonexist;
 	int r;
 
@@ -217,9 +219,12 @@ mount_root(void)
 {
 	const char *how = boot_config.root;
 
-	if (how == NULL) {
+	if (how == NULL)
 		kfatal("No root FS specified.\n");
-	} else if (strncmp(how, "9p:", 3) == 0) {
+
+	kprintf("ex_mount_root: %s\n", how);
+
+	if (strncmp(how, "9p:", 3) == 0) {
 		ninep_vfsops.mount((namecache_handle_t) {}, how + 3);
 	} else {
 		kfatal("Can't handle it\n");

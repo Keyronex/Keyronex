@@ -87,7 +87,7 @@ flush_timer_dpc_handler(void *arg)
 
 	r = [provider enableDevice];
 	if (r != 0) {
-		DKDevLog(self, "Failed to enable device: %d", r);
+		DKDevLog(self, "Failed to enable device: %d\n", r);
 	}
 
 	[self registerDevice];

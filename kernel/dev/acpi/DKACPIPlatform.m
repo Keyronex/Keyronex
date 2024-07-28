@@ -5,9 +5,11 @@
 #include "dev/PS2Keyboard.h"
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/acpi/tables.h"
-#include "kdk/kmem.h"
+#include "kdk/executive.h"
 #include "kdk/kern.h"
+#include "kdk/kmem.h"
 #include "kdk/object.h"
+#include "kdk/vm.h"
 #include "uacpi/event.h"
 #include "uacpi/internal/namespace.h"
 #include "uacpi/kernel_api.h"
@@ -56,7 +58,10 @@ struct pcie_ecam *ecam;
 		return;
 	}
 
-	pcibus = [[PCIBus alloc] initWithProvider:self acpiNode:node segment:seg bus:bus];
+	pcibus = [[PCIBus alloc] initWithProvider:self
+					 acpiNode:node
+					  segment:seg
+					      bus:bus];
 	(void)pcibus;
 }
 
@@ -124,24 +129,50 @@ parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
 }
 #elif defined(__aarch64__)
 
+static paddr_t last_gicc_base = 0;
+
 static void
 parse_giccs(struct acpi_entry_hdr *item, void *arg)
 {
 	struct acpi_madt_gicc *gicc;
+	extern vaddr_t gicc_base;
+	bool matched = false;
 
 	if (item->type != 0xb)
 		return;
 
 	gicc = (void *)item;
-	kprintf("Found a GICC: "
-		"GIC interface num %d, ACPI UID %d base address 0x%zx\n",
-	    gicc->interface_number, gicc->acpi_id, gicc->address);
+	kprintf(
+	    "Found a GICC: "
+	    "GIC interface num %u, ACPI UID %u, MPIDR %lu, base address 0x%zx\n",
+	    gicc->interface_number, gicc->acpi_id, gicc->mpidr, gicc->address);
+
+	if (last_gicc_base != 0)
+		kassert(last_gicc_base == gicc->address);
+
+	for (size_t i = 0; i < ncpus; i++) {
+		if (cpus[i]->cpucb.mpidr == gicc->mpidr) {
+			int r;
+
+			kassert(!matched);
+			matched = true;
+
+			r = vm_ps_map_physical_view(kernel_process->vm,
+			    &cpus[i]->cpucb.gicc_base, PGSIZE, gicc->address,
+			    kVMAll, kVMAll, false);
+			kassert(r == 0);
+		}
+	}
+
+	kassert(matched);
 }
 
 static void
 parse_gicds(struct acpi_entry_hdr *item, void *arg)
 {
 	struct acpi_madt_gicd *gicd;
+	extern vaddr_t gicd_base;
+	int r;
 
 	if (item->type != 0xc)
 		return;
@@ -149,6 +180,10 @@ parse_gicds(struct acpi_entry_hdr *item, void *arg)
 	gicd = (void *)item;
 	kprintf("Found a GICD: GIC version num %d, base address 0x%zx\n",
 	    gicd->gic_version, gicd->address);
+
+	r = vm_ps_map_physical_view(kernel_process->vm, &gicd_base, PGSIZE,
+	    gicd->address, kVMAll, kVMAll, false);
+	kassert(r == 0);
 }
 
 static void

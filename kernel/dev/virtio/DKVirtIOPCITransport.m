@@ -2,6 +2,7 @@
 #include "ddk/virtio_pcireg.h"
 #include "ddk/virtioreg.h"
 #include "dev/PCIBus.h"
+#include "dev/aarch64/GICv2Distributor.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "dev/virtio/VirtIO9pPort.h"
 #include "dev/virtio/VirtIODisk.h"
@@ -82,7 +83,14 @@ dpc_handler(void *arg)
 	case VIRTIO_PCI_CAP_NOTIFY_CFG: {
 		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
-		m_notifyBase = P2V(phys);
+		vaddr_t virt;
+		int r;
+
+		r = vm_ps_map_physical_view(&kernel_procstate, &virt, PGSIZE,
+		    phys, kVMAll, kVMAll, false);
+		kassert(r == 0);
+
+		m_notifyBase = virt;
 		m_notifyOffMultiplier = PCIINFO_CFG_READ(l, &m_pciInfo,
 		    capOffset + sizeof(struct virtio_pci_cap));
 		break;
@@ -91,14 +99,28 @@ dpc_handler(void *arg)
 	case VIRTIO_PCI_CAP_ISR_CFG: {
 		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
-		m_isr = (uint8_t *)(P2V(phys));
+		vaddr_t virt;
+		int r;
+
+		r = vm_ps_map_physical_view(&kernel_procstate, &virt, PGSIZE,
+		    phys, kVMAll, kVMAll, false);
+		kassert(r == 0);
+
+		m_isr = (uint8_t *)virt;
 		break;
 	}
 
 	case VIRTIO_PCI_CAP_DEVICE_CFG: {
 		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
-		m_deviceCfg = (void *)(P2V(phys));
+		vaddr_t virt;
+		int r;
+
+		r = vm_ps_map_physical_view(&kernel_procstate, &virt, PGSIZE,
+		    phys, kVMAll, kVMAll, false);
+		kassert(r == 0);
+
+		m_deviceCfg = (void *)virt;
 		break;
 	}
 
@@ -284,8 +306,13 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #else
-	DKDevLog(self, "Allocate an interrupt for GSI %d...\n", m_pciInfo.gsi);
-	r = -1;
+	r = [GICv2Distributor handleGSI:m_pciInfo.gsi
+		  withHandler:vitrio_handler
+		     argument:self
+		isLowPolarity:m_pciInfo.lopol
+	      isEdgeTriggered:m_pciInfo.edge
+		   atPriority:kIPLHigh
+			entry:&m_intxEntry];
 #endif
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);

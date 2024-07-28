@@ -119,10 +119,8 @@ ap_init(struct limine_smp_info *smpi)
 #define SMPI_ID mpidr
 #endif
 
-static void
-smp_init()
-{
-#if !defined(__m68k__)
+static void smp_allocate(void) {
+	#if !defined(__m68k__)
 	struct limine_smp_response *smpr = smp_request.response;
 	ncpus = smpr->cpu_count;
 #endif
@@ -144,17 +142,40 @@ smp_init()
 			bootstrap_cpu.num = i;
 			cpus[i] = &bootstrap_cpu;
 			threads[i] = &thread0;
-			common_core_init(&bootstrap_cpu, &thread0, smpi);
+			bootstrap_cpu.cpucb.SMPI_ID = smpi->SMPI_ID;
 		} else {
 			kcpu_t *cpu = kmem_alloc(sizeof *cpu);
 			kthread_t *thread = kmem_alloc(sizeof *thread);
 
 			cpu->num = i;
 			cpu->curthread = thread;
+			cpu->cpucb.SMPI_ID = smpi->SMPI_ID;
 			cpus[i] = cpu;
 			threads[i] = thread;
 			thread->last_cpu = cpu;
+		}
+	}
+#endif
+}
 
+static void
+smp_start()
+{
+#if !defined(__m68k__)
+	struct limine_smp_response *smpr = smp_request.response;
+
+	kprintf("smp_start: starting %zu APs\n", ncpus - 1);
+
+	for (size_t i = 0; i < ncpus; i++) {
+		struct limine_smp_info *smpi = smpr->cpus[i];
+
+		kprintf("%zu: SMPI ID %lx\n", i, smpi->SMPI_ID);
+
+		if (smpi->SMPI_ID == smpr->SMPR_BSP_ID) {
+			smpi->extra_argument = (uint64_t)&bootstrap_cpu;
+			common_core_init(&bootstrap_cpu, &thread0, smpi);
+		} else {
+			kcpu_t *cpu = cpus[i];
 			smpi->extra_argument = (uint64_t)cpu;
 			smpi->goto_address = ap_init;
 		}
@@ -206,9 +227,10 @@ _start(void)
 	kmem_init();
 	obj_init();
 	ps_early_init(&thread0);
+	smp_allocate();
 	ddk_init();
 	ddk_early_init();
-	smp_init();
+	smp_start();
 #if 0
 	ntcompat_init();
 #endif

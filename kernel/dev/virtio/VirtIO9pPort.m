@@ -83,7 +83,7 @@ static int counter = 0;
 
 	r = [provider enableDevice];
 	if (r != 0) {
-		DKDevLog(self, "Failed to enable device: %d", r);
+		DKDevLog(self, "Failed to enable device: %d\n", r);
 		return nil;
 	}
 

@@ -73,4 +73,6 @@ void
 plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi)
 {
+	void enable_timer(void);
+	enable_timer();
 }
