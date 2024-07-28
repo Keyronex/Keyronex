@@ -6,6 +6,8 @@
 #include "kdk/vm.h"
 #include "kern/ki.h"
 
+static TAILQ_HEAD(intr_entries, intr_entry) intr_entries[1024];
+
 static inline void
 write_vbar_el1(void *addr)
 {
@@ -47,29 +49,77 @@ c_el1t_error(md_intr_frame_t *frame)
 void
 c_el1_sync(md_intr_frame_t *frame)
 {
-	kfatal(
-	    "el1 sync: frame %p, elr 0x%zx, far 0x%zx, spsr 0x%zx, esr 0x%zx\n",
+	splraise(kIPLHigh);
+	kfatal("el1 sync: frame %p, elr 0x%zx, far 0x%zx, spsr 0x%zx, "
+	       "esr 0x%zx\n",
 	    frame, frame->elr, frame->far, frame->spsr, frame->esr);
+}
+
+bool
+ki_disable_interrupts(void)
+{
+	uint64_t daif;
+	asm volatile("mrs %0, daif" : "=r"(daif));
+	asm volatile("msr daifset, #0xf");
+	return (daif & 0xf) == 0;
+}
+
+void
+ki_set_interrupts(bool enable)
+{
+	if (enable)
+		asm volatile("msr daifclr, #0xf");
+	else
+		asm volatile("msr daifset, #0xf");
 }
 
 void
 c_el1_intr(md_intr_frame_t *frame)
 {
 	uint32_t intr = gengic_acknowledge();
+	ipl_t ipl;
+
 	switch (intr) {
 	case 30: {
-		ipl_t ipl = splraise(kIPLHigh);
+		ipl = splraise(kIPLHigh);
 		void reset_timer(void);
 		reset_timer();
 		ki_cpu_hardclock(frame, curcpu());
-		splx(ipl);
 		break;
 	}
 
-	default:
-		kfatal("el1 intr: IAR = %u\n", intr);
+	default: {
+		struct intr_entries *entries = &intr_entries[intr];
+		struct intr_entry *entry;
+		ipl = 0;
+
+		if (TAILQ_EMPTY(entries)) {
+			kfatal("Unhandled interrupt %u.", intr);
+		}
+
+		TAILQ_FOREACH (entry, entries, queue_entry) {
+			ipl = MAX2(ipl, entry->ipl);
+		}
+
+		if (ipl < splget()) {
+			kprintf(
+			    "In handling interrupt %u:\n"
+			    "IPL not less or equal (running at %d, interrupt priority %d)\n",
+			    intr, splget(), ipl);
+		}
+
+		ipl = splraise(ipl);
+		TAILQ_FOREACH (entry, entries, queue_entry) {
+			bool r = entry->handler(frame, entry->arg);
+			(void)r;
+		}
+
+		break;
+	}
 	}
 	gengic_eoi(intr);
+	ki_disable_interrupts();
+	splx(ipl);
 }
 
 void
@@ -113,24 +163,6 @@ intr_init(void)
 {
 	extern void *vectors;
 	write_vbar_el1(&vectors);
-}
-
-bool
-ki_disable_interrupts(void)
-{
-	uint64_t daif;
-	asm volatile("mrs %0, daif" : "=r"(daif));
-	asm volatile("msr daifset, #0xf");
-	return (daif & 0xf) == 0;
-}
-
-void
-ki_set_interrupts(bool enable)
-{
-	if (enable)
-		asm volatile("msr daifclr, #0xf");
-	else
-		asm volatile("msr daifset, #0xf");
 }
 
 ipl_t
@@ -177,4 +209,24 @@ splget(void)
 	ipl_t old = curcpu()->cpucb.ipl;
 	ki_set_interrupts(x);
 	return old;
+}
+
+void
+irq_init(void)
+{
+	for (int i = 0; i < elementsof(intr_entries); i++) {
+		TAILQ_INIT(&intr_entries[i]);
+	}
+}
+
+void
+md_intr_register(const char *name, uint32_t gsi, ipl_t prio,
+    intr_handler_t handler, void *arg, bool shareable, struct intr_entry *entry)
+{
+	entry->name = name;
+	entry->ipl = prio;
+	entry->handler = handler;
+	entry->arg = arg;
+	entry->shareable = shareable;
+	TAILQ_INSERT_TAIL(&intr_entries[gsi], entry, queue_entry);
 }

@@ -1,7 +1,10 @@
 #ifndef KRX_KDK_AARCH64_H
 #define KRX_KDK_AARCH64_H
 
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "kdk/queue.h"
 
 #define KRX_BIG_ENDIAN 0
 #define KRX_LITTLE_ENDIAN 1
@@ -64,8 +67,10 @@ typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);
 
 /*! A private structure. */
 struct intr_entry {
+	TAILQ_ENTRY(intr_entry) queue_entry;
 	const char *name;
 	ipl_t ipl;
+	intr_handler_t handler;
 	void *arg;
 	bool shareable;
 };
@@ -95,6 +100,10 @@ curthread(void)
 	asm volatile("mrs %0, tpidr_el1" : "=r"(thread));
 	return thread;
 }
+
+void md_intr_register(const char *name, uint32_t gsi, ipl_t prio,
+    intr_handler_t handler, void *arg, bool shareable,
+    struct intr_entry *entry);
 
 extern struct kthread thread0;
 extern struct kcpu bootstrap_cpu;

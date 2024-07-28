@@ -16,6 +16,8 @@
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry
 {
+	md_intr_register("gsi", gsi, prio, handler, arg, !isEdgeTriggered, entry);
+
 	gengic_dist_setedge(gsi, isEdgeTriggered);
 	gengic_dist_settarget(gsi, (1 << ncpus) - 1);
 	gengic_dist_setenabled(gsi);

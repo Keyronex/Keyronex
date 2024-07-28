@@ -10,6 +10,7 @@
 
 void gicc_for_mpidr(uint32_t mpidr);
 void intr_init(void);
+void irq_init(void);
 void vmp_set_ttbr1(void);
 
 volatile uint8_t *uart = (uint8_t *)0x09000000;
@@ -46,6 +47,7 @@ plat_first_init(void)
 
 	asm volatile ("msr tpidr_el1, %0" : : "r" (&thread0) : "memory");
 	intr_init();
+	irq_init();
 }
 
 void
