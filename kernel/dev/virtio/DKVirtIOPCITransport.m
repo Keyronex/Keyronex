@@ -66,6 +66,7 @@ dpc_handler(void *arg)
 		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
 		m_commonCfg = (struct virtio_pci_common_cfg *)(P2V(phys));
+		kprintf("m_commonCfg: %p (phys %p)\n", m_commonCfg, phys);
 		break;
 	}
 

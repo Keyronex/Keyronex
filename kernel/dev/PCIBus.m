@@ -37,6 +37,19 @@ enum {
 
 @implementation PCIBus
 
+static paddr_t ecam_base = -1;
+
++ (void)setECAMBase:(paddr_t)base
+{
+	ecam_base = base;
+}
+
++ (paddr_t)getECAMBaseForSegment:(uint16_t)seg bus:(uint8_t)bus
+{
+	kassert(ecam_base != -1);
+	return ecam_base + (seg << 20) + (bus << 15);
+}
+
 + (void)enableBusMasteringForInfo:(struct pci_dev_info *)info
 {
 	ENABLE_CMD_FLAG(info, 0x4);

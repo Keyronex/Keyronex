@@ -262,6 +262,11 @@ int vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object,
     vm_protection_t initial_protection, vm_protection_t max_protection,
     bool inherit_shared, bool cow, bool exact);
 
+/*! Map a physical view into an address space. */
+int vm_ps_map_physical_view(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size,
+    paddr_t phys, vm_protection_t initial_protection,
+    vm_protection_t max_protection, bool exact);
+
 /*! Deallocate part of address space. */
 int vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size);
 

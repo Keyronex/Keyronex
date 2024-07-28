@@ -38,6 +38,9 @@ struct pci_dev_info {
 	uacpi_namespace_node *acpiNode;
 }
 
++ (void)setECAMBase:(paddr_t)base;
++ (paddr_t)getECAMBaseForSegment:(uint16_t)seg bus:(uint8_t)bus;
+
 + (void)enableBusMasteringForInfo:(struct pci_dev_info *)info;
 + (void)setMemorySpaceForInfo:(struct pci_dev_info *)info enabled:(BOOL)enabled;
 + (void)enumerateCapabilitiesForInfo:(struct pci_dev_info *)info

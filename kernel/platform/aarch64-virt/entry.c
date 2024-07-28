@@ -31,6 +31,7 @@ md_raise_dpc_interrupt(void)
 void
 md_cpu_init(kcpu_t *cpu)
 {
+	cpu->cpucb.ipl = 0;
 }
 
 void

@@ -1,9 +1,11 @@
-#include "kdk/kmem.h"
+#include "dev/PCIBus.h"
 #include "kdk/kern.h"
+#include "kdk/kmem.h"
 #include "kdk/vm.h"
 #include "uacpi/kernel_api.h"
 #include "uacpi/status.h"
 #include "uacpi/types.h"
+#include "vm/vmp.h"
 
 #ifdef AMD64
 #include "dev/amd64/IOAPIC.h"
@@ -109,46 +111,117 @@ pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
 	outl(0xCFC + (offset & 3), value);
 }
 #else
+
+struct ecam_view {
+	RB_ENTRY(ecam_view) entry;
+	uint16_t seg;
+	uint32_t bus;
+	vaddr_t base;
+};
+
+RB_HEAD(ecam_view_tree, ecam_view) ecam_views;
+RB_PROTOTYPE_STATIC(ecam_view_tree, ecam_view, entry, ecam_view_cmp);
+
+static int
+ecam_view_cmp(struct ecam_view *a, struct ecam_view *b)
+{
+	if (a->seg < b->seg)
+		return -1;
+	if (a->seg > b->seg)
+		return 1;
+	if (a->bus < b->bus)
+		return -1;
+	if (a->bus > b->bus)
+		return 1;
+	return 0;
+}
+
+RB_GENERATE_STATIC(ecam_view_tree, ecam_view, entry, ecam_view_cmp);
+
+static vaddr_t
+find_or_make_view(uint16_t seg, uint8_t bus)
+{
+	struct ecam_view key, *view;
+
+	key.seg = seg;
+	key.bus = bus;
+	view = RB_FIND(ecam_view_tree, &ecam_views, &key);
+
+	if (view == NULL) {
+		int r;
+		paddr_t phys;
+
+		phys = [PCIBus getECAMBaseForSegment:seg bus:bus];
+
+		view = kmem_alloc(sizeof(*view));
+		view->seg = seg;
+		view->bus = bus;
+		r = vm_ps_map_physical_view(&kernel_procstate, &view->base,
+		    0x100000, phys, kVMAll, kVMAll, false);
+		kassert(r == 0);
+		RB_INSERT(ecam_view_tree, &ecam_views, view);
+	}
+
+	return view->base;
+}
+
+#define PCI_CONFIG_OFFSET(slot, function, offset) \
+	((slot << 15) | (function << 12) | (offset))
+
 uint8_t
 pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
-	kfatal("implement me!\n");
+	vaddr_t base = find_or_make_view(seg, bus);
+	return *(volatile uint8_t *)(base +
+	    PCI_CONFIG_OFFSET(slot, function, offset));
 }
 
 uint16_t
 pci_readw(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
-	kfatal("implement me!\n");
+	vaddr_t base = find_or_make_view(seg, bus);
+	return *(volatile uint16_t *)(base +
+	    PCI_CONFIG_OFFSET(slot, function, offset));
 }
 
 uint32_t
 pci_readl(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
-	kfatal("implement me!\n");
+	vaddr_t base = find_or_make_view(seg, bus);
+	return *(volatile uint32_t *)(base +
+	    PCI_CONFIG_OFFSET(slot, function, offset));
 }
 
 void
 pci_writeb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint8_t value)
 {
-	kfatal("implement me!\n");
+	vaddr_t base = find_or_make_view(seg, bus);
+	*(volatile uint8_t *)(base +
+	    PCI_CONFIG_OFFSET(slot, function, offset)) = value;
 }
 
 void
 pci_writew(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint16_t value)
 {
+    vaddr_t base = find_or_make_view(seg, bus);
+    *(volatile uint16_t *)(base +
+	PCI_CONFIG_OFFSET(slot, function, offset)) = value;
 }
 
 void
 pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint32_t value)
 {
-	kfatal("implement me!\n");
+    vaddr_t base = find_or_make_view(seg, bus);
+    *(volatile uint32_t *)(base +
+	PCI_CONFIG_OFFSET(slot, function, offset)) = value;
 }
+
 #endif
 
 void

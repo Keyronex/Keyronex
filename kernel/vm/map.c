@@ -141,6 +141,68 @@ vm_ps_map_object_view(vm_procstate_t *vmps, vm_object_t *object, vaddr_t *vaddrp
 }
 
 int
+vm_ps_map_physical_view(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size,
+    paddr_t phys, vm_protection_t initial_protection,
+    vm_protection_t max_protection, bool exact)
+{
+	int r;
+	vm_map_entry_t *map_entry;
+	vmem_addr_t addr = exact ? *vaddrp : 0;
+	pte_t *pte;
+	struct vmp_pte_wire_state pte_wire;
+	ipl_t ipl;
+
+	kassert(size % PGSIZE == 0);
+	kassert(phys % PGSIZE == 0);
+
+	ex_rwlock_acquire_write(&vmps->map_lock,
+	    "map_object_view:vmps->map_lock");
+
+	r = vmem_xalloc(&vmps->vmem, size, 0, 0, 0, addr, 0,
+	    exact ? kVMemExact : 0, &addr);
+	if (r < 0) {
+		kfatal("vm_ps_map_object_view failed at vmem_xalloc: %d\n", r);
+	}
+
+	map_entry = kmem_alloc(sizeof(vm_map_entry_t));
+	map_entry->start = (vaddr_t)addr;
+	map_entry->end = addr + size;
+	map_entry->flags.cow = false;
+	map_entry->flags.inherit_shared = true;
+	map_entry->flags.offset = phys / PGSIZE;
+	map_entry->flags.inherit_shared = false;
+	map_entry->flags.protection = initial_protection;
+	map_entry->flags.max_protection = max_protection;
+	map_entry->object = NULL;
+
+	*vaddrp = addr;
+
+	ipl = vmp_acquire_pfn_lock();
+	for (int i = 0; i < size - 1; i += PGSIZE, addr += PGSIZE) {
+		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+			if (pte)
+				vmp_pte_wire_state_release(&pte_wire, false);
+			r = vmp_wire_pte(kernel_process, addr, 0, &pte_wire,
+			    true);
+			kassert(r == 0);
+			pte = pte_wire.pte;
+		}
+
+		vmp_md_pte_create_hw(pte, (phys >> VMP_PAGE_SHIFT) + i / PGSIZE,
+		    true, false);
+		vmp_pagetable_page_noswap_pte_created(vmps,
+		    pte_wire.pgtable_pages[0], true);
+	}
+	vmp_release_pfn_lock(ipl);
+
+	RB_INSERT(vm_map_entry_rbtree, &vmps->vad_queue, map_entry);
+
+	ex_rwlock_release_write(&vmps->map_lock);
+
+	return 0;
+}
+
+int
 vm_ps_deallocate(vm_procstate_t *vmps, vaddr_t start, size_t size)
 {
 	vm_map_entry_t *entry, *tmp;
