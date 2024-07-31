@@ -60,7 +60,26 @@ plat_irq(md_intr_frame_t *frame)
 	uint32_t intr = gengic_acknowledge();
 	ipl_t ipl;
 
-	switch (intr) {
+	switch (intr & 0x3ff) {
+	case 2: {
+		ipl = spldpc();
+		ki_set_interrupts(true);
+		void ki_tlb_flush_handler(void);
+		ki_tlb_flush_handler();
+		break;
+	}
+
+	case 4: {
+		ipl = spldpc();
+		ki_set_interrupts(true);
+		gengic_eoi(intr);
+		ki_dispatch_dpcs(curcpu());
+		splx(ipl);
+		ki_disable_interrupts();
+		return;
+		break;
+	}
+
 	case 30: {
 		ipl = splraise(kIPLHigh);
 		void reset_timer(void);
@@ -69,8 +88,13 @@ plat_irq(md_intr_frame_t *frame)
 		break;
 	}
 
+	case 1023: {
+		ipl = splget();
+		break;
+	}
+
 	default: {
-		struct intr_entries *entries = &intr_entries[intr];
+		struct intr_entries *entries = &intr_entries[intr & 0x3ff];
 		struct intr_entry *entry;
 		ipl = 0;
 
@@ -90,6 +114,7 @@ plat_irq(md_intr_frame_t *frame)
 		}
 
 		ipl = splraise(ipl);
+		ki_set_interrupts(true);
 
 		TAILQ_FOREACH (entry, entries, queue_entry) {
 			bool r = entry->handler(frame, entry->arg);

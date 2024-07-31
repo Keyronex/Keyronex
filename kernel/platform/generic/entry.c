@@ -103,7 +103,6 @@ static void
 ap_init(struct limine_smp_info *smpi)
 {
 	kcpu_t *cpu = (kcpu_t *)smpi->extra_argument;
-	// for (;;) ;
 	plat_ap_early_init(cpu, smpi);
 	common_core_init(cpu, cpu->curthread, smpi);
 	/* this is now that CPU's idle thread loop */
@@ -169,8 +168,6 @@ smp_start()
 	for (size_t i = 0; i < ncpus; i++) {
 		struct limine_smp_info *smpi = smpr->cpus[i];
 
-		kprintf("%zu: SMPI ID %lx\n", i, smpi->SMPI_ID);
-
 		if (smpi->SMPI_ID == smpr->SMPR_BSP_ID) {
 			smpi->extra_argument = (uint64_t)&bootstrap_cpu;
 			common_core_init(&bootstrap_cpu, &thread0, smpi);
@@ -189,6 +186,8 @@ smp_start()
 
 	while (cpus_up != ncpus)
 		;
+
+	kprintf("smp_start: all cores up\n");
 
 	idle_mask = (1 << ncpus) - 1;
 }

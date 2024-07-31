@@ -53,21 +53,25 @@ plat_first_init(void)
 void
 plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
 {
+	vmp_set_ttbr1();
+	asm volatile("msr tpidr_el1, %0" : : "r"(cpu->curthread) : "memory");
 	asm volatile("mov x0, sp\n"
 		     "msr SPSel, #1\n"
 		     "mov sp, x0\n"
 		     :
 		     :
 		     : "x0");
-	vmp_set_ttbr1();
 	intr_init();
-	kprintf("AP early init..\n");
 }
 
 void
 plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi)
 {
+	uintptr_t cpacr;
+	asm volatile("mrs %0, cpacr_el1" : "=r"(cpacr));
+	/* fpen */
+	asm volatile("msr cpacr_el1, %0" ::"r"(cpacr | (0b11 << 20)));
 	cpu->cpucb.mpidr = smpi->mpidr;
 }
 

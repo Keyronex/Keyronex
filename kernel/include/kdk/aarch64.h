@@ -79,12 +79,14 @@ struct intr_entry {
 
 typedef struct md_pcb {
 	aarch64_context_t genregs;
+	uint64_t fp[66];
 } md_pcb_t;
 
 typedef struct md_cpucb {
 	int dpc_int;
 	ipl_t ipl;
 	uint32_t mpidr;
+	uint32_t gic_interface_number;
 	uintptr_t gicc_base;
 } md_cpucb_t;
 

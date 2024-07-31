@@ -79,6 +79,8 @@ common_sync(md_intr_frame_t *frame)
 	struct aarch64_esr esr;
 	bool userland = false;
 
+	ki_set_interrupts(true);
+
 	memcpy(&esr, &frame->esr, sizeof(struct aarch64_esr));
 
 	switch (esr.generic.EC) {
@@ -108,6 +110,7 @@ common_sync(md_intr_frame_t *frame)
 
 		(void)insn;
 		(void)userland;
+
 		vmp_fault(frame, frame->far, write, NULL);
 
 		break;

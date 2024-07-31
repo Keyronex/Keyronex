@@ -156,6 +156,9 @@ parse_giccs(struct acpi_entry_hdr *item, void *arg)
 			kassert(!matched);
 			matched = true;
 
+			cpus[i]->cpucb.gic_interface_number =
+			    gicc->interface_number;
+
 			r = vm_ps_map_physical_view(kernel_process->vm,
 			    &cpus[i]->cpucb.gicc_base, PGSIZE, gicc->address,
 			    kVMAll, kVMAll, false);

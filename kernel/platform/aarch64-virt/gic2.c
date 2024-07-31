@@ -1,5 +1,6 @@
 #include "kdk/kern.h"
 #include "kdk/vm.h"
+#include "kern/ki.h"
 
 /* GIC stuff */
 vaddr_t gicd_base = 0x0;
@@ -11,6 +12,7 @@ enum {
 	kGICD_IPRIORITYR = 0x0400,
 	kGICD_ITARGETSR = 0x0800,
 	kGICD_ICFGR = 0x0c00,
+	kGICD_SGIR = 0x0f00,
 };
 
 enum {
@@ -146,10 +148,30 @@ enable_timer(void)
 	gicc_write_ctlr(1);
 	gicc_write(kGICC_PMR, 0xff);
 
+	gicd_write_isenabler(2, 1);
+	gicd_write_isenabler(4, 1);
 	gicd_write_isenabler(30, 1);
 
 	asm volatile("msr daifclr, #0x2");
 
 	// asm volatile("msr icc_igrpen1_el1, %0" ::"r"((uint32_t)1));
 	// asm volatile("msr icc_igrpen0_el1, %0" ::"r"((uint32_t)1));
+}
+
+void
+md_send_invlpg_ipi(kcpu_t *cpu)
+{
+	uint32_t sgi = 2;
+	uint32_t target_list = (1 << cpu->cpucb.gic_interface_number);
+	uint32_t sgi_reg = sgi | (target_list << 16);
+	gicd_write(kGICD_SGIR, sgi_reg);
+}
+
+void
+md_send_dpc_ipi(kcpu_t *cpu)
+{
+	uint32_t sgi = 4;
+	uint32_t target_list = (1 << cpu->cpucb.gic_interface_number);
+	uint32_t sgi_reg = sgi | (target_list << 16);
+	gicd_write(kGICD_SGIR, sgi_reg);
 }
