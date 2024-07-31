@@ -25,7 +25,7 @@ reset_timer(void)
 {
 	uint64_t deadline;
 	asm volatile("mrs %0, cntpct_el0" : "=r"(deadline));
-	deadline += timer_hz / 4;
+	deadline += timer_hz / KERN_HZ;
 	asm volatile("msr cntp_cval_el0, %0" ::"r"(deadline));
 }
 
@@ -132,7 +132,7 @@ gengic_dist_setenabled(uint32_t gsi)
 void
 enable_timer(void)
 {
-#if 0
+#if 1
 	asm volatile("mrs %0, cntfrq_el0" : "=r"(timer_hz));
 	kprintf("ticks per second = %lu\n", timer_hz);
 

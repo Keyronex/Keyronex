@@ -23,7 +23,7 @@ read_ttbr1_el1(void)
 	return res;
 }
 
-static inline void
+void
 write_ttbr0_el1(paddr_t val)
 {
 	asm("msr ttbr0_el1, %0" : : "r"(val));

@@ -305,6 +305,9 @@ typedef enum kthread_state {
  * (t) => thread lock
  */
 typedef struct kthread {
+	/*! Kernel stack base. */
+	void *kstack_base;
+
 	/*! (~) name */
 	const char *name;
 	/*! (~) is it a userland thread? */
@@ -320,8 +323,6 @@ typedef struct kthread {
 	LIST_ENTRY(kthread) list_link;
 	/*! Machine-specific context. */
 	md_pcb_t pcb;
-	/*! Kernel stack base. */
-	void *kstack_base;
 	/*! (t?) CPU this thread last ran on */
 	struct kcpu *last_cpu;
 	/*! (t, sometimes?) current or soon-to-happen thread state */

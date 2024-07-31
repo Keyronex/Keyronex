@@ -13,7 +13,7 @@ void intr_init(void);
 void irq_init(void);
 void vmp_set_ttbr1(void);
 
-volatile uint8_t *uart = (uint8_t *)0x09000000;
+volatile uint8_t *uart = (uint8_t *)P2V(0x09000000);
 
 void
 pac_putc(int c, void *ctx)

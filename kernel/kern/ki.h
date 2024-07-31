@@ -88,4 +88,7 @@ void ki_tlb_flush_vaddr_globally(uintptr_t vaddr);
 
 void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
 
+bool ki_disable_interrupts(void);
+void ki_set_interrupts(bool enabled);
+
 #endif /* KRX_NANOKERN_KI_H */

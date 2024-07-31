@@ -61,6 +61,8 @@ typedef struct __attribute__((packed)) md_intr_frame {
 	uint64_t spsr;
 	uint64_t esr;
 	uint64_t far;
+	uint64_t sp_el0;
+	uint64_t tpidr_el0;
 } md_intr_frame_t;
 
 typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);

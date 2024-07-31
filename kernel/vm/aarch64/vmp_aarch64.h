@@ -51,7 +51,11 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool cacheable)
 	pte.hw.pfn = pfn;
 	pte.hw.valid = 1;
 	pte.hw.af = 1;
-	pte.hw.ap = writeable ? 0b01 : 0b10;
+#if 0 /* kernel-only! */
+	pte.hw.ap = writeable ? 0b00 : 0b10;
+#else
+	pte.hw.ap = writeable ? 0b01 : 0b11;
+#endif
 	pte.hw.sh = 0b11;
 	pte.hw.attrindx = cacheable ? 0 : 1;
 	pte.hw.reserved_must_be_1 = 1;

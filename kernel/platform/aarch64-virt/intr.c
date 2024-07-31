@@ -8,73 +8,54 @@
 
 static TAILQ_HEAD(intr_entries, intr_entry) intr_entries[1024];
 
-static inline void
-write_vbar_el1(void *addr)
+ipl_t
+splraise(ipl_t ipl)
 {
-	asm volatile("msr VBAR_EL1, %0" ::"r"(addr));
+	bool x = ki_disable_interrupts();
+	ipl_t old = curcpu()->cpucb.ipl;
+	kassert(ipl >= old);
+	curcpu()->cpucb.ipl = ipl;
+	if (ipl < kIPLHigh)
+		ki_set_interrupts(x);
+	return old;
 }
 
 void
-c_exception(md_intr_frame_t *frame)
+splx(ipl_t to)
 {
-	kfatal("exception\n");
+	bool x = ki_disable_interrupts();
+	kcpu_t *cpu = curcpu();
+	ipl_t old = cpu->cpucb.ipl;
+	kassert(to <= old);
+
+	if (old >= kIPLDPC && to < kIPLDPC) {
+		cpu->cpucb.ipl = kIPLDPC;
+		while (cpu->cpucb.dpc_int) {
+			curcpu()->cpucb.dpc_int = 0;
+			ki_set_interrupts(x);
+			ki_dispatch_dpcs(cpu);
+			x = ki_disable_interrupts();
+		}
+		cpu = curcpu(); /* could have migrated! */
+	}
+
+	cpu->cpucb.ipl = to;
+
+	if (to < kIPLHigh)
+		ki_set_interrupts(x);
+}
+
+ipl_t
+splget(void)
+{
+	bool x = ki_disable_interrupts();
+	ipl_t old = curcpu()->cpucb.ipl;
+	ki_set_interrupts(x);
+	return old;
 }
 
 void
-c_el1t_sync(md_intr_frame_t *frame)
-{
-	kfatal(
-	    "el1 T sync: frame %p, elr 0x%zx, far 0x%zx, spsr 0x%zx, esr 0x%zx\n",
-	    frame, frame->elr, frame->far, frame->spsr, frame->esr);
-}
-
-void
-c_el1t_irq(md_intr_frame_t *frame)
-{
-	kfatal("el1t irq\n");
-}
-
-void
-c_el1t_fiq(md_intr_frame_t *frame)
-{
-	kfatal("el1t fiq\n");
-}
-
-void
-c_el1t_error(md_intr_frame_t *frame)
-{
-	kfatal("el1t error\n");
-}
-
-void
-c_el1_sync(md_intr_frame_t *frame)
-{
-	splraise(kIPLHigh);
-	kfatal("el1 sync: frame %p, elr 0x%zx, far 0x%zx, spsr 0x%zx, "
-	       "esr 0x%zx\n",
-	    frame, frame->elr, frame->far, frame->spsr, frame->esr);
-}
-
-bool
-ki_disable_interrupts(void)
-{
-	uint64_t daif;
-	asm volatile("mrs %0, daif" : "=r"(daif));
-	asm volatile("msr daifset, #0xf");
-	return (daif & 0xf) == 0;
-}
-
-void
-ki_set_interrupts(bool enable)
-{
-	if (enable)
-		asm volatile("msr daifclr, #0xf");
-	else
-		asm volatile("msr daifset, #0xf");
-}
-
-void
-c_el1_intr(md_intr_frame_t *frame)
+plat_irq(md_intr_frame_t *frame)
 {
 	uint32_t intr = gengic_acknowledge();
 	ipl_t ipl;
@@ -121,95 +102,6 @@ c_el1_intr(md_intr_frame_t *frame)
 	gengic_eoi(intr);
 	splx(ipl);
 	ki_disable_interrupts();
-}
-
-void
-c_el1_fiq(md_intr_frame_t *frame)
-{
-	kfatal("el1 fiq\n");
-}
-
-void
-c_el1_error(md_intr_frame_t *frame)
-{
-	kfatal("el1 error\n");
-}
-
-void
-c_el0_sync(md_intr_frame_t *frame)
-{
-	kfatal("el0 sync\n");
-}
-
-void
-c_el0_intr(md_intr_frame_t *frame)
-{
-	kfatal("intr\n");
-}
-
-void
-c_el0_fiq(md_intr_frame_t *frame)
-{
-	kfatal("el0 fiq\n");
-}
-
-void
-c_el0_error(md_intr_frame_t *frame)
-{
-	kfatal("el0 error\n");
-}
-
-void
-intr_init(void)
-{
-	extern void *vectors;
-	write_vbar_el1(&vectors);
-}
-
-ipl_t
-splraise(ipl_t ipl)
-{
-	bool x = ki_disable_interrupts();
-	ipl_t old = curcpu()->cpucb.ipl;
-	kassert(ipl >= old);
-	curcpu()->cpucb.ipl = ipl;
-	if (ipl < kIPLHigh)
-		ki_set_interrupts(x);
-	return old;
-}
-
-void
-splx(ipl_t to)
-{
-	bool x = ki_disable_interrupts();
-	kcpu_t *cpu = curcpu();
-	ipl_t old = cpu->cpucb.ipl;
-	kassert(to <= old);
-
-	if (old >= kIPLDPC && to < kIPLDPC) {
-		cpu->cpucb.ipl = kIPLDPC;
-		while (cpu->cpucb.dpc_int) {
-			curcpu()->cpucb.dpc_int = 0;
-			ki_set_interrupts(x);
-			ki_dispatch_dpcs(cpu);
-			x = ki_disable_interrupts();
-		}
-		cpu = curcpu(); /* could have migrated! */
-	}
-
-	cpu->cpucb.ipl = to;
-
-	if (to < kIPLHigh)
-		ki_set_interrupts(x);
-}
-
-ipl_t
-splget(void)
-{
-	bool x = ki_disable_interrupts();
-	ipl_t old = curcpu()->cpucb.ipl;
-	ki_set_interrupts(x);
-	return old;
 }
 
 void
