@@ -292,7 +292,7 @@ setUpClass(Class class)
 	superclassName = (const char *)class->superclass;
 	if (superclassName != NULL) {
 		Class super = objc_classnameToClass(superclassName, false);
-		Class rootClass;
+		Class rootClass = NULL;
 
 		if (super == Nil)
 			return;

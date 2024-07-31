@@ -10,7 +10,7 @@ extern vm_procstate_t kernel_procstate;
 static inline paddr_t
 read_ttbr0_el1(void)
 {
-	void *res;
+	paddr_t res;
 	asm("mrs %0, ttbr0_el1" : "=r"(res));
 	return res;
 }
@@ -18,7 +18,7 @@ read_ttbr0_el1(void)
 static inline paddr_t
 read_ttbr1_el1(void)
 {
-	void *res;
+	paddr_t res;
 	asm("mrs %0, ttbr1_el1" : "=r"(res));
 	return res;
 }
@@ -52,7 +52,9 @@ vmp_md_ps_init(eprocess_t *ps)
 	vm_procstate_t *vmps = ps->vm;
 	vm_page_t *table_page;
 	paddr_t table_addr;
+#if 0
 	pte_t *table_ptebase;
+#endif
 
 	vm_page_alloc(&table_page, 0, kPageUsePML4, true);
 	table_page->process = ps;
@@ -75,7 +77,8 @@ vmp_md_ps_init(eprocess_t *ps)
 		memcpy((void *)P2V(table_addr), (void *)P2V(read_ttbr1_el1()),
 		    PGSIZE);
 
-#if 0
+
+#if 0 /* unneeded on aarch64! */
 		/* preallocate higher half entries */
 		table_ptebase = (pte_t *)P2V(table_addr);
 		for (int i = 256; i < 512; i++) {

@@ -11,6 +11,8 @@
 #if defined(__amd64__)
 #include "kdk/amd64.h"
 #include "dev/amd64/IOAPIC.h"
+#elif defined (__aarch64__)
+#include "dev/aarch64/GICv2Distributor.h"
 #endif
 
 @interface
@@ -518,6 +520,14 @@ link_dpc(void *arg)
 
 #if defined(__amd64__)
 	r = [IOApic handleGSI:m_pciInfo.gsi
+		  withHandler:e1000_handler
+		     argument:self
+		isLowPolarity:m_pciInfo.lopol
+	      isEdgeTriggered:m_pciInfo.edge
+		   atPriority:kIPLHigh
+			entry:&m_intxEntry];
+#elif defined(__aarch64__)
+	r = [GICv2Distributor handleGSI:m_pciInfo.gsi
 		  withHandler:e1000_handler
 		     argument:self
 		isLowPolarity:m_pciInfo.lopol

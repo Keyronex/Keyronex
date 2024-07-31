@@ -82,6 +82,7 @@ typedef TAILQ_TYPE_ENTRY(DKDevice) DKDevice_queue_entry_t;
  * used to communicate information between them.
  */
 + (BOOL)probe;
+- (void)secondStageInit;
 @end
 
 #endif /* KRX_DDK_DKDEVICE_H */

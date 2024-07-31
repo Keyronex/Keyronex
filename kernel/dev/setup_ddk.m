@@ -12,7 +12,7 @@ extern void (*init_array_end)(void);
 extern void platform_init();
 
 Class platformDeviceClass = NULL;
-DKDevice *platformDevice;
+DKDevice <DKPlatformDevice> *platformDevice;
 static char indent[255] = { 0 };
 
 static void

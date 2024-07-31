@@ -135,7 +135,6 @@ static void
 parse_giccs(struct acpi_entry_hdr *item, void *arg)
 {
 	struct acpi_madt_gicc *gicc;
-	extern vaddr_t gicc_base;
 	bool matched = false;
 
 	if (item->type != 0xb)

@@ -21,6 +21,8 @@
 	gengic_dist_setedge(gsi, isEdgeTriggered);
 	gengic_dist_settarget(gsi, (1 << ncpus) - 1);
 	gengic_dist_setenabled(gsi);
+
+	return 0;
 }
 
 @end
