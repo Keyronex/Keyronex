@@ -46,7 +46,8 @@ typedef enum ipl {
 	kIPL0 = 0,
 	kIPLAST = 1,
 	kIPLDPC = 2,
-	kIPLHigh = 15,
+	kIPLDevice = 14, /* most external IRQs */
+	kIPLHigh = 15, /* hardclock, invlpg IPI */
 } ipl_t;
 
 typedef struct aarch64_context {
@@ -85,6 +86,7 @@ typedef struct md_pcb {
 typedef struct md_cpucb {
 	int dpc_int;
 	ipl_t ipl;
+	ipl_t hard_ipl;
 	uint32_t mpidr;
 	uint32_t gic_interface_number;
 	uintptr_t gicc_base;

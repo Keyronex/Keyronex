@@ -214,8 +214,10 @@ mcfg_walk(void)
 	int r;
 
 	r = uacpi_table_find_by_signature("MCFG", &table);
-	if (r != 0)
-		kfatal("No MCFG table found!\n");
+	if (r != 0) {
+		DKDevLog(acpiplatform, "No mcfg table found.\n");
+		return;
+	}
 
 	mcfg = (void *)table.virt_addr;
 	nentries = (mcfg->hdr.length - sizeof(struct acpi_mcfg)) /

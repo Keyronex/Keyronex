@@ -24,15 +24,10 @@ pac_putc(int c, void *ctx)
 }
 
 void
-md_raise_dpc_interrupt(void)
-{
-	curcpu()->cpucb.dpc_int = true;
-}
-
-void
 md_cpu_init(kcpu_t *cpu)
 {
 	cpu->cpucb.ipl = 0;
+	cpu->cpucb.hard_ipl = 0;
 }
 
 void

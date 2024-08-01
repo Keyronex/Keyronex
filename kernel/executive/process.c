@@ -42,6 +42,7 @@ ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
 		kfatal("implement thread alloc failure\n");
 
 	thread->kstack_base = (void *)stack;
+
 	ki_thread_common_init(thread, NULL, &ps->kprocess, name);
 	ke_thread_init_context(thread, fn, arg);
 

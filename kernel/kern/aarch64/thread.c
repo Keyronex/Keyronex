@@ -1,3 +1,4 @@
+#include "kdk/aarch64.h"
 #include "kdk/executive.h"
 #include "kdk/kern.h"
 #include "kdk/libkern.h"
@@ -68,6 +69,7 @@ void
 md_switch(kthread_t *old_thread)
 {
 	kthread_t *new_thread = curthread();
+	bool intr;
 
 	void write_ttbr0_el1(paddr_t val);
 	write_ttbr0_el1(ex_curproc()->vm->md.table);
@@ -77,13 +79,16 @@ md_switch(kthread_t *old_thread)
 	if (new_thread->user)
 		restore_fp(new_thread->pcb.fp);
 
+	intr = ki_disable_interrupts();
 	asm_swtch(&old_thread->pcb, &curthread()->pcb);
+	ki_set_interrupts(intr);
 }
 
 void
 thread_trampoline(void (*func)(void *), void *arg)
 {
 	ke_spinlock_release_nospl(&curcpu()->old_thread->lock);
+	ki_set_interrupts(true);
 	splx(kIPL0);
 	func(arg);
 }
@@ -151,6 +156,7 @@ ki_tlb_flush_vaddr_globally(vaddr_t addr)
 void
 ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 {
+	ki_disable_interrupts();
 	uintptr_t spsr = 0x60000000;
 	asm volatile("msr sp_el0, %0\n\t"
 		     "msr elr_el1, %1\n\t"
@@ -171,5 +177,7 @@ ke_set_tcb(uintptr_t tcb)
 void
 md_intr_frame_trace(md_intr_frame_t *frame)
 {
+	splraise(kIPLHigh);
+	kprintf("Thread %p; CPU %p:\n", curthread(), curcpu());
 	kfatal("Unimplemented\n");
 }

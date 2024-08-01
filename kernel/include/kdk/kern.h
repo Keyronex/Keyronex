@@ -657,6 +657,13 @@ void kputc(int ch, void *unused);
 	_r;								 \
 })
 
+#define printf_wrapper_nospl(PUTC, ...) ({				 \
+	ke_spinlock_acquire_nospl(&pac_console_lock);			 \
+	int _r = npf_pprintf(PUTC, NULL, __VA_ARGS__);		 	 \
+	ke_spinlock_release_nospl(&pac_console_lock);			 \
+	_r;								 \
+})
+
 #define vpprintf_wrapper(PUTC, ...) ({                         \
 	ipl_t _ipl = ke_spinlock_acquire_at(&pac_console_lock, \
 	    kIPLHigh);                                         \
@@ -668,6 +675,7 @@ void kputc(int ch, void *unused);
 #define pac_printf(...) printf_wrapper(pac_putc, __VA_ARGS__)
 #define pac_vpprintf(...) vpprintf_wrapper(pac_putc, __VA_ARGS__)
 
+#define kprintf_nospl(...) printf_wrapper_nospl(kputc, __VA_ARGS__)
 #define kprintf(...) printf_wrapper(kputc, __VA_ARGS__)
 #define kvpprintf(...) vpprintf_wrapper(kputc, __VA_ARGS__)
 

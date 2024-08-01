@@ -44,7 +44,7 @@ typedef enum ipl {
 	kIPL0 = 0,
 	kIPLAST = 1,
 	kIPLDPC = 2,
-	kIPLHardClock = 12,
+	kIPLDevice = 12,
 	kIPLHigh = 15,
 } ipl_t;
 

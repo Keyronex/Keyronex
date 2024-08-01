@@ -8,6 +8,12 @@
 
 static TAILQ_HEAD(intr_entries, intr_entry) intr_entries[1024];
 
+void
+md_raise_dpc_interrupt(void)
+{
+	curcpu()->cpucb.dpc_int = true;
+}
+
 ipl_t
 splraise(ipl_t ipl)
 {
@@ -28,7 +34,12 @@ splx(ipl_t to)
 	ipl_t old = cpu->cpucb.ipl;
 	kassert(to <= old);
 
+#if 1
 	if (old >= kIPLDPC && to < kIPLDPC) {
+		if (cpu->cpucb.hard_ipl > kIPLDPC) {
+			gengic_setpmr(ipl_to_pmr[kIPLDPC]);
+			cpu->cpucb.hard_ipl = kIPLDPC;
+		}
 		cpu->cpucb.ipl = kIPLDPC;
 		while (cpu->cpucb.dpc_int) {
 			curcpu()->cpucb.dpc_int = 0;
@@ -38,8 +49,13 @@ splx(ipl_t to)
 		}
 		cpu = curcpu(); /* could have migrated! */
 	}
+#endif
 
 	cpu->cpucb.ipl = to;
+	if (cpu->cpucb.hard_ipl > to) {
+		gengic_setpmr(ipl_to_pmr[to]);
+		cpu->cpucb.hard_ipl = to;
+	}
 
 	if (to < kIPLHigh)
 		ki_set_interrupts(x);
@@ -55,53 +71,59 @@ splget(void)
 }
 
 void
-plat_irq(md_intr_frame_t *frame)
+handle_irq(md_intr_frame_t *frame)
 {
-	uint32_t intr = gengic_acknowledge();
+	uint32_t intr;
 	ipl_t ipl;
 
+	intr = gengic_acknowledge();
+
 	switch (intr & 0x3ff) {
-	case 2: {
-		ipl = spldpc();
-		ki_set_interrupts(true);
+	case kGSITLBFlush: {
 		void ki_tlb_flush_handler(void);
+
 		ki_tlb_flush_handler();
-		break;
+		gengic_eoi(intr);
+		return;
 	}
 
-	case 4: {
+	case kGSIDPC: {
 		ipl = spldpc();
 		ki_set_interrupts(true);
 		gengic_eoi(intr);
 		ki_dispatch_dpcs(curcpu());
 		splx(ipl);
+
 		ki_disable_interrupts();
 		return;
-		break;
 	}
 
-	case 30: {
-		ipl = splraise(kIPLHigh);
+	case kGSIHardclock: {
 		void reset_timer(void);
+
+		ipl = splraise(kIPLHigh);
 		reset_timer();
 		ki_cpu_hardclock(frame, curcpu());
-		break;
+		gengic_eoi(intr);
+		splx(ipl);
+		ki_disable_interrupts();
+		return;
 	}
 
-	case 1023: {
-		ipl = splget();
-		break;
+	case 1023: { /* spurious */
+		gengic_eoi(intr);
+		return;
 	}
 
 	default: {
 		struct intr_entries *entries = &intr_entries[intr & 0x3ff];
 		struct intr_entry *entry;
-		ipl = 0;
 
 		if (TAILQ_EMPTY(entries)) {
 			kfatal("Unhandled interrupt %u.", intr);
 		}
 
+		ipl = 0;
 		TAILQ_FOREACH (entry, entries, queue_entry) {
 			ipl = MAX2(ipl, entry->ipl);
 		}
@@ -113,6 +135,8 @@ plat_irq(md_intr_frame_t *frame)
 			    intr, splget(), ipl);
 		}
 
+		kassert(ipl == kIPLHigh);
+
 		ipl = splraise(ipl);
 		ki_set_interrupts(true);
 
@@ -121,12 +145,46 @@ plat_irq(md_intr_frame_t *frame)
 			(void)r;
 		}
 
+		gengic_eoi(intr);
+		splx(ipl);
+		ki_disable_interrupts();
+		return;
+	}
+	}
+}
+
+void
+plat_irq(md_intr_frame_t *frame)
+{
+	uint32_t hppir;
+	ipl_t irq_ipl;
+
+	hppir = gengic_hppir();
+	switch (hppir & 0x3ff) {
+	case kGSIDPC:
+		irq_ipl = kIPLDPC;
+		break;
+
+	case kGSITLBFlush:
+	case kGSIHardclock:
+		irq_ipl = kIPLHigh;
+		break;
+
+	default:
+		irq_ipl = kIPLHigh;
 		break;
 	}
+
+	if (irq_ipl <= curcpu()->cpucb.ipl) {
+		gengic_setpmr(ipl_to_pmr[curcpu()->cpucb.ipl]);
+		curcpu()->cpucb.hard_ipl = curcpu()->cpucb.ipl;
+		kprintf_nospl(
+		    "\e[0;31m[%d] rejected excess ipl interrupt (int %d, my ipl %d)\e[0m\n",
+		    curcpu()->num, hppir & 0x3ff, curcpu()->cpucb.ipl);
+		return;
 	}
-	gengic_eoi(intr);
-	splx(ipl);
-	ki_disable_interrupts();
+
+	handle_irq(frame);
 }
 
 void

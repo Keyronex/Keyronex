@@ -46,7 +46,7 @@ typedef enum ipl {
 	kIPL0 = 0,
 	kIPLAST = 1,
 	kIPLDPC = 2,
-	kIPLHardClock = 12,
+	kIPLDevice = 14,
 	kIPLHigh = 15,
 } ipl_t;
 
@@ -89,7 +89,7 @@ struct intr_entry {
 
 typedef struct md_pcb {
 	uint64_t rbp, rbx, r12, r13, r14, r15, rdi, rsi, rsp;
-
+	uint64_t align;
 	uint8_t fpu[512];
 } md_pcb_t;
 

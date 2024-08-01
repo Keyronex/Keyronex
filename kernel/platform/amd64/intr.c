@@ -103,8 +103,11 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	else
 		new_ipl = kIPL0;
 
-	if (splget() >new_ipl)
-		kfatal("IPL not less or equal\n");
+	if (splget() > new_ipl) {
+		kfatal("In handling interrupt %zu:\n"
+		    "IPL not less or equal (running at %d, interrupt priority %d, cr2 0x%lx)\n",
+		    num, splget(), ipl, cr2);
+	}
 
 	write_cr8(new_ipl);
 	asm("sti");

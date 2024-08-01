@@ -287,8 +287,18 @@ uacpi_kernel_free(void *ptr)
 void *
 uacpi_kernel_map(uacpi_phys_addr physical, uacpi_size length)
 {
+	paddr_t paddr = PGROUNDDOWN(physical);
+	size_t vsize = PGROUNDUP(length);
+	vaddr_t vaddr;
+	int r;
+
 	kprintf("mapping 0x%zx length 0x%lx\n", physical, length);
-	return (void *)P2V(physical);
+
+	r = vm_ps_map_physical_view(kernel_process->vm, &vaddr, vsize, paddr,
+	    kVMRead | kVMWrite, kVMRead | kVMWrite, false);
+	kassert(r == 0);
+
+	return (void*)(vaddr + (physical & (PGSIZE - 1)));
 }
 
 void

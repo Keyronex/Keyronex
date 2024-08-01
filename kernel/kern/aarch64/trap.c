@@ -5,32 +5,6 @@
 #include "kdk/libkern.h"
 #include "vm/vmp.h"
 
-void plat_irq(md_intr_frame_t *frame);
-
-static inline void
-write_vbar_el1(void *addr)
-{
-	asm volatile("msr VBAR_EL1, %0" ::"r"(addr));
-}
-
-bool
-ki_disable_interrupts(void)
-{
-	uint64_t daif;
-	asm volatile("mrs %0, daif" : "=r"(daif));
-	asm volatile("msr daifset, #0xf");
-	return (daif & 0xf) == 0;
-}
-
-void
-ki_set_interrupts(bool enable)
-{
-	if (enable)
-		asm volatile("msr daifclr, #0xf");
-	else
-		asm volatile("msr daifset, #0xf");
-}
-
 struct __attribute__((packed)) aarch64_esr {
 	union {
 		struct {
@@ -72,6 +46,32 @@ struct __attribute__((packed)) aarch64_esr {
 };
 
 static_assert(sizeof(struct aarch64_esr) == sizeof(void *), "ESR wrong size!");
+
+void plat_irq(md_intr_frame_t *frame);
+
+static inline void
+write_vbar_el1(void *addr)
+{
+	asm volatile("msr VBAR_EL1, %0" ::"r"(addr));
+}
+
+bool
+ki_disable_interrupts(void)
+{
+	uint64_t daif;
+	asm volatile("mrs %0, daif" : "=r"(daif));
+	asm volatile("msr daifset, #0xf");
+	return (daif & 0xf) == 0;
+}
+
+void
+ki_set_interrupts(bool enable)
+{
+	if (enable)
+		asm volatile("msr daifclr, #0xf");
+	else
+		asm volatile("msr daifset, #0xf");
+}
 
 void
 common_sync(md_intr_frame_t *frame)
@@ -122,6 +122,8 @@ common_sync(md_intr_frame_t *frame)
 		    frame, frame->elr, frame->far, frame->spsr, frame->esr,
 		    esr.generic.EC);
 	}
+
+	ki_disable_interrupts();
 }
 
 void
@@ -177,7 +179,9 @@ c_el1_fiq(md_intr_frame_t *frame)
 void
 c_el1_error(md_intr_frame_t *frame)
 {
-	kfatal("el1 error\n");
+	kfatal("el1 error: "
+	       "frame %p, elr 0x%zx, far 0x%zx, spsr 0x%zx, esr 0x%zx\n",
+	    frame, frame->elr, frame->far, frame->spsr, frame->esr);
 }
 
 void
@@ -189,7 +193,7 @@ c_el0_sync(md_intr_frame_t *frame)
 void
 c_el0_intr(md_intr_frame_t *frame)
 {
-	c_el1_intr(frame);
+	plat_irq(frame);
 }
 
 void

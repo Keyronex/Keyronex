@@ -1,3 +1,5 @@
+#include "gic.h"
+#include "kdk/aarch64.h"
 #include "kdk/kern.h"
 #include "kdk/vm.h"
 #include "kern/ki.h"
@@ -20,6 +22,15 @@ enum {
 	kGICC_PMR = 0x0004,
 	kGICC_IAR = 0x000c,
 	kGICC_EOIR = 0x0010,
+	kGICC_HPPIR = 0x0018,
+};
+
+uint8_t ipl_to_pmr[16] = {
+	[kIPL0] = 240,
+	[kIPLAST] = 224,
+	[kIPLDPC] = 208,
+	[kIPLDevice] = 16,
+	[kIPLHigh] = 0,
 };
 
 void
@@ -77,6 +88,12 @@ gicc_write_ctlr(uint32_t value)
 	gicc_write(0, value);
 }
 
+uint32_t gengic_hppir(void)
+{
+	return gicc_read(kGICC_HPPIR);
+}
+
+
 uint32_t
 gengic_acknowledge(void)
 {
@@ -118,17 +135,27 @@ gengic_dist_settarget(uint32_t gsi, uint64_t target)
 }
 
 void
-gengic_dist_setenabled(uint32_t gsi)
+gengic_dist_setpriority(uint32_t gsi, uint8_t priority)
 {
-#if 0
 	uint32_t priority_reg = kGICD_IPRIORITYR + (gsi / 4) * 4;
 	uint32_t priority_shift = (gsi % 4) * 8;
 	gicd_write(priority_reg,
 	    ((*(volatile uint32_t *)(gicd_base + priority_reg)) &
 		~(0xFF << priority_shift)) |
-		(0x80 << priority_shift));
-#endif
+		((uint32_t)priority << priority_shift));
+}
+
+void
+gengic_dist_setenabled(uint32_t gsi)
+{
+	gengic_dist_setpriority(gsi, ipl_to_pmr[kIPLHigh]);
 	gicd_write_isenabler(gsi, 1);
+}
+
+
+void gengic_setpmr(uint8_t priority)
+{
+	gicc_write(kGICC_PMR, priority);
 }
 
 void
@@ -146,11 +173,17 @@ enable_timer(void)
 #endif
 	gicd_write_ctlr(1);
 	gicc_write_ctlr(1);
-	gicc_write(kGICC_PMR, 0xff);
 
-	gicd_write_isenabler(2, 1);
-	gicd_write_isenabler(4, 1);
-	gicd_write_isenabler(30, 1);
+	gengic_dist_setpriority(kGSITLBFlush, ipl_to_pmr[kIPLHigh]);
+	gicd_write_isenabler(kGSITLBFlush, 1);
+
+	gengic_dist_setpriority(kGSIDPC, ipl_to_pmr[kIPLDPC]);
+	gicd_write_isenabler(kGSIDPC, 1);
+
+	gengic_dist_setpriority(kGSIHardclock, ipl_to_pmr[kIPLHigh]);
+	gicd_write_isenabler(kGSIHardclock, 1);
+
+	gengic_setpmr(ipl_to_pmr[kIPL0]);
 
 	asm volatile("msr daifclr, #0x2");
 
