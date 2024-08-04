@@ -118,8 +118,10 @@ ap_init(struct limine_smp_info *smpi)
 #define SMPI_ID mpidr
 #endif
 
-static void smp_allocate(void) {
-	#if !defined(__m68k__)
+static void
+smp_allocate(void)
+{
+#if !defined(__m68k__)
 	struct limine_smp_response *smpr = smp_request.response;
 	ncpus = smpr->cpu_count;
 #endif
@@ -195,11 +197,11 @@ smp_start()
 // The following will be our kernel's entry point.
 // If renaming _start() to something else, make sure to change the
 // linker script accordingly.
+
 void
 _start(void)
 {
 	plat_first_init();
-
 	npf_pprintf(pac_putc, NULL,
 	    "Keyronex-lite/generic (" __DATE__ " " __TIME__ ")\r\n");
 

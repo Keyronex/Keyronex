@@ -407,7 +407,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, vm_object_t *obj,
 				vmp_md_setup_table_pointers(ps->vm,
 				    pages[level - 1], page, pte, kWasTrans);
 			else {
-				vmp_md_pte_create_hw(pte, page->pfn, true,
+				vmp_md_pte_create_hw(pte, page->pfn, true, false,
 				    false);
 				vmp_pagetable_page_noswap_pte_created(ps->vm,
 				    pages[level - 1], false);
@@ -462,7 +462,7 @@ vmp_wire_pte(eprocess_t *ps, vaddr_t vaddr, vm_object_t *obj,
 				vmp_md_setup_table_pointers(ps->vm,
 				    pages[level - 1], page, pte, kWasZero);
 			else {
-				vmp_md_pte_create_hw(pte, page->pfn, true,
+				vmp_md_pte_create_hw(pte, page->pfn, true, false,
 				    false);
 				vmp_pagetable_page_noswap_pte_created(ps->vm,
 				    pages[level - 1], true);

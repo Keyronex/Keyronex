@@ -5,6 +5,7 @@
 #include "kdk/queue.h"
 #include "kdk/vm.h"
 #include "kdk/vmem.h"
+#include "kern/ki.h"
 #include "ubc.h"
 #include "vmp.h"
 #include "vmp_dynamics.h"
@@ -26,7 +27,7 @@ struct fault_info {
 	vm_object_t *object;
 	vaddr_t start;
 	pgoff_t offset;
-	bool copy, writeable;
+	bool copy, writeable, executable;
 	bool map_lock_held;
 	bool ws_lock_held;
 };
@@ -133,10 +134,13 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	mdl->offset = 0;
 	mdl->write = true;
 	mdl->pages[0] = page;
+	vmp_page_dcache_flush_pre_readin(page);
 	iop = iop_new_vnode_read(vnode, mdl, PGSIZE, file_byteoffset);
 
 	iop_send_sync(iop);
 	iop_free(iop);
+
+	vmp_page_dcache_flush_post_readin(page);
 
 	/*
 	 * we don't need the map_lock, any unmapper will be waiting on our busy
@@ -178,7 +182,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 		kfatal("Invalid Object PTE state\n");
 	}
 	kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state->pte)) == page);
-	vmp_md_pte_create_hw(object_state->pte, page->pfn, true, true);
+	vmp_md_pte_create_hw(object_state->pte, page->pfn, true, true, true);
 
 	/*
 	 * the process PTE must still be busy - we wait for busy PTEs to become
@@ -191,7 +195,12 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	 * operations like unmap would not have to wait on the busy page.
 	 */
 	kassert(vmp_pte_characterise(state->pte) == kPTEKindBusy);
-	vmp_md_pte_create_hw(state->pte, page->pfn, false, true);
+
+	if (area_info->executable)
+		vmp_page_sync_icache(page);
+
+	vmp_md_pte_create_hw(state->pte, page->pfn, false,
+	    area_info->executable, true);
 
 	/* release references we took to preserve the pages containing PTEs */
 	vmp_page_release_locked(object_state->pgtable_pages[0]);
@@ -228,7 +237,13 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 		vm_page_t *pml1_page = state->pgtable_pages[0];
 
 		vmp_page_retain_locked(page);
-		vmp_md_pte_create_hw(pte, page->pfn, false, true);
+
+		if (area_info->executable)
+			vmp_page_sync_icache(page);
+
+		vmp_md_pte_create_hw(pte, page->pfn, false,
+		    area_info->executable, true);
+
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
 		    true);
 		vmp_pte_wire_state_release(&object_state, true);
@@ -311,7 +326,11 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 			return -kVMFaultRetPageShortage;
 		}
 
-		vmp_md_pte_create_hw(pte, page->pfn, false, true);
+		if (area_info->executable)
+			vmp_page_sync_icache(page);
+
+		vmp_md_pte_create_hw(pte, page->pfn, false,
+		    area_info->executable, true);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
 		    true);
@@ -370,6 +389,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 		area_info.object = map_entry->object;
 		area_info.writeable = map_entry->flags.protection & kVMWrite;
+		area_info.executable = map_entry->flags.protection & kVMExecute;
 		area_info.copy = map_entry->flags.cow;
 		area_info.offset = map_entry->flags.offset;
 		area_info.start = map_entry->start;
@@ -382,6 +402,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		area_info.object = window->vnode->object;
 		area_info.copy = false;
 		area_info.writeable = true;
+		area_info.executable = false;
 		area_info.offset = window->offset * (UBC_WINDOW_SIZE / PGSIZE);
 		area_info.start = ubc_window_addr(window);
 		area_info.map_lock_held = false;
@@ -414,7 +435,8 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	if (pte_kind == kPTEKindValid &&
 	    (!write || vmp_md_hw_pte_is_writeable(state.pte))) {
-		kprintf("Nothing to do?\n");
+		kprintf("Nothing to do for 0x%zx?\n", vaddr);
+		ki_tlb_flush_vaddr_locally(vaddr);
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(ipl);
 	} else if (pte_kind == kPTEKindValid &&
@@ -432,15 +454,19 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 		if (old_page->use == kPageUseAnonPrivate) {
 			/* Dirty fault. */
+
 			vmp_md_pte_create_hw(state.pte,
-			    vmp_md_pte_hw_pfn(state.pte, 1), true, true);
+			    vmp_md_pte_hw_pfn(state.pte, 1), true,
+			    area_info.executable, true);
+
 			vmp_pte_wire_state_release(&state, false);
+
 			vmp_release_pfn_lock(ipl);
 		} else if (area_info.copy) {
 			vm_page_t *new_page;
 			vm_page_t *pml1_page = state.pgtable_pages[0];
 
-			/* (Symmetric) CoW fault.*/
+			/* (Asymmetric) CoW fault. */
 
 			r = vmp_page_alloc_locked(&new_page,
 			    kPageUseAnonPrivate, false);
@@ -460,14 +486,23 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			    (void *)vm_page_direct_map_addr(old_page), PGSIZE);
 
 			vmp_page_evict(vmps, pte, pml1_page, vaddr);
-			vmp_md_pte_create_hw(pte, new_page->pfn, write, true);
+
+			if (area_info.executable)
+				vmp_page_sync_icache(new_page);
+
+			vmp_md_pte_create_hw(pte, new_page->pfn, write,
+			    area_info.executable, true);
+
 			vmp_pagetable_page_noswap_pte_created(vmps, pml1_page,
 			    true);
 			vmps->n_anonymous++;
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
 		} else {
+			/* dirty fault on a file shared page */
+
 			kassert(old_page->use == kPageUseFileShared);
+
 			if (!old_page->dirty) {
 				/* page is dirty for the first time. */
 				old_page->dirty = true;
@@ -486,8 +521,11 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 					vn_retain(area_info.object->file.vnode);
 				}
 			}
+
 			vmp_md_pte_create_hw(state.pte,
-			    vmp_md_pte_hw_pfn(state.pte, 1), true, true);
+			    vmp_md_pte_hw_pfn(state.pte, 1), true,
+			    area_info.executable, true);
+
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
 		}
@@ -508,8 +546,15 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		page->process = process;
 		page->referent_pte = V2P((vaddr_t)pte);
 		page->offset = vaddr / PGSIZE;
-		vmp_md_pte_create_hw(pte, page->pfn, write, true);
+
+		if (area_info.executable)
+			vmp_page_sync_icache(page);
+
+		vmp_md_pte_create_hw(pte, page->pfn, write,
+		    area_info.executable, true);
+
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
+
 		vmps->n_anonymous++;
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(ipl);
@@ -536,7 +581,14 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		kassert(page->use == kPageUseAnonPrivate);
 
 		vmp_page_retain_locked(page);
-		vmp_md_pte_create_hw(state.pte, page->pfn, write, true);
+
+		/*
+		 * no need to sync icache here unless and until we speculatively
+		 * insert trans PTEs (perhaps as part of fault-in clustering).
+		 */
+		vmp_md_pte_create_hw(state.pte, page->pfn, write,
+		    area_info.executable, true);
+
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(ipl);
 
@@ -606,8 +658,10 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		iop = iop_new_vnode_read(pagefile_vnode, mdl, PGSIZE,
 		    drumslot * PGSIZE);
 
+		vmp_page_dcache_flush_pre_readin(page);
 		iop_send_sync(iop);
 		iop_free(iop);
+		vmp_page_dcache_flush_post_readin(page);
 
 		/* only need WS mutex for dealing with a busy page */
 		KE_WAIT(&vmps->ws_mutex, false, false, -1);
@@ -622,7 +676,12 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		}
 
 		kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state.pte)) == page);
-		vmp_md_pte_create_hw(state.pte, page->pfn, write, true);
+
+		if (area_info.executable)
+			vmp_page_sync_icache(page);
+
+		vmp_md_pte_create_hw(state.pte, page->pfn, write,
+		    area_info.executable, true);
 
 		/* release reference we took to preserve the PTE page */
 		vmp_page_release_locked(state.pgtable_pages[0]);

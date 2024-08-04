@@ -42,7 +42,7 @@ vmp_md_ps_init(eprocess_t *ps)
 				pml3_page->noswap_ptes = 10000;
 				pml3_page->refcnt = 10000;
 				vmp_md_pte_create_hw(pte, pml3_page->pfn, true,
-				    true);
+				    true, true);
 			}
 		}
 #endif

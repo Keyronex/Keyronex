@@ -26,19 +26,27 @@ read_ttbr1_el1(void)
 void
 write_ttbr0_el1(paddr_t val)
 {
-	asm("msr ttbr0_el1, %0" : : "r"(val));
-	asm("isb");
-	asm("dsb sy");
-	asm("tlbi vmalle1is");
+	asm volatile("dsb ishst\n\t"
+		     "msr ttbr0_el1, %0\n\t"
+		     "tlbi vmalle1\n\t"
+		     "dsb ish\n\t"
+		     "isb\n\t"
+		     :
+		     : "r"(val)
+		     : "memory");
 }
 
 static inline void
 write_ttbr1_el1(paddr_t val)
 {
-	asm("msr ttbr1_el1, %0" : : "r"(val));
-	asm("isb");
-	asm("dsb sy");
-	asm("tlbi vmalle1is");
+	asm volatile("dsb ishst\n\t"
+		     "msr ttbr1_el1, %0\n\t"
+		     "tlbi vmalle1\n\t"
+		     "dsb ish\n\t"
+		     "isb\n\t"
+		     :
+		     : "r"(val)
+		     : "memory");
 }
 
 void vmp_set_ttbr1(void)

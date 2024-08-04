@@ -33,6 +33,7 @@ extern struct bootinfo bootinfo;
 {
 	extern id platformDevice;
 	extern struct limine_rsdp_request rsdp_request;
+
 	struct limine_framebuffer *fb =
 	    framebuffer_request.response->framebuffers[0];
 

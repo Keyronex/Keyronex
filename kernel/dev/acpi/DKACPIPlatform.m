@@ -134,33 +134,35 @@ static paddr_t last_gicc_base = 0;
 static void
 parse_giccs(struct acpi_entry_hdr *item, void *arg)
 {
-	struct acpi_madt_gicc *gicc;
+	struct acpi_madt_gicc *pgicc, gicc;
 	bool matched = false;
 
 	if (item->type != 0xb)
 		return;
 
-	gicc = (void *)item;
-	kprintf(
-	    "Found a GICC: "
-	    "GIC interface num %u, ACPI UID %u, MPIDR %lu, base address 0x%zx\n",
-	    gicc->interface_number, gicc->acpi_id, gicc->mpidr, gicc->address);
+	memcpy(&gicc, item, sizeof(struct acpi_madt_gicc));
+	pgicc = (void *)&gicc;
+
+	kprintf("Found a GICC:"
+		" GIC interface num %u, ACPI UID %u, MPIDR %lu,"
+		" base address 0x%zx\n",
+	    pgicc->interface_number, pgicc->acpi_id, pgicc->mpidr, pgicc->address);
 
 	if (last_gicc_base != 0)
-		kassert(last_gicc_base == gicc->address);
+		kassert(last_gicc_base == pgicc->address);
 
 	for (size_t i = 0; i < ncpus; i++) {
-		if (cpus[i]->cpucb.mpidr == gicc->mpidr) {
+		if (cpus[i]->cpucb.mpidr == pgicc->mpidr) {
 			int r;
 
 			kassert(!matched);
 			matched = true;
 
 			cpus[i]->cpucb.gic_interface_number =
-			    gicc->interface_number;
+			    pgicc->interface_number;
 
 			r = vm_ps_map_physical_view(kernel_process->vm,
-			    &cpus[i]->cpucb.gicc_base, PGSIZE, gicc->address,
+			    &cpus[i]->cpucb.gicc_base, PGSIZE, pgicc->address,
 			    kVMAll, kVMAll, false);
 			kassert(r == 0);
 		}
@@ -172,19 +174,21 @@ parse_giccs(struct acpi_entry_hdr *item, void *arg)
 static void
 parse_gicds(struct acpi_entry_hdr *item, void *arg)
 {
-	struct acpi_madt_gicd *gicd;
+	struct acpi_madt_gicd *pgicd, gicd;
 	extern vaddr_t gicd_base;
 	int r;
 
 	if (item->type != 0xc)
 		return;
 
-	gicd = (void *)item;
+	memcpy(&gicd, item, sizeof(struct acpi_madt_gicd));
+	pgicd = (void *)&gicd;
+
 	kprintf("Found a GICD: GIC version num %d, base address 0x%zx\n",
-	    gicd->gic_version, gicd->address);
+	    pgicd->gic_version, pgicd->address);
 
 	r = vm_ps_map_physical_view(kernel_process->vm, &gicd_base, PGSIZE,
-	    gicd->address, kVMAll, kVMAll, false);
+	    pgicd->address, kVMAll, kVMAll, false);
 	kassert(r == 0);
 }
 

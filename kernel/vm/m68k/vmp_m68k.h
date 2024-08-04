@@ -81,7 +81,7 @@ vmp_pte_characterise(pte_t *pte)
 }
 
 static inline void
-vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool cacheable)
+vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool executable, bool cacheable)
 {
 	pte_t newpte;
 	newpte.hw_pml1_040.pfn = pfn;
@@ -179,6 +179,31 @@ vmp_addr_unpack(vaddr_t vaddr, int unpacked[VMP_TABLE_LEVELS + 1])
 	unpacked[1] = addr.l1i;
 	unpacked[2] = addr.l2i;
 	unpacked[3] = addr.l3i;
+}
+
+static inline void
+vmp_page_dcache_flush_pre_readin(vm_page_t *page)
+{
+}
+
+static inline void
+vmp_page_dcache_flush_post_readin(vm_page_t *page)
+{
+}
+
+static inline void
+vmp_page_invalidate_dcache(vm_page_t *page)
+{
+}
+
+static inline void
+vmp_page_sync_icache(vm_page_t *page)
+{
+}
+
+static inline void
+vmp_page_clean_dcache_postevict(vm_page_t *page)
+{
 }
 
 #endif /* KRX_M68K_VMP_M68K_H */

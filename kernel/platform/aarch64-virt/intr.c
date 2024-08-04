@@ -160,6 +160,9 @@ plat_irq(md_intr_frame_t *frame)
 	ipl_t irq_ipl;
 
 	hppir = gengic_hppir();
+
+	asm volatile("isb" ::: "memory");
+
 	switch (hppir & 0x3ff) {
 	case kGSIDPC:
 		irq_ipl = kIPLDPC;

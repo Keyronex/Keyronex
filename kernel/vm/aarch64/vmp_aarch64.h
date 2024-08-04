@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "kdk/vm.h"
+#include "kern/ki.h"
 #include "mmu_regs.h"
 
 #define VMP_TABLE_LEVELS 4
@@ -43,7 +44,8 @@ typedef union __attribute__((packed)) pte {
 } pte_t;
 
 static inline void
-vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool cacheable)
+vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
+    bool cacheable)
 {
 	pte_t pte;
 
@@ -59,8 +61,15 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool cacheable)
 	pte.hw.sh = 0b11;
 	pte.hw.attrindx = cacheable ? 0 : 1;
 	pte.hw.reserved_must_be_1 = 1;
+	if (!executable) {
+		pte.hw.pxn = 1;
+		pte.hw.uxn = 1;
+	}
 
 	ppte->value = pte.value;
+	asm volatile("dsb ishst\n\t"
+		     "isb\n\t" ::
+			 : "memory");
 }
 
 static inline void
@@ -81,6 +90,9 @@ vmp_md_pte_create_trans(pte_t *ppte, pfn_t pfn)
 	pte.sw.data = pfn;
 	pte.sw.kind = kSoftPteKindTrans;
 	ppte->value = pte.value;
+	asm volatile("dsb ishst\n\t"
+		     "isb\n\t" ::
+			 : "memory");
 }
 
 static inline void
@@ -97,6 +109,9 @@ static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	pte->value = 0;
+	asm volatile("dsb ishst\n\t"
+		     "isb\n\t" ::
+			 : "memory");
 }
 
 static inline bool
@@ -165,5 +180,42 @@ vmp_addr_unpack(vaddr_t vaddr, int unpacked[VMP_TABLE_LEVELS + 1])
 	unpacked[2] = ((virta >> 21) & 0x1FF);
 	unpacked[1] = ((virta >> 12) & 0x1FF);
 }
+
+static inline void
+vmp_page_dcache_flush_pre_readin(vm_page_t *page)
+{
+	vaddr_t base = vm_page_direct_map_addr(page);
+	ki_dcache_invalidate_range(base, base + PGSIZE);
+}
+
+/* deals with speculative loads */
+static inline void
+vmp_page_dcache_flush_post_readin(vm_page_t *page)
+{
+	vaddr_t base = vm_page_direct_map_addr(page);
+	ki_dcache_invalidate_range(base, base + PGSIZE);
+}
+
+static inline void
+vmp_page_invalidate_dcache(vm_page_t *page)
+{
+	vaddr_t base = vm_page_direct_map_addr(page);
+	ki_dcache_invalidate_range(base, base + PGSIZE);
+}
+
+static inline void
+vmp_page_sync_icache(vm_page_t *page)
+{
+	vaddr_t base = vm_page_direct_map_addr(page);
+	ki_icache_synchronise_range(base, base + PGSIZE);
+}
+
+static inline void
+vmp_page_clean_dcache_postevict(vm_page_t *page)
+{
+	vaddr_t base = vm_page_direct_map_addr(page);
+	ki_dcache_invalidate_range(base, base + PGSIZE);
+}
+
 
 #endif /* KRX_AARCH64_VMP_AARCH64_H */

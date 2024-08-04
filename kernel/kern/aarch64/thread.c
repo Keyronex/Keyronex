@@ -104,13 +104,78 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 	thread->pcb.genregs.sp = (uint64_t)(sp);
 }
 
+static inline size_t
+icache_line()
+{
+	uint64_t ctr;
+	asm volatile("mrs %0, ctr_el0" : "=r"(ctr));
+	return (ctr & 0b1111) << 4;
+}
+
+static inline size_t
+dcache_line()
+{
+	uint64_t ctr;
+	asm volatile("mrs %0, ctr_el0" : "=r"(ctr));
+	return ((ctr >> 16) & 0b1111) << 4;
+}
+
+void
+ki_dcache_clean_invalidate_range(vaddr_t base, vaddr_t limit)
+{
+	size_t dcline = dcache_line();
+
+	for (vaddr_t it = ROUNDDOWN(base, dcache_line()); it < limit;
+	     it += dcline)
+		asm volatile("dc civac, %0" ::"r"(it) : "memory");
+
+	asm volatile("dsb ish\n\t" ::: "memory");
+}
+
+/*!
+ * @brief Invalidate dcache lines.
+ */
+void
+ki_dcache_invalidate_range(vaddr_t base, vaddr_t limit)
+{
+	size_t dcline = dcache_line();
+
+	for (vaddr_t it = ROUNDDOWN(base, dcache_line()); it < limit;
+	     it += dcline)
+		asm volatile("dc ivac, %0" ::"r"(it) : "memory");
+
+	asm volatile("dsb ish\n\t" ::: "memory");
+}
+
+/* good for non-aliasing icache. */
+void
+ki_icache_synchronise_range(vaddr_t base, vaddr_t limit)
+{
+	size_t dcline = dcache_line(), icline = icache_line();
+
+	for (vaddr_t it = ROUNDDOWN(base, dcache_line()); it < limit;
+	     it += dcline)
+		asm volatile("dc cvau, %0\n\t" ::"r"(it) : "memory");
+
+	asm volatile("dsb ish\n\t" ::: "memory");
+
+	for (vaddr_t it = ROUNDDOWN(base, icline); it < limit; it += icline)
+		asm volatile("ic ivau, %0\n\t" ::"r"(it) : "memory");
+
+	asm volatile("dsb ish\n\t"
+		     "isb\n\t");
+}
+
 void
 ki_tlb_flush_vaddr_locally(vaddr_t addr)
 {
-	asm volatile("dsb st");
-	asm volatile("tlbi vale1, %0" : : "r"(addr >> 12) : "memory");
-	asm volatile("dsb sy");
-	asm volatile("isb");
+	asm volatile("dsb st\n\t"
+		     "tlbi vaae1, %0\n\t"
+		     "dsb sy\n\t"
+		     "isb\n\t"
+		     :
+		     : "r"(addr >> 12)
+		     : "memory");
 }
 
 vaddr_t invlpg_addr;
@@ -143,15 +208,6 @@ ki_tlb_flush_vaddr_globally(vaddr_t addr)
 
 	ki_tlb_flush_vaddr_locally(addr);
 }
-
-#if 0
-void
-ki_tlb_flush_vaddr_globally(vaddr_t addr)
-{
-	/* todo smp */
-	ki_tlb_flush_vaddr_locally(addr);
-}
-#endif
 
 void
 ki_enter_user_mode(uintptr_t ip, uintptr_t sp)

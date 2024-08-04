@@ -189,7 +189,7 @@ vm_ps_map_physical_view(vm_procstate_t *vmps, vaddr_t *vaddrp, size_t size,
 		}
 
 		vmp_md_pte_create_hw(pte, (phys >> VMP_PAGE_SHIFT) + i / PGSIZE,
-		    true, false);
+		    true, false, false);
 		vmp_pagetable_page_noswap_pte_created(vmps,
 		    pte_wire.pgtable_pages[0], true);
 	}

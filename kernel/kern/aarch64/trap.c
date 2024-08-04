@@ -108,7 +108,6 @@ common_sync(md_intr_frame_t *frame)
 			write = false;
 		}
 
-		(void)insn;
 		(void)userland;
 
 		vmp_fault(frame, frame->far, write, NULL);
@@ -117,6 +116,8 @@ common_sync(md_intr_frame_t *frame)
 	}
 
 	default:
+		ki_disable_interrupts();
+		splraise(kIPLHigh);
 		kfatal("el1 sync: frame %p, elr 0x%zx, far 0x%zx, spsr 0x%zx, "
 		       "esr 0x%zx; esr->ec = 0x%x\n",
 		    frame, frame->elr, frame->far, frame->spsr, frame->esr,

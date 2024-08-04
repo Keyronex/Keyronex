@@ -1,6 +1,7 @@
 #ifndef KRX_KDK_VM_H
 #define KRX_KDK_VM_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "kdk/kern.h"
@@ -9,7 +10,7 @@
 #include "kdk/tree.h"
 #include "kdk/vmem.h"
 #include "kdk/vmem_impl.h"
-#include "stdbool.h"
+#include "kdk/vmtypes.h"
 
 #if BITS == 32
 #define PFN_BITS 20
@@ -21,12 +22,6 @@ enum vmem_flag;
 struct eprocess;
 struct vnode;
 
-/*! Physical address. */
-typedef uintptr_t paddr_t;
-/*! Virtual address. */
-typedef uintptr_t vaddr_t;
-/*! Virtual offset */
-typedef int64_t pgoff_t, voff_t;
 /*! Page frame number. */
 typedef uintptr_t pfn_t;
 /*! Process VM state. */

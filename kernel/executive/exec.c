@@ -2,6 +2,7 @@
 
 #include <elf.h>
 #include <errno.h>
+#include <stdint.h>
 
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
@@ -63,6 +64,7 @@ load_elf(vnode_t *vnode, vaddr_t base, struct exec_package *pkg)
 		vaddr_t vaddr, vaddr_based;
 		io_off_t file_offset_aligned;
 		size_t mapped_length, mapped_length_aligned, full_length;
+		vm_protection_t prot = kVMRead;
 
 		if (phdr->p_type == PT_PHDR) {
 			pkg->phaddr = base + phdr->p_vaddr;
@@ -76,6 +78,15 @@ load_elf(vnode_t *vnode, vaddr_t base, struct exec_package *pkg)
 		mapped_length = phdr->p_vaddr + phdr->p_filesz - vaddr;
 		mapped_length_aligned = PGROUNDUP(mapped_length);
 		full_length = PGROUNDUP(phdr->p_vaddr + phdr->p_memsz) - vaddr;
+
+		if (phdr->p_flags & PF_W)
+			prot |= kVMWrite;
+
+		if (phdr->p_flags & PF_X)
+			prot |= kVMExecute;
+
+		if ((prot & kVMExecute) && (prot & kVMWrite))
+			kprintf("note: riteable and executable segment\n");
 
 		r = vm_ps_map_object_view(ex_curproc()->vm, vnode->object,
 		    &vaddr_based, mapped_length_aligned, file_offset_aligned,

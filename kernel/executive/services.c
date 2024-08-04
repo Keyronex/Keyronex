@@ -43,6 +43,7 @@ krx_vm_map(vaddr_t hint, size_t size, int prot, int flags, int handle,
 {
 	int r;
 	vm_object_t *obj = NULL;
+	int protection = kVMRead;
 
 	if (!(flags & MAP_ANON)) {
 		struct file *file;
@@ -60,8 +61,14 @@ krx_vm_map(vaddr_t hint, size_t size, int prot, int flags, int handle,
 		kfatal("Implement anon shared\n");
 	}
 
+	if (prot & PROT_WRITE)
+		protection |= kVMWrite;
+
+	if (prot & PROT_EXEC)
+		protection |= kVMExecute;
+
 	r = vm_ps_map_object_view(ex_curproc()->vm, obj, &hint, size, offset,
-	    kVMAll, kVMAll, !(flags & MAP_PRIVATE),
+	    protection, protection, !(flags & MAP_PRIVATE),
 	    obj != NULL ? (flags & MAP_PRIVATE) : false, flags & MAP_FIXED);
 	if (r == 0)
 		*out = hint;

@@ -376,6 +376,7 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		kassert(page->referent_pte == V2P(pte));
 		vmp_md_pte_create_trans(pte, page->pfn);
 		ki_tlb_flush_vaddr_globally(vaddr);
+		vmp_page_clean_dcache_postevict(page);
 		vmp_page_release_locked(page);
 		break;
 	}
@@ -386,6 +387,7 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		vmp_md_pte_create_zero(pte);
 		vmp_pagetable_page_pte_deleted(vmps, pte_page, false);
 		ki_tlb_flush_vaddr_globally(vaddr);
+		vmp_page_clean_dcache_postevict(page);
 		vmp_page_release_locked(page);
 		break;
 

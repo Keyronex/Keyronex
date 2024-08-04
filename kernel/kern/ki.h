@@ -2,6 +2,7 @@
 #define KRX_NANOKERN_KI_H
 
 #include "kdk/kern.h"
+#include "kdk/vmtypes.h"
 
 /*!
  * Upcall from MD to Ke - process the DPC queue on a CPU.
@@ -83,7 +84,25 @@ void ki_reschedule(void);
 void ki_rcu_quiet();
 void ki_rcu_per_cpu_init(struct ki_rcu_per_cpu_data *data);
 
+/*!
+ * @brief Clean and invalidate dcache lines.
+ */
+void ki_dcache_clean_invalidate_range(vaddr_t base, vaddr_t limit);
+/*!
+ * @brief Invalidate dcache lines.
+ */
+void ki_dcache_invalidate_range(vaddr_t base, vaddr_t limit);
+/*!
+ * @brief Invalidate dcache and icache lines.
+ */
+void ki_icache_synchronise_range(vaddr_t base, vaddr_t limit);
+/*!
+ * @brief Flush a TLB entry for a given vaddr on this core only.
+ */
 void ki_tlb_flush_vaddr_locally(uintptr_t vaddr);
+/*!
+ * @brief Flush a TLB entry for a given vaddr on every core.
+ */
 void ki_tlb_flush_vaddr_globally(uintptr_t vaddr);
 
 void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
