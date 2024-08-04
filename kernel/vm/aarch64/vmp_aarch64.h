@@ -66,7 +66,7 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 		pte.hw.uxn = 1;
 	}
 
-	ppte->value = pte.value;
+	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
 	asm volatile("dsb ishst\n\t"
 		     "isb\n\t" ::
 			 : "memory");
@@ -80,6 +80,7 @@ vmp_md_pte_create_busy(pte_t *ppte, pfn_t pfn)
 	pte.sw.data = pfn;
 	pte.sw.kind = kSoftPteKindBusy;
 	ppte->value = pte.value;
+	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
 }
 
 static inline void
@@ -89,7 +90,7 @@ vmp_md_pte_create_trans(pte_t *ppte, pfn_t pfn)
 	pte.sw.valid = 0;
 	pte.sw.data = pfn;
 	pte.sw.kind = kSoftPteKindTrans;
-	ppte->value = pte.value;
+	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
 	asm volatile("dsb ishst\n\t"
 		     "isb\n\t" ::
 			 : "memory");
@@ -102,13 +103,16 @@ vmp_md_pte_create_swap(pte_t *ppte, pfn_t pfn)
 	pte.sw.valid = 0;
 	pte.sw.data = pfn;
 	pte.sw.kind = kSoftPteKindSwap;
-	ppte->value = pte.value;
+	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
+	/* no barrier - swap PTEs always replace trans PTEs. */
 }
 
 static inline void
-vmp_md_pte_create_zero(pte_t *pte)
+vmp_md_pte_create_zero(pte_t *ppte)
 {
-	pte->value = 0;
+	pte_t pte;
+	pte.value = 0;
+	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
 	asm volatile("dsb ishst\n\t"
 		     "isb\n\t" ::
 			 : "memory");
