@@ -201,10 +201,10 @@ vmp_page_dcache_flush_post_readin(vm_page_t *page)
 }
 
 static inline void
-vmp_page_invalidate_dcache(vm_page_t *page)
+vmp_page_flush_dcache(vm_page_t *page)
 {
 	vaddr_t base = vm_page_direct_map_addr(page);
-	ki_dcache_invalidate_range(base, base + PGSIZE);
+	ki_dcache_clean_invalidate_range(base, base + PGSIZE);
 }
 
 static inline void
@@ -218,7 +218,7 @@ static inline void
 vmp_page_clean_dcache_postevict(vm_page_t *page)
 {
 	vaddr_t base = vm_page_direct_map_addr(page);
-	ki_dcache_invalidate_range(base, base + PGSIZE);
+	ki_dcache_clean_invalidate_range(base, base + PGSIZE);
 }
 
 

@@ -71,6 +71,8 @@ md_switch(kthread_t *old_thread)
 	kthread_t *new_thread = curthread();
 	bool intr;
 
+	intr = ki_disable_interrupts();
+
 	void write_ttbr0_el1(paddr_t val);
 	write_ttbr0_el1(ex_curproc()->vm->md.table);
 
@@ -79,7 +81,6 @@ md_switch(kthread_t *old_thread)
 	if (new_thread->user)
 		restore_fp(new_thread->pcb.fp);
 
-	intr = ki_disable_interrupts();
 	asm_swtch(&old_thread->pcb, &curthread()->pcb);
 	ki_set_interrupts(intr);
 }
@@ -109,7 +110,7 @@ icache_line()
 {
 	uint64_t ctr;
 	asm volatile("mrs %0, ctr_el0" : "=r"(ctr));
-	return (ctr & 0b1111) << 4;
+	return (4 << (ctr & 0b1111));
 }
 
 static inline size_t
@@ -117,7 +118,7 @@ dcache_line()
 {
 	uint64_t ctr;
 	asm volatile("mrs %0, ctr_el0" : "=r"(ctr));
-	return ((ctr >> 16) & 0b1111) << 4;
+	return (4 << ((ctr >> 16) & 0b1111));
 }
 
 void
@@ -213,13 +214,19 @@ void
 ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 {
 	ki_disable_interrupts();
+
 	uintptr_t spsr = 0x60000000;
+	uintptr_t sp_el1 = (uintptr_t)curthread()->kstack_base + KSTACK_SIZE;
+
 	asm volatile("msr sp_el0, %0\n\t"
 		     "msr elr_el1, %1\n\t"
 		     "msr spsr_el1, %2\n\t"
-		     "eret\n"
+		     "mov sp, %3\n\t"
+		     "eret\n\t"
+		     "dsb sy\n\t"
+		     "isb\n\t"
 		     :
-		     : "r"(sp), "r"(ip), "r"(spsr)
+		     : "r"(sp), "r"(ip), "r"(spsr), "r"(sp_el1)
 		     : "memory");
 	kfatal("Unreached\n");
 }

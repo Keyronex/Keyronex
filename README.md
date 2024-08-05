@@ -13,13 +13,13 @@ the virtual memory system.
 
 Keyronex is a portable system:
 
-| Architecture | Platform     | Status         |
-|--------------|--------------|----------------|
-| aarch64      | Generic ACPI | Broken[^1]     |
-| amd64        | Generic ACPI | Well-supported |
-| m68k         | Amiga        | Planned        |
-| m68k         | QEmu "Virt"  | Well-supported |
-| riscv64      | Generic ACPI | Planned        |
+| Architecture | Platform     | Status                   |
+|--------------|--------------|--------------------------|
+| aarch64      | Generic ACPI | Poorly supported[^1]     |
+| amd64        | Generic ACPI | Well-supported           |
+| m68k         | Amiga        | Planned                  |
+| m68k         | QEmu "Virt"  | Well-supported           |
+| riscv64      | Generic ACPI | Planned                  |
 
 *[ This is a rewrite  branch which currently lacks features; the previous, more
 featured branch is `23-jul`, which features ports of such apps as the GNU
@@ -29,7 +29,7 @@ apps such as Twm and Xeyes, and the Links text-mode web browser. ]*
 [Mintia]: https://github.com/limnarch/mintia
 
 [^1]: The AArch64 port has only had limited testing, and userland code execution
-  is unreliable with frequent exceptions.
+  only works with a workaround for unknown-ESR exceptions.
 
 ### Architecture
 

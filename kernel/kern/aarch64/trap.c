@@ -73,11 +73,39 @@ ki_set_interrupts(bool enable)
 		asm volatile("msr daifset, #0xf");
 }
 
+
+static uint64_t unkesr_counter[64];
+
 void
 common_sync(md_intr_frame_t *frame)
 {
 	struct aarch64_esr esr;
 	bool userland = false;
+
+	if (frame->esr == 0x2000000) {
+		/*
+		 * I don't know why this happens nor why tlb invalidation gets
+		 * it going again.
+		 *
+		 * TLB entries are invalidated apparently in all the right
+		 * places, and even adding tlbi vmalle1 all over the place
+		 * does not fix things.
+		 *
+		 * Even with aggressive page stealing, no harm seems to
+		 * happen... for whatever reason, this nonsense somehow gets
+		 * userland execution going again.
+		 *
+		 * The counter is kept for ease of investigation in the future.
+		 * A per-thread counter ought to be kept also and repeated
+		 * entries here for the same ELR should terminate the thread.
+		 */
+		unkesr_counter[(frame->elr >> 4) % 64]++;
+		asm volatile("tlbi vaae1, %0\n\t"
+			     :
+			     : "r"(frame->elr >> 12)
+			     : "memory");
+		return;
+	}
 
 	ki_set_interrupts(true);
 

@@ -161,6 +161,8 @@
 	.cfi_restore sp
 
 	eret
+	dsb sy
+	isb
 	.cfi_endproc
 .endm
 
@@ -233,9 +235,13 @@ asm_swtch:
 	mov sp, x2
 
 	ret
+	dsb sy
+	isb
 
 .global asm_thread_trampoline
 asm_thread_trampoline:
 	mov x0, x19
 	mov x1, x20
 	bl thread_trampoline
+	dsb sy
+	isb

@@ -435,7 +435,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	if (pte_kind == kPTEKindValid &&
 	    (!write || vmp_md_hw_pte_is_writeable(state.pte))) {
-		kprintf("Nothing to do for 0x%zx?\n", vaddr);
+		kprintf("Nothing to do for 0x%zx/%d?\n", vaddr, write);
 		ki_tlb_flush_vaddr_locally(vaddr);
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(ipl);
@@ -731,6 +731,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 	if (area_info.map_lock_held)
 		ex_rwlock_release_read(&vmps->map_lock);
 	ke_mutex_release(&vmps->ws_mutex);
+
 
 	return r;
 }

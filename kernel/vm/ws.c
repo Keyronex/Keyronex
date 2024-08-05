@@ -394,4 +394,5 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 	default:
 		kfatal("Unhandled page use in working set eviction\n");
 	}
+
 }

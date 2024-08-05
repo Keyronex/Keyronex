@@ -1,5 +1,6 @@
 #include <sys/mman.h>
 #include <keyronex/syscall.h>
+#include <unistd.h>
 
 #include <cassert>
 #include <iostream>
@@ -28,14 +29,14 @@ int main(int argc, char *argv[])
 
 	std::thread t2(
 	    [](std::string msg) {
-		    syscall1(kKrxDebugMessage, (uintptr_t)msg.c_str(), NULL);
+		    std::cout << "Hello from thread " << syscall0(kKrxGetTid, NULL) << "\n";
 		    for (;;) ;
 	    },
 	    "Hello world from thread 2!");
 
 	std::thread t3(
 	    [](std::string msg) {
-		    syscall1(kKrxDebugMessage, (uintptr_t)msg.c_str(), NULL);
+		    std::cout << "Hello from thread " << syscall0(kKrxGetTid, NULL) << "\n";
 		    for (;;) ;
 	    },
 	    "Hello world from thread 3!");
