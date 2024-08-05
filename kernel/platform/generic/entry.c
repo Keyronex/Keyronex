@@ -116,6 +116,9 @@ ap_init(struct limine_smp_info *smpi)
 #elif defined(__aarch64__)
 #define SMPR_BSP_ID bsp_mpidr
 #define SMPI_ID mpidr
+#elif defined (__riscv)
+#define SMPR_BSP_ID bsp_hartid
+#define SMPI_ID hartid
 #endif
 
 static void

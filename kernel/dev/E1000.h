@@ -4,7 +4,7 @@
 #include "DKNIC.h"
 #include "PCIBus.h"
 
-#if defined(__aarch64__) || defined(__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 
 #define E1000_NDESCS 256
 

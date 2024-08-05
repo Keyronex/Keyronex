@@ -5,7 +5,7 @@
 #include "kdk/object.h"
 #include "ntcompat/NTStorPort.h"
 
-#if defined(__aarch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 #include "uacpi/resources.h"
 #include "uacpi/utilities.h"
 #include "uacpi/kernel_api.h"
@@ -235,7 +235,7 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 {
 	struct pci_dev_info info;
 
-#if defined(__aarch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 #define CFG_READ(WIDTH, OFFSET) \
 	pci_read##WIDTH(seg, bus, slot, fun, OFFSET)
 
@@ -290,7 +290,7 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	[self registerDevice];
 	DKLogAttach(self);
 
-#if defined(__aarch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 	for (unsigned slot = 0; slot < 32; slot++) {
 		size_t nFun = 1;
 

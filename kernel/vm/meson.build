@@ -7,6 +7,8 @@ elif (cpu == 'aarch64')
 	kernel_sources += files('aarch64/vm_aarch64.c')
 elif (cpu == 'amd64')
 	kernel_sources += files('amd64/vm_amd64.c')
+elif (cpu == 'riscv64')
+	kernel_sources += files('riscv64/vm_riscv64.c')
 else
 	#error('Unknown processor')
 endif

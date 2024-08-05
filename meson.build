@@ -62,6 +62,20 @@ if not headers_only
 			'-fno-pic',
 			'-mgeneral-regs-only',
 		]
+	elif (arch == 'riscv64')
+		cpu = 'riscv64'
+		meson_cpu_family = cpu
+		freestanding_c_args += [
+			'-DRISCV64',
+			'-ffreestanding',
+			'-fno-stack-protector',
+			'-fno-stack-check',
+			'-fno-pie',
+			'-fno-pic',
+			'-mabi=lp64',
+			'-march=rv64imac_zicsr_zifencei',
+			'-mno-relax'
+		]
 	else
 		message('\n\tport ' + arch + ' is not supported by Keyronex')
 		error('\n\tbad arch')

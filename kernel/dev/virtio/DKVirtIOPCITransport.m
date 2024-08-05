@@ -17,7 +17,7 @@
 #include "kdk/amd64.h"
 #endif
 
-#if defined(__aarch64__) || defined(__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 @interface
 DKVirtIOPCITransport (Private)
 - (instancetype)initWithPCIBus:(PCIBus *)provider

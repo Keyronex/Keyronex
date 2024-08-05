@@ -7,6 +7,8 @@
 #include "aarch64.h"
 #elif defined(AMD64)
 #include "amd64.h"
+#elif defined(__riscv)
+#include "riscv64.h"
 #else
 #error "Unknown port!"
 #endif

@@ -16,4 +16,6 @@ elif (arch == 'm68k')
 	subdir('platform/m68k-virt')
 elif (arch == 'aarch64')
 	subdir('platform/aarch64-virt')
+elif (arch == 'riscv64')
+	subdir('platform/riscv64-virt')
 endif

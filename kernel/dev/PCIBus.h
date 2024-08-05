@@ -3,7 +3,7 @@
 
 #include "ddk/DKDevice.h"
 
-#if defined(__aarch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 #include "uacpi/types.h"
 #include "uacpi/uacpi.h"
 #endif
@@ -27,7 +27,7 @@ struct pci_dev_info {
 	bool edge;
 };
 
-#if defined(__aarch64__) || defined (__amd64__)
+#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 @protocol DKPCIDeviceDelegate
 
 - (void)capabilityEnumeratedAtOffset:(voff_t)capOffset;

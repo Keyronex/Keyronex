@@ -14,6 +14,8 @@ struct eprocess;
 #include "aarch64/vmp_aarch64.h"
 #elif defined(__amd64__)
 #include "amd64/vmp_amd64.h"
+#elif defined (__riscv)
+#include "riscv64/vmp_riscv64.h"
 #else
 #error "Unknown port!"
 #endif
