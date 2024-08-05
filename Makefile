@@ -14,6 +14,7 @@ else ifeq ($(ARCH), aarch64)
 	PLATFORM ?= aarch64-virt
 else ifeq ($(ARCH), riscv64)
 	TARGET_TRIPLE := riscv64-keyronex
+	PLATFORM ?= riscv64-virt
 else
 	$(error Unsupported ARCH: $(ARCH))
 endif

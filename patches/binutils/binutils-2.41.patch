@@ -72,16 +72,16 @@ diff -ruN binutils-2.41-original/gas/configure.tgt binutils-2.41/gas/configure.t
    m68k-*-haiku*)			fmt=elf em=haiku ;;
 +  m68k-*-keyronex*)			fmt=elf em=linux ;;
 +
- 
+
    s12z-*-*)				fmt=elf ;;
- 
+
 @@ -371,6 +375,7 @@
    pru-*-*)				fmt=elf ;;
- 
+
    riscv*-*-haiku*)			fmt=elf endian=little em=haiku ;;
-+  riscv*-*-haiku*)			fmt=elf endian=little em=linux ;;
++  riscv*-*-keyronex*)			fmt=elf endian=little em=linux ;;
    riscv*-*-*)				fmt=elf ;;
- 
+
    rx-*-linux*)				fmt=elf em=linux ;;
 diff -ruN binutils-2.41-original/ld/configure.tgt binutils-2.41/ld/configure.tgt
 --- binutils-2.41-original/ld/configure.tgt	2023-09-19 15:28:55.171990475 +0100

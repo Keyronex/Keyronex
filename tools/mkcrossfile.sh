@@ -17,6 +17,11 @@ elif [ "$ARCH" = "aarch64" ]; then
   cpu_family=aarch64
   endian=little
   cpu=aarch64
+elif [ "$ARCH" = "riscv64" ]; then
+  TRIPLE=riscv64-keyronex
+  cpu_family=riscv64
+  endian=little
+  cpu=riscv64
 else
   echo "Unsupported architecture: $ARCH"
   exit 1
