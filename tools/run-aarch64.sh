@@ -1,11 +1,13 @@
 qemu_exe=qemu-system-aarch64
 cores=1
+memory=128
 
-while getopts "S:c:kr:spq:9" optchar; do
+while getopts "S:c:km:r:spq:9" optchar; do
 	case $optchar in
 	9) virtio_9p=1 ;;
 	c) cores=$OPTARG ;;
 	k) kvm=1 ;;
+	m) memory=$OPTARG ;;
 	r) root=$OPTARG ;;
 	s) serial_stdio=1 ;;
 	p) pause=1 ;;
@@ -49,7 +51,7 @@ virtio_trace_arg=--trace "virtio_*"
 
 $qemu_exe -M virt -cpu ${cpu} -smp ${cores} \
   -device ramfb -device qemu-xhci -device usb-kbd \
-  -m 128 \
+  -m ${memory} \
   -bios OVMF.fd \
   -boot menu=on,splash-time=0 \
   -cdrom build/aarch64/barebones.iso \

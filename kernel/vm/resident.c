@@ -209,10 +209,10 @@ vm_region_add(paddr_t base, size_t length)
 {
 	struct vmp_pregion *bm = (void *)P2V(base);
 	size_t		    used; /* n bytes used by bitmap struct */
-	int		    b;
+	size_t		    b;
 	paddr_t limit;
 
-	if (length < 2)
+	if (length / PGSIZE < 2)
 		return;
 
 	/* set up a pregion for this area */
