@@ -1,0 +1,19 @@
+If:
+  PathMatch: kernel/.*
+CompileFlags:
+  CompilationDatabase: build/riscv64/pkg-builds/kernel
+---
+If:
+  PathMatch: platform/.*
+CompileFlags:
+  CompilationDatabase: build/riscv64/pkg-builds/kernel
+---
+If:
+  PathMatch: lwip/.*
+CompileFlags:
+  CompilationDatabase: build/riscv64/pkg-builds/kernel
+---
+If:
+  PathMatch: mlibc/.*
+CompileFlags:
+  CompilationDatabase: build/riscv64/pkg-builds/mlibc

@@ -55,7 +55,7 @@ write_vbar_el1(void *addr)
 	asm volatile("msr VBAR_EL1, %0" ::"r"(addr));
 }
 
-bool
+int
 ki_disable_interrupts(void)
 {
 	uint64_t daif;
@@ -65,7 +65,7 @@ ki_disable_interrupts(void)
 }
 
 void
-ki_set_interrupts(bool enable)
+ki_set_interrupts(int enable)
 {
 	if (enable)
 		asm volatile("msr daifclr, #0xf");
