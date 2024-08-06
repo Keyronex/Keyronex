@@ -18,11 +18,38 @@ md_raise_dpc_interrupt(void)
 ipl_t
 splraise(ipl_t ipl)
 {
+	bool x = ki_disable_interrupts();
+	ipl_t old = curcpu()->cpucb.ipl;
+	kassert(ipl >= old);
+	curcpu()->cpucb.ipl = ipl;
+	if (ipl < kIPLHigh)
+		ki_set_interrupts(x);
+	return old;
 }
 
 void
 splx(ipl_t to)
 {
+	bool x = ki_disable_interrupts();
+	kcpu_t *cpu = curcpu();
+	ipl_t old = cpu->cpucb.ipl;
+	kassert(to <= old);
+
+	if (old >= kIPLDPC && to < kIPLDPC) {
+		cpu->cpucb.ipl = kIPLDPC;
+		while (cpu->cpucb.dpc_int) {
+			curcpu()->cpucb.dpc_int = 0;
+			ki_set_interrupts(x);
+			ki_dispatch_dpcs(cpu);
+			x = ki_disable_interrupts();
+		}
+		cpu = curcpu(); /* could have migrated! */
+	}
+
+	cpu->cpucb.ipl = to;
+
+	if (to < kIPLHigh)
+		ki_set_interrupts(x);
 }
 
 ipl_t

@@ -13,13 +13,13 @@ the virtual memory system.
 
 Keyronex is a portable system:
 
-| Architecture | Platform     | Status                   |
-|--------------|--------------|--------------------------|
-| aarch64      | Generic ACPI | Poorly supported[^1]     |
-| amd64        | Generic ACPI | Well-supported           |
-| m68k         | Amiga        | Planned                  |
-| m68k         | QEmu "Virt"  | Well-supported           |
-| riscv64      | Generic ACPI | Planned                  |
+| Platform       | Architecture | Status                   |
+|----------------|--------------|--------------------------|
+| ACPI 64-bit PC | amd64        | Well-supported           |
+| ACPI AArch64   | aarch64      | Poorly supported[^1]     |
+| ACPI RISC-V 64 | riscv64      | Under development        |
+| Amiga          | m68k         | Planned                  |
+| QEMU Virt m68k | m68k         | Well-supported           |
 
 *[ This is a rewrite  branch which currently lacks features; the previous, more
 featured branch is `23-jul`, which features ports of such apps as the GNU

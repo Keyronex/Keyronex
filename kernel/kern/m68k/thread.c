@@ -10,7 +10,7 @@ md_cpu_init(kcpu_t *cpu)
 void vmp_activate(struct vm_procstate *ps);
 
 void
-md_switch(kthread_t *old_thread)
+md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {
 	extern void asm_swtch(m68k_context_t * old, m68k_context_t * new);
 	vmp_activate(ex_curproc()->vm);

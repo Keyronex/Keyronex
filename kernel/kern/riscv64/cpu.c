@@ -3,7 +3,16 @@
  * Created on Mon Aug 05 2024.
  */
 
+#include "kdk/executive.h"
+#include "kdk/riscv64.h"
 #include "kern/ki.h"
+#include "vm/vmp.h"
+
+/* trap.S */
+void asm_thread_trampoline(void);
+void asm_swtch(riscv64_context_t **pold_sp, riscv64_context_t *psp);
+/* vm_riscv64.c */
+void write_satp(paddr_t paddr);
 
 static inline uint64_t
 read_sstatus(void)
@@ -41,10 +50,23 @@ ki_set_interrupts(int enabled)
 }
 
 void
+c_thread_trampoline(void (*func)(void *), void *arg)
+{
+	ke_spinlock_release_nospl(&curcpu()->old_thread->lock);
+	ki_set_interrupts(true);
+	splx(kIPL0);
+	func(arg);
+}
+
+void
 ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 {
-	for (;;)
-		;
+	riscv64_context_t *ctx = (riscv64_context_t *)(thread->kstack_base +
+	    KSTACK_SIZE - sizeof(riscv64_context_t));
+	ctx->ra = (uintptr_t)asm_thread_trampoline;
+	ctx->s0 = (uintptr_t)func;
+	ctx->s1 = (uintptr_t)arg;
+	thread->pcb.sp = ctx;
 }
 
 void
@@ -82,10 +104,24 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 }
 
 void
-md_switch(kthread_t *old_thread)
+md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {
-	for (;;)
-		;
+	bool intr;
+
+	intr = ki_disable_interrupts();
+
+	asm volatile("mv tp, %0" : : "r"(new_thread));
+	write_satp(ex_curproc()->vm->md.table);
+
+#if 0
+	if (old_thread->user)
+		save_fp(old_thread->pcb.fp);
+	if (new_thread->user)
+		restore_fp(new_thread->pcb.fp);
+#endif
+
+	asm_swtch(&old_thread->pcb.sp, new_thread->pcb.sp);
+	ki_set_interrupts(intr);
 }
 
 void

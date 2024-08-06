@@ -66,9 +66,8 @@ restore_fp(uint64_t *state)
 }
 
 void
-md_switch(kthread_t *old_thread)
+md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {
-	kthread_t *new_thread = curthread();
 	bool intr;
 
 	intr = ki_disable_interrupts();

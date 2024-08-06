@@ -402,7 +402,7 @@ void pac_putc(int ch, void *unused);
  *
  * \post IPL=high
  */
-void md_switch(kthread_t *old_thread);
+void md_switch(kthread_t *old_thread, kthread_t *new_thread);
 
 /*!
  * @brief Raise interrupt priority level and return the previous.

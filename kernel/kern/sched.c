@@ -195,7 +195,7 @@ ki_reschedule(void)
 	}
 
 	/* do the machine-specific switching of state */
-	md_switch(old_thread);
+	md_switch(old_thread, next);
 
 	/* by this point, curcpu() can have changed. */
 

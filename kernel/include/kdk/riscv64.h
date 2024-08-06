@@ -47,11 +47,11 @@ typedef enum ipl {
 	kIPLAST = 1,
 	kIPLDPC = 2,
 	kIPLDevice = 14, /* most external IRQs */
-	kIPLHigh = 15, /* hardclock, invlpg IPI */
+	kIPLHigh = 15,	 /* hardclock, invlpg IPI */
 } ipl_t;
 
 typedef struct riscv64_context {
-
+	uintptr_t ra, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
 } riscv64_context_t;
 
 typedef struct __attribute__((packed)) md_intr_frame {
@@ -78,7 +78,7 @@ struct intr_entry {
 };
 
 typedef struct md_pcb {
-	riscv64_context_t genregs;
+	riscv64_context_t *sp;
 	uint64_t fp[66];
 } md_pcb_t;
 
@@ -98,9 +98,9 @@ hcf(void)
 static inline struct kthread *
 curthread(void)
 {
-    struct kthread *thread;
-    asm volatile("mv %0, tp" : "=r"(thread));
-    return thread;
+	struct kthread *thread;
+	asm volatile("mv %0, tp" : "=r"(thread));
+	return thread;
 }
 
 void md_intr_register(const char *name, uint32_t gsi, ipl_t prio,

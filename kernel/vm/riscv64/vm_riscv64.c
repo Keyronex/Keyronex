@@ -7,13 +7,12 @@
 #include "kdk/libkern.h"
 #include "vm/vmp.h"
 
-static inline void
+void
 write_satp(paddr_t paddr)
 {
 	uint64_t satp_value = (paddr >> 12) | (0x9UL << 60);
 
-	asm volatile("sfence.vma\n\t"
-		     "csrw satp, %0\n\t"
+	asm volatile("csrw satp, %0\n\t"
 		     "sfence.vma\n\t"
 		     :
 		     : "r"(satp_value)

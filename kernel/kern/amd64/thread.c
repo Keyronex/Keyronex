@@ -26,10 +26,8 @@ fxrstor(uint8_t *state)
 }
 
 void
-md_switch(kthread_t *old_thread)
+md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {
-	kthread_t *new_thread = curthread();
-
 	write_cr3(ex_curproc()->vm->md.table);
 
 	wrmsr(kAMD64MSRFSBase, new_thread->tcb);

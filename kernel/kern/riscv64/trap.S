@@ -1,6 +1,7 @@
 .cfi_sections .debug_frame, .eh_frame
 
 .globl c_trap
+.global c_thread_trampoline
 
 #define FRAME_RA 0*8
 #define FRAME_SP 1*8
@@ -168,3 +169,61 @@ trap:
 	sret
 
 	.cfi_endproc
+
+#define CTX_RA 0*8
+#define CTX_S0 1*8
+#define CTX_S1 2*8
+#define CTX_S2 3*8
+#define CTX_S3 4*8
+#define CTX_S4 5*8
+#define CTX_S5 6*8
+#define CTX_S6 7*8
+#define CTX_S7 8*8
+#define CTX_S8 9*8
+#define CTX_S9 10*8
+#define CTX_S10 11*8
+#define CTX_S11 12*8
+#define CTX_SIZE 13*8
+
+.globl asm_swtch
+/* void asm_swtch(void **oldsp, void *newsp) */
+asm_swtch:
+	addi sp, sp, -CTX_SIZE
+	sd	ra, CTX_RA(sp)
+	sd	s0, CTX_S0(sp)
+	sd	s1, CTX_S1(sp)
+	sd	s2, CTX_S2(sp)
+	sd	s3, CTX_S3(sp)
+	sd	s4, CTX_S4(sp)
+	sd	s5, CTX_S5(sp)
+	sd	s6, CTX_S6(sp)
+	sd	s7, CTX_S7(sp)
+	sd	s8, CTX_S8(sp)
+	sd	s9, CTX_S9(sp)
+	sd	s10, CTX_S10(sp)
+	sd	s11, CTX_S11(sp)
+	sd	sp, (a0) # save sp into oldsp
+
+	mv	sp, a1 # restore sp from newsp
+	ld	ra, CTX_RA(sp)
+	ld	s0, CTX_S0(sp)
+	ld	s1, CTX_S1(sp)
+	ld	s2, CTX_S2(sp)
+	ld	s3, CTX_S3(sp)
+	ld	s4, CTX_S4(sp)
+	ld	s5, CTX_S5(sp)
+	ld	s6, CTX_S6(sp)
+	ld	s7, CTX_S7(sp)
+	ld	s8, CTX_S8(sp)
+	ld	s9, CTX_S9(sp)
+	ld	s10, CTX_S10(sp)
+	ld	s11, CTX_S11(sp)
+
+	addi sp, sp, CTX_SIZE
+	ret
+
+.globl asm_thread_trampoline
+asm_thread_trampoline:
+	mv a0, s0
+	mv a1, s1
+	call c_thread_trampoline
