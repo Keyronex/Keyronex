@@ -9,13 +9,13 @@
 
 extern volatile struct limine_framebuffer_request framebuffer_request;
 
-@interface VirtAArch64Platform : DKDevice <DKPlatformDevice>
+@interface VirtRISCV64Platform : DKDevice <DKPlatformDevice>
 
 @end
 
 extern struct bootinfo bootinfo;
 
-@implementation VirtAArch64Platform
+@implementation VirtRISCV64Platform
 
 + (void)load
 {

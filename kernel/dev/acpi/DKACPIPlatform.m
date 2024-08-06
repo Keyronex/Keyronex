@@ -208,6 +208,7 @@ gtdt_walk(void)
 	kprintf("GTDT: %p/ EL1 NS: GSIV %u, Flags 0x%x\n", gtdt,
 	    gtdt->nonsecure_el1_interrupt, gtdt->nonsecure_el1_flags);
 }
+#endif
 
 static void
 mcfg_walk(void)
@@ -229,11 +230,12 @@ mcfg_walk(void)
 	kassert(nentries == 1); /* todo(low): handle multiple */
 	for (int i = 0; i < nentries; i++) {
 		struct acpi_mcfg_allocation *entry = &mcfg->entries[i];
+		DKDevLog(acpiplatform, "PCI-E eCAM base [%d:%d-%d]: 0x%lx\n",
+		    entry->segment, entry->start_bus, entry->end_bus,
+		    entry->address);
 		[PCIBus setECAMBase:entry->address];
 	}
 }
-
-#endif
 
 - (instancetype)initWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
 {
@@ -270,8 +272,8 @@ mcfg_walk(void)
 	madt_walk((struct acpi_madt *)madt.virt_addr, parse_giccs, NULL);
 	madt_walk((struct acpi_madt *)madt.virt_addr, parse_gicds, NULL);
 	gtdt_walk();
-	mcfg_walk();
 #endif
+	mcfg_walk();
 
 	return self;
 }
