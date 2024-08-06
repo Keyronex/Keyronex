@@ -1,0 +1,5 @@
+file build/riscv64/pkg-builds/kernel/kernel/platform/riscv64-virt/keyronex
+add-symbol-file build/riscv64/system-root/usr/bin/posix_server
+add-symbol-file -o 0x40000000 build/riscv64/system-root/usr/lib/ld.so
+add-symbol-file -o 0x41600000 build/riscv64/system-root/usr/lib/libc.so
+target remote localhost:1234

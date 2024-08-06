@@ -11,11 +11,27 @@
 #include "kdk/object.h"
 #include "vm/vmp.h"
 
+struct sbi_return_t {
+	uintptr_t err, ret;
+};
+
 void
-pac_putc(int c, void *ctx)
+sbi_ecall1(int ext, int func, uintptr_t arg0)
 {
-	for (;;)
-		;
+	struct sbi_return_t ret;
+	register uintptr_t a7 asm("a7") = ext;
+	register uintptr_t a6 asm("a6") = func;
+	register uintptr_t a0 asm("a0") = arg0;
+	register uintptr_t a1 asm("a1");
+	asm volatile("ecall" : "+r"(a0), "=r"(a1) : "r"(a7), "r"(a6));
+	ret.err = a0;
+	ret.ret = a1;
+}
+
+void
+pac_putc(int ch, void *ctx)
+{
+	sbi_ecall1(1, 0, ch);
 }
 
 void
@@ -27,6 +43,11 @@ md_cpu_init(kcpu_t *cpu)
 void
 plat_first_init(void)
 {
+	void trap(void);
+
+	asm volatile("mv tp, %0" : : "r"(&thread0));
+	asm volatile("csrw sscratch, zero");
+	asm volatile("csrw stvec, %0" : : "r"(trap));
 }
 
 void

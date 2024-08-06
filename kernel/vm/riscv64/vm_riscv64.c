@@ -4,7 +4,29 @@
  */
 
 #include "kdk/executive.h"
+#include "kdk/libkern.h"
 #include "vm/vmp.h"
+
+static inline void
+write_satp(paddr_t paddr)
+{
+	uint64_t satp_value = (paddr >> 12) | (0x9UL << 60);
+
+	asm volatile("sfence.vma\n\t"
+		     "csrw satp, %0\n\t"
+		     "sfence.vma\n\t"
+		     :
+		     : "r"(satp_value)
+		     : "memory");
+}
+
+static inline paddr_t
+read_satp()
+{
+	uint64_t satp;
+	asm volatile("csrr %0, satp\n" : "=r"(satp));
+	return (satp & 0xFFFFFFFFFFF) << 12;
+}
 
 void
 vmp_md_ps_init(eprocess_t *ps)
@@ -12,36 +34,17 @@ vmp_md_ps_init(eprocess_t *ps)
 	vm_procstate_t *vmps = ps->vm;
 	vm_page_t *table_page;
 	paddr_t table_addr;
-#if 0
 	pte_t *table_ptebase;
-#endif
 
 	vm_page_alloc(&table_page, 0, kPageUsePML4, true);
 	table_page->process = ps;
 	table_addr = vmp_page_paddr(table_page);
 	vmps->md.table = table_addr;
 
-	for (;;) ;
-
-#if 0
 	if (vmps == &kernel_procstate) {
-		struct id_aa64mmfr0_el1 id = read_id_aa64mmfr0_el1();
-		struct tcr_el1 tcr = read_tcr_el1();
-
-		if (id.tgran4 != 0) {
-			kfatal("todo: support non 4kib-granularity pages\n")
-		} else if (tcr.tg0 != kTG0GranuleSize4KiB ||
-		    tcr.tg1 != kTG1GranuleSize4KiB) {
-			kfatal("todo: support non 4kib-granularity pages\n")
-		} else if (tcr.t0sz != 16 || tcr.t1sz != 16) {
-			kfatal("todo: support non-16 t0sz/t1sz\n");
-		}
-
-		memcpy((void *)P2V(table_addr), (void *)P2V(read_ttbr1_el1()),
+		memcpy((void *)P2V(table_addr), (void *)P2V(read_satp()),
 		    PGSIZE);
 
-
-#if 0 /* unneeded on aarch64! */
 		/* preallocate higher half entries */
 		table_ptebase = (pte_t *)P2V(table_addr);
 		for (int i = 256; i < 512; i++) {
@@ -55,16 +58,13 @@ vmp_md_ps_init(eprocess_t *ps)
 				pml3_page->nonzero_ptes = 10000;
 				pml3_page->noswap_ptes = 10000;
 				pml3_page->refcnt = 10000;
-				pte->hw_table.valid = 1;
-				pte->hw_table.is_table = 1;
-				pte->hw_table.next_level = pml3_page->pfn;
+				pte->hw.valid = 1;
+				pte->hw.pfn = pml3_page->pfn;
 			}
 		}
-#endif
 
-	write_ttbr1_el1(table_addr);
+		write_satp(table_addr);
 	}
-#endif
 }
 
 paddr_t

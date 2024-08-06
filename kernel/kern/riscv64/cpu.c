@@ -5,19 +5,39 @@
 
 #include "kern/ki.h"
 
+static inline uint64_t
+read_sstatus(void)
+{
+	uint64_t value;
+	asm volatile("csrr %0, sstatus" : "=r"(value));
+	return value;
+}
+
+static inline void
+write_sstatus(uint64_t value)
+{
+	asm volatile("csrw sstatus, %0" : : "r"(value) : "memory");
+}
+
 int
 ki_disable_interrupts(void)
 {
-	for (;;)
-		;
+	uint64_t sstatus = read_sstatus();
+	uint64_t old_sstatus = sstatus;
+	sstatus &= ~0x2; /* sie */
+	write_sstatus(sstatus);
+	return (old_sstatus & 0x2) != 0;
 }
 
 void
 ki_set_interrupts(int enabled)
 {
-
-	for (;;)
-		;
+	uint64_t sstatus = read_sstatus();
+	if (enabled)
+		sstatus |= 0x2;
+	else
+		sstatus &= ~0x2;
+	write_sstatus(sstatus);
 }
 
 void
@@ -30,8 +50,7 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 void
 ki_tlb_flush_vaddr_locally(vaddr_t addr)
 {
-	for (;;)
-		;
+	asm volatile("sfence.vma %0" : : "r"(addr) : "memory");
 }
 
 void

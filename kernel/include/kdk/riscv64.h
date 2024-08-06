@@ -18,14 +18,14 @@
 #define PGSIZE 4096
 #define LOWER_HALF 0x10000
 #define LOWER_HALF_SIZE (0x0000800000000000 - LOWER_HALF)
-#define HIGHER_HALF 0xffff000000000000
-#define HHDM_BASE 0xffff000000000000
-#define HHDM_SIZE 0x10000000000
-#define KVM_DYNAMIC_BASE 0xffff110000000000
+#define HIGHER_HALF 0xffff800000000000
+#define HHDM_BASE 0xffff800000000000
+#define HHDM_SIZE 0x100000000
+#define KVM_DYNAMIC_BASE 0xffff810000000000
 #define KVM_DYNAMIC_SIZE 0x10000000000
-#define KVM_WIRED_BASE 0xffff120000000000
+#define KVM_WIRED_BASE 0xffff820000000000
 #define KVM_WIRED_SIZE 0x10000000000
-#define KVM_UBC_BASE 0xffff130000000000
+#define KVM_UBC_BASE 0xffff830000000000
 #define KVM_UBC_SIZE 0x10000000000
 #define KERN_BASE 0xffffffff80000000
 
@@ -55,7 +55,14 @@ typedef struct riscv64_context {
 } riscv64_context_t;
 
 typedef struct __attribute__((packed)) md_intr_frame {
-
+	uint64_t ra, sp, gp, tp;
+	uint64_t t0, t1, t2;
+	uint64_t s0, s1;
+	uint64_t a0, a1, a2, a3, a4, a5, a6, a7;
+	uint64_t s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
+	uint64_t t3, t4, t5, t6;
+	uint64_t sepc, sstatus, scause, stval;
+	uint64_t usermode;
 } md_intr_frame_t;
 
 typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);

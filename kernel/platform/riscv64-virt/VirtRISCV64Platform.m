@@ -38,7 +38,7 @@ extern struct bootinfo bootinfo;
 	    framebuffer_request.response->framebuffers[0];
 
 	self = [super init];
-	kmem_asprintf(obj_name_ptr(self), "aarch64-platform");
+	kmem_asprintf(obj_name_ptr(self), "riscv64-platform");
 	platformDevice = self;
 	[self registerDevice];
 	DKLogAttach(self);
