@@ -66,8 +66,9 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 	pte.hw.pfn = pfn;
 	pte.hw.valid = 1;
 	pte.hw.read = pte.hw.accessed = 1;
-	pte.hw.write = pte.hw.dirty = writeable ? 1 : 1;
+	pte.hw.write = pte.hw.dirty = writeable ? 1 : 0;
 	pte.hw.execute = executable ? 1 : 0;
+	pte.hw.user = 1;
 #if 0 /* not supported by qemu? */
 	pte.hw.pbmt = cacheable ? 0b00 : 0b10; /* PMA : IO */
 #endif

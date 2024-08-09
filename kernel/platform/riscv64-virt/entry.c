@@ -45,9 +45,15 @@ plat_first_init(void)
 {
 	void trap(void);
 
+	uint64_t sstatus;
+
 	asm volatile("mv tp, %0" : : "r"(&thread0));
 	asm volatile("csrw sscratch, zero");
 	asm volatile("csrw stvec, %0" : : "r"(trap));
+
+	asm volatile("csrr %0, sstatus" : "=r"(sstatus));
+	sstatus |= 1ul << 18; /* SUM */
+	asm volatile("csrw sstatus, %0" : : "r"(sstatus) : "memory");
 }
 
 void

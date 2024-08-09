@@ -1,3 +1,4 @@
+#qemu_exe=/ws/Compilers/qemu-git/bld/qemu-system-riscv64
 qemu_exe=/opt/qemu-git/bin/qemu-system-riscv64
 cores=1
 memory=128
@@ -40,11 +41,12 @@ fi
 virtio_disk_arg=
 virtio_trace_arg=--trace "virtio_*"
 
-${qemu_exe} -M virt -m ${memory} -cpu rv64 -device ramfb \
+${qemu_exe} -M virt,aia=aplic -m ${memory} -cpu rv64 -device ramfb \
 	-device qemu-xhci -device usb-kbd  \
 	-drive if=pflash,unit=0,format=raw,file=ovmf-riscv64/OVMF.fd \
 	-boot menu=on,splash-time=1 \
 	-device virtio-scsi-pci,id=scsi -device scsi-cd,drive=cd0 \
 	-drive id=cd0,format=raw,file=build/riscv64/barebones.iso,if=none \
 	-serial stdio -s \
-	${qemu_args}
+	${qemu_args} \
+#	--trace "*pci*"

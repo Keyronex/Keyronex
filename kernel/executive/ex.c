@@ -203,10 +203,6 @@ ex_init(void *)
 	int r;
 	void ddk_autoconf(void), ubc_init(void);
 
-		uint64_t sstatus;
-	asm volatile("csrr %0, sstatus" : "=r"(sstatus));
-	kprintf("SStatus in ex_init, ints? %lu\n", sstatus & 0x2);
-
 	vmp_paging_init();
 	ubc_init();
 #if 0
