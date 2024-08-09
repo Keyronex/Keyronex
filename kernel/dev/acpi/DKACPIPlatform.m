@@ -8,6 +8,7 @@
 #include "kdk/executive.h"
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "uacpi/event.h"
@@ -23,6 +24,8 @@
 #ifdef AMD64
 #include "dev/amd64/IOAPIC.h"
 #include "kdk/amd64/portio.h"
+#elif defined(__riscv)
+#include "platform/riscv64-virt/APLIC.h"
 #endif
 
 struct pcie_ecam {
@@ -208,6 +211,56 @@ gtdt_walk(void)
 	kprintf("GTDT: %p/ EL1 NS: GSIV %u, Flags 0x%x\n", gtdt,
 	    gtdt->nonsecure_el1_interrupt, gtdt->nonsecure_el1_flags);
 }
+#elif defined(__riscv)
+
+/*
+ * [31:24] -> APLIC identifier.
+ * [15:0] -> APLIC IDC Hart index.
+ */
+
+static uint8_t
+ext_intc_id_to_aplic_id(uint32_t ext_intc_id)
+{
+	return ext_intc_id >> 24;
+}
+
+static uint16_t
+ext_intc_id_to_aplic_idc_hartindex(uint32_t ext_intc_id)
+{
+	return ext_intc_id & 0xffff;
+}
+
+static void
+parse_riscv(struct acpi_entry_hdr *item, void *arg)
+{
+	switch (item->type) {
+	case 0x18: { /* RINTC */
+
+		struct acpi_madt_rintc rintc;
+		memcpy(&rintc, item, sizeof(struct acpi_madt_rintc));
+		kprintf("Rintc: Hart ID %zu; APLIC id %hhu; "
+			"APLIC IDC HartIndex %hu\n",
+		    rintc.hart_id, ext_intc_id_to_aplic_id(rintc.ext_intc_id),
+		    ext_intc_id_to_aplic_idc_hartindex(rintc.ext_intc_id));
+		bootstrap_cpu.cpucb.aplic_idc_hartindex =
+		    ext_intc_id_to_aplic_idc_hartindex(rintc.ext_intc_id);
+		break;
+	}
+
+	case 0x1a: { /* APLIC */
+		struct acpi_madt_aplic aplic;
+		memcpy(&aplic, item, sizeof(struct acpi_madt_aplic));
+		[[APLIC alloc] initWithProvider:arg madtAplicEntry:&aplic];
+		break;
+	}
+
+	default: {
+
+		kprintf("Found something of type 0x%x\n", item->type);
+	}
+	}
+}
+
 #endif
 
 static void
@@ -272,6 +325,8 @@ mcfg_walk(void)
 	madt_walk((struct acpi_madt *)madt.virt_addr, parse_giccs, NULL);
 	madt_walk((struct acpi_madt *)madt.virt_addr, parse_gicds, NULL);
 	gtdt_walk();
+#elif defined(__riscv)
+	madt_walk((struct acpi_madt *)madt.virt_addr, parse_riscv, self);
 #endif
 	mcfg_walk();
 

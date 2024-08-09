@@ -65,4 +65,8 @@ void
 plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi)
 {
+	uint64_t sie;
+	asm volatile("csrr %0, sie" : "=r"(sie));
+	sie |= (1UL << 1) | /* (1UL << 5) |*/ (1UL << 9); /* SIE, SEIE, STIE */
+	asm volatile("csrw sie, %0" ::"r"(sie));
 }

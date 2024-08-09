@@ -49,7 +49,7 @@ splx(ipl_t to)
 	cpu->cpucb.ipl = to;
 
 	if (to < kIPLHigh)
-		ki_set_interrupts(x);
+		ki_set_interrupts(true);
 }
 
 ipl_t
@@ -59,16 +59,4 @@ splget(void)
 	ipl_t old = curcpu()->cpucb.ipl;
 	ki_set_interrupts(x);
 	return old;
-}
-
-void
-md_intr_register(const char *name, uint32_t gsi, ipl_t prio,
-    intr_handler_t handler, void *arg, bool shareable, struct intr_entry *entry)
-{
-	entry->name = name;
-	entry->ipl = prio;
-	entry->handler = handler;
-	entry->arg = arg;
-	entry->shareable = shareable;
-	// TAILQ_INSERT_TAIL(&intr_entries[gsi], entry, queue_entry);
 }

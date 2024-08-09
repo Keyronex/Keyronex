@@ -3,6 +3,10 @@
 .globl c_trap
 .global c_thread_trampoline
 
+#define TP_U_SP 0*8
+#define TP_U_TP 1*8
+#define TP_S_SP 2*8
+
 #define FRAME_RA 0*8
 #define FRAME_SP 1*8
 #define FRAME_GP 2*8
@@ -53,36 +57,61 @@
 	sd 		R, (OFF)(sp);\
 	.cfi_rel_offset R, OFF
 
+
+
+
 .globl trap
 .align 8
 trap:
 	.cfi_startproc simple
-	# doesn't work - why?!
-	#.cfi_signal_frame
+	.cfi_signal_frame
 	.cfi_def_cfa	sp, 0
 
-	/* swap tp and sscratch; if then tp = 0, branch as trapped supervisor */
+	/* swap tp and sscratch; if then tp = 0, branch; supervisor trapped */
 	csrrw	tp, sscratch, tp
-	beqz	tp, 1f
+	beqz	tp, supervisor_save
 
 	/* this is a trap from user mode */
-	// todo code
-	wfi
+		/* save user SP to kthread_t.pcb.user_sp */
+		sd sp, (TP_U_SP)(tp)
+		/* load supervisor SP from kthread_t.pcb.supervisor_sp */
+		ld sp, (TP_S_SP)(tp)
 
-	1:
-	/* this is a trap from supervisor mode */
-	/* restore tp */
-	csrrw	tp, sscratch, zero
-	/* make space for the trap frame */
-	addi	sp, sp, -FRAME_SIZE
-	/* write 0 to indicate a trap from supervisor mode */
-	sd		x0, (FRAME_IS_USERMODE)(sp)
+		/* make space for the trap frame */
+		addi	sp, sp, -FRAME_SIZE
+
+		/* write t0 now so we can use it */
+		sd t0, (FRAME_T0)(sp)
+
+		/* save user TP to kthread_t.pcb.user_tp */
+		csrr t0, sscratch
+		sd t0, (TP_U_TP)(tp)
+
+		/* write 1 to indicate a trap from user mode */
+		li t0, 1
+		sd t0, (FRAME_IS_USERMODE)(sp)
+
+		j common_save
+
+	supervisor_save:
+		/* this is a trap from supervisor mode */
+		/* restore tp */
+		csrrw	tp, sscratch, zero
+		/* make space for the trap frame */
+		addi	sp, sp, -FRAME_SIZE
+		/* write 0 to indicate a trap from supervisor mode */
+		sd		x0, (FRAME_IS_USERMODE)(sp)
+
+		/* write t0 now - it's expected */
+		sd t0, (FRAME_T0)(sp)
+
+	common_save:
 
 	PUSH_WITH_CFI(ra, FRAME_RA)
 	PUSH_WITH_CFI(sp, FRAME_SP)
 	PUSH_WITH_CFI(gp, FRAME_GP)
 	PUSH_WITH_CFI(tp, FRAME_TP)
-	PUSH_WITH_CFI(t0, FRAME_T0)
+	#PUSH_WITH_CFI(t0, FRAME_T0)
 	PUSH_WITH_CFI(t1, FRAME_T1)
 	PUSH_WITH_CFI(t2, FRAME_T2)
 	PUSH_WITH_CFI(s0, FRAME_S0)

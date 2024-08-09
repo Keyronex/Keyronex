@@ -63,6 +63,10 @@ vmp_md_ps_init(eprocess_t *ps)
 		}
 
 		write_satp(table_addr);
+	} else {
+		memcpy((void *)P2V(table_addr + (PGSIZE / 2)),
+		    (void *)P2V(kernel_procstate.md.table + (PGSIZE / 2)),
+		    (PGSIZE / 2));
 	}
 }
 

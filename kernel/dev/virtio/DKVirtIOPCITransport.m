@@ -15,6 +15,8 @@
 #if defined(__amd64__)
 #include "dev/amd64/IOAPIC.h"
 #include "kdk/amd64.h"
+#elif defined(__riscv)
+#include "platform/riscv64-virt/APLIC.h"
 #endif
 
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
@@ -314,7 +316,13 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #elif defined (__riscv)
-	r = -1;
+	r = [APLIC handleGSI:m_pciInfo.gsi
+		 withHandler:vitrio_handler
+		    argument:self
+	       isLowPolarity:m_pciInfo.lopol
+	     isEdgeTriggered:m_pciInfo.edge
+		  atPriority:kIPLHigh
+		       entry:&m_intxEntry];
 #endif
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);

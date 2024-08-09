@@ -78,6 +78,9 @@ struct intr_entry {
 };
 
 typedef struct md_pcb {
+	uintptr_t user_sp;
+	uintptr_t user_tp;
+	uintptr_t supervisor_sp;
 	riscv64_context_t *sp;
 	uint64_t fp[66];
 } md_pcb_t;
@@ -86,6 +89,7 @@ typedef struct md_cpucb {
 	int dpc_int;
 	ipl_t ipl;
 	uint32_t hartid;
+	uint32_t aplic_idc_hartindex;
 } md_cpucb_t;
 
 static inline __attribute__((noreturn)) void
