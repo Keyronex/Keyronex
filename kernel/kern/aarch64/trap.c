@@ -138,7 +138,7 @@ common_sync(md_intr_frame_t *frame)
 
 		(void)userland;
 
-		vmp_fault(frame, frame->far, write, NULL);
+		vmp_fault(frame, frame->far, write, insn, userland, NULL);
 
 		break;
 	}

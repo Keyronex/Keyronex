@@ -81,13 +81,14 @@ vmp_pte_characterise(pte_t *pte)
 }
 
 static inline void
-vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool executable, bool cacheable)
+vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool executable,
+    bool cacheable, bool user)
 {
 	pte_t newpte;
 	newpte.hw_pml1_040.pfn = pfn;
 	/* 1 = cached/copyback; 3 = uncached. (2 = uncached/serialised) */
 	newpte.hw_pml1_040.cachemode = cacheable ? 1 : 3;
-	newpte.hw_pml1_040.supervisor = 0;
+	newpte.hw_pml1_040.supervisor = user ? 0 : 1;
 	newpte.hw_pml1_040.type = 3;
 	newpte.hw_pml1_040.global = (pfn << 12) >= HIGHER_HALF;
 	newpte.hw_pml1_040.writeprotect = writeable ? 0 : 1;

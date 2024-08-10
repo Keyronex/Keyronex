@@ -34,7 +34,8 @@ vmp_enter_kwired(vaddr_t virt, paddr_t phys)
 	r = vmp_wire_pte(kernel_process, virt, 0, &pte_wire, true);
 	kassert(r == 0);
 
-	vmp_md_pte_create_hw(pte_wire.pte, phys >> VMP_PAGE_SHIFT, true, true, true);
+	vmp_md_pte_create_hw(pte_wire.pte, phys >> VMP_PAGE_SHIFT, true, true,
+	    true, false);
 	vmp_pagetable_page_noswap_pte_created(kernel_process->vm,
 	    pte_wire.pgtable_pages[0], true);
 	vmp_pte_wire_state_release(&pte_wire, false);
@@ -78,7 +79,7 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 		r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 		kassert(r == 0);
-		vmp_md_pte_create_hw(pte, page->pfn, true, true, true);
+		vmp_md_pte_create_hw(pte, page->pfn, true, true, true, false);
 		vmp_pagetable_page_noswap_pte_created(kernel_process->vm,
 		    pte_wire.pgtable_pages[0], true);
 	}
@@ -171,7 +172,8 @@ internal_reallocwired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t oldsize,
 
 			r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 			kassert(r == 0);
-			vmp_md_pte_create_hw(pte, page->pfn, true, true, true);
+			vmp_md_pte_create_hw(pte, page->pfn, true, true, true,
+			    false);
 			vmp_pagetable_page_noswap_pte_created(
 			    kernel_process->vm, pte_wire.pgtable_pages[0],
 			    true);

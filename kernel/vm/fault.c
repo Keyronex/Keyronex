@@ -182,7 +182,8 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 		kfatal("Invalid Object PTE state\n");
 	}
 	kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state->pte)) == page);
-	vmp_md_pte_create_hw(object_state->pte, page->pfn, true, true, true);
+	vmp_md_pte_create_hw(object_state->pte, page->pfn, true, true, true,
+	    true);
 
 	/*
 	 * the process PTE must still be busy - we wait for busy PTEs to become
@@ -200,7 +201,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 		vmp_page_sync_icache(page);
 
 	vmp_md_pte_create_hw(state->pte, page->pfn, false,
-	    area_info->executable, true);
+	    area_info->executable, true, vaddr <= HIGHER_HALF);
 
 	/* release references we took to preserve the pages containing PTEs */
 	vmp_page_release_locked(object_state->pgtable_pages[0]);
@@ -242,7 +243,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 			vmp_page_sync_icache(page);
 
 		vmp_md_pte_create_hw(pte, page->pfn, false,
-		    area_info->executable, true);
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
 		    true);
@@ -330,7 +331,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 			vmp_page_sync_icache(page);
 
 		vmp_md_pte_create_hw(pte, page->pfn, false,
-		    area_info->executable, true);
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
 		    true);
@@ -352,7 +353,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 }
 
 int
-vmp_do_fault(vaddr_t vaddr, bool write)
+vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 {
 	int r;
 	eprocess_t *process;
@@ -365,9 +366,11 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 	vaddr = PGROUNDDOWN(vaddr);
 
-	if (vaddr >= HHDM_BASE)
+	if (vaddr >= HHDM_BASE) {
+		if (user)
+			kfatal("User fault in kernel area\n");
 		process = kernel_process;
-	else
+	} else
 		process = ex_curproc();
 
 #if TRACE_FAULT
@@ -457,7 +460,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 			vmp_md_pte_create_hw(state.pte,
 			    vmp_md_pte_hw_pfn(state.pte, 1), true,
-			    area_info.executable, true);
+			    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 			vmp_pte_wire_state_release(&state, false);
 
@@ -491,7 +494,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 				vmp_page_sync_icache(new_page);
 
 			vmp_md_pte_create_hw(pte, new_page->pfn, write,
-			    area_info.executable, true);
+			    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 			vmp_pagetable_page_noswap_pte_created(vmps, pml1_page,
 			    true);
@@ -524,7 +527,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 
 			vmp_md_pte_create_hw(state.pte,
 			    vmp_md_pte_hw_pfn(state.pte, 1), true,
-			    area_info.executable, true);
+			    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 			vmp_pte_wire_state_release(&state, false);
 			vmp_release_pfn_lock(ipl);
@@ -551,7 +554,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			vmp_page_sync_icache(page);
 
 		vmp_md_pte_create_hw(pte, page->pfn, write,
-		    area_info.executable, true);
+		    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
 
@@ -587,7 +590,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 		 * insert trans PTEs (perhaps as part of fault-in clustering).
 		 */
 		vmp_md_pte_create_hw(state.pte, page->pfn, write,
-		    area_info.executable, true);
+		    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pte_wire_state_release(&state, false);
 		vmp_release_pfn_lock(ipl);
@@ -681,7 +684,7 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 			vmp_page_sync_icache(page);
 
 		vmp_md_pte_create_hw(state.pte, page->pfn, write,
-		    area_info.executable, true);
+		    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 		/* release reference we took to preserve the PTE page */
 		vmp_page_release_locked(state.pgtable_pages[0]);
@@ -739,12 +742,13 @@ vmp_do_fault(vaddr_t vaddr, bool write)
 void md_intr_frame_trace(md_intr_frame_t *frame);
 
 int
-vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, vm_page_t **out)
+vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, bool execute,
+    bool user, vm_page_t **out)
 {
 	vm_fault_return_t ret;
 
 retry:
-	ret = vmp_do_fault(vaddr, write);
+	ret = vmp_do_fault(vaddr, write, execute, user);
 	switch (ret) {
 	case kVMFaultRetOK:
 		break;

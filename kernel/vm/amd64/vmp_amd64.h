@@ -61,7 +61,8 @@ typedef union __attribute__((packed)) pte {
 } pte_t;
 
 static inline void
-vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable, bool cacheable)
+vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
+    bool cacheable, bool user)
 {
 	pte_t pte;
 

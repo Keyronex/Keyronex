@@ -12,10 +12,8 @@
 void
 c_trap(md_intr_frame_t *frame)
 {
-#if 0
-	if (!(frame->sstatus & (1 << 8) /* SPP */)
-		kfatal("userland trap\n");
-#endif
+
+	bool user = !(frame->sstatus & /* SPP */ (1 << 8));
 
 	switch (frame->scause & 0x7fffffff) {
 
@@ -47,7 +45,7 @@ c_trap(md_intr_frame_t *frame)
 
 		(void)instr;
 
-		vmp_fault(frame, frame->stval, write, NULL);
+		vmp_fault(frame, frame->stval, write, instr, user, NULL);
 
 		ki_disable_interrupts();
 

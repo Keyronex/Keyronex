@@ -45,7 +45,7 @@ typedef union __attribute__((packed)) pte {
 
 static inline void
 vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
-    bool cacheable)
+    bool cacheable, bool user)
 {
 	pte_t pte;
 
@@ -53,11 +53,10 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 	pte.hw.pfn = pfn;
 	pte.hw.valid = 1;
 	pte.hw.af = 1;
-#if 0 /* kernel-only! */
-	pte.hw.ap = writeable ? 0b00 : 0b10;
-#else
-	pte.hw.ap = writeable ? 0b01 : 0b11;
-#endif
+	if (user)
+		pte.hw.ap = writeable ? 0b01 : 0b11;
+	else
+		pte.hw.ap = writeable ? 0b00 : 0b10;
 	pte.hw.sh = 0b11;
 	pte.hw.attrindx = cacheable ? 0 : 1;
 	pte.hw.reserved_must_be_1 = 1;

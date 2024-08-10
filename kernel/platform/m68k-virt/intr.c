@@ -72,7 +72,7 @@ c_exception(md_intr_frame_t *iframe)
 	switch (iframe->vector_offset) {
 	case 0x8: /* access error */
 		vmp_fault(iframe, iframe->format_7.ea, !iframe->format_7.ssw.rw,
-		    NULL);
+		    false, (iframe->sr & (1 << 13)) == 0, NULL);
 		break;
 
 	case 0x64: /* Level 1 autovector */

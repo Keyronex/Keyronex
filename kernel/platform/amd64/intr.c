@@ -114,7 +114,8 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 
 	switch (num) {
 	case 14:
-		vmp_fault(frame, cr2, frame->code & 2, NULL);
+		vmp_fault(frame, cr2, frame->code & (1 << 1),
+		    frame->code & (1 << 4), frame->code & (1 << 2), NULL);
 		break;
 
 	case kIntVecDPC:
