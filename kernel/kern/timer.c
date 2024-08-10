@@ -6,20 +6,6 @@
 #include "kdk/kern.h"
 #include "ki.h"
 
-void
-timer_dpc(void *arg)
-{
-	ktimer_t *timer = arg;
-	kwaitblock_queue_t queue = TAILQ_HEAD_INITIALIZER(queue);
-	ipl_t ipl = ke_spinlock_acquire(&timer->hdr.spinlock);
-
-	timer->hdr.signalled = 1;
-	ki_signal(&timer->hdr, &queue);
-	ke_spinlock_release_nospl(&timer->hdr.spinlock);
-
-	ki_wake_waiters(&queue);
-	splx(ipl);
-}
 
 void
 ke_timer_init(ktimer_t *timer)

@@ -13,7 +13,8 @@ void
 ki_wake_waiter(kthread_t *thread)
 {
 	ipl_t ipl = ke_spinlock_acquire(&thread->lock);
-	kassert(thread->state == kThreadStateWaiting);
+	kassert(thread->state == kThreadStateWaiting &&
+	    thread->wait_status == kInternalWaitStatusSatisfied);
 	thread->state = kThreadStateRunnable;
 	ki_thread_resume_locked(thread);
 	ke_spinlock_release(&thread->lock, ipl);

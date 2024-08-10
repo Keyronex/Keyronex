@@ -150,13 +150,25 @@ timer_expiry_dpc(void *arg)
 		timer->hdr.signalled = 1;
 		ki_signal(&timer->hdr, &waiters_queue);
 		timer->hdr.signalled = 0;
-		__atomic_store_n(&timer->state, kTimerDisabled,
-		    __ATOMIC_RELEASE);
 		if (timer->dpc != NULL)
 			ke_dpc_enqueue(timer->dpc);
-		ke_spinlock_release_nospl(&timer->hdr.spinlock);
-
+		/*
+		 * moving ki_wake_waiters out of here, to after the spinlock was
+		 * released, should be possibe. but it causes, at least on
+		 * aarch64 under kvm, a stale wait block to be attempted to be
+		 * woken by ki_wake_waiters. (being stack allocated, it's been
+		 * trampled by now)
+		 *
+		 * it shouldn't be possible, because if ki_signal has queued a
+		 * wait block on the waiters_queue, then we should have custody
+		 * of that thread - it should not wake until we give the
+		 * go-ahead. nevertheless, it happens - it seems somehow the
+		 * thread wakes anyway.
+		 */
 		ki_wake_waiters(&waiters_queue);
+		__atomic_store_n(&timer->state, kTimerDisabled,
+		    __ATOMIC_RELEASE);
+		ke_spinlock_release_nospl(&timer->hdr.spinlock);
 	}
 }
 
