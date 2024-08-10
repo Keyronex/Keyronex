@@ -387,7 +387,7 @@ page_free(struct vmp_pregion *preg, vm_page_t *page)
 		else
 			buddy_index = index - pages;
 
-		if ((size_t)buddy_index > preg->npages || buddy_index < 0)
+		if ((size_t)buddy_index >= preg->npages || buddy_index < 0)
 			break;
 
 		buddy = &preg->pages[buddy_index];
