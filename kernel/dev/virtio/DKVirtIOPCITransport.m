@@ -377,7 +377,6 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 	    queue->notify_off * m_notifyOffMultiplier);
 	uint32_t value = queue->index;
 	*addr = value;
-	__sync_synchronize();
 }
 
 @end

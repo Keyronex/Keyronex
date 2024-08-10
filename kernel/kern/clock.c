@@ -41,6 +41,7 @@ next:
 }
 
 bool
+
 ki_timer_dequeue_locked(ktimer_t *callout)
 {
 	kcpu_t *cpu;
@@ -124,7 +125,7 @@ timer_expiry_dpc(void *arg)
 		ipl_t ipl = ke_spinlock_acquire_at(&cpu->dpc_lock, kIPLHigh);
 		ktimer_t *timer = TAILQ_FIRST(&cpu->timer_queue);
 
-		if (timer == NULL || timer->deadline >= cpu->nanos) {
+		if (timer == NULL || timer->deadline > cpu->nanos) {
 			ke_spinlock_release(&cpu->dpc_lock, ipl);
 			break;
 		}
@@ -132,7 +133,7 @@ timer_expiry_dpc(void *arg)
 		enum ktimer_state expected = kTimerInQueue;
 
 		if (!__atomic_compare_exchange_n(&timer->state, &expected,
-			false, kTimerExecuting, __ATOMIC_ACQ_REL,
+			kTimerExecuting, false, __ATOMIC_RELAXED,
 			__ATOMIC_RELAXED)) {
 			/* timer cancelled */
 			ke_spinlock_release(&cpu->dpc_lock, ipl);

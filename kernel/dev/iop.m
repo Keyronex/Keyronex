@@ -149,6 +149,8 @@ start:
 		    iop->stack_count);
 #endif
 
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
 	/* note this can be set multiple times - it doesn't matter. */
 	iop->begun = true;
 
@@ -202,6 +204,7 @@ cont:
 		kassert(frame->dev != NULL);
 		//kassert(frame->dev->dispatch != NULL);
 
+		__atomic_thread_fence(__ATOMIC_RELEASE);
 		r = [frame->dev dispatchIOP:iop];
 		//r = frame->dev->dispatch(frame->dev, iop);
 
@@ -293,6 +296,8 @@ cont:
 #if DEBUG_DEVMAN == 1
 				kdprintf("devmgr: IOP %p completes\n", iop);
 #endif
+
+				__atomic_thread_fence(__ATOMIC_RELEASE);
 				ke_event_signal(&iop->event);
 				return kIOPRetCompleted;
 			}
@@ -301,6 +306,7 @@ cont:
 		/*! associated IOPs should all be gone */
 		kassert(SLIST_EMPTY(&iop->associated_iops));
 
+		__atomic_thread_fence(__ATOMIC_RELEASE);
 		r = [frame->dev completeIOP: iop];
 
 	continuation_up:

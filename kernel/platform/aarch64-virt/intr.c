@@ -58,7 +58,7 @@ splx(ipl_t to)
 	}
 
 	if (to < kIPLHigh)
-		ki_set_interrupts(x);
+		ki_set_interrupts(true);
 }
 
 ipl_t
