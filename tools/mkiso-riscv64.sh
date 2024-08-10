@@ -8,7 +8,7 @@ cp build/riscv64/pkg-builds/kernel/kernel/platform/riscv64-virt/keyronex \
     ${LIMINE}/limine-bios.sys ${LIMINE}/limine-bios-cd.bin ${LIMINE}/limine-uefi-cd.bin \
     ${ISOROOT} &&
 
-cp tools/limine-aarch64.cfg ${ISOROOT}/limine.cfg &&
+cp tools/limine-aarch64.cfg ${ISOROOT}/limine.conf &&
 
 xorriso -as mkisofs \
   -no-emul-boot -boot-load-size 4 -boot-info-table \

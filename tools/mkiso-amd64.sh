@@ -8,7 +8,7 @@ cp build/amd64/pkg-builds/kernel/kernel/platform/amd64/keyronex \
     ${LIMINE}/limine-bios.sys ${LIMINE}/limine-bios-cd.bin ${LIMINE}/limine-uefi-cd.bin \
     ${ISOROOT} &&
 
-cp tools/limine-amd64.cfg ${ISOROOT}/limine.cfg &&
+cp tools/limine-amd64.cfg ${ISOROOT}/limine.conf &&
 
 xorriso -as mkisofs -b limine-bios-cd.bin \
   -no-emul-boot -boot-load-size 4 -boot-info-table \
