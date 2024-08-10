@@ -239,6 +239,7 @@ vm_region_add(paddr_t base, size_t length)
 	for (b = 0; b < used / PGSIZE; b++) {
 		bm->pages[b].use = kPageUsePFNDB;
 		bm->pages[b].refcnt = 1;
+		bm->pages[b].on_freelist = false;
 		vmstat.npwired++;
 	}
 
