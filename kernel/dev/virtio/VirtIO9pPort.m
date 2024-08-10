@@ -272,14 +272,17 @@ static int counter = 0;
 
 - (iop_return_t)dispatchIOP:(iop_t *)iop
 {
+	ipl_t ipl;
 	iop_frame_t *frame = iop_stack_current(iop);
 
 	kassert(frame->function == kIOPType9p);
-	/*! (!) needs to be guarded by spinlock.... */
+	ipl = ke_spinlock_acquire(&m_reqQueue.spinlock);
 	TAILQ_INSERT_TAIL(&pending_packets, iop, dev_queue_entry);
+	ke_spinlock_release(&m_reqQueue.spinlock, ipl);
 	[PROVIDER enqueueDPC];
 
 	return kIOPRetPending;
 }
+
 
 @end
