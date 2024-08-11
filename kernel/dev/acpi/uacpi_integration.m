@@ -7,49 +7,9 @@
 #include "uacpi/types.h"
 #include "vm/vmp.h"
 
-#ifdef AMD64
-#include "dev/amd64/IOAPIC.h"
+#ifdef __amd64__
+#include "platform/amd64/IOAPIC.h"
 #include "kdk/amd64/portio.h"
-#endif
-
-#ifdef AMD64
-void
-laihost_outb(uint16_t port, uint8_t val)
-{
-	asm volatile("outb %0, %1" : : "a"(val), "d"(port));
-}
-void
-laihost_outw(uint16_t port, uint16_t val)
-{
-	asm volatile("outw %0, %1" : : "a"(val), "d"(port));
-}
-void
-laihost_outd(uint16_t port, uint32_t val)
-{
-	asm volatile("outl %0, %1" : : "a"(val), "d"(port));
-}
-
-uint8_t
-laihost_inb(uint16_t port)
-{
-	uint8_t val;
-	asm volatile("inb %1, %0" : "=a"(val) : "d"(port));
-	return val;
-}
-uint16_t
-laihost_inw(uint16_t port)
-{
-	uint16_t val;
-	asm volatile("inw %1, %0" : "=a"(val) : "d"(port));
-	return val;
-}
-uint32_t
-laihost_ind(uint16_t port)
-{
-	uint32_t val;
-	asm volatile("inl %1, %0" : "=a"(val) : "d"(port));
-	return val;
-}
 
 uint8_t
 pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,

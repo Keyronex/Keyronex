@@ -3,8 +3,8 @@
  * Created on Sun Jul 28 2024.
  */
 
-#include "../../platform/aarch64-virt/gic.h"
-#include "dev/aarch64/GICv2Distributor.h"
+#include "GICv2Distributor.h"
+#include "gic.h"
 
 @implementation GICv2Distributor
 
@@ -16,7 +16,8 @@
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry
 {
-	md_intr_register("gsi", gsi, prio, handler, arg, !isEdgeTriggered, entry);
+	md_intr_register("gsi", gsi, prio, handler, arg, !isEdgeTriggered,
+	    entry);
 
 	gengic_dist_setedge(gsi, isEdgeTriggered);
 	gengic_dist_settarget(gsi, (1 << ncpus) - 1);

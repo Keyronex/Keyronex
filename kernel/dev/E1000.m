@@ -10,9 +10,9 @@
 
 #if defined(__amd64__)
 #include "kdk/amd64.h"
-#include "dev/amd64/IOAPIC.h"
+#include "platform/amd64/IOAPIC.h"
 #elif defined (__aarch64__)
-#include "dev/aarch64/GICv2Distributor.h"
+#include "platform/aarch64-virt/GICv2Distributor.h"
 #endif
 
 @interface

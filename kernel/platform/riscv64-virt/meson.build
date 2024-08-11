@@ -1,5 +1,5 @@
 keyronex = executable('keyronex',
-	'APLIC.m', 'entry.c', 'intr.c','VirtRISCV64Platform.m',
+	'APLIC.m', 'DKACPIPlatform+RISCV.m', 'entry.c', 'intr.c','VirtRISCV64Platform.m',
 	'../generic/entry.c', kernel_sources,
 	c_args: [ freestanding_c_args, '-std=gnu2x' ],
 	objc_args: [ freestanding_c_args, '-std=gnu17'] ,

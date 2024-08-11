@@ -21,12 +21,6 @@
 #include "uacpi/uacpi.h"
 #include "uacpi/utilities.h"
 
-#ifdef AMD64
-#include "dev/amd64/IOAPIC.h"
-#include "kdk/amd64/portio.h"
-#elif defined(__riscv)
-#include "platform/riscv64-virt/APLIC.h"
-#endif
 
 struct pcie_ecam {
 	paddr_t phys;
@@ -85,8 +79,8 @@ iteration_callback(void *user, uacpi_namespace_node *node)
 	return UACPI_NS_ITERATION_DECISION_CONTINUE;
 }
 
-static void
-madt_walk(struct acpi_madt *madt,
+void
+dk_acpi_madt_walk(struct acpi_madt *madt,
     void (*callback)(struct acpi_entry_hdr *item, void *arg), void *arg)
 {
 	for (char *item = (char *)&madt->entries[0];
@@ -97,171 +91,6 @@ madt_walk(struct acpi_madt *madt,
 		item += header->length;
 	}
 }
-
-#ifdef __amd64
-static void
-parse_ioapics(struct acpi_entry_hdr *item, void *arg)
-{
-	struct acpi_madt_ioapic *ioapic;
-
-	if (item->type != 1)
-		return;
-
-	ioapic = (struct acpi_madt_ioapic *)item;
-	[[IOApic alloc] initWithProvider:arg
-				      id:ioapic->id
-				 address:(paddr_t)ioapic->address
-				 gsiBase:ioapic->gsi_base];
-}
-
-static void
-parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
-{
-	struct acpi_madt_interrupt_source_override *intr;
-	struct isa_intr_override *override;
-
-	if (item->type != 2)
-		return;
-
-	intr = (struct acpi_madt_interrupt_source_override *)item;
-	override = &isa_intr_overrides[intr->source];
-
-	override->gsi = intr->gsi;
-	override->lopol = (intr->flags & 0x2) == 0x2 ? 0x1 : 0x0;
-	override->edge = (intr->flags & 0x8) == 0x8 ? 0x1 : 0x0;
-}
-#elif defined(__aarch64__)
-
-static paddr_t last_gicc_base = 0;
-
-static void
-parse_giccs(struct acpi_entry_hdr *item, void *arg)
-{
-	struct acpi_madt_gicc *pgicc, gicc;
-	bool matched = false;
-
-	if (item->type != 0xb)
-		return;
-
-	memcpy(&gicc, item, sizeof(struct acpi_madt_gicc));
-	pgicc = (void *)&gicc;
-
-	kprintf("Found a GICC:"
-		" GIC interface num %u, ACPI UID %u, MPIDR %lu,"
-		" base address 0x%zx\n",
-	    pgicc->interface_number, pgicc->acpi_id, pgicc->mpidr, pgicc->address);
-
-	if (last_gicc_base != 0)
-		kassert(last_gicc_base == pgicc->address);
-
-	for (size_t i = 0; i < ncpus; i++) {
-		if (cpus[i]->cpucb.mpidr == pgicc->mpidr) {
-			int r;
-
-			kassert(!matched);
-			matched = true;
-
-			cpus[i]->cpucb.gic_interface_number =
-			    pgicc->interface_number;
-
-			r = vm_ps_map_physical_view(kernel_process->vm,
-			    &cpus[i]->cpucb.gicc_base, PGSIZE, pgicc->address,
-			    kVMAll, kVMAll, false);
-			kassert(r == 0);
-		}
-	}
-
-	kassert(matched);
-}
-
-static void
-parse_gicds(struct acpi_entry_hdr *item, void *arg)
-{
-	struct acpi_madt_gicd *pgicd, gicd;
-	extern vaddr_t gicd_base;
-	int r;
-
-	if (item->type != 0xc)
-		return;
-
-	memcpy(&gicd, item, sizeof(struct acpi_madt_gicd));
-	pgicd = (void *)&gicd;
-
-	kprintf("Found a GICD: GIC version num %d, base address 0x%zx\n",
-	    pgicd->gic_version, pgicd->address);
-
-	r = vm_ps_map_physical_view(kernel_process->vm, &gicd_base, PGSIZE,
-	    pgicd->address, kVMAll, kVMAll, false);
-	kassert(r == 0);
-}
-
-static void
-gtdt_walk(void)
-{
-	uacpi_table table;
-	acpi_table_gtdt_t *gtdt;
-	int r;
-
-	r = uacpi_table_find_by_signature("GTDT", &table);
-	if (r != 0)
-		kfatal("No GTDT table found!\n");
-
-	gtdt = (void *)table.virt_addr;
-
-	kprintf("GTDT: %p/ EL1 NS: GSIV %u, Flags 0x%x\n", gtdt,
-	    gtdt->nonsecure_el1_interrupt, gtdt->nonsecure_el1_flags);
-}
-#elif defined(__riscv)
-
-/*
- * [31:24] -> APLIC identifier.
- * [15:0] -> APLIC IDC Hart index.
- */
-
-static uint8_t
-ext_intc_id_to_aplic_id(uint32_t ext_intc_id)
-{
-	return ext_intc_id >> 24;
-}
-
-static uint16_t
-ext_intc_id_to_aplic_idc_hartindex(uint32_t ext_intc_id)
-{
-	return ext_intc_id & 0xffff;
-}
-
-static void
-parse_riscv(struct acpi_entry_hdr *item, void *arg)
-{
-	switch (item->type) {
-	case 0x18: { /* RINTC */
-
-		struct acpi_madt_rintc rintc;
-		memcpy(&rintc, item, sizeof(struct acpi_madt_rintc));
-		kprintf("Rintc: Hart ID %zu; APLIC id %hhu; "
-			"APLIC IDC HartIndex %hu\n",
-		    rintc.hart_id, ext_intc_id_to_aplic_id(rintc.ext_intc_id),
-		    ext_intc_id_to_aplic_idc_hartindex(rintc.ext_intc_id));
-		bootstrap_cpu.cpucb.aplic_idc_hartindex =
-		    ext_intc_id_to_aplic_idc_hartindex(rintc.ext_intc_id);
-		break;
-	}
-
-	case 0x1a: { /* APLIC */
-		struct acpi_madt_aplic aplic;
-		memcpy(&aplic, item, sizeof(struct acpi_madt_aplic));
-		[[APLIC alloc] initWithProvider:arg madtAplicEntry:&aplic];
-		break;
-	}
-
-	default: {
-
-		kprintf("Found something of type 0x%x\n", item->type);
-	}
-	}
-}
-
-#endif
 
 static void
 mcfg_walk(void)
@@ -307,28 +136,9 @@ mcfg_walk(void)
 	r = uacpi_initialize(&params);
 	kassert(r == UACPI_STATUS_OK);
 
-	uacpi_table madt;
-	r = uacpi_table_find_by_signature("APIC", &madt);
-	kassert(r == UACPI_STATUS_OK);
-
-#if defined(__amd64__)
-	for (int i = 0; i < 16; i++) {
-		isa_intr_overrides[i].gsi = i;
-		isa_intr_overrides[i].lopol = i;
-		isa_intr_overrides[i].gsi = i;
-	}
-
-	madt_walk((struct acpi_madt *)madt.virt_addr, parse_ioapics, self);
-	madt_walk((struct acpi_madt *)madt.virt_addr, parse_isa_overrides,
-	    self);
-#elif defined(__aarch64__)
-	madt_walk((struct acpi_madt *)madt.virt_addr, parse_giccs, NULL);
-	madt_walk((struct acpi_madt *)madt.virt_addr, parse_gicds, NULL);
-	gtdt_walk();
-#elif defined(__riscv)
-	madt_walk((struct acpi_madt *)madt.virt_addr, parse_riscv, self);
-#endif
 	mcfg_walk();
+
+	[self iterateArchSpecificEarlyTables];
 
 	return self;
 }
@@ -351,6 +161,11 @@ mcfg_walk(void)
 	kassert(sb != NULL);
 
 	uacpi_namespace_for_each_node_depth_first(sb, iteration_callback, self);
+}
+
+- (void)iterateArchSpecificEarlyTables
+{
+	kfatal("Subclass responsibility\n");
 }
 
 + (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp

@@ -222,6 +222,9 @@ _start(void)
 	struct limine_memmap_entry **entries = memmap_request.response->entries;
 
 	for (int i = 0; i < memmap_request.response->entry_count; i++) {
+		if (entries[i]->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE)
+			kprintf("Bootloader reclaimable from 0x%zx to 0x%zx\n",
+			    entries[i]->base, entries[i]->base + entries[i]->length);
 		if (entries[i]->type != LIMINE_MEMMAP_USABLE ||
 		    entries[i]->base < 0x100000)
 			continue;

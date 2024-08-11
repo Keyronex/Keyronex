@@ -30,7 +30,7 @@ retry:
 	if (__atomic_load_n(&timer->state, __ATOMIC_RELAXED) ==
 	    kTimerExecuting) {
 		ke_spinlock_release_nospl(&timer->hdr.spinlock);
-#ifdef AMD64
+#ifdef __amd64__
 		asm("pause");
 #endif
 		ke_spinlock_acquire_nospl(&timer->hdr.spinlock);

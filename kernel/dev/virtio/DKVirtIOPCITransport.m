@@ -2,7 +2,7 @@
 #include "ddk/virtio_pcireg.h"
 #include "ddk/virtioreg.h"
 #include "dev/PCIBus.h"
-#include "dev/aarch64/GICv2Distributor.h"
+#include "platform/aarch64-virt/GICv2Distributor.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "dev/virtio/VirtIO9pPort.h"
 #include "dev/virtio/VirtIODisk.h"
@@ -13,7 +13,7 @@
 #include "vm/vmp.h"
 
 #if defined(__amd64__)
-#include "dev/amd64/IOAPIC.h"
+#include "platform/amd64/IOAPIC.h"
 #include "kdk/amd64.h"
 #elif defined(__riscv)
 #include "platform/riscv64-virt/APLIC.h"

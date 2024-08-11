@@ -1,7 +1,7 @@
 
 #include "NTStorPort.h"
 #include "dev/PCIBus.h"
-#include "dev/amd64/IOAPIC.h"
+#include "platform/amd64/IOAPIC.h"
 #include "dev/pci_reg.h"
 #include "kdk/dev.h"
 #include "kdk/kmem.h"

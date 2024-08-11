@@ -3,9 +3,9 @@
 
 #if defined(__m68k__)
 #include "m68k.h"
-#elif defined(AARCH64)
+#elif defined(__aarch64__)
 #include "aarch64.h"
-#elif defined(AMD64)
+#elif defined(__amd64__)
 #include "amd64.h"
 #elif defined(__riscv)
 #include "riscv64.h"

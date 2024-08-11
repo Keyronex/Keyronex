@@ -3,6 +3,9 @@
 
 #include "ddk/DKDevice.h"
 
+struct acpi_madt;
+struct acpi_entry_hdr;
+
 typedef struct {
 	char Signature[8];
 	uint8_t Checksum;
@@ -18,6 +21,12 @@ typedef struct {
 
 - (void)secondStageInit;
 
+/* These are for subclasses to override. */
+- (void)iterateArchSpecificEarlyTables;
+
 @end
+
+void dk_acpi_madt_walk(struct acpi_madt *madt,
+    void (*callback)(struct acpi_entry_hdr *item, void *arg), void *arg);
 
 #endif /* KRX_DEV_DKAACPIPLATFORM_H */

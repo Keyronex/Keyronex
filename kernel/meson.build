@@ -108,9 +108,6 @@ if not headers_only
 
 	subdir('lwip')
 	subdir('objfwrt')
-#	if (arch == 'm68k')
-#		subdir('loader/m68k-virt-loader')
-#	endif
 
 	kernel_sources = [ files('libkern/libkern.c') ]
 
