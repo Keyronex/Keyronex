@@ -11,25 +11,31 @@ NetBSD, and Solaris) with influences from the VMS tradition (particularly
 OpenVMS itself, [Mintia], and Windows NT). Special attention has been given to
 the virtual memory system.
 
-Keyronex is a portable system:
+Keyronex is a portable system. Supported platforms are summarised below; more
+detailed information is available in the [Platforms] document.
 
-| Platform       | Architecture | Status                   |
-|----------------|--------------|--------------------------|
-| ACPI 64-bit PC | amd64        | Well-supported           |
-| ACPI AArch64   | aarch64      | Poorly supported[^1]     |
-| ACPI RISC-V 64 | riscv64      | Under development        |
-| Amiga          | m68k         | Planned                  |
-| QEMU Virt m68k | m68k         | Well-supported           |
+| Platform         | Architecture | Status                   |
+|------------------|--------------|--------------------------|
+| ACPI 64-bit PC   | amd64        | Well-supported           |
+| ACPI AArch64     | aarch64      | Poorly supported[^1]     |
+| ACPI RISC-V 64   | riscv64      | Partly supported[^2]     |
+| Amiga            | m68k         | Planned                  |
+| QEMU Virt m68k   | m68k         | Well-supported           |
 
 *[ This is a rewrite  branch which currently lacks features; the previous, more
 featured branch is `23-jul`, which features ports of such apps as the GNU
 Coreutils, BASH shell, Binutils, and GCC, as well as Xorg and some basic X11
 apps such as Twm and Xeyes, and the Links text-mode web browser. ]*
 
+[Platforms]: docs/platforms.md
+
 [Mintia]: https://github.com/limnarch/mintia
 
 [^1]: The AArch64 port has only had limited testing, and userland code execution
   only works with a workaround for unknown-ESR exceptions.
+
+[^2]: The RISC-V 64 port has only been tested under QEMU with `-M virt` and does
+  not support SMP yet.
 
 ### Architecture
 

@@ -40,6 +40,18 @@ ${BUILD_SETUP_TARGET}:
 	(cd ${BUILD_DIR} && xbstrap init ../..)
 	touch $@
 
+ovmf-aarch64:
+	mkdir -p ovmf-aarch64
+	cd ovmf-aarch64 && curl -o OVMF.fd \
+		https://retrage.github.io/edk2-nightly/bin/RELEASEAARCH64_QEMU_EFI.fd
+
+ovmf-riscv64:
+	mkdir -p ovmf-riscv64
+	cd ovmf-riscv64 && curl -o OVMF.fd \
+		https://retrage.github.io/edk2-nightly/bin/RELEASERISCV64_VIRT_CODE.fd && \
+		dd if=/dev/zero of=OVMF.fd bs=1 count=0 seek=33554432
+
+
 reconfigure-kernel: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install --reconfigure --rebuild kernel-headers kernel)
 

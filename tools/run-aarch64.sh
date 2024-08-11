@@ -52,7 +52,7 @@ virtio_trace_arg=--trace "virtio_*"
 $qemu_exe -M virt -cpu ${cpu} -smp ${cores} \
   -device ramfb -device qemu-xhci -device usb-kbd \
   -m ${memory} \
-  -bios OVMF.fd \
+  -bios ovmf-aarch64/OVMF.fd \
   -boot menu=on,splash-time=0 \
   -cdrom build/aarch64/barebones.iso \
   -boot d \

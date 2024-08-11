@@ -1,7 +1,11 @@
 .cache/*
 build/
 gdb-pt-dump/
+local_tools/
+ovmf-aarch64/
+ovmf-riscv64/
 sources/
+
 compile_commands.json
 *.xbstrap
 *.img
