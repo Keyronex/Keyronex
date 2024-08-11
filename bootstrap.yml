@@ -13,7 +13,10 @@ declare_options:
 
 sources:
 
-  - name: '.'
+  - name: 'kernel'
+
+  - name: 'm68k-virt-loader'
+    subdir: 'loader'
 
   - name: 'mlibc'
 
@@ -345,7 +348,7 @@ packages:
   - name: kernel-headers
     metadata:
       summary: Keyronex kernel SDK headers
-    from_source: '.'
+    from_source: 'kernel'
     implict_package: true
     tools_required:
       - 'crossfile'
@@ -392,10 +395,35 @@ packages:
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
+  - name: m68k-virt-loader
+    labels: [ no_aarch64, no_amd64, no_riscv64 ]
+    metadata:
+      summary: Keyronex loader for QEMU virt m68k
+    from_source: 'm68k-virt-loader'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'bootstrap-host-gcc'
+    pkgs_required:
+      - 'mlibc-headers'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '--optimization=g'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
   - name: kernel
     metadata:
       summary: Keyronex kernel
-    from_source: '.'
+    from_source: 'kernel'
     tools_required:
       - 'crossfile'
       - 'host-binutils'

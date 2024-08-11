@@ -1,4 +1,4 @@
-file build/aarch64/pkg-builds/kernel/kernel/platform/aarch64-virt/keyronex
+file build/aarch64/pkg-builds/kernel/platform/aarch64-virt/keyronex
 add-symbol-file build/aarch64/system-root/usr/bin/posix_server
 add-symbol-file -o 0x40000000 build/aarch64/system-root/usr/lib/ld.so
 add-symbol-file -o 0x41600000 build/aarch64/system-root/usr/lib/libc.so

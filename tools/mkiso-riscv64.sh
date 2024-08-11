@@ -4,7 +4,7 @@ ISO=build/riscv64/barebones.iso
 
 mkdir -p ${ISOROOT} &&
 
-cp build/riscv64/pkg-builds/kernel/kernel/platform/riscv64-virt/keyronex \
+cp build/riscv64/pkg-builds/kernel/platform/riscv64-virt/keyronex \
     ${LIMINE}/limine-bios.sys ${LIMINE}/limine-bios-cd.bin ${LIMINE}/limine-uefi-cd.bin \
     ${ISOROOT} &&
 

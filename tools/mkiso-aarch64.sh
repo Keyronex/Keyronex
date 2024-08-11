@@ -4,7 +4,7 @@ ISO=build/aarch64/barebones.iso
 
 mkdir -p ${ISOROOT} &&
 
-cp build/aarch64/pkg-builds/kernel/kernel/platform/aarch64-virt/keyronex \
+cp build/aarch64/pkg-builds/kernel/platform/aarch64-virt/keyronex \
     ${LIMINE}/limine-bios.sys ${LIMINE}/limine-bios-cd.bin ${LIMINE}/limine-uefi-cd.bin \
     ${ISOROOT} &&
 
