@@ -519,19 +519,19 @@ link_dpc(void *arg)
 	    kE1000RctlEN | kE1000RctlBAM | kE1000RctlSZ_2048 | kE1000RctlSECRC);
 
 #if defined(__amd64__)
-	r = [IOApic handleGSI:m_pciInfo.gsi
+	r = [IOApic handleGSI:info->intx_source.id
 		  withHandler:e1000_handler
 		     argument:self
-		isLowPolarity:m_pciInfo.lopol
-	      isEdgeTriggered:m_pciInfo.edge
+		isLowPolarity:info->intx_source.low_polarity
+	      isEdgeTriggered:info->intx_source.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #elif defined(__aarch64__)
-	r = [GICv2Distributor handleGSI:m_pciInfo.gsi
+	r = [GICv2Distributor handleGSI:info->intx_source.id
 		  withHandler:e1000_handler
 		     argument:self
-		isLowPolarity:m_pciInfo.lopol
-	      isEdgeTriggered:m_pciInfo.edge
+		isLowPolarity:info->intx_source.low_polarity
+	      isEdgeTriggered:info->intx_source.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #else

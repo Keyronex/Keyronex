@@ -1,12 +1,13 @@
+/*
+ * Copyright (c) 2024 NetaScale Object Solutions.
+ * Created in 2023.
+ */
+
 #ifndef KRX_DEV_PCIBUS_H
 #define KRX_DEV_PCIBUS_H
 
 #include "ddk/DKDevice.h"
-
-#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
-#include "uacpi/types.h"
-#include "uacpi/uacpi.h"
-#endif
+#include "dev/pci_reg.h"
 
 struct pci_dev_info {
 	uint16_t seg;
@@ -17,25 +18,22 @@ struct pci_dev_info {
 	uint8_t klass, subClass;
 	uint16_t vendorId, deviceId;
 
-	/* intx pin */
 	uint8_t pin;
-	/*! global system interrupt number (0 for none) */
-	uint8_t gsi;
-	/* low polarity? */
-	bool lopol;
-	/* edge triggered? */
-	bool edge;
+	dk_interrupt_source_t intx_source;
 };
 
-#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 @protocol DKPCIDeviceDelegate
 
 - (void)capabilityEnumeratedAtOffset:(voff_t)capOffset;
 
 @end
 
+/*!
+ * Abstract class representing a PCI bus.
+ */
 @interface PCIBus : DKDevice {
-	uacpi_namespace_node *acpiNode;
+	uint16_t m_seg;
+	uint8_t m_bus;
 }
 
 + (void)setECAMBase:(paddr_t)base;
@@ -43,20 +41,23 @@ struct pci_dev_info {
 
 + (void)enableBusMasteringForInfo:(struct pci_dev_info *)info;
 + (void)setMemorySpaceForInfo:(struct pci_dev_info *)info enabled:(BOOL)enabled;
++ (void)setInterruptsEnabled:(BOOL)enabled forInfo:(struct pci_dev_info *)info;
 + (void)enumerateCapabilitiesForInfo:(struct pci_dev_info *)info
 			    delegate:(DKDevice<DKPCIDeviceDelegate> *)delegate;
 + (paddr_t)getBar:(int)i forInfo:(struct pci_dev_info *)info;
-+ (void)setInterruptsEnabled:(BOOL)enabled forInfo:(struct pci_dev_info *)info;
 
-- (instancetype)initWithProvider:(DKDevice *)provider
-			acpiNode:(uacpi_namespace_node *)node
-			 segment:(uint16_t)seg
-			     bus:(uint8_t)bus;
+
+/*!
+ * Called by subclasses only.
+ */
+- (void)enumerateDevices;
+
+/*!
+ * Implemented by subclasses.
+ */
+- (dk_interrupt_source_t)routePCIPinForInfo:(struct pci_dev_info *)info;
 
 @end
-#else
-@class PCIBus;
-#endif
 
 uint8_t pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset);

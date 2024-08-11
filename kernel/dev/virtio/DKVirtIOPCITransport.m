@@ -300,27 +300,27 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 	int r = 0;
 
 #if defined(__amd64__)
-	r = [IOApic handleGSI:m_pciInfo.gsi
+	r = [IOApic handleGSI:m_pciInfo.intx_source.id
 		  withHandler:vitrio_handler
 		     argument:self
-		isLowPolarity:m_pciInfo.lopol
-	      isEdgeTriggered:m_pciInfo.edge
+		isLowPolarity:m_pciInfo.intx_source.low_polarity
+	      isEdgeTriggered:m_pciInfo.intx_source.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #elif defined (__aarch64__)
-	r = [GICv2Distributor handleGSI:m_pciInfo.gsi
+	r = [GICv2Distributor handleGSI:m_pciInfo.intx_source.id
 		  withHandler:vitrio_handler
 		     argument:self
-		isLowPolarity:m_pciInfo.lopol
-	      isEdgeTriggered:m_pciInfo.edge
+		isLowPolarity:m_pciInfo.intx_source.low_polarity
+	      isEdgeTriggered:m_pciInfo.intx_source.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #elif defined (__riscv)
-	r = [APLIC handleGSI:m_pciInfo.gsi
+	r = [APLIC handleGSI:m_pciInfo.intx_source.id
 		 withHandler:vitrio_handler
 		    argument:self
-	       isLowPolarity:m_pciInfo.lopol
-	     isEdgeTriggered:m_pciInfo.edge
+	       isLowPolarity:m_pciInfo.intx_source.low_polarity
+	     isEdgeTriggered:m_pciInfo.intx_source.edge
 		  atPriority:kIPLHigh
 		       entry:&m_intxEntry];
 #endif

@@ -5,28 +5,6 @@
 #include "kdk/object.h"
 #include "ntcompat/NTStorPort.h"
 
-#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
-#include "uacpi/resources.h"
-#include "uacpi/utilities.h"
-#include "uacpi/kernel_api.h"
-
-enum {
-	kVendorID = 0x0, /* u16 */
-	kDeviceID = 0x2, /* u16 */
-	kCommand = 0x4,	 /* u16 */
-	kStatus = 0x6,	 /* bit 4 = capabilities list exists */
-	kSubclass = 0xa,
-	kClass = 0xb,
-	kHeaderType = 0xe, /* bit 7 = is multifunction */
-	kBaseAddress0 = 0x10,
-	kCapabilitiesPointer = 0x34,
-	kInterruptPin = 0x3d, /* u8 */
-};
-
-enum {
-	kCapMSIx = 0x11,
-};
-
 #define INFO_ARGS(INFO) (INFO)->seg, (INFO)->bus, (INFO)->slot, (INFO)->fun
 #define ENABLE_CMD_FLAG(INFO, FLAG)           \
 	pci_writew(INFO_ARGS(INFO), kCommand, \
@@ -34,6 +12,8 @@ enum {
 #define DISABLE_CMD_FLAG(INFO, FLAG)          \
 	pci_writew(INFO_ARGS(INFO), kCommand, \
 	    pci_readw(INFO_ARGS(INFO), kCommand) & ~(FLAG))
+
+#if !defined(__m68k__)
 
 @implementation PCIBus
 
@@ -133,79 +113,6 @@ static paddr_t ecam_base = -1;
 		ENABLE_CMD_FLAG(info, (1 << 10));
 }
 
-- (int)routePinForInfo:(struct pci_dev_info *)info
-{
-	uacpi_pci_routing_table *pci_routes;
-	int r = uacpi_get_pci_routing_table(acpiNode, &pci_routes);
-
-	kassert(r == UACPI_STATUS_OK);
-
-	for (size_t i = 0; i < pci_routes->num_entries; i++) {
-		uacpi_pci_routing_table_entry *entry;
-		int entry_slot, entry_fun;
-
-		entry = &pci_routes->entries[i];
-		entry_slot = (entry->address >> 16) & 0xffff;
-		entry_fun = entry->address & 0xffff;
-
-		if (entry->pin != info->pin - 1 || entry_slot != info->slot ||
-		    (entry_fun != 0xffff && entry_fun != info->fun))
-			continue;
-
-		info->edge = false;
-		info->lopol = true;
-		info->gsi = entry->index;
-
-		if (entry->source != NULL) {
-			uacpi_resources *resources;
-			uacpi_resource *resource;
-			r = uacpi_get_current_resources(entry->source,
-			    &resources);
-			kassert(r == UACPI_STATUS_OK);
-
-			resource = &resources->entries[0];
-
-			switch (resource->type) {
-			case UACPI_RESOURCE_TYPE_IRQ: {
-				uacpi_resource_irq *irq = &resource->irq;
-
-				kassert(irq->num_irqs >= 1);
-				info->gsi = irq->irqs[0];
-
-				if (irq->triggering == UACPI_TRIGGERING_EDGE)
-					info->edge = true;
-				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
-					info->lopol = false;
-
-				break;
-			}
-			case UACPI_RESOURCE_TYPE_EXTENDED_IRQ: {
-				uacpi_resource_extended_irq *irq =
-				    &resource->extended_irq;
-
-				kassert(irq->num_irqs >= 1);
-				info->gsi = irq->irqs[0];
-
-				if (irq->triggering == UACPI_TRIGGERING_EDGE)
-					info->edge = true;
-				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
-					info->lopol = false;
-
-				break;
-			}
-			default:
-				kfatal("unexpected\n");
-			}
-
-			uacpi_free_resources(resources);
-		}
-	}
-
-	uacpi_free_pci_routing_table(pci_routes);
-
-	return 0;
-}
-
 static BOOL
 match_e1000(uint16_t vendorId, uint16_t devId)
 {
@@ -234,6 +141,7 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	 function:(uint8_t)fun
 {
 	struct pci_dev_info info;
+	uint8_t pin;
 
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 #define CFG_READ(WIDTH, OFFSET) \
@@ -252,10 +160,8 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	info.fun = fun;
 	info.pin = CFG_READ(b, kInterruptPin);
 
-	if (info.pin != 0) {
-		int r = [self routePinForInfo:&info];
-		kassert(r == 0);
-	}
+	if (info.pin != 0)
+		info.intx_source = [self routePCIPinForInfo:&info];
 
 #endif
 
@@ -276,39 +182,26 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 		    info.slot, info.fun, info.vendorId, info.deviceId);
 }
 
-- (instancetype)initWithProvider:(DKDevice *)provider
-			acpiNode:(uacpi_namespace_node *)node
-			 segment:(uint16_t)seg
-			     bus:(uint8_t)bus
-
+- (void)enumerateDevices
 {
-	self = [super initWithProvider:provider];
-	acpiNode = node;
-
-	kmem_asprintf(obj_name_ptr(self), "pcibus-%d-%d", seg, bus);
-
-	[self registerDevice];
-	DKLogAttach(self);
-
-#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 	for (unsigned slot = 0; slot < 32; slot++) {
 		size_t nFun = 1;
 
-		if (pci_readw(seg, bus, slot, 0, kVendorID) == 0xffff)
+		if (pci_readw(m_seg, m_bus, slot, 0, kVendorID) == 0xffff)
 			continue;
 
-		if (pci_readb(seg, bus, slot, 0, kHeaderType) &
-		    (1 << 7))
+		if (pci_readb(m_seg, m_bus, slot, 0, kHeaderType) & (1 << 7))
 			nFun = 8;
 
 		for (unsigned fun = 0; fun < nFun; fun++)
-			[self doSegment:seg bus:bus slot:slot function:fun];
+			[self doSegment:m_seg bus:m_bus slot:slot function:fun];
 	}
-#endif
+}
 
-	return self;
+- (dk_interrupt_source_t)routePCIPinForInfo:(struct pci_dev_info *)info
+{
+	kfatal("Subclass responsibility\n");
 }
 
 @end
-
 #endif

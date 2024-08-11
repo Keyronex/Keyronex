@@ -259,11 +259,11 @@ intx_handler(md_intr_frame_t *frame, void *arg)
 	BOOLEAN suc = driver->hwinit.HwInitialize(m_HwDeviceExtension);
 
 #ifdef __amd64
-	r = [IOApic handleGSI:info->gsi
+	r = [IOApic handleGSI:info->intx_source.id
 		  withHandler:intx_handler
 		     argument:m_deviceExtension
-		isLowPolarity:info->lopol
-	      isEdgeTriggered:info->edge
+		isLowPolarity:info->intx_source.low_polarity
+	      isEdgeTriggered:info->intx_source.edge
 		   atPriority:kIPLHigh
 			entry:&m_intxEntry];
 #else

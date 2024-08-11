@@ -75,6 +75,25 @@ typedef TAILQ_TYPE_ENTRY(DKDevice) DKDevice_queue_entry_t;
 
 @end
 
+@class DKPlatformInterruptController;
+
+typedef struct dk_interrupt_source {
+	DKPlatformInterruptController *pic;
+	uint32_t id;
+	bool low_polarity;
+	bool edge;
+} dk_interrupt_source_t;
+
+@protocol DKPlatformInterruptController
+
+- (int)handleSource:(dk_interrupt_source_t *)source
+	withHandler:(intr_handler_t)handler
+	   argument:(void *)arg
+	 atPriority:(ipl_t)prio
+	      entry:(struct intr_entry *)entry;
+
+@end
+
 @protocol DKPlatformDevice
 /*!
  * Probe for the platform device. Should always return YES. It is expected that
@@ -82,6 +101,12 @@ typedef TAILQ_TYPE_ENTRY(DKDevice) DKDevice_queue_entry_t;
  * used to communicate information between them.
  */
 + (BOOL)probe;
+
+/*!
+ * Second-stage initialisation for the platform device. This is called in thread
+ * context after SMP and all other essentials are set up.
+ *
+ */
 - (void)secondStageInit;
 @end
 
