@@ -1,4 +1,4 @@
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/vm.h"
@@ -111,7 +111,7 @@ find_or_make_view(uint16_t seg, uint8_t bus)
 		int r;
 		paddr_t phys;
 
-		phys = [PCIBus getECAMBaseForSegment:seg bus:bus];
+		phys = [DKPCIBus getECAMBaseForSegment:seg bus:bus];
 
 		view = kmem_alloc(sizeof(*view));
 		view->seg = seg;
@@ -248,7 +248,8 @@ void *
 uacpi_kernel_map(uacpi_phys_addr physical, uacpi_size length)
 {
 	paddr_t paddr = PGROUNDDOWN(physical);
-	size_t vsize = PGROUNDUP(length);
+	size_t offset = physical & (PGSIZE - 1);
+	size_t vsize = PGROUNDUP(offset + length);
 	vaddr_t vaddr;
 	int r;
 
@@ -258,7 +259,7 @@ uacpi_kernel_map(uacpi_phys_addr physical, uacpi_size length)
 	    kVMRead | kVMWrite, kVMRead | kVMWrite, false);
 	kassert(r == 0);
 
-	return (void*)(vaddr + (physical & (PGSIZE - 1)));
+	return (void *)(vaddr + offset);
 }
 
 void

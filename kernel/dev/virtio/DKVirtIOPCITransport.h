@@ -3,7 +3,7 @@
 
 #include "ddk/DKVirtIOTransport.h"
 #include "ddk/virtio_pcireg.h"
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 @interface DKVirtIOPCITransport
@@ -21,7 +21,7 @@
 	uint32_t m_notifyOffMultiplier;
 }
 
-+ (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info;
++ (BOOL)probeWithPCIBus:(DKPCIBus *)provider info:(struct pci_dev_info *)info;
 
 @end
 #endif

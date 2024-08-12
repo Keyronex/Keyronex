@@ -6,8 +6,12 @@
 #ifndef KRX_DEV_PCIBUS_H
 #define KRX_DEV_PCIBUS_H
 
+#include <stdint.h>
+
 #include "ddk/DKDevice.h"
 #include "dev/pci_reg.h"
+
+@class DKPCIBus;
 
 struct pci_dev_info {
 	uint16_t seg;
@@ -22,16 +26,28 @@ struct pci_dev_info {
 	dk_interrupt_source_t intx_source;
 };
 
+/*!
+ * TODO: Abolish this and have enumerateCapabilitiesForInfo:delegate: invoke a
+ * block instead.
+ */
 @protocol DKPCIDeviceDelegate
 
 - (void)capabilityEnumeratedAtOffset:(voff_t)capOffset;
 
 @end
 
+@protocol DKPCIFirmwareInterfacing
+
+- (void)createDownstreamBus:(uint8_t)bus of:(DKPCIBus *)upstream;
+- (int)routePCIPinForInfo:(struct pci_dev_info *)info
+		     into:(out dk_interrupt_source_t *)source;
+
+@end
+
 /*!
  * Abstract class representing a PCI bus.
  */
-@interface PCIBus : DKDevice {
+@interface DKPCIBus : DKDevice {
 	uint16_t m_seg;
 	uint8_t m_bus;
 }
@@ -46,7 +62,6 @@ struct pci_dev_info {
 			    delegate:(DKDevice<DKPCIDeviceDelegate> *)delegate;
 + (paddr_t)getBar:(int)i forInfo:(struct pci_dev_info *)info;
 
-
 /*!
  * Called by subclasses only.
  */
@@ -56,6 +71,8 @@ struct pci_dev_info {
  * Implemented by subclasses.
  */
 - (dk_interrupt_source_t)routePCIPinForInfo:(struct pci_dev_info *)info;
+
+@end
 
 @end
 

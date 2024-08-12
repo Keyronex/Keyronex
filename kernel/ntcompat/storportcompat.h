@@ -40,7 +40,7 @@ struct dpc_alias
 };
 
 @interface NTStorPort (Private)
-- (instancetype)initWithPCIBus:(PCIBus *)provider
+- (instancetype)initWithPCIBus:(DKPCIBus *)provider
                           info:(struct pci_dev_info *)info
                 storportDriver:(struct storport_driver *)driver
                deviceExtension:(struct sp_dev_ext *)devExt;

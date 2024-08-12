@@ -1,4 +1,4 @@
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "storportcompat.h"

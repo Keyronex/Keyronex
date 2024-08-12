@@ -1,7 +1,7 @@
 #include <limine.h>
 #include <string.h>
 
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 #include "dev/PS2Keyboard.h"
 #include "dev/acpi/ACPIPCIBus.h"
 #include "dev/acpi/DKAACPIPlatform.h"
@@ -41,7 +41,7 @@ struct pcie_ecam *ecam;
 - (void)makePCIBusFromNode:(uacpi_namespace_node *)node
 {
 	uint64_t seg = 0, bus = 0;
-	PCIBus *pcibus;
+	DKPCIBus *pcibus;
 	int r;
 
 	r = uacpi_eval_integer(node, "_SEG", NULL, &seg);
@@ -116,7 +116,7 @@ mcfg_walk(void)
 		DKDevLog(acpiplatform, "PCI-E eCAM base [%d:%d-%d]: 0x%lx\n",
 		    entry->segment, entry->start_bus, entry->end_bus,
 		    entry->address);
-		[PCIBus setECAMBase:entry->address];
+		[DKPCIBus setECAMBase:entry->address];
 	}
 }
 

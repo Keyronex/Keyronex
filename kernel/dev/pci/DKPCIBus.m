@@ -1,4 +1,4 @@
-#include "PCIBus.h"
+#include "DKPCIBus.h"
 #include "dev/E1000.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "kdk/kmem.h"
@@ -15,7 +15,7 @@
 
 #if !defined(__m68k__)
 
-@implementation PCIBus
+@implementation DKPCIBus
 
 static paddr_t ecam_base = -1;
 
@@ -141,7 +141,6 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	 function:(uint8_t)fun
 {
 	struct pci_dev_info info;
-	uint8_t pin;
 
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 #define CFG_READ(WIDTH, OFFSET) \
@@ -182,6 +181,29 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 		    info.slot, info.fun, info.vendorId, info.deviceId);
 }
 
+- (void)enumerateSlot:(uint8_t)slot func:(uint8_t)fun
+{
+	uint8_t headerType = pci_readb(m_seg, m_bus, slot, fun, kHeaderType);
+
+	switch (headerType & 0x7f) {
+	case 0:
+		[self doSegment:m_seg bus:m_bus slot:slot function:fun];
+		break;
+
+	case 1: {
+		uint8_t secondary_bus = pci_readb(m_seg, m_bus, slot, fun,
+		    kSecondaryBus);
+		DKDevLog(self, "%d.%d.%d.%d is a PCI-PCI bridge to %d\n", m_seg,
+		    m_bus, slot, fun, secondary_bus);
+		break;
+	}
+
+	default:
+		DKDevLog(self, "%d.%d.%d.%d: Unknown PCI header type %d\n",
+		    m_seg, m_bus, slot, fun, headerType);
+	}
+}
+
 - (void)enumerateDevices
 {
 	for (unsigned slot = 0; slot < 32; slot++) {
@@ -194,7 +216,7 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 			nFun = 8;
 
 		for (unsigned fun = 0; fun < nFun; fun++)
-			[self doSegment:m_seg bus:m_bus slot:slot function:fun];
+			[self enumerateSlot:slot func:fun];
 	}
 }
 

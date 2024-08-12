@@ -1,6 +1,6 @@
 
 #include "NTStorPort.h"
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 #include "platform/amd64/IOAPIC.h"
 #include "dev/pci_reg.h"
 #include "kdk/dev.h"
@@ -139,7 +139,7 @@ srb_deferred_completion_callback(void *arg)
 	}
 }
 
-+ (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info
++ (BOOL)probeWithPCIBus:(DKPCIBus *)provider info:(struct pci_dev_info *)info
 {
 	struct storport_driver *driver = NULL;
 	PACCESS_RANGE ranges = NULL;
@@ -231,7 +231,7 @@ intx_handler(md_intr_frame_t *frame, void *arg)
 	return true;
 }
 
-- (instancetype)initWithPCIBus:(PCIBus *)provider
+- (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info
 		storportDriver:(struct storport_driver *)driver
 	       deviceExtension:(struct sp_dev_ext *)devExt;

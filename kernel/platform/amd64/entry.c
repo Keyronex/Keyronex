@@ -47,6 +47,7 @@ void plat_first_init(void)
 	static kthread_t *pthread0 = &thread0;
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&pthread0);
 	serial_init();
+	intr_init();
 }
 
 void plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)

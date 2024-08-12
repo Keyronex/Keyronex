@@ -19,7 +19,8 @@ QEMU_EXE="${QEMU_EXE:=qemu-system-x86_64}"
 #QEMU_EXE=/ws/Compilers/qemu-8.0.4/bld/qemu-system-x86_64
 qemu_args="$qemu_args -s"
 
-virtio_9p_arg="-device virtio-9p-pci,fsdev=sysroot,mount_tag=sysroot \
+virtio_9p_arg="-device pci-bridge,id=bridge0,chassis_nr=1 \
+	-device virtio-9p-pci,id=pci9p,bus=bridge0,fsdev=sysroot,mount_tag=sysroot \
   -fsdev local,id=sysroot,security_model=none,path=build/amd64/system-root"
 
 if [ "$serial_stdio" = "1" ]; then
@@ -52,4 +53,4 @@ ${QEMU_EXE} -smp 4 -hda test.img -m 128 -M q35 \
   -cdrom build/amd64/barebones.iso \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
-  ${qemu_args}  -net tap,ifname=tap0,script=no,downscript=no -net nic,model=e1000e
+  ${qemu_args}  -net tap,ifname=tap0,script=no,downscript=no -net nic,model=e1000e \

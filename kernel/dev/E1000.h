@@ -2,7 +2,7 @@
 #define KRX_DEV_E1000_H
 
 #include "DKNIC.h"
-#include "PCIBus.h"
+#include "pci/DKPCIBus.h"
 
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 
@@ -34,7 +34,7 @@ struct pbuf_rx;
 	vm_page_t *m_packet_buf_pages[E1000_NDESCS];
 }
 
-+ (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info;
++ (BOOL)probeWithPCIBus:(DKPCIBus *)provider info:(struct pci_dev_info *)info;
 
 @end
 #endif

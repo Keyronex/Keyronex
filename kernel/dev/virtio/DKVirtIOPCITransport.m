@@ -1,7 +1,7 @@
 #include "ddk/DKDevice.h"
 #include "ddk/virtio_pcireg.h"
 #include "ddk/virtioreg.h"
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 #include "platform/aarch64-virt/GICv2Distributor.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "dev/virtio/VirtIO9pPort.h"
@@ -22,11 +22,11 @@
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
 @interface
 DKVirtIOPCITransport (Private)
-- (instancetype)initWithPCIBus:(PCIBus *)provider
+- (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info;
 @end
 
-#define PROVIDER ((PCIBus *)m_provider)
+#define PROVIDER ((DKPCIBus *)m_provider)
 
 static int counter = 0;
 
@@ -41,7 +41,7 @@ dpc_handler(void *arg)
 
 @synthesize delegate = m_delegate;
 
-+ (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info
++ (BOOL)probeWithPCIBus:(DKPCIBus *)provider info:(struct pci_dev_info *)info
 {
 	[[self alloc] initWithPCIBus:provider info:info];
 	return YES;
@@ -69,7 +69,7 @@ dpc_handler(void *arg)
 
 	switch (cap.cfg_type) {
 	case VIRTIO_PCI_CAP_COMMON_CFG: {
-		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
+		paddr_t phys = [DKPCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
 		vaddr_t virt;
 		int r;
@@ -83,7 +83,7 @@ dpc_handler(void *arg)
 	}
 
 	case VIRTIO_PCI_CAP_NOTIFY_CFG: {
-		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
+		paddr_t phys = [DKPCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
 		vaddr_t virt;
 		int r;
@@ -99,7 +99,7 @@ dpc_handler(void *arg)
 	}
 
 	case VIRTIO_PCI_CAP_ISR_CFG: {
-		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
+		paddr_t phys = [DKPCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
 		vaddr_t virt;
 		int r;
@@ -113,7 +113,7 @@ dpc_handler(void *arg)
 	}
 
 	case VIRTIO_PCI_CAP_DEVICE_CFG: {
-		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
+		paddr_t phys = [DKPCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
 		vaddr_t virt;
 		int r;
@@ -131,7 +131,7 @@ dpc_handler(void *arg)
 		break;
 
 	case VIRTIO_PCI_CAP_SHARED_MEMORY_CFG: {
-		paddr_t phys = [PCIBus getBar:cap.bar forInfo:&m_pciInfo] +
+		paddr_t phys = [DKPCIBus getBar:cap.bar forInfo:&m_pciInfo] +
 		    cap.offset;
 		DKLog("VirtIODevice", "Shared Memory is at 0x%zx\n", phys);
 		break;
@@ -143,7 +143,7 @@ dpc_handler(void *arg)
 	}
 }
 
-- (instancetype)initWithPCIBus:(PCIBus *)provider
+- (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info
 {
 	self = [super initWithProvider:provider];
@@ -155,10 +155,10 @@ dpc_handler(void *arg)
 	m_dpc.callback = dpc_handler;
 	m_dpc.cpu = NULL;
 
-	[PCIBus enableBusMasteringForInfo:info];
-	[PCIBus setMemorySpaceForInfo:info enabled:false];
-	[PCIBus enumerateCapabilitiesForInfo:info delegate:self];
-	[PCIBus setMemorySpaceForInfo:info enabled:true];
+	[DKPCIBus enableBusMasteringForInfo:info];
+	[DKPCIBus setMemorySpaceForInfo:info enabled:false];
+	[DKPCIBus enumerateCapabilitiesForInfo:info delegate:self];
+	[DKPCIBus setMemorySpaceForInfo:info enabled:true];
 
 	DKLogAttach(self);
 
@@ -332,7 +332,7 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 	m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
 
-	[PCIBus setInterruptsEnabled:YES forInfo:&m_pciInfo];
+	[DKPCIBus setInterruptsEnabled:YES forInfo:&m_pciInfo];
 
 	return 0;
 }

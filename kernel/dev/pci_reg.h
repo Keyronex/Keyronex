@@ -10,6 +10,8 @@ enum {
 	kClass = 0xb,
 	kHeaderType = 0xe, /* bit 7 = is multifunction */
 	kBaseAddress0 = 0x10,
+	kSecondaryBus = 0x19,
+	kSubordinateBus = 0x1a,
 	kCapabilitiesPointer = 0x34,
 	kInterruptPin = 0x3d, /* u8 */
 };

@@ -1,4 +1,5 @@
 kernel_sources += files(
+	'pci/DKPCIBus.m',
 	'virtio/DKVirtIOMMIOTransport.m',
 	'virtio/DKVirtIOPCITransport.m',
 	'virtio/VirtIO9pPort.m',
@@ -12,7 +13,6 @@ kernel_sources += files(
 	'Ext2FS.m',
 	'FBTerminal.m',
 	'Null.m',
-	'PCIBus.m',
 	'SimpleFB.m',
 	'buf.c',
 	'iop.m',

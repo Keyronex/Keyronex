@@ -17,11 +17,11 @@
 
 @interface
 E1000 (Private)
-- (instancetype)initWithPCIBus:(PCIBus *)provider
+- (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info;
 @end
 
-#define PROVIDER ((PCIBus *)m_provider)
+#define PROVIDER ((DKPCIBus *)m_provider)
 
 enum e1000_reg {
 	kE1000RegSTATUS = 0x8,
@@ -97,7 +97,7 @@ static int counter = 0;
 
 @implementation E1000
 
-+ (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info
++ (BOOL)probeWithPCIBus:(DKPCIBus *)provider info:(struct pci_dev_info *)info
 {
 	[[self alloc] initWithPCIBus:provider info:info];
 	return YES;
@@ -453,7 +453,7 @@ link_dpc(void *arg)
 	[super dealloc];
 }
 
-- (instancetype)initWithPCIBus:(PCIBus *)provider
+- (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info
 {
 	int r;
@@ -476,10 +476,10 @@ link_dpc(void *arg)
 	m_linkDpc.callback = link_dpc;
 	m_linkDpc.cpu = NULL;
 
-	[PCIBus enableBusMasteringForInfo:info];
-	[PCIBus setMemorySpaceForInfo:info enabled:false];
+	[DKPCIBus enableBusMasteringForInfo:info];
+	[DKPCIBus setMemorySpaceForInfo:info enabled:false];
 
-	m_reg = [PCIBus getBar:0 forInfo:info];
+	m_reg = [DKPCIBus getBar:0 forInfo:info];
 	if (m_reg == 0) {
 		DKDevLog(self, "Failed to get bar 0\n");
 		[self release];
@@ -488,7 +488,7 @@ link_dpc(void *arg)
 
 	m_reg = P2V(m_reg);
 
-	[PCIBus setMemorySpaceForInfo:info enabled:true];
+	[DKPCIBus setMemorySpaceForInfo:info enabled:true];
 
 	r = e1000_read_mac(m_reg, m_mac);
 	if (r != 0) {
@@ -547,7 +547,7 @@ link_dpc(void *arg)
 	[self linkDeferredProcessing];
 
 	[self enableInterrupts];
-	[PCIBus setInterruptsEnabled:YES forInfo:&m_pciInfo];
+	[DKPCIBus setInterruptsEnabled:YES forInfo:&m_pciInfo];
 
 	[self registerDevice];
 	DKLogAttachExtra(self, "Ethernet address " MAC_FMT, MAC_ARGS(m_mac));

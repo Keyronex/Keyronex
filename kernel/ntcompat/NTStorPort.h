@@ -1,7 +1,7 @@
 #ifndef KRX_NTCOMPAT_STORPORT_H
 #define KRX_NTCOMPAT_STORPORT_H
 
-#include "dev/PCIBus.h"
+#include "dev/pci/DKPCIBus.h"
 
 @interface NTStorPort : DKDevice {
     @public
@@ -16,7 +16,7 @@
 	kdpc_t srb_deferred_completion_dpc;
 }
 
-+ (BOOL)probeWithPCIBus:(PCIBus *)provider info:(struct pci_dev_info *)info;
++ (BOOL)probeWithPCIBus:(DKPCIBus *)provider info:(struct pci_dev_info *)info;
 
 @end
 
