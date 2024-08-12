@@ -160,7 +160,7 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	info.pin = CFG_READ(b, kInterruptPin);
 
 	if (info.pin != 0)
-		info.intx_source = [self routePCIPinForInfo:&info];
+		[m_fwInterface routePCIPinForInfo:&info into:&info.intx_source];
 
 #endif
 
@@ -193,8 +193,9 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	case 1: {
 		uint8_t secondary_bus = pci_readb(m_seg, m_bus, slot, fun,
 		    kSecondaryBus);
-		DKDevLog(self, "%d.%d.%d.%d is a PCI-PCI bridge to %d\n", m_seg,
-		    m_bus, slot, fun, secondary_bus);
+		[m_fwInterface createDownstreamBus:secondary_bus
+					   segment:m_seg
+					  upstream:self];
 		break;
 	}
 
@@ -220,9 +221,25 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 	}
 }
 
-- (dk_interrupt_source_t)routePCIPinForInfo:(struct pci_dev_info *)info
+- (instancetype)initWithProvider:(DKDevice *)provider
+	       firmwareInterface:(id<DKPCIFirmwareInterfacing>)fwInterface
+			     seg:(uint16_t)seg
+			     bus:(uint8_t)bus
 {
-	kfatal("Subclass responsibility\n");
+
+	self = [super initWithProvider:provider];
+	m_fwInterface = fwInterface;
+	m_seg = seg;
+	m_bus = bus;
+
+	kmem_asprintf(obj_name_ptr(self), "pcibus-%d-%d", seg, bus);
+
+	[self registerDevice];
+	DKLogAttach(self);
+
+	[self enumerateDevices];
+
+	return self;
 }
 
 @end

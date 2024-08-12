@@ -3,7 +3,7 @@
 
 #include "dev/pci/DKPCIBus.h"
 #include "dev/PS2Keyboard.h"
-#include "dev/acpi/ACPIPCIBus.h"
+#include "dev/acpi/DKACPIPCIFirmwareInterface.h"
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/acpi/tables.h"
 #include "kdk/executive.h"
@@ -56,10 +56,10 @@ struct pcie_ecam *ecam;
 		return;
 	}
 
-	pcibus = [[ACPIPCIBus alloc] initWithProvider:self
-					 acpiNode:node
-					  segment:seg
-					      bus:bus];
+	pcibus = [[DKACPIPCIFirmwareInterface alloc] initWithProvider:self
+							     acpiNode:node
+							      segment:seg
+								  bus:bus];
 	(void)pcibus;
 }
 

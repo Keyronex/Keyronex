@@ -38,7 +38,9 @@ struct pci_dev_info {
 
 @protocol DKPCIFirmwareInterfacing
 
-- (void)createDownstreamBus:(uint8_t)bus of:(DKPCIBus *)upstream;
+- (void)createDownstreamBus:(uint8_t)bus
+		    segment:(uint16_t)segment
+		   upstream:(DKPCIBus *)upstream;
 - (int)routePCIPinForInfo:(struct pci_dev_info *)info
 		     into:(out dk_interrupt_source_t *)source;
 
@@ -48,6 +50,7 @@ struct pci_dev_info {
  * Abstract class representing a PCI bus.
  */
 @interface DKPCIBus : DKDevice {
+	id<DKPCIFirmwareInterfacing> m_fwInterface;
 	uint16_t m_seg;
 	uint8_t m_bus;
 }
@@ -62,17 +65,10 @@ struct pci_dev_info {
 			    delegate:(DKDevice<DKPCIDeviceDelegate> *)delegate;
 + (paddr_t)getBar:(int)i forInfo:(struct pci_dev_info *)info;
 
-/*!
- * Called by subclasses only.
- */
-- (void)enumerateDevices;
-
-/*!
- * Implemented by subclasses.
- */
-- (dk_interrupt_source_t)routePCIPinForInfo:(struct pci_dev_info *)info;
-
-@end
+- (instancetype)initWithProvider:(DKDevice *)provider
+	       firmwareInterface:(id<DKPCIFirmwareInterfacing>)fwInterface
+			     seg:(uint16_t)seg
+			     bus:(uint8_t)bus;
 
 @end
 

@@ -31,7 +31,7 @@ kernel_sources += [
 
 if (cpu != 'm68k')
 	kernel_sources += [
-		files('acpi/ACPIPCIBus.m', 'acpi/DKACPIPlatform.m',
+		files('acpi/DKACPIPCIFirmwareInterface.m', 'acpi/DKACPIPlatform.m',
 			'acpi/uacpi_integration.m', 'E1000.m', 'PS2Keyboard.m',),
 		uacpi_sources,
 	]

@@ -7,10 +7,12 @@
 #define KRX_ACPI_ACPIPCIBUS_H
 
 #include "DKAACPIPlatform.h"
+#include "ddk/DKObject.h"
 #include "dev/pci/DKPCIBus.h"
 #include "uacpi/uacpi.h"
 
-@interface ACPIPCIBus : DKPCIBus {
+@interface DKACPIPCIFirmwareInterface : DKObject <DKPCIFirmwareInterfacing> {
+	DKACPIPCIFirmwareInterface *m_parent;
 	uacpi_namespace_node *acpiNode;
 }
 
