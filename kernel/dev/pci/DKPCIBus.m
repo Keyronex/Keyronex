@@ -17,6 +17,9 @@
 
 @implementation DKPCIBus
 
+@synthesize seg = m_seg;
+@synthesize bus = m_bus;
+
 static paddr_t ecam_base = -1;
 
 + (void)setECAMBase:(paddr_t)base
@@ -195,7 +198,9 @@ match_e1000(uint16_t vendorId, uint16_t devId)
 		    kSecondaryBus);
 		[m_fwInterface createDownstreamBus:secondary_bus
 					   segment:m_seg
-					  upstream:self];
+					  upstream:self
+				      upstreamSlot:slot
+				  upstreamFunction:fun];
 		break;
 	}
 

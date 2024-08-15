@@ -3,6 +3,8 @@
  * Created on Sun Aug 11 2024.
  */
 
+#include <stdint.h>
+
 #include "ddk/DKDevice.h"
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/acpi/DKACPIPCIFirmwareInterface.h"
@@ -16,11 +18,15 @@
 
 @implementation DKACPIPCIFirmwareInterface
 
+@synthesize pciBus = m_PCIBus;
+
 - (instancetype)initWithProvider:(DKDevice *)provider
 			  parent:(DKACPIPCIFirmwareInterface *)parent
 			acpiNode:(uacpi_namespace_node *)node
 			 segment:(uint16_t)seg
 			     bus:(uint8_t)bus
+		    upstreamSlot:(uint8_t)slot
+		upstreamFunction:(uint8_t)fun
 {
 	self = [super init];
 	if (self == nil)
@@ -28,11 +34,14 @@
 
 	m_parent = parent;
 	acpiNode = node;
+	m_upstreamSlot = slot;
+	m_upstreamFunction = fun;
 
-	[[DKPCIBus alloc] initWithProvider:provider
-			 firmwareInterface:self
-				       seg:seg
-				       bus:bus];
+	m_PCIBus = [DKPCIBus alloc];
+	[m_PCIBus initWithProvider:provider
+		 firmwareInterface:self
+			       seg:seg
+			       bus:bus];
 
 	return self;
 }
@@ -40,35 +49,82 @@
 - (instancetype)initWithProvider:(DKDevice *)provider
 			acpiNode:(uacpi_namespace_node *)node
 			 segment:(uint16_t)seg
-			     bus:(uint8_t)bus;
+			     bus:(uint8_t)bus
 {
 	return [self initWithProvider:provider
 			       parent:nil
 			     acpiNode:node
 			      segment:seg
-				  bus:bus];
+				  bus:bus
+			 upstreamSlot:0
+		     upstreamFunction:0];
+}
+
+struct node_search {
+	uint64_t adr;
+	uacpi_namespace_node *node;
+};
+
+uacpi_ns_iteration_decision
+search_adr(uacpi_handle arg, uacpi_namespace_node *node)
+{
+	struct node_search *search = arg;
+	uint64_t adr;
+	uacpi_status r;
+
+	r = uacpi_eval_adr(node, &adr);
+	if (r != UACPI_STATUS_OK)
+		return UACPI_NS_ITERATION_DECISION_CONTINUE;
+
+	if (adr == search->adr) {
+		search->node = node;
+		return UACPI_NS_ITERATION_DECISION_BREAK;
+	}
+
+	return UACPI_NS_ITERATION_DECISION_CONTINUE;
 }
 
 - (void)createDownstreamBus:(uint8_t)bus
 		    segment:(uint16_t)segment
-		   upstream:(DKPCIBus *)upstream;
+		   upstream:(DKPCIBus *)upstream
+	       upstreamSlot:(uint8_t)slot
+	   upstreamFunction:(uint8_t)fun;
 {
+	struct node_search search = { .adr = (slot << 16) | fun, .node = NULL };
+
+	uacpi_namespace_for_each_node_depth_first(acpiNode, search_adr,
+	    &search);
+
 	[[DKACPIPCIFirmwareInterface alloc] initWithProvider:upstream
 						      parent:self
-						    acpiNode:acpiNode
+						    acpiNode:search.node
 						     segment:segment
-							 bus:bus];
+							 bus:bus
+						upstreamSlot:slot
+					    upstreamFunction:fun];
 }
 
 - (int)routePCIPinForInfo:(struct pci_dev_info *)info
 		     into:(out dk_interrupt_source_t *)source
 {
 	uacpi_pci_routing_table *pci_routes;
-	int r;
+	int r = 0;
 
-	kassert(m_parent == nil);
+	if (acpiNode != NULL)
+		r = uacpi_get_pci_routing_table(acpiNode, &pci_routes);
 
-	r = uacpi_get_pci_routing_table(acpiNode, &pci_routes);
+	if (acpiNode == NULL || r == UACPI_STATUS_NOT_FOUND) {
+		struct pci_dev_info my_info = {
+			.slot = m_upstreamSlot,
+			.fun = m_upstreamFunction,
+			.pin = ((info->pin - 1 + info->slot) % 4) + 1,
+		};
+
+		kassert(m_parent != nil);
+
+		return [m_parent routePCIPinForInfo:&my_info into:source];
+	}
+
 	kassert(r == UACPI_STATUS_OK);
 
 	for (size_t i = 0; i < pci_routes->num_entries; i++) {

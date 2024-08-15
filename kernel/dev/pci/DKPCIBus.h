@@ -13,6 +13,13 @@
 
 @class DKPCIBus;
 
+struct pci_addr {
+	uint16_t seg;
+	uint8_t bus;
+	uint8_t slot;
+	uint8_t fun;
+};
+
 struct pci_dev_info {
 	uint16_t seg;
 	uint8_t bus;
@@ -40,7 +47,10 @@ struct pci_dev_info {
 
 - (void)createDownstreamBus:(uint8_t)bus
 		    segment:(uint16_t)segment
-		   upstream:(DKPCIBus *)upstream;
+		   upstream:(DKPCIBus *)upstream
+	       upstreamSlot:(uint8_t)slot
+	   upstreamFunction:(uint8_t)fun;
+
 - (int)routePCIPinForInfo:(struct pci_dev_info *)info
 		     into:(out dk_interrupt_source_t *)source;
 
@@ -54,6 +64,9 @@ struct pci_dev_info {
 	uint16_t m_seg;
 	uint8_t m_bus;
 }
+
+@property (readonly) uint16_t seg;
+@property (readonly) uint8_t bus;
 
 + (void)setECAMBase:(paddr_t)base;
 + (paddr_t)getECAMBaseForSegment:(uint16_t)seg bus:(uint8_t)bus;
