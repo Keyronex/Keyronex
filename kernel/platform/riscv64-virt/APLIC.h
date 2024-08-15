@@ -16,11 +16,9 @@ struct aplic_mmio;
 	volatile struct aplic_mmio *m_mmio;
 }
 
-+ (int)handleGSI:(uint32_t)gsi
++ (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
 	   argument:(void *)arg
-      isLowPolarity:(bool)lopol
-    isEdgeTriggered:(bool)isEdgeTriggered
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry;
 

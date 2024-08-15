@@ -1,3 +1,6 @@
+#include <ctype.h>
+
+#include "ddk/DKDevice.h"
 #include "dev/pci/DKPCIBus.h"
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
@@ -470,19 +473,23 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
 {
 	int r;
 	struct uacpi_interrupt *entry;
+	dk_interrupt_source_t source;
 
 	entry = kmem_alloc(sizeof(*entry));
 	entry->handler = handler;
 	entry->ctx = ctx;
 
+
 #ifdef __amd64__
-	r = [IOApic handleGSI:isa_intr_overrides[irq].gsi
-		  withHandler:uacpi_intr_handler
-		     argument:entry
-		isLowPolarity:isa_intr_overrides[irq].lopol
-	      isEdgeTriggered:isa_intr_overrides[irq].edge
-		   atPriority:kIPLHigh
-			entry:&entry->entry];
+	source.id = isa_intr_overrides[irq].gsi;
+	source.edge = isa_intr_overrides[irq].edge;
+	source.low_polarity = isa_intr_overrides[irq].lopol;
+
+	r = [IOApic handleSource:&source
+		     withHandler:uacpi_intr_handler
+			argument:entry
+		      atPriority:kIPLHigh
+			   entry:&entry->entry];
 #else
 	kprintf("uacpi_install_interrupt_handler\n");
 	r = 0;

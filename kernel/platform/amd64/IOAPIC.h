@@ -30,11 +30,9 @@ struct isa_intr_override {
  *
  * @returns 0 if handler installed successfully
  */
-+ (int)handleGSI:(uint32_t)gsi
++ (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
 	   argument:(void *)arg
-      isLowPolarity:(bool)lopol
-    isEdgeTriggered:(bool)isEdgeTriggered
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry;
 

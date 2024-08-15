@@ -94,15 +94,14 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 	return self;
 }
 
-+ (int)handleGSI:(uint32_t)gsi
++ (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
 	   argument:(void *)arg
-      isLowPolarity:(bool)lopol
-    isEdgeTriggered:(bool)isEdgeTriggered
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry
 {
 	IOApic *ioapic;
+	uint8_t gsi = source->id;
 	bool found = false;
 
 	TAILQ_FOREACH (ioapic, &ioapics, _ioapics_entries) {
@@ -115,7 +114,7 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 			kassert(ioapic->redirs[intr] == 0 && "shared");
 
 			r = md_intr_alloc("gsi", prio, handler, arg,
-			    !isEdgeTriggered, &vec, entry);
+			    !source->edge, &vec, entry);
 			if (r != 0) {
 				kprintf(
 				    "ioapic: failed to register interrupt for GSI %d: "
@@ -124,8 +123,8 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 				return -1;
 			}
 
-			ioapic_route(ioapic->_vaddr, intr, vec, lopol,
-			    isEdgeTriggered);
+			ioapic_route(ioapic->_vaddr, intr, vec, source->low_polarity,
+			    source->edge);
 			ioapic->redirs[intr] = vec;
 
 			found = true;

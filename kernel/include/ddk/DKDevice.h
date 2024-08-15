@@ -84,7 +84,7 @@ typedef struct dk_interrupt_source {
 	bool edge;
 } dk_interrupt_source_t;
 
-@protocol DKPlatformInterruptController
+@protocol DKPlatformInterruptControl
 
 - (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
@@ -108,6 +108,14 @@ typedef struct dk_interrupt_source {
  *
  */
 - (void)secondStageInit;
+
+/*!
+ * Get the platform interrupt controller for the system.
+ */
+- (DKDevice<DKPlatformInterruptControl> *)platformInterruptController;
+
 @end
+
+extern DKDevice <DKPlatformDevice> *platformDevice;
 
 #endif /* KRX_DDK_DKDEVICE_H */

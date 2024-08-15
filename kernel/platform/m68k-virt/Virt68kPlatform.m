@@ -29,8 +29,6 @@ extern struct bootinfo bootinfo;
 
 - (instancetype)init
 {
-	extern id platformDevice;
-
 	self = [super init];
 	kmem_asprintf(obj_name_ptr(self), "virt68k-platform");
 	platformDevice = self;
@@ -52,6 +50,11 @@ extern struct bootinfo bootinfo;
 						    mmio:virtio_base + 0x200 * i
 					       interrupt:32 + i];
 	}
+}
+
+- (DKDevice<DKPlatformInterruptControl> *)platformInterruptController
+{
+	return nil;
 }
 
 @end

@@ -1,11 +1,12 @@
 #include "ddk/DKDevice.h"
 #include "dev/Null.h"
 #include "dev/SimpleFB.h"
-#include "kdk/kmem.h"
 #include "dev/acpi/DKAACPIPlatform.h"
+#include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "limine.h"
 #include "net/keysock_dev.h"
+#include "platform/aarch64-virt/GICv2Distributor.h"
 
 extern volatile struct limine_framebuffer_request framebuffer_request;
 
@@ -31,7 +32,6 @@ extern struct bootinfo bootinfo;
 
 - (instancetype)init
 {
-	extern id platformDevice;
 	extern struct limine_rsdp_request rsdp_request;
 
 	struct limine_framebuffer *fb =
@@ -58,6 +58,11 @@ extern struct bootinfo bootinfo;
 	[Null probeWithProvider:self];
 	[KeySock probeWithProvider:self];
 	[[DKACPIPlatform instance] secondStageInit];
+}
+
+- (DKDevice<DKPlatformInterruptControl> *)platformInterruptController
+{
+	return (id)[GICv2Distributor class];
 }
 
 @end

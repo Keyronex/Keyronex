@@ -6,6 +6,7 @@
 #include "kdk/object.h"
 #include "limine.h"
 #include "net/keysock_dev.h"
+#include "platform/amd64/IOAPIC.h"
 
 extern volatile struct limine_framebuffer_request framebuffer_request;
 
@@ -31,7 +32,6 @@ extern struct bootinfo bootinfo;
 
 - (instancetype)init
 {
-	extern id platformDevice;
 	extern struct limine_rsdp_request rsdp_request;
 	struct limine_framebuffer *fb =
 	    framebuffer_request.response->framebuffers[0];
@@ -57,6 +57,11 @@ extern struct bootinfo bootinfo;
 	[KeySock probeWithProvider:self];
 	[Null probeWithProvider:self];
 	[[DKACPIPlatform instance] secondStageInit];
+}
+
+- (DKDevice<DKPlatformInterruptControl> *)platformInterruptController
+{
+	return (id)[IOApic class];
 }
 
 @end

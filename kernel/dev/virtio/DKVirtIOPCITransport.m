@@ -2,7 +2,6 @@
 #include "ddk/virtio_pcireg.h"
 #include "ddk/virtioreg.h"
 #include "dev/pci/DKPCIBus.h"
-#include "platform/aarch64-virt/GICv2Distributor.h"
 #include "dev/virtio/DKVirtIOPCITransport.h"
 #include "dev/virtio/VirtIO9pPort.h"
 #include "dev/virtio/VirtIODisk.h"
@@ -12,16 +11,8 @@
 #include "kdk/vm.h"
 #include "vm/vmp.h"
 
-#if defined(__amd64__)
-#include "platform/amd64/IOAPIC.h"
-#include "kdk/amd64.h"
-#elif defined(__riscv)
-#include "platform/riscv64-virt/APLIC.h"
-#endif
-
 #if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
-@interface
-DKVirtIOPCITransport (Private)
+@interface DKVirtIOPCITransport (Private)
 - (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info;
 @end
@@ -299,31 +290,12 @@ vitrio_handler(md_intr_frame_t *, void *arg)
 {
 	int r = 0;
 
-#if defined(__amd64__)
-	r = [IOApic handleGSI:m_pciInfo.intx_source.id
-		  withHandler:vitrio_handler
-		     argument:self
-		isLowPolarity:m_pciInfo.intx_source.low_polarity
-	      isEdgeTriggered:m_pciInfo.intx_source.edge
-		   atPriority:kIPLHigh
-			entry:&m_intxEntry];
-#elif defined (__aarch64__)
-	r = [GICv2Distributor handleGSI:m_pciInfo.intx_source.id
-		  withHandler:vitrio_handler
-		     argument:self
-		isLowPolarity:m_pciInfo.intx_source.low_polarity
-	      isEdgeTriggered:m_pciInfo.intx_source.edge
-		   atPriority:kIPLHigh
-			entry:&m_intxEntry];
-#elif defined (__riscv)
-	r = [APLIC handleGSI:m_pciInfo.intx_source.id
-		 withHandler:vitrio_handler
-		    argument:self
-	       isLowPolarity:m_pciInfo.intx_source.low_polarity
-	     isEdgeTriggered:m_pciInfo.intx_source.edge
-		  atPriority:kIPLHigh
-		       entry:&m_intxEntry];
-#endif
+	r = [[platformDevice platformInterruptController]
+	    handleSource:&m_pciInfo.intx_source
+	     withHandler:vitrio_handler
+		argument:self
+	      atPriority:kIPLHigh
+		   entry:&m_intxEntry];
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
 		return r;

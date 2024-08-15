@@ -8,18 +8,17 @@
 
 @implementation GICv2Distributor
 
-+ (int)handleGSI:(uint32_t)gsi
++ (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
 	   argument:(void *)arg
-      isLowPolarity:(bool)lopol
-    isEdgeTriggered:(bool)isEdgeTriggered
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry
 {
-	md_intr_register("gsi", gsi, prio, handler, arg, !isEdgeTriggered,
-	    entry);
+	uint32_t gsi = source->id;
 
-	gengic_dist_setedge(gsi, isEdgeTriggered);
+	md_intr_register("gsi", gsi, prio, handler, arg, !source->edge, entry);
+
+	gengic_dist_setedge(gsi, !source->edge);
 	gengic_dist_settarget(gsi, (1 << ncpus) - 1);
 	gengic_dist_setenabled(gsi);
 

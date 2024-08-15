@@ -100,24 +100,25 @@ volatile struct aplic_mmio *mmio;
 
 @implementation APLIC
 
-+ (int)handleGSI:(uint32_t)gsi
++ (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
 	   argument:(void *)arg
-      isLowPolarity:(bool)lopol
-    isEdgeTriggered:(bool)isEdgeTriggered
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry
 {
 	uint16_t idc_index = cpu_idc_index(&bootstrap_cpu);
+	uint32_t gsi = source->id;
 	int sourcecfg;
 
 	/* GSI 0 is invalid. Registers describe GSIs starting at 1. */
 	gsi--;
 
-	if (isEdgeTriggered)
-		sourcecfg = lopol ? kAPLICSourcefgLevel0 : kAPLICSourcefgLevel1;
+	if (source->edge)
+		sourcecfg = source->low_polarity ? kAPLICSourcefgLevel0 :
+						   kAPLICSourcefgLevel1;
 	else
-		sourcecfg = lopol ? kAPLICSourcefgEdge0 : kAPLICSourcefgEdge1;
+		sourcecfg = source->low_polarity ? kAPLICSourcefgEdge0 :
+						   kAPLICSourcefgEdge1;
 
 	write_u32(&aplic->m_mmio->sourcecfg[gsi], sourcecfg);
 	write_u32(&aplic->m_mmio->target[gsi], target_value(idc_index));
@@ -133,7 +134,7 @@ volatile struct aplic_mmio *mmio;
 	entry->ipl = prio;
 	entry->handler = handler;
 	entry->arg = arg;
-	entry->shareable = !isEdgeTriggered;
+	entry->shareable = !source->edge;
 	TAILQ_INSERT_TAIL(&intr_entries[gsi + 1], entry, queue_entry);
 
 	return 0;

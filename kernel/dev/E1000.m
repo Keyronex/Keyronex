@@ -1,22 +1,15 @@
+#include "ddk/DKDevice.h"
 #include "ddk/virtio_pcireg.h"
 #include "dev/9pSockTransport.h"
 #include "dev/E1000.h"
 #include "kdb/kdb_udp.h"
-#include "kdk/kmem.h"
 #include "kdk/kern.h"
+#include "kdk/kmem.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "net/keysock_dev.h"
 
-#if defined(__amd64__)
-#include "kdk/amd64.h"
-#include "platform/amd64/IOAPIC.h"
-#elif defined (__aarch64__)
-#include "platform/aarch64-virt/GICv2Distributor.h"
-#endif
-
-@interface
-E1000 (Private)
+@interface E1000 (Private)
 - (instancetype)initWithPCIBus:(DKPCIBus *)provider
 			  info:(struct pci_dev_info *)info;
 @end
@@ -518,25 +511,12 @@ link_dpc(void *arg)
 	e1000_write(m_reg, kE1000RegRCTL,
 	    kE1000RctlEN | kE1000RctlBAM | kE1000RctlSZ_2048 | kE1000RctlSECRC);
 
-#if defined(__amd64__)
-	r = [IOApic handleGSI:info->intx_source.id
-		  withHandler:e1000_handler
-		     argument:self
-		isLowPolarity:info->intx_source.low_polarity
-	      isEdgeTriggered:info->intx_source.edge
-		   atPriority:kIPLHigh
-			entry:&m_intxEntry];
-#elif defined(__aarch64__)
-	r = [GICv2Distributor handleGSI:info->intx_source.id
-		  withHandler:e1000_handler
-		     argument:self
-		isLowPolarity:info->intx_source.low_polarity
-	      isEdgeTriggered:info->intx_source.edge
-		   atPriority:kIPLHigh
-			entry:&m_intxEntry];
-#else
-	r = -1;
-#endif
+	r = [[platformDevice platformInterruptController]
+	    handleSource:&info->intx_source
+	     withHandler:e1000_handler
+		argument:self
+	      atPriority:kIPLHigh
+		   entry:&m_intxEntry];
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
 		[self release];

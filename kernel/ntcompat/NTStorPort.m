@@ -1,7 +1,6 @@
 
 #include "NTStorPort.h"
 #include "dev/pci/DKPCIBus.h"
-#include "platform/amd64/IOAPIC.h"
 #include "dev/pci_reg.h"
 #include "kdk/dev.h"
 #include "kdk/kmem.h"
@@ -16,11 +15,6 @@
 #include "ntcompat/win_types.h"
 #include "vm/vmp.h"
 
-#if defined(__aarch64__) || defined(__amd64__) || defined(__riscv)
-#if 0
-#include "lai/host.h"
-#endif
-#endif
 
 #define INFO_ARGS(PINFO) (PINFO)->seg, (PINFO)->bus, (PINFO)->slot, (PINFO)->fun
 
@@ -259,13 +253,12 @@ intx_handler(md_intr_frame_t *frame, void *arg)
 	BOOLEAN suc = driver->hwinit.HwInitialize(m_HwDeviceExtension);
 
 #ifdef __amd64
-	r = [IOApic handleGSI:info->intx_source.id
-		  withHandler:intx_handler
-		     argument:m_deviceExtension
-		isLowPolarity:info->intx_source.low_polarity
-	      isEdgeTriggered:info->intx_source.edge
-		   atPriority:kIPLHigh
-			entry:&m_intxEntry];
+	r = [[platformDevice platformInterruptController]
+	    handleSource:&info->intx_source
+	     withHandler:intx_handler
+		argument:m_deviceExtension
+	      atPriority:kIPLHigh
+		   entry:&m_intxEntry];
 #else
 	r = -1;
 #endif
