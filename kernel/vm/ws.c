@@ -179,7 +179,7 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool shared)
 	struct vmp_wsl *ws = &ps->wsl;
 
 #if TRACE_WS
-	kprintf("Inserting vpfn %zu...", vpfn);
+	kprintf("Inserting vpfn %zu...\n", vpfn);
 #endif
 
 	if (ws->size < ws->limit || ws_can_expand(ws)) {
@@ -216,6 +216,8 @@ vmp_wsl_insert(vm_procstate_t *ps, vaddr_t vaddr, bool shared)
 		ws->freelist = wse->vpfn;
 	} else {
 		wsindex_t iter;
+
+		kassert(ws->limit != 0);
 
 		iter = ws->head;
 		while (true) {
