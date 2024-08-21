@@ -50,8 +50,13 @@ typedef struct __attribute__((packed)) pte_hw {
 	    reserved : 7, pbmt : 2, n : 1;
 } pte_hw_t;
 
+typedef pte_hw_t pte_hwl2_t;
+typedef pte_hw_t pte_hwl3_t;
+
 typedef union __attribute__((packed)) pte {
 	pte_hw_t hw;
+	pte_hwl2_t hwl2;
+	pte_hwl3_t hwl3;
 	pte_sw_t sw;
 	uintptr_t value;
 } pte_t;

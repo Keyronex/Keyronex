@@ -137,6 +137,10 @@ typedef struct vm_page {
 
 	/* 32-bit: word 8; 64-bit: word 7 */
 	uintptr_t drumslot;
+
+#if BITS == 64
+	uintptr_t padding;
+#endif
 } vm_page_t;
 
 typedef struct vm_mdl_view_entry {

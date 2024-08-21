@@ -48,7 +48,7 @@ static volatile struct limine_hhdm_request hhdm_request = {
 	.revision = 0
 };
 
-static volatile struct limine_kernel_address_request kernel_address_request = {
+volatile struct limine_kernel_address_request kernel_address_request = {
 	.id = LIMINE_KERNEL_ADDRESS_REQUEST,
 	.revision = 0
 };
@@ -58,7 +58,7 @@ static volatile struct limine_kernel_file_request kernel_file_request = {
 	.revision = 0
 };
 
-static volatile struct limine_memmap_request memmap_request = {
+volatile struct limine_memmap_request memmap_request = {
 	.id = LIMINE_MEMMAP_REQUEST,
 	.revision = 0
 };
@@ -219,19 +219,7 @@ _start(void)
 	ki_thread_common_init(&thread0, &bootstrap_cpu,
 	    &kernel_process->kprocess, "idle0");
 
-	struct limine_memmap_entry **entries = memmap_request.response->entries;
-
-	for (int i = 0; i < memmap_request.response->entry_count; i++) {
-		if (entries[i]->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE)
-			kprintf("Bootloader reclaimable from 0x%zx to 0x%zx\n",
-			    entries[i]->base, entries[i]->base + entries[i]->length);
-		if (entries[i]->type != LIMINE_MEMMAP_USABLE ||
-		    entries[i]->base < 0x100000)
-			continue;
-
-		vm_region_add(entries[i]->base, entries[i]->length);
-	}
-
+	vmp_pmm_init();
 	vmp_kernel_init();
 	kmem_init();
 	obj_init();

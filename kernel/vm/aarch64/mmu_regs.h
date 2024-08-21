@@ -26,7 +26,7 @@ enum tg0_granule {
 typedef struct __attribute__((packed)) pte_hw {
 	uint64_t valid : 1,
 	    /* must = 1 */
-	    reserved_must_be_1 : 1,
+	    reserved_must_be_1_at_l1 : 1,
 	    /* attribute index */
 	    attrindx : 3,
 	    /* nonsecure */
@@ -52,6 +52,9 @@ typedef struct __attribute__((packed)) pte_hw {
 	    /* for us to use */
 	    reserved_soft : 4, ignored : 5;
 } pte_hw_t;
+
+typedef pte_hw_t pte_hwl2_t;
+typedef pte_hw_t pte_hwl3_t;
 
 struct __attribute__((packed)) table_entry {
 	uint64_t valid : 1, is_table : 1,

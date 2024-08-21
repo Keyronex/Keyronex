@@ -278,6 +278,9 @@ int vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end);
 void vmp_pager_state_retain(struct vmp_pager_state *state);
 void vmp_pager_state_release(struct vmp_pager_state *state);
 
+/*! @brief Early initialisation of the kernel VM map. */
+void vmp_pmm_init(void);
+
 extern kspinlock_t vmp_pfn_lock;
 
 extern struct vmem vmem_kern_nonpaged;

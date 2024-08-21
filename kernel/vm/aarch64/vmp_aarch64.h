@@ -59,7 +59,7 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 		pte.hw.ap = writeable ? 0b00 : 0b10;
 	pte.hw.sh = 0b11;
 	pte.hw.attrindx = cacheable ? 0 : 1;
-	pte.hw.reserved_must_be_1 = 1;
+	pte.hw.reserved_must_be_1_at_l1 = 1;
 	if (!executable) {
 		pte.hw.pxn = 1;
 		pte.hw.uxn = 1;

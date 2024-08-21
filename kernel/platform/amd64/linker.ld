@@ -23,13 +23,16 @@ SECTIONS
     /* that is the beginning of the region. */
     . = 0xffffffff80000000;
 
+    TEXT_SEGMENT_START = .;
     .text : {
         *(.text .text.*)
     } :text
+    TEXT_SEGMENT_END = .;
 
     /* Move to the next memory page for .rodata */
     . += CONSTANT(MAXPAGESIZE);
 
+    RODATA_SEGMENT_START = .;
     .rodata : {
         *(.rodata .rodata.*)
     } :rodata
@@ -42,10 +45,12 @@ SECTIONS
         KEEP (*(.init_array))
         PROVIDE (init_array_end = .);
     }
+    RODATA_SEGMENT_END = .;
 
     /* Move to the next memory page for .data */
     . += CONSTANT(MAXPAGESIZE);
 
+    DATA_SEGMENT_START = .;
     .data : {
         *(.data .data.*)
     } :data
@@ -63,6 +68,7 @@ SECTIONS
         *(.bss .bss.*)
         *(COMMON)
     } :data
+    KDATA_SEGMENT_END = .;
 
     /* Discard .note.* and .eh_frame since they may cause issues on some hosts. */
     /DISCARD/ : {
