@@ -55,12 +55,20 @@ void plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
 	write_cr3(kernel_process->vm->md.table);
 }
 
+static kspinlock_t early_map_lock = KSPINLOCK_INITIALISER;
 
 void plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread, struct limine_smp_info *smpi)
 {
+	paddr_t lapic_base;
+	int r;
+
 	wrmsr(kAMD64MSRGSBase, (uintptr_t)&threads[cpu->num]);
 	idt_load();
-	cpu->cpucb.lapic_base = rdmsr(kAMD64MSRAPICBase);
+	lapic_base = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
+	ke_spinlock_acquire_nospl(&early_map_lock);
+	r = vm_ps_map_physical_view(kernel_process->vm, &cpu->cpucb.lapic_base,
+	    PGSIZE, lapic_base, kVMAll, kVMAll, false);
+	ke_spinlock_release_nospl(&early_map_lock);
 	lapic_enable(0xff);
 	setup_cpu_gdt(cpu);
 	intr_init();

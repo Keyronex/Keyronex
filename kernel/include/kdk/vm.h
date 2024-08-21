@@ -139,7 +139,7 @@ typedef struct vm_page {
 	uintptr_t drumslot;
 
 #if BITS == 64
-	uintptr_t padding;
+	uintptr_t padding : 40, max_order : 5;
 #endif
 } vm_page_t;
 
@@ -203,7 +203,7 @@ size_t vm_mdl_contig_bytes(vm_mdl_t *mdl, voff_t offset);
 /*!
  * @brief Add a region of memory to the VMM's management.
  */
-void vm_region_add(paddr_t base, size_t length);
+void vm_region_add(paddr_t base, paddr_t limit);
 
 /*!
  * @brief Allocate physical page frames.
@@ -309,9 +309,21 @@ vm_npages_to_order(size_t npages)
 }
 
 static inline size_t
+vm_bytes_to_order(size_t bytes)
+{
+	return vm_npages_to_order(ROUNDUP(bytes, PGSIZE) / PGSIZE);
+}
+
+static inline size_t
 vm_order_to_npages(size_t order)
 {
 	return 1 << order;
+}
+
+static inline size_t
+vm_order_to_bytes(size_t order)
+{
+	return vm_order_to_npages(order) * PGSIZE;
 }
 
 static inline paddr_t

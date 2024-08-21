@@ -12,6 +12,7 @@
 #include <kdk/vm.h>
 #include <limine.h>
 
+#include "kdk/amd64/regs.h"
 #include "kdk/vmtypes.h"
 #include "vm/vmp.h"
 
@@ -232,6 +233,28 @@ map_hhdm(void)
 	for (size_t i = 0; i < memmap_request.response->entry_count; i++) {
 		struct limine_memmap_entry *entry = entries[i];
 
+		const char *type;
+
+		switch (entry->type) {
+		case LIMINE_MEMMAP_USABLE:
+			type = "usable";
+			break;
+
+		case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE:
+			type = "bootloader reclaimable";
+			break;
+
+		case LIMINE_MEMMAP_FRAMEBUFFER:
+			type = "framebuffer";
+			break;
+
+		default:
+			type = "unknown";
+		}
+
+		kprintf("Entry %zu: %p-%p, type %s\n", i, (void *)entry->base,
+		    (void *)(entry->base + entry->length), type);
+
 		if (entry->type == LIMINE_MEMMAP_FRAMEBUFFER) {
 			uint64_t end = entry->base + entry->length;
 			for (uint64_t base = entry->base; base < end;
@@ -296,6 +319,89 @@ map_ksegs(void)
 	}
 }
 
+static void
+add_phys_segs(void)
+{
+	struct limine_memmap_entry **entries = memmap_request.response->entries;
+
+	for (size_t i = 0; i < memmap_request.response->entry_count; i++) {
+		struct limine_memmap_entry *entry = entries[i], *next;
+		paddr_t base, limit;
+
+		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+		    entry->type != LIMINE_MEMMAP_USABLE)
+			continue;
+
+		base = entry->base;
+		limit = entry->base + entry->length;
+
+		/* merge consecutive BOOTLOADER_RECLAIMABLE/USABLE regions */
+		for (size_t j = i + 1; j < memmap_request.response->entry_count;
+		     j++) {
+			next = entries[j];
+
+			if (next->type !=
+				LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+			    next->type != LIMINE_MEMMAP_USABLE)
+				break;
+
+			if (entry->base + entry->length == next->base) {
+				limit += next->length;
+				i++;
+			}
+		}
+
+		vm_region_add(base, limit);
+	}
+}
+
+static void
+unfree_boot(void)
+{
+	for (paddr_t i = bump_start; i < bump_large_end; i += pfndb_pgsize) {
+		vm_page_t *page = vm_paddr_to_page(i);
+		vmp_page_unfree(page, vm_bytes_to_order(pfndb_pgsize));
+	}
+
+	for (paddr_t i = bump_large_end; i < ROUNDUP(bump_small_base, PGSIZE);
+	     i += PGSIZE) {
+		vm_page_t *page = vm_paddr_to_page(i);
+		vmp_page_unfree(page, 0);
+	}
+}
+
+static void
+unfree_bl_reserved(void)
+{
+	struct limine_memmap_entry **entries = memmap_request.response->entries;
+
+	for (size_t i = 0; i < memmap_request.response->entry_count; i++) {
+		struct limine_memmap_entry *entry = entries[i], *next;
+		paddr_t base, limit;
+
+		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE)
+			continue;
+
+		base = entry->base;
+		limit = entry->base + entry->length;
+
+		for (size_t j = i + 1; j < memmap_request.response->entry_count;
+		     j++) {
+			next = entries[j];
+
+			if (next->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE)
+				break;
+
+			if (entry->base + entry->length == next->base) {
+				limit += next->length;
+				i++;
+			}
+		}
+
+		vmp_range_unfree(base, limit);
+	}
+}
+
 void
 vmp_pmm_init(void)
 {
@@ -310,8 +416,12 @@ vmp_pmm_init(void)
 	map_pfndb();
 	map_hhdm();
 	map_ksegs();
+	write_cr3(kpgtable);
+	add_phys_segs();
+	unfree_boot();
+	unfree_bl_reserved();
 
 	kernel_procstate.md.table = kpgtable;
 
-	kfatal("Stop please\n");
+	// kfatal("Stop please\n");
 }

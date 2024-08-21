@@ -32,17 +32,6 @@
 
 #define DEFINE_PAGEQUEUE(NAME) page_queue_t NAME = TAILQ_HEAD_INITIALIZER(NAME)
 
-struct vmp_pregion {
-	/*! Linkage to pregion_queue. */
-	TAILQ_ENTRY(vmp_pregion) queue_entry;
-	/*! Base address of region. */
-	paddr_t base;
-	/*! Number of pages the region covers. */
-	size_t npages;
-	/*! PFN database part for region. */
-	vm_page_t pages[0];
-};
-
 void vmp_page_steal(vm_page_t *page, enum vm_page_use new_use);
 
 #define BUDDY_ORDERS 16
@@ -50,10 +39,10 @@ static page_queue_t buddy_queue[BUDDY_ORDERS];
 static size_t buddy_queue_npages[BUDDY_ORDERS];
 DEFINE_PAGEQUEUE(vm_pagequeue_modified);
 DEFINE_PAGEQUEUE(vm_pagequeue_standby);
-static TAILQ_HEAD(, vmp_pregion) pregion_queue = TAILQ_HEAD_INITIALIZER(
-    pregion_queue);
 struct vm_stat vmstat;
 kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
+
+vm_page_t *pfndb = (vm_page_t *)PFNDB_BASE;
 
 static inline void
 update_page_use_stats(enum vm_page_use use, int value)
@@ -205,90 +194,118 @@ vm_mdl_contig_bytes(vm_mdl_t *mdl, voff_t offset)
 }
 
 void
-vm_region_add(paddr_t base, size_t length)
+vm_region_add(paddr_t base, paddr_t limit)
 {
-	struct vmp_pregion *bm = (void *)P2V(base);
-	size_t		    used; /* n bytes used by bitmap struct */
-	size_t		    b;
-	paddr_t limit;
-
-	if (length / PGSIZE < 2)
+	if (base == limit)
 		return;
 
-	/* set up a pregion for this area */
-	bm->base = base;
-	bm->npages = length / PGSIZE;
-	limit = bm->base + length;
+	kprintf("vm_region_add: 0x%zx-0x%zx (%zu kib)\n", base, limit,
+	    (limit - base) / 1024);
 
-	used = ROUNDUP(sizeof(struct vmp_pregion) +
-		sizeof(vm_page_t) * bm->npages,
-	    PGSIZE);
+	for (paddr_t i = base; i < limit; i += PGSIZE) {
+		pfn_t pfn = i >> VMP_PAGE_SHIFT;
+		vm_page_t *page = &pfndb[pfn];
+		size_t order = MIN2(BUDDY_ORDERS - 1, __builtin_ctz(pfn));
 
-	kprintf("vm_region_add: 0x%zx-0x%zx"
-		"(%zu MiB, %zu pages; PFDB part %zu kib)\n",
-	    base, base + length, length / (1024 * 1024), length / PGSIZE, used / 1024);
-
-	/* initialise pages */
-	for (b = 0; b < bm->npages; b++) {
-		bm->pages[b].pfn = PADDR_TO_PFN(bm->base + PGSIZE * b);
-		// bm->pages[b].anon = NULL;
-		// LIST_INIT(&bm->pages[b].pv_list);
-	}
-
-	/* mark off the pages used */
-	for (b = 0; b < used / PGSIZE; b++) {
-		bm->pages[b].use = kPageUsePFNDB;
-		bm->pages[b].refcnt = 1;
-		bm->pages[b].on_freelist = false;
-		vmstat.npwired++;
-	}
-
-	/* now zero the remainder */
-	for (size_t i = b; i < bm->npages; i++) {
-		vm_page_t *page = &bm->pages[i];
-		paddr_t paddr = vm_page_paddr(page);
-		size_t order = MIN2(BUDDY_ORDERS - 1,
-		    __builtin_ctz(paddr / PGSIZE));
-		if ((paddr + (1 << order) * PGSIZE) > limit)
+		if ((i + (1 << order) * PGSIZE) > limit)
 			order = MIN2(BUDDY_ORDERS - 1,
-			    __builtin_ctz((limit - paddr) / PGSIZE));
+			    __builtin_ctz((limit - i) / PGSIZE));
+
 		page->order = order;
 		page->refcnt = 0;
 		page->nonzero_ptes = 0;
 		page->referent_pte = 0;
 		page->use = kPageUseFree;
 		page->on_freelist = false;
+		page->pfn = pfn;
 	}
 
-	for (size_t i = b; i < bm->npages;) {
-		vm_page_t *page = &bm->pages[i];
+	for (paddr_t i = base; i < limit;) {
+		vm_page_t *page = &pfndb[i / PGSIZE];
 		TAILQ_INSERT_HEAD(&buddy_queue[page->order], page, queue_link);
 		buddy_queue_npages[page->order]++;
-		i += (1 << page->order);
+		i += (1 << page->order) * PGSIZE;
 		page->on_freelist = true;
+		page->max_order = page->order;
 	}
 
-	vmstat.nfree += bm->npages - (used / PGSIZE);
-	vmstat.nreservedfree += bm->npages - (used / PGSIZE);
-	vmstat.ntotal += bm->npages;
+	vmstat.nfree += (limit - base) / PGSIZE;
+	vmstat.ntotal += (limit - base) / PGSIZE;
+}
 
-	TAILQ_INSERT_TAIL(&pregion_queue, bm, queue_entry);
+void
+vmp_page_unfree(vm_page_t *page, size_t order)
+{
+	vm_page_t *initial = page;
+
+	/*
+	 * Find the first page on a freelist in the block of pages this page is
+	 * part of.
+	 */
+	while (!initial->on_freelist) {
+		/* Let initial be the next lower power-of-2 aligned page. */
+		initial -= 1 << initial->order;
+	}
+
+	/*
+	 * Loop splitting initial, putting the divided two pages onto the
+	 * freelist, and letting initial = whichever one the page we want to
+	 * free is greater or equal to, until initial's order is the order we
+	 * want to free.
+	 */
+	while (initial->order != order) {
+		vm_page_t *second = initial + (1 << (initial->order - 1));
+		size_t newOrder = second->order;
+
+		kassert(newOrder == initial->order - 1);
+		kassert(initial->on_freelist);
+		kassert(!second->on_freelist);
+
+		second->on_freelist = true;
+		TAILQ_INSERT_HEAD(&buddy_queue[newOrder], second, queue_link);
+
+		TAILQ_REMOVE(&buddy_queue[initial->order], initial, queue_link);
+
+		initial->order = newOrder;
+		TAILQ_INSERT_HEAD(&buddy_queue[newOrder], initial, queue_link);
+
+		if (second <= page)
+			initial = second;
+	}
+
+	kassert(initial == page);
+	kassert(initial->on_freelist);
+
+	TAILQ_REMOVE(&buddy_queue[order], page, queue_link);
+	vmstat.nfree -= 1 << order;
+	vmstat.npwired += 1 << order;
+	initial->on_freelist = false;
+}
+
+void
+vmp_range_unfree(paddr_t base, paddr_t limit)
+{
+	base = ROUNDDOWN(base, PGSIZE);
+	limit = ROUNDUP(limit, PGSIZE);
+
+	for (paddr_t i = base; i < limit;) {
+		vm_page_t *page = vm_paddr_to_page(i);
+		size_t order = MIN2(BUDDY_ORDERS - 1,
+		    __builtin_ctz(i / PGSIZE));
+
+		if ((i + (1 << order) * PGSIZE) > limit)
+			order = MIN2(BUDDY_ORDERS - 1,
+			    __builtin_ctz((limit - i) / PGSIZE));
+
+		vmp_page_unfree(page, order);
+		i += (1 << order) * PGSIZE;
+	}
 }
 
 vm_page_t *
 vm_paddr_to_page(paddr_t paddr)
 {
-	struct vmp_pregion *preg;
-
-	TAILQ_FOREACH (preg, &pregion_queue, queue_entry) {
-		if (preg->base <= paddr &&
-		    (preg->base + PGSIZE * preg->npages) > paddr) {
-			return &preg->pages[(paddr - preg->base) / PGSIZE];
-		}
-	}
-
-	kfatal("No page for paddr 0x%zx\n", paddr);
-	return NULL;
+	return &pfndb[paddr >> VMP_PAGE_SHIFT];
 }
 
 int
@@ -375,10 +392,36 @@ vmp_page_alloc_locked(vm_page_t **out, enum vm_page_use use, bool must)
 	return vmp_pages_alloc_locked(out, 0, use, must);
 }
 
-static void
-page_free(struct vmp_pregion *preg, vm_page_t *page)
+static vm_page_t *
+page_buddy(vm_page_t *page)
 {
-	while (true) {
+	paddr_t paddr = vm_page_paddr(page);
+	return vm_paddr_to_page(paddr ^ ((1 << page->order) * PGSIZE));
+}
+
+static void
+page_free(vm_page_t *page)
+{
+	while (page->order < page->max_order) {
+		vm_page_t *buddy = page_buddy(page);
+
+		if (buddy->order != page->order)
+			break;
+		else if (!buddy->on_freelist)
+			break;
+
+		TAILQ_REMOVE(&buddy_queue[buddy->order], buddy, queue_link);
+		buddy_queue_npages[buddy->order]--;
+
+		if (page > buddy) {
+			vm_page_t *tmp = page;
+			page = buddy;
+			buddy = tmp;
+		}
+
+		page->order++;
+
+#if 0
 		vm_page_t *buddy;
 		intptr_t index = page - preg->pages, buddy_index;
 		size_t pages = 1 << page->order;
@@ -408,6 +451,7 @@ page_free(struct vmp_pregion *preg, vm_page_t *page)
 		}
 
 		page->order++;
+#endif
 	}
 
 	TAILQ_INSERT_HEAD(&buddy_queue[page->order], page, queue_link);
@@ -422,7 +466,6 @@ page_free(struct vmp_pregion *preg, vm_page_t *page)
 void
 vmp_page_free_locked(vm_page_t *page)
 {
-	struct vmp_pregion *preg;
 	size_t npages = vm_order_to_npages(page->order);
 
 	kassert(ke_spinlock_held(&vmp_pfn_lock));
@@ -433,21 +476,14 @@ vmp_page_free_locked(vm_page_t *page)
 	kprintf("Freeing page %p\n", page);
 #endif
 
-	TAILQ_FOREACH (preg, &pregion_queue, queue_entry) {
-		if (preg->base <= vm_page_paddr(page) &&
-		    (preg->base + PGSIZE * preg->npages) >
-			vm_page_paddr(page)) {
-
-			page->dirty = false;
-			page->referent_pte = 0;
-			page->use = kPageUseFree;
-			page->nonzero_ptes = 0;
-			vmstat.nfree += npages;
-			vmstat.nreservedfree += npages;
-			vmstat.ndeleted -= npages;
-			return page_free(preg, page);
-		}
-	}
+	page->dirty = false;
+	page->referent_pte = 0;
+	page->use = kPageUseFree;
+	page->nonzero_ptes = 0;
+	vmstat.nfree += npages;
+	vmstat.nreservedfree += npages;
+	vmstat.ndeleted -= npages;
+	return page_free(page);
 }
 
 void
@@ -655,8 +691,6 @@ dump_page(vm_page_t *page)
 void
 vmp_pages_dump(void)
 {
-	struct vmp_pregion *region;
-
 	kprintf("Active: %zu, modified: %zu, standby: %zu, free: %zu\n",
 	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
 
@@ -675,6 +709,7 @@ vmp_pages_dump(void)
 	    vmstat.nprocpgtable, vmstat.nprotopgtable, vmstat.nkwired,
 	    vmstat.npwired);
 
+#if 0
 	kprintf("Page summary:\n");
 	print_page_summary_header();
 	TAILQ_FOREACH (region, &pregion_queue, queue_entry) {
@@ -683,6 +718,7 @@ vmp_pages_dump(void)
 			dump_page(page);
 		}
 	}
+#endif
 
 	extern vm_procstate_t kernel_procstate;
 	kprintf("Kernel working set:\n");

@@ -233,6 +233,9 @@ void vmp_page_delete_locked(vm_page_t *page);
 vm_page_t *vmp_page_retain_locked(vm_page_t *page);
 void vmp_page_release_locked(vm_page_t *page);
 
+void vmp_page_unfree(vm_page_t *page, size_t order);
+void vmp_range_unfree(paddr_t base, paddr_t limit);
+
 int vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, bool execute,
     bool user, vm_page_t **out);
 
