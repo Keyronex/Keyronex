@@ -11,8 +11,6 @@
 
 @end
 
-extern struct bootinfo bootinfo;
-
 @implementation Virt68kPlatform
 
 + (void)load
@@ -33,16 +31,19 @@ extern struct bootinfo bootinfo;
 	kmem_asprintf(obj_name_ptr(self), "virt68k-platform");
 	platformDevice = self;
 	[self registerDevice];
+#if 0
 	DKLogAttachExtra(self, "QEMU v%zu.%zu.%zu",
 	    bootinfo.qemu_version >> 24 & 0xff,
 	    bootinfo.qemu_version >> 16 & 0xff,
 	    bootinfo.qemu_version >> 8 & 0xff);
+#endif
 
 	return self;
 }
 
 - (void)secondStageInit
 {
+#if 0
 	volatile uint8_t *virtio_base = (void *)bootinfo.virtio_base;
 
 	for (int i = 0; i < 128; i++) {
@@ -50,6 +51,7 @@ extern struct bootinfo bootinfo;
 						    mmio:virtio_base + 0x200 * i
 					       interrupt:32 + i];
 	}
+#endif
 }
 
 - (DKDevice<DKPlatformInterruptControl> *)platformInterruptController

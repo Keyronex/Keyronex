@@ -1,15 +1,5 @@
 .cfi_sections .eh_frame, .debug_frame
 
-.global _start
-
-_start:
-	move.l %sp, %a0
-	lea stack_top,%sp
-	move.l 4(%a0), -(%sp)
-	jsr cstart
-loop:
-	bra loop
-
 .global asm_exception
 asm_exception:
 	.cfi_startproc
@@ -54,8 +44,4 @@ asm_exception:
 	rte
 	.cfi_endproc
 
-.section .bootstrap_stack, "aw", @nobits
-.align 64
-stack_bottom:
-.skip 65536
-stack_top:
+.section .note.GNU-stack,"",%progbits

@@ -15,8 +15,8 @@ sources:
 
   - name: 'kernel'
 
-  - name: 'm68k-virt-loader'
-    subdir: 'loader'
+  - name: 'lisp'
+    subdir: 'vendor'
 
   - name: 'mlibc'
 
@@ -399,7 +399,7 @@ packages:
     labels: [ no_aarch64, no_amd64, no_riscv64 ]
     metadata:
       summary: Keyronex loader for QEMU virt m68k
-    from_source: 'm68k-virt-loader'
+    from_source: 'lisp'
     tools_required:
       - 'crossfile'
       - 'host-binutils'

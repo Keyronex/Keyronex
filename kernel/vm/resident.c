@@ -40,9 +40,9 @@ static size_t buddy_queue_npages[BUDDY_ORDERS];
 DEFINE_PAGEQUEUE(vm_pagequeue_modified);
 DEFINE_PAGEQUEUE(vm_pagequeue_standby);
 struct vm_stat vmstat;
-kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
-
+paddr_t vmp_highest_address;
 vm_page_t *pfndb = (vm_page_t *)PFNDB_BASE;
+kspinlock_t vmp_pfn_lock = KSPINLOCK_INITIALISER;
 
 static inline void
 update_page_use_stats(enum vm_page_use use, int value)
@@ -226,7 +226,9 @@ vm_region_add(paddr_t base, paddr_t limit)
 		buddy_queue_npages[page->order]++;
 		i += (1 << page->order) * PGSIZE;
 		page->on_freelist = true;
+#if BITS == 64
 		page->max_order = page->order;
+#endif
 	}
 
 	vmstat.nfree += (limit - base) / PGSIZE;
@@ -395,15 +397,28 @@ vmp_page_alloc_locked(vm_page_t **out, enum vm_page_use use, bool must)
 static vm_page_t *
 page_buddy(vm_page_t *page)
 {
-	paddr_t paddr = vm_page_paddr(page);
-	return vm_paddr_to_page(paddr ^ ((1 << page->order) * PGSIZE));
+	paddr_t paddr = vm_page_paddr(page) ^ ((1 << page->order) * PGSIZE);
+#if BITS == 32
+	if (paddr >= vmp_highest_address)
+		return NULL;
+#endif
+	return vm_paddr_to_page(paddr );
 }
 
 static void
 page_free(vm_page_t *page)
 {
+#if BITS == 64
 	while (page->order < page->max_order) {
+#else
+	while (true) {
+#endif
 		vm_page_t *buddy = page_buddy(page);
+
+#if BITS == 32
+		if (buddy == NULL)
+			break;
+#endif
 
 		if (buddy->order != page->order)
 			break;

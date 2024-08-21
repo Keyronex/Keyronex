@@ -14,8 +14,6 @@ extern volatile struct limine_framebuffer_request fb_request;
 
 @end
 
-extern struct bootinfo bootinfo;
-
 @implementation VirtAArch64Platform
 
 + (void)load

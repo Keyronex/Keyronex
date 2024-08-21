@@ -9,6 +9,7 @@ ifeq ($(ARCH), amd64)
 else ifeq ($(ARCH), m68k)
 	TARGET_TRIPLE := m68k-keyronex
 	PLATFORM ?= m68k-virt
+	PLATFORM_EXTRAS=m68k-virt-loader
 else ifeq ($(ARCH), aarch64)
 	TARGET_TRIPLE := aarch64-keyronex
 	PLATFORM ?= aarch64-virt
@@ -62,7 +63,9 @@ rebuild-posix:  ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install --rebuild posix_server)
 
 rebuild-kernel: ${BUILD_SETUP_TARGET}
-	(cd ${BUILD_DIR} && xbstrap install --rebuild kernel-headers kernel)
+	rm -f build/m68k/pkg-builds/m68k-virt-loader/lisp.p/loader_Loader.cpp.o
+	rm -f build/m68k/pkg-builds/m68k-virt-loader/lisp
+	(cd ${BUILD_DIR} && xbstrap install --rebuild kernel-headers kernel ${PLATFORM_EXTRAS})
 
 build-all: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install -c --all)

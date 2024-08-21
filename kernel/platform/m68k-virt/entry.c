@@ -1,6 +1,4 @@
-#include "bootinfo.h"
 #include "goldfish.h"
-#include "handover.h"
 #include "kdk/endian.h"
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
@@ -10,15 +8,40 @@
 #include "kern/ki.h"
 #include "executive/exp.h"
 #include "vm/vmp.h"
+#include <limine.h>
 
 void ddk_init(void), ddk_early_init(void);
 
 static size_t memory_size = 0;
 kcpu_t bootstrap_cpu;
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
-struct bootinfo bootinfo;
 struct kthread thread0;
 kthread_t **threads;
+
+volatile struct limine_framebuffer_request fb_request = {
+	.id = LIMINE_FRAMEBUFFER_REQUEST,
+	.revision = 0
+};
+
+volatile struct limine_kernel_address_request kernel_address_request = {
+	.id = LIMINE_KERNEL_ADDRESS_REQUEST,
+	.revision = 0
+};
+
+volatile struct limine_memmap_request memmap_request = {
+	.id = LIMINE_MEMMAP_REQUEST,
+	.revision = 0
+};
+
+volatile struct limine_module_request module_request = {
+	.id = LIMINE_MODULE_REQUEST,
+	.revision = 0
+};
+
+static volatile struct limine_smp_request smp_request = {
+	.id = LIMINE_SMP_REQUEST,
+	.revision = 0
+};
 
 struct bootinfo_item {
 	uint16_t tag;

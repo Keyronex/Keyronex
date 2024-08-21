@@ -11,8 +11,8 @@
 #include <kdk/libkern.h>
 #include <kdk/vm.h>
 #include <limine.h>
+#include <stdint.h>
 
-// #include "kdk/amd64/regs.h"
 #include "kdk/kern.h"
 #include "kdk/vmtypes.h"
 #include "vm/vmp.h"
@@ -48,6 +48,7 @@ extern char KDATA_SEGMENT_END[];
 _Static_assert(sizeof(vm_page_t) == sizeof(uintptr_t) * 8,
     "vm_page_t must be 8 words");
 
+#ifdef PGSIZE_L2
 paddr_t
 boot_alloc_l2(void)
 {
@@ -57,6 +58,7 @@ boot_alloc_l2(void)
 	memset((void *)P2V(ret), 0, PGSIZE_L2);
 	return ret;
 }
+#endif
 
 paddr_t
 boot_alloc(void)
@@ -100,6 +102,13 @@ vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
 	pte.hw.valid = 1;
 	pte.hw.pfn = table >> VMP_PAGE_SHIFT;
 	dirpte->value = pte.value;
+}
+
+#elif defined (__m68k__)
+static void
+vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
+{
+	kfatal("Implement me\n");
 }
 #endif
 
@@ -239,9 +248,14 @@ map_pfndb(void)
 		     base += pfndb_page_describes) {
 			uintptr_t area = PFNDB_BASE +
 			    (base / pfndb_page_describes) * pfndb_pgsize;
-			uintptr_t page = boot_alloc_l2();
 
+#ifdef PGSIZE_L2
+			uintptr_t page = boot_alloc_l2();
 			boot_map_l2(area, page, kVMRead | kVMWrite, true);
+#else
+			uintptr_t page = boot_alloc();
+			boot_map(area, page, kVMRead | kVMWrite, true);
+#endif
 		}
 
 		prev = entry;
@@ -299,8 +313,12 @@ map_hhdm(void)
 
 		for (uint64_t base = roundedDownStart; base < roundedUpEnd;
 		     base += hhdm_page_describes) {
-			boot_map_l2(HHDM_BASE + base, base, kVMRead | kVMWrite,
-			    true);
+			if (hhdm_level == 1)
+				boot_map(HHDM_BASE + base, base,
+				    kVMRead | kVMWrite, true);
+			else
+				boot_map_l2(HHDM_BASE + base, base,
+				    kVMRead | kVMWrite, true);
 		}
 
 		prev = entry;
@@ -339,6 +357,7 @@ map_ksegs(void)
 static void
 map_fbs(void)
 {
+#if !defined(__m68k__)
 	struct limine_framebuffer *fb = fb_request.response->framebuffers[0];
 	paddr_t fb0_phys = V2P(fb->address);
 	paddr_t fb0_base = ROUNDDOWN(fb0_phys, hhdm_page_describes);
@@ -350,6 +369,7 @@ map_fbs(void)
 	}
 
 	fb->address = (void *)(MISC_BASE + fb0_phys);
+#endif
 }
 
 static void
@@ -438,13 +458,21 @@ unfree_bl_reserved(void)
 void
 vmp_pmm_init(void)
 {
-	pfndb_pages_are_l2 = true;
+#ifdef PGSIZE_L2
 	pfndb_pgsize = PGSIZE_L2;
-	elements_per_pfndb_page = PGSIZE_L2 / sizeof(vm_page_t);
+#else
+	pfndb_pgsize = PGSIZE;
+#endif
+	elements_per_pfndb_page = pfndb_pgsize / sizeof(vm_page_t);
 	pfndb_page_describes = elements_per_pfndb_page * PGSIZE;
 
+#ifdef PGSIZE_L2
 	hhdm_level = 2;
 	hhdm_page_describes = PGSIZE_L2;
+#else
+	hhdm_level = 1;
+	hhdm_page_describes = PGSIZE;
+#endif
 
 	map_pfndb();
 	map_hhdm();
@@ -469,6 +497,9 @@ vmp_pmm_init(void)
 		     :
 		     : "r"((kpgtable >> 12) | (0x9UL << 60))
 		     : "memory");
+#else
+	for (;;)
+		;
 #endif
 
 	add_phys_segs();

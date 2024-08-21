@@ -101,6 +101,7 @@ common_core_init(kcpu_t *cpu, kthread_t *thread, struct limine_smp_info *smpi)
 	__atomic_add_fetch(&cpus_up, 1, __ATOMIC_RELAXED);
 }
 
+#if SMP
 static void
 ap_init(struct limine_smp_info *smpi)
 {
@@ -110,6 +111,7 @@ ap_init(struct limine_smp_info *smpi)
 	/* this is now that CPU's idle thread loop */
 	hcf();
 }
+#endif
 
 #if defined(__amd64__)
 #define SMPR_BSP_ID bsp_lapic_id
@@ -126,10 +128,8 @@ ap_init(struct limine_smp_info *smpi)
 static void
 smp_allocate(void)
 {
-#if !defined(__m68k__)
 	struct limine_smp_response *smpr = smp_request.response;
 	ncpus = smpr->cpu_count;
-#endif
 
 	cpus = kmem_alloc(sizeof(kcpu_t *) * ncpus);
 	threads = kmem_alloc(sizeof(kthread_t *) * ncpus);
