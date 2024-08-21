@@ -8,7 +8,7 @@
 #include "net/keysock_dev.h"
 #include "platform/aarch64-virt/GICv2Distributor.h"
 
-extern volatile struct limine_framebuffer_request framebuffer_request;
+extern volatile struct limine_framebuffer_request fb_request;
 
 @interface VirtAArch64Platform : DKDevice <DKPlatformDevice>
 
@@ -35,7 +35,7 @@ extern struct bootinfo bootinfo;
 	extern struct limine_rsdp_request rsdp_request;
 
 	struct limine_framebuffer *fb =
-	    framebuffer_request.response->framebuffers[0];
+	    fb_request.response->framebuffers[0];
 
 	self = [super init];
 	kmem_asprintf(obj_name_ptr(self), "aarch64-platform");

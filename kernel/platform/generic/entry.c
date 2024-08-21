@@ -38,7 +38,7 @@ static kspinlock_t early_lock = KSPINLOCK_INITIALISER;
 // be made volatile or equivalent.
 LIMINE_BASE_REVISION(2);
 
-volatile struct limine_framebuffer_request framebuffer_request = {
+volatile struct limine_framebuffer_request fb_request = {
 	.id = LIMINE_FRAMEBUFFER_REQUEST,
 	.revision = 0
 };

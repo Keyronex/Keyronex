@@ -12,12 +12,14 @@
 #include <kdk/vm.h>
 #include <limine.h>
 
-#include "kdk/amd64/regs.h"
+// #include "kdk/amd64/regs.h"
+#include "kdk/kern.h"
 #include "kdk/vmtypes.h"
 #include "vm/vmp.h"
 
 extern struct limine_memmap_request memmap_request;
 extern struct limine_kernel_address_request kernel_address_request;
+extern struct limine_framebuffer_request fb_request;
 
 static paddr_t bump_start, bump_large_base, bump_large_end, bump_small_base;
 static paddr_t kpgtable;
@@ -65,6 +67,7 @@ boot_alloc(void)
 	return ret;
 }
 
+#if defined(__amd64__)
 static void
 vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
 {
@@ -76,6 +79,29 @@ vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
 	pte.hw.pfn = table >> VMP_PAGE_SHIFT;
 	dirpte->value = pte.value;
 }
+#elif defined(__aarch64__)
+static void
+vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
+{
+	pte_t pte;
+	pte.value = 0x0;
+	pte.hw.valid = 1;
+	pte.hw_table.is_table = 1;
+	pte.hw_table.next_level = table >> VMP_PAGE_SHIFT;
+	dirpte->value = pte.value;
+}
+
+#elif defined(__riscv)
+static void
+vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
+{
+	pte_t pte;
+	pte.value = 0x0;
+	pte.hw.valid = 1;
+	pte.hw.pfn = table >> VMP_PAGE_SHIFT;
+	dirpte->value = pte.value;
+}
+#endif
 
 int
 boot_fetch_pte(int at_level, vaddr_t vaddr, pte_t **pte_out)
@@ -100,8 +126,9 @@ boot_fetch_pte(int at_level, vaddr_t vaddr, pte_t **pte_out)
 		if (vmp_pte_characterise(pte) == kPTEKindZero) {
 			paddr_t new_table = boot_alloc();
 			vmp_md_boot_setup_table_pointers(level, pte, new_table);
-		} else if (vmp_pte_characterise(pte) != kPTEKindValid)
+		} else if (vmp_pte_characterise(pte) != kPTEKindValid) {
 			kfatal("unexpected PTE kind\n");
+		}
 
 		kassert(!vmp_md_pte_hw_is_large(pte, level));
 
@@ -125,7 +152,6 @@ boot_map_l2(uintptr_t vaddr, uintptr_t paddr, vm_protection_t prot,
     bool cacheable)
 {
 	pte_t *pte;
-	//kprintf("Mapping %p to %p\n", (void *)vaddr, (void *)paddr);
 
 	boot_fetch_pte(2, vaddr, &pte);
 	kassert(pte->value == 0);
@@ -255,16 +281,7 @@ map_hhdm(void)
 		kprintf("Entry %zu: %p-%p, type %s\n", i, (void *)entry->base,
 		    (void *)(entry->base + entry->length), type);
 
-		if (entry->type == LIMINE_MEMMAP_FRAMEBUFFER) {
-			uint64_t end = entry->base + entry->length;
-			for (uint64_t base = entry->base; base < end;
-			     base += PGSIZE) {
-				boot_map(HHDM_BASE + base, base,
-				    kVMRead | kVMWrite, true);
-			}
-			continue;
-		} else if (entry->type !=
-			LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
 		    entry->type != LIMINE_MEMMAP_USABLE)
 			continue;
 
@@ -317,6 +334,22 @@ map_ksegs(void)
 		boot_map(vaddr, vaddr - vbase + pbase, kVMRead | kVMWrite,
 		    true);
 	}
+}
+
+static void
+map_fbs(void)
+{
+	struct limine_framebuffer *fb = fb_request.response->framebuffers[0];
+	paddr_t fb0_phys = V2P(fb->address);
+	paddr_t fb0_base = ROUNDDOWN(fb0_phys, hhdm_page_describes);
+	paddr_t fb0_limit = ROUNDUP(fb0_phys + fb->pitch * fb->height,
+	    hhdm_page_describes);
+
+	for (paddr_t p = fb0_base; p < fb0_limit; p += hhdm_page_describes) {
+		boot_map_l2(MISC_BASE + p, p, kVMRead | kVMWrite, true);
+	}
+
+	fb->address = (void *)(MISC_BASE + fb0_phys);
 }
 
 static void
@@ -416,7 +449,28 @@ vmp_pmm_init(void)
 	map_pfndb();
 	map_hhdm();
 	map_ksegs();
-	write_cr3(kpgtable);
+	map_fbs();
+#if defined(__aarch64__)
+	/* todo: get this out (UART) */
+	boot_map(P2V(0x09000000), 0x09000000, kVMRead | kVMWrite, false);
+	asm volatile("dsb ishst\n\t"
+		     "msr ttbr1_el1, %0\n\t"
+		     "tlbi vmalle1\n\t"
+		     "dsb ish\n\t"
+		     "isb\n\t"
+		     :
+		     : "r"(kpgtable)
+		     : "memory");
+#elif defined(__amd64__)
+	asm volatile("mov %0, %%cr3" ::"r"(kpgtable) : "memory");
+#elif defined(__riscv)
+	asm volatile("csrw satp, %0\n\t"
+		     "sfence.vma\n\t"
+		     :
+		     : "r"((kpgtable >> 12) | (0x9UL << 60))
+		     : "memory");
+#endif
+
 	add_phys_segs();
 	unfree_boot();
 	unfree_bl_reserved();

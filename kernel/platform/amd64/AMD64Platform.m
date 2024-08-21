@@ -8,7 +8,7 @@
 #include "net/keysock_dev.h"
 #include "platform/amd64/IOAPIC.h"
 
-extern volatile struct limine_framebuffer_request framebuffer_request;
+extern volatile struct limine_framebuffer_request fb_request;
 
 @interface VirtAMD64Platform : DKDevice <DKPlatformDevice>
 
@@ -33,8 +33,7 @@ extern struct bootinfo bootinfo;
 - (instancetype)init
 {
 	extern struct limine_rsdp_request rsdp_request;
-	struct limine_framebuffer *fb =
-	    framebuffer_request.response->framebuffers[0];
+	struct limine_framebuffer *fb = fb_request.response->framebuffers[0];
 
 	self = [super init];
 	kmem_asprintf(obj_name_ptr(self), "amd64-platform");

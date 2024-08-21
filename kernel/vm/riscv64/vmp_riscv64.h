@@ -82,6 +82,9 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 	asm volatile("fence\n\t" ::: "memory");
 }
 
+#define vmp_md_pte_create_hwl2 vmp_md_pte_create_hw
+#define vmp_md_pte_create_hwl3 vmp_md_pte_create_hw
+
 static inline void
 vmp_md_pte_create_busy(pte_t *ppte, pfn_t pfn)
 {
@@ -134,6 +137,14 @@ static inline bool
 vmp_md_pte_is_valid(pte_t *pte)
 {
 	return pte->hw.valid;
+}
+
+static inline bool
+vmp_md_pte_hw_is_large(pte_t *pte, int level)
+{
+	kassert(level > 1);
+	return pte->hw.valid &&
+	    (pte->hw.read || pte->hw.write || pte->hw.execute);
 }
 
 static inline bool
