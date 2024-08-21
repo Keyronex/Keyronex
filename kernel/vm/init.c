@@ -108,7 +108,21 @@ vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
 static void
 vmp_md_boot_setup_table_pointers(int level, pte_t *dirpte, paddr_t table)
 {
-	kfatal("Implement me\n");
+	size_t npages;
+
+	kassert(level > 1);
+	npages = level == 3 ? 8 : 16;
+
+	dirpte = (pte_t *)ROUNDDOWN(dirpte, npages * sizeof(pte_t));
+
+	for (int i = 0; i < npages; i++) {
+		pte_t pte;
+		pte.hw_pml2_040.addr = (table + i * PGSIZE / npages) >> 4;
+		pte.hw_pml2_040.used = 0;
+		pte.hw_pml2_040.writeprotect = 0;
+		pte.hw_pml2_040.type = 3;
+		dirpte[i].value = pte.value;
+	}
 }
 #endif
 
@@ -497,6 +511,16 @@ vmp_pmm_init(void)
 		     :
 		     : "r"((kpgtable >> 12) | (0x9UL << 60))
 		     : "memory");
+#elif defined(__m68k__)
+	extern volatile char *gftty_regs;
+	for (paddr_t i = 0xff000000; i < 0xff020000; i += PGSIZE)
+		boot_map(i, i, kVMRead | kVMWrite, false);
+	asm volatile("movec %0, %%urp\n\t"
+		     "movec %0, %%srp"
+		     :
+		     : "r"(kpgtable)
+		     : "memory");
+	gftty_regs = (void *)0xff008000;
 #else
 	for (;;)
 		;

@@ -36,7 +36,7 @@ if [ "$virtio_9p" = "1" ]; then
 	qemu_args="${qemu_args} -${virtio_9p_arg}"
 fi
 
-qemu-system-m68k -M virt -m 9 \
+qemu-system-m68k -M virt -m 16 \
   -kernel build/m68k/pkg-builds/m68k-virt-loader/lisp \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \

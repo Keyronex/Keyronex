@@ -38,43 +38,31 @@ static kspinlock_t early_lock = KSPINLOCK_INITIALISER;
 // be made volatile or equivalent.
 LIMINE_BASE_REVISION(2);
 
-volatile struct limine_framebuffer_request fb_request = {
-	.id = LIMINE_FRAMEBUFFER_REQUEST,
-	.revision = 0
-};
+volatile struct limine_framebuffer_request fb_request __attribute__((
+    aligned(8))) = { .id = LIMINE_FRAMEBUFFER_REQUEST, .revision = 0 };
 
-static volatile struct limine_hhdm_request hhdm_request = {
-	.id = LIMINE_HHDM_REQUEST,
-	.revision = 0
-};
+static volatile struct limine_hhdm_request hhdm_request
+    __attribute__((aligned(8))) = { .id = LIMINE_HHDM_REQUEST, .revision = 0 };
 
-volatile struct limine_kernel_address_request kernel_address_request = {
-	.id = LIMINE_KERNEL_ADDRESS_REQUEST,
-	.revision = 0
-};
+volatile struct limine_kernel_address_request kernel_address_request
+    __attribute__((aligned(8))) = { .id = LIMINE_KERNEL_ADDRESS_REQUEST,
+	    .revision = 0 };
 
-static volatile struct limine_kernel_file_request kernel_file_request = {
-	.id = LIMINE_KERNEL_FILE_REQUEST,
-	.revision = 0
-};
+static volatile struct limine_kernel_file_request kernel_file_request
+    __attribute__((aligned(8))) = { .id = LIMINE_KERNEL_FILE_REQUEST,
+	    .revision = 0 };
 
-volatile struct limine_memmap_request memmap_request = {
-	.id = LIMINE_MEMMAP_REQUEST,
-	.revision = 0
-};
+volatile struct limine_memmap_request memmap_request __attribute__((
+    aligned(8))) = { .id = LIMINE_MEMMAP_REQUEST, .revision = 0 };
 
-volatile struct limine_module_request module_request = {
-	.id = LIMINE_MODULE_REQUEST,
-	.revision = 0
-};
+volatile struct limine_module_request module_request __attribute__((
+    aligned(8))) = { .id = LIMINE_MODULE_REQUEST, .revision = 0 };
 
-volatile struct limine_rsdp_request rsdp_request = { .id = LIMINE_RSDP_REQUEST,
-	.revision = 0 };
+volatile struct limine_rsdp_request rsdp_request
+    __attribute__((aligned(8))) = { .id = LIMINE_RSDP_REQUEST, .revision = 0 };
 
-static volatile struct limine_smp_request smp_request = {
-	.id = LIMINE_SMP_REQUEST,
-	.revision = 0
-};
+static volatile struct limine_smp_request smp_request
+    __attribute__((aligned(8))) = { .id = LIMINE_SMP_REQUEST, .revision = 0 };
 
 struct ex_boot_config boot_config = {
 	.root = "9p:trans=virtio,server=sysroot,aname=/"
@@ -236,5 +224,11 @@ _start(void)
 	ke_thread_resume(ex_init_thread);
 
 	/* idle loop */
+#if defined (__m68k__)
+	for (;;) {
+		asm("stop #0x2000");
+	}
+#else
 	hcf();
+#endif
 }

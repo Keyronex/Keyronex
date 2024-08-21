@@ -5,6 +5,7 @@
 
 #include <kdk/kern.h>
 #include <limine.h>
+#include "goldfish.h"
 
 extern kthread_t thread0;
 
@@ -30,6 +31,8 @@ void
 plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi)
 {
+	gfrtc_init();
+	gfrtc_oneshot(NS_PER_S / KERN_HZ);
 	(void)cpu;
 	(void)idle_thread;
 	(void)smpi;

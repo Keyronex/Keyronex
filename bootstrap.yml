@@ -406,6 +406,7 @@ packages:
       - 'bootstrap-host-gcc'
     pkgs_required:
       - 'mlibc-headers'
+      - 'kernel'
     configure:
       - args:
         - 'meson'

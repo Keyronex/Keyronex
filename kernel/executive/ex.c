@@ -179,6 +179,7 @@ mount_root(void)
 	if (how == NULL)
 		kfatal("No root FS specified.\n");
 
+//splx(kIPL0);
 	kprintf("ex_mount_root: %s\n", how);
 
 	if (strncmp(how, "9p:", 3) == 0) {

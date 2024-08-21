@@ -43,15 +43,13 @@
 
 - (void)secondStageInit
 {
-#if 0
-	volatile uint8_t *virtio_base = (void *)bootinfo.virtio_base;
+	volatile uint8_t *virtio_base = (void *)0xff010000;
 
 	for (int i = 0; i < 128; i++) {
 		[DKVirtIOMMIOTransport probeWithProvider:self
 						    mmio:virtio_base + 0x200 * i
 					       interrupt:32 + i];
 	}
-#endif
 }
 
 - (DKDevice<DKPlatformInterruptControl> *)platformInterruptController
