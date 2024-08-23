@@ -183,9 +183,6 @@ typedef TAILQ_HEAD(, vm_page) page_queue_t;
 /*! @brief Release the PFN database lock. */
 #define vmp_release_pfn_lock(IPL) ke_spinlock_release(&vmp_pfn_lock, IPL)
 
-/* paddr_t vmp_page_paddr(vm_page_t *page) */
-#define vmp_page_paddr(PAGE) ((paddr_t)(PAGE)->pfn << VMP_PAGE_SHIFT)
-
 /* paddr_t vmp_pfn_to_paddr(pfn_t pfn) */
 #define vmp_pfn_to_paddr(PFN) ((paddr_t)PFN << VMP_PAGE_SHIFT)
 
@@ -233,6 +230,9 @@ void vmp_page_delete_locked(vm_page_t *page);
 vm_page_t *vmp_page_retain_locked(vm_page_t *page);
 void vmp_page_release_locked(vm_page_t *page);
 
+void vmp_page_unfree(vm_page_t *page, size_t order);
+void vmp_range_unfree(paddr_t base, paddr_t limit);
+
 int vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, bool execute,
     bool user, vm_page_t **out);
 
@@ -277,6 +277,9 @@ int vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end);
  */
 void vmp_pager_state_retain(struct vmp_pager_state *state);
 void vmp_pager_state_release(struct vmp_pager_state *state);
+
+/*! @brief Early initialisation of the kernel VM map. */
+void vmp_pmm_init(void);
 
 extern kspinlock_t vmp_pfn_lock;
 

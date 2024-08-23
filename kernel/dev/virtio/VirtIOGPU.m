@@ -12,6 +12,7 @@
 #include "kdk/libkern.h"
 #include "kdk/kern.h"
 #include "kdk/object.h"
+#include "kdk/vm.h"
 
 #define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)
 
@@ -59,6 +60,7 @@ flush_timer_dpc_handler(void *arg)
 - (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider
 {
 	int r;
+	vm_page_t *page;
 
 	self = [super initWithProvider:provider];
 
@@ -92,6 +94,12 @@ flush_timer_dpc_handler(void *arg)
 
 	[self registerDevice];
 	DKLogAttach(self);
+
+	r = vm_page_alloc(&page, vm_bytes_to_order(1024 * 768 * 4), kPageUseKWired, false);
+	if (r != 0)
+		kfatal("Failed to allocate framebuffer memory: %d\n", r);
+
+	fb_base = (void*) vm_page_paddr(page);
 
 	m_info.address = (paddr_t)fb_base;
 	m_info.pitch = 1024 * 4;
@@ -153,7 +161,7 @@ flush_timer_dpc_handler(void *arg)
 	req_attach->hdr.flags = 0;
 	req_attach->resource_id = native_to_le32(1);
 	req_attach->nr_entries = native_to_le32(1);
-	req_attach->addr = native_to_le64((uint64_t)(uintptr_t)fb_base);
+	req_attach->addr = native_to_le64((uint64_t)(uintptr_t)m_info.address);
 	req_attach->length = native_to_le32(1024 * 768 * 4);
 	req_attach->padding = 0;
 

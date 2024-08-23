@@ -23,7 +23,7 @@ enum gftty_cmd {
 };
 
 /*! hardcoded value i found in qemu, lmao */
-volatile char *gftty_regs = (void *)0xff008000;
+volatile char *gftty_regs = (void *)0x900000;
 
 #if 0
 static uint32_t

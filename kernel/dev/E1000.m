@@ -3,6 +3,7 @@
 #include "dev/9pSockTransport.h"
 #include "dev/E1000.h"
 #include "kdb/kdb_udp.h"
+#include "kdk/executive.h"
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
@@ -479,7 +480,9 @@ link_dpc(void *arg)
 		return nil;
 	}
 
-	m_reg = P2V(m_reg);
+	r = vm_ps_map_physical_view(kernel_process->vm, &m_reg, PGSIZE * 8, m_reg,
+	    kVMAll, kVMAll, false);
+	kassert(r == 0);
 
 	[DKPCIBus setMemorySpaceForInfo:info enabled:true];
 

@@ -97,6 +97,16 @@ vmp_md_pte_create_hw(pte_t *pte, pfn_t pfn, bool writeable, bool executable,
 }
 
 static inline void
+vmp_md_pte_create_large(pte_t *pte, pfn_t pfn, bool writeable, bool executable,
+    bool cacheable, bool user)
+{
+	kfatal("No large pages on this arch.\n");
+}
+
+#define vmp_md_pte_create_hwl2 vmp_md_pte_create_large
+#define vmp_md_pte_create_hwl3 vmp_md_pte_create_large
+
+static inline void
 vmp_md_pte_create_busy(pte_t *pte, pfn_t pfn)
 {
 	pte->sw.type = 0;
@@ -124,6 +134,14 @@ static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	pte->value = 0;
+}
+
+
+static inline bool
+vmp_md_pte_hw_is_large(pte_t *pte, int level)
+{
+	kassert(level > 1);
+	return false;
 }
 
 static inline pfn_t

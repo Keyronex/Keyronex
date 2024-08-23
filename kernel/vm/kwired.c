@@ -79,7 +79,8 @@ internal_allocwired(vmem_t *vmem, vmem_size_t size, vmem_flag_t flags,
 
 		r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 		kassert(r == 0);
-		vmp_md_pte_create_hw(pte, page->pfn, true, true, true, false);
+		vmp_md_pte_create_hw(pte, vm_page_pfn(page), true, true, true,
+		    false);
 		vmp_pagetable_page_noswap_pte_created(kernel_process->vm,
 		    pte_wire.pgtable_pages[0], true);
 	}
@@ -172,8 +173,8 @@ internal_reallocwired(vmem_t *vmem, vmem_addr_t addr, vmem_size_t oldsize,
 
 			r = vmp_page_alloc_locked(&page, kPageUseKWired, true);
 			kassert(r == 0);
-			vmp_md_pte_create_hw(pte, page->pfn, true, true, true,
-			    false);
+			vmp_md_pte_create_hw(pte, vm_page_pfn(page), true, true,
+			    true, false);
 			vmp_pagetable_page_noswap_pte_created(
 			    kernel_process->vm, pte_wire.pgtable_pages[0],
 			    true);

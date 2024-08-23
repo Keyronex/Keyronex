@@ -1,6 +1,7 @@
 
 #include "IOAPIC.h"
 #include "dev/acpi/DKAACPIPlatform.h"
+#include "kdk/executive.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
 
@@ -73,10 +74,15 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 	   address:(paddr_t)paddr
 	   gsiBase:(uint32_t)gsiBase
 {
+	int r;
+
 	self = [super initWithProvider:provider];
 
+	r = vm_ps_map_physical_view(kernel_process->vm, &_vaddr, PGSIZE, paddr,
+	    kVMAll, kVMAll, false);
+	kassert(r == 0);
+
 	_id = id;
-	_vaddr = (vaddr_t)P2V(paddr);
 	_gsi_base = gsiBase;
 	_n_redirs = ((ioapic_read(_vaddr, kRegisterVersion) >> 16) & 0xff) + 1;
 	kassert(_n_redirs <= 240);

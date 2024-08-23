@@ -33,6 +33,27 @@ typedef struct __attribute__((packed)) pte_sw {
 	enum software_pte_kind kind : 2;
 } pte_sw_t;
 
+/* 2mib and 1gib pages */
+struct __attribute__((packed)) pte_large {
+	bool valid : 1;
+	bool writeable : 1;
+	bool user : 1;
+	bool writethrough : 1;
+	bool nocache : 1;
+	bool accessed : 1;
+	bool dirty : 1;
+	bool ps : 1;
+	bool global : 1;
+	uint64_t available1 : 3;
+	uint64_t pat : 1;
+	uintptr_t pfn : 39;
+	uint64_t available2 : 11;
+	bool nx : 1;
+};
+
+typedef struct pte_large pte_hwl2_t;
+typedef struct pte_large pte_hwl3_t;
+
 typedef struct __attribute__((packed)) pte_hw {
 	union __attribute__((packed)) {
 		uint64_t value;
@@ -56,6 +77,8 @@ typedef struct __attribute__((packed)) pte_hw {
 
 typedef union __attribute__((packed)) pte {
 	pte_hw_t hw;
+	pte_hwl2_t hwl2;
+	pte_hwl3_t hwl3;
 	pte_sw_t sw;
 	uintptr_t value;
 } pte_t;
@@ -71,10 +94,32 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 	pte.hw.valid = 1;
 	pte.hw.writeable = writeable;
 	pte.hw.nocache = !cacheable;
-	pte.hw.user = true;
+	pte.hw.user = user;
+	pte.hw.nx = !executable;
 
 	ppte->value = pte.value;
 }
+
+static inline void
+vmp_md_pte_create_hwlarge(pte_t *ppte, pfn_t pfn, bool writeable,
+    bool executable, bool cacheable, bool user)
+{
+	pte_t pte;
+
+	pte.value = 0x0;
+	pte.hwl2.pfn = pfn >> 1;
+	pte.hwl2.valid = 1;
+	pte.hwl2.writeable = writeable;
+	pte.hwl2.nocache = !cacheable;
+	pte.hwl2.user = user;
+	pte.hwl2.ps = true;
+	pte.hw.nx = !executable;
+
+	ppte->value = pte.value;
+}
+
+#define vmp_md_pte_create_hwl2 vmp_md_pte_create_hwlarge
+#define vmp_md_pte_create_hwl3 vmp_md_pte_create_hwlarge
 
 static inline void
 vmp_md_pte_create_busy(pte_t *ppte, pfn_t pfn)
@@ -167,6 +212,14 @@ static inline paddr_t
 vmp_pte_hw_paddr(pte_t *pte, int level)
 {
 	return (paddr_t)pte->hw.pfn << VMP_PAGE_SHIFT;
+}
+
+
+static inline bool
+vmp_md_pte_hw_is_large(pte_t *pte, int level)
+{
+	kassert(level > 1);
+	return pte->hwl2.ps;
 }
 
 static inline void

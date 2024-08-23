@@ -107,12 +107,12 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	 * create busy PTEs in the prototype page table; new (i.e. pte was
 	 * previously zero) only if drumslot = 0 (meaning this is not anon.)
 	 */
-	vmp_md_pte_create_busy(object_state->pte, page->pfn);
+	vmp_md_pte_create_busy(object_state->pte, vm_page_pfn(page));
 	vmp_pagetable_page_noswap_pte_created(process->vm,
 	    object_state->pgtable_pages[0], drumslot == 0);
 
 	/* and also in the process page table */
-	vmp_md_pte_create_busy(state->pte, page->pfn);
+	vmp_md_pte_create_busy(state->pte, vm_page_pfn(page));
 	vmp_pagetable_page_noswap_pte_created(process->vm,
 	    state->pgtable_pages[0], drumslot == 0);
 
@@ -182,8 +182,8 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 		kfatal("Invalid Object PTE state\n");
 	}
 	kassert(vm_pfn_to_page(vmp_md_soft_pte_pfn(state->pte)) == page);
-	vmp_md_pte_create_hw(object_state->pte, page->pfn, true, true, true,
-	    true);
+	vmp_md_pte_create_hw(object_state->pte, vm_page_pfn(page), true, true,
+	    true, true);
 
 	/*
 	 * the process PTE must still be busy - we wait for busy PTEs to become
@@ -200,7 +200,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 	if (area_info->executable)
 		vmp_page_sync_icache(page);
 
-	vmp_md_pte_create_hw(state->pte, page->pfn, false,
+	vmp_md_pte_create_hw(state->pte, vm_page_pfn(page), false,
 	    area_info->executable, true, vaddr <= HIGHER_HALF);
 
 	/* release references we took to preserve the pages containing PTEs */
@@ -242,7 +242,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 		if (area_info->executable)
 			vmp_page_sync_icache(page);
 
-		vmp_md_pte_create_hw(pte, page->pfn, false,
+		vmp_md_pte_create_hw(pte, vm_page_pfn(page), false,
 		    area_info->executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
@@ -330,7 +330,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 		if (area_info->executable)
 			vmp_page_sync_icache(page);
 
-		vmp_md_pte_create_hw(pte, page->pfn, false,
+		vmp_md_pte_create_hw(pte, vm_page_pfn(page), false,
 		    area_info->executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page,
@@ -493,7 +493,7 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 			if (area_info.executable)
 				vmp_page_sync_icache(new_page);
 
-			vmp_md_pte_create_hw(pte, new_page->pfn, write,
+			vmp_md_pte_create_hw(pte, vm_page_pfn(new_page), write,
 			    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 			vmp_pagetable_page_noswap_pte_created(vmps, pml1_page,
@@ -553,7 +553,7 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		if (area_info.executable)
 			vmp_page_sync_icache(page);
 
-		vmp_md_pte_create_hw(pte, page->pfn, write,
+		vmp_md_pte_create_hw(pte, vm_page_pfn(page), write,
 		    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pagetable_page_noswap_pte_created(process->vm, pml1_page, true);
@@ -589,7 +589,7 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		 * no need to sync icache here unless and until we speculatively
 		 * insert trans PTEs (perhaps as part of fault-in clustering).
 		 */
-		vmp_md_pte_create_hw(state.pte, page->pfn, write,
+		vmp_md_pte_create_hw(state.pte, vm_page_pfn(page), write,
 		    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 		vmp_pte_wire_state_release(&state, false);
@@ -640,7 +640,7 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		page->drumslot = drumslot;
 
 		/* create busy PTE */
-		vmp_md_pte_create_busy(state.pte, page->pfn);
+		vmp_md_pte_create_busy(state.pte, vm_page_pfn(page));
 		vmp_pagetable_page_noswap_pte_created(process->vm,
 		    state.pgtable_pages[0], false);
 
@@ -683,7 +683,7 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		if (area_info.executable)
 			vmp_page_sync_icache(page);
 
-		vmp_md_pte_create_hw(state.pte, page->pfn, write,
+		vmp_md_pte_create_hw(state.pte, vm_page_pfn(page), write,
 		    area_info.executable, true, vaddr <= HIGHER_HALF);
 
 		/* release reference we took to preserve the PTE page */

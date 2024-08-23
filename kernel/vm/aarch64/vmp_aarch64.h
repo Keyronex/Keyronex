@@ -6,7 +6,7 @@
 
 #include "kdk/vm.h"
 #include "kern/ki.h"
-#include "mmu_regs.h"
+#include "vm/aarch64/mmu_regs.h"
 
 #define VMP_TABLE_LEVELS 4
 #define VMP_PAGE_SHIFT 12
@@ -38,6 +38,8 @@ typedef struct __attribute__((packed)) pte_sw {
 
 typedef union __attribute__((packed)) pte {
 	pte_hw_t hw;
+	pte_hwl2_t hwl2;
+	pte_hwl3_t hwl3;
 	struct table_entry hw_table;
 	pte_sw_t sw;
 	uintptr_t value;
@@ -59,17 +61,50 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 		pte.hw.ap = writeable ? 0b00 : 0b10;
 	pte.hw.sh = 0b11;
 	pte.hw.attrindx = cacheable ? 0 : 1;
-	pte.hw.reserved_must_be_1 = 1;
+	pte.hw.reserved_must_be_1_at_l1 = 1;
 	if (!executable) {
 		pte.hw.pxn = 1;
 		pte.hw.uxn = 1;
-	}
+	} else
+		pte.hw.uxn = !user;
 
 	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
 	asm volatile("dsb ishst\n\t"
 		     "isb\n\t" ::
 			 : "memory");
 }
+
+static inline void
+vmp_md_pte_create_hwlarge(pte_t *ppte, pfn_t pfn, bool writeable,
+    bool executable, bool cacheable, bool user)
+{
+	pte_t pte;
+
+	pte.value = 0x0;
+	pte.hw.pfn = pfn;
+	pte.hw.valid = 1;
+	pte.hw.af = 1;
+	if (user)
+		pte.hw.ap = writeable ? 0b01 : 0b11;
+	else
+		pte.hw.ap = writeable ? 0b00 : 0b10;
+	pte.hw.sh = 0b11;
+	pte.hw.attrindx = cacheable ? 0 : 1;
+	pte.hw.reserved_must_be_1_at_l1 = 0;
+	if (!executable) {
+		pte.hw.pxn = 1;
+		pte.hw.uxn = 1;
+	} else
+		pte.hw.uxn = !user;
+
+	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
+	asm volatile("dsb ishst\n\t"
+		     "isb\n\t" ::
+			 : "memory");
+}
+
+#define vmp_md_pte_create_hwl2 vmp_md_pte_create_hwlarge
+#define vmp_md_pte_create_hwl3 vmp_md_pte_create_hwlarge
 
 static inline void
 vmp_md_pte_create_busy(pte_t *ppte, pfn_t pfn)
@@ -115,6 +150,13 @@ vmp_md_pte_create_zero(pte_t *ppte)
 	asm volatile("dsb ishst\n\t"
 		     "isb\n\t" ::
 			 : "memory");
+}
+
+static inline bool
+vmp_md_pte_hw_is_large(pte_t *pte, int level)
+{
+	kassert(level > 1);
+	return pte->hw_table.is_table == 0;
 }
 
 static inline bool

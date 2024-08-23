@@ -20,15 +20,22 @@ SECTIONS
     /* that is the beginning of the region. */
     . = 0xffffffff80000000;
 
+    TEXT_SEGMENT_START = .;
     .text : {
         *(.text .text.*)
     } :text
+    TEXT_SEGMENT_END = .;
 
     /* Move to the next memory page for .rodata */
     . += CONSTANT(MAXPAGESIZE);
 
+    RODATA_SEGMENT_START = .;
     .rodata : {
         *(.rodata .rodata.*)
+    } :rodata
+
+    .srodata : {
+        *(.srodata .srodata.*)
     } :rodata
 
 	.init_array : {
@@ -40,12 +47,18 @@ SECTIONS
 
 	.eh_frame_hdr : { *(.eh_frame_hdr) }
 	.eh_frame : { *(.eh_frame) }
+    RODATA_SEGMENT_END = .;
 
     /* Move to the next memory page for .data */
     . += CONSTANT(MAXPAGESIZE);
 
+    DATA_SEGMENT_START = .;
     .data : {
         *(.data .data.*)
+    } :data
+
+    .sdata : {
+        *(.sdata .sdata.*)
     } :data
 
     /* Dynamic section for relocations, both in its own PHDR and inside data PHDR */
@@ -62,9 +75,14 @@ SECTIONS
         *(COMMON)
     } :data
 
+    .sbss : {
+        *(.sbss .sbss.*)
+    } :data
+
+    KDATA_SEGMENT_END = .;
+
     /* Discard .note.* and .eh_frame since they may cause issues on some hosts. */
     /DISCARD/ : {
-        *(.eh_frame)
         *(.note .note.*)
     }
 }

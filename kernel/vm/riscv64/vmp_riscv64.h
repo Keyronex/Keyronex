@@ -50,8 +50,13 @@ typedef struct __attribute__((packed)) pte_hw {
 	    reserved : 7, pbmt : 2, n : 1;
 } pte_hw_t;
 
+typedef pte_hw_t pte_hwl2_t;
+typedef pte_hw_t pte_hwl3_t;
+
 typedef union __attribute__((packed)) pte {
 	pte_hw_t hw;
+	pte_hwl2_t hwl2;
+	pte_hwl3_t hwl3;
 	pte_sw_t sw;
 	uintptr_t value;
 } pte_t;
@@ -76,6 +81,9 @@ vmp_md_pte_create_hw(pte_t *ppte, pfn_t pfn, bool writeable, bool executable,
 	__atomic_store(ppte, &pte, __ATOMIC_RELAXED);
 	asm volatile("fence\n\t" ::: "memory");
 }
+
+#define vmp_md_pte_create_hwl2 vmp_md_pte_create_hw
+#define vmp_md_pte_create_hwl3 vmp_md_pte_create_hw
 
 static inline void
 vmp_md_pte_create_busy(pte_t *ppte, pfn_t pfn)
@@ -129,6 +137,14 @@ static inline bool
 vmp_md_pte_is_valid(pte_t *pte)
 {
 	return pte->hw.valid;
+}
+
+static inline bool
+vmp_md_pte_hw_is_large(pte_t *pte, int level)
+{
+	kassert(level > 1);
+	return pte->hw.valid &&
+	    (pte->hw.read || pte->hw.write || pte->hw.execute);
 }
 
 static inline bool

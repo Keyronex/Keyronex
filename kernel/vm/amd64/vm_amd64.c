@@ -20,7 +20,7 @@ vmp_md_ps_init(eprocess_t *ps)
 
 	vm_page_alloc(&table_page, 0, kPageUsePML4, true);
 	table_page->process = ps;
-	table_addr = vmp_page_paddr(table_page);
+	table_addr = vm_page_paddr(table_page);
 	vmps->md.table = table_addr;
 
 	if (vmps == &kernel_procstate) {
@@ -41,8 +41,9 @@ vmp_md_ps_init(eprocess_t *ps)
 				pml3_page->nonzero_ptes = 10000;
 				pml3_page->noswap_ptes = 10000;
 				pml3_page->refcnt = 10000;
-				vmp_md_pte_create_hw(pte, pml3_page->pfn, true,
-				    true, true, false);
+				vmp_md_pte_create_hw(pte,
+				    vm_page_pfn(pml3_page), true, true, true,
+				    false);
 			}
 		}
 #endif
@@ -83,7 +84,7 @@ void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 	pte.hw.valid = 1;
 	pte.hw.writeable = 1;
 	pte.hw.user = 1;
-	pte.hw.pfn = tablepage->pfn;
+	pte.hw.pfn = vm_page_pfn(tablepage);
 	dirpte->value = pte.value;
 
 	if (old_state != kWasTrans)
@@ -93,7 +94,7 @@ void vmp_md_setup_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 void vmp_md_busy_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     pte_t *dirpte, vm_page_t *tablepage)
 {
-	vmp_md_pte_create_busy(dirpte, tablepage->pfn);
+	vmp_md_pte_create_busy(dirpte, vm_page_pfn(tablepage));
 	vmp_pagetable_page_noswap_pte_created(ps, dirpage, true);
 }
 
@@ -101,7 +102,7 @@ void
 vmp_md_trans_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
     pte_t *dirpte, vm_page_t *tablepage)
 {
-	vmp_md_pte_create_trans(dirpte, tablepage->pfn);
+	vmp_md_pte_create_trans(dirpte, vm_page_pfn(tablepage));
 }
 
 void

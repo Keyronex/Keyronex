@@ -12,3 +12,5 @@ asm_swtch: /* (void)(tcb_t *old, tcb_t *new) */
 	move.l %a1@(44), %sp@ | load new saved-%pc
 	movem.l %a1@, %d2-%d7/%a2-%a6 | load new callee-saved registers
 	rts | finally return into new context
+
+.section .note.GNU-stack,"",%progbits

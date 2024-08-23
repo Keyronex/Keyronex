@@ -97,12 +97,13 @@ enum vm_page_use {
 typedef struct vm_page {
 	/* first word */
 	struct __attribute__((packed)) {
-		uintptr_t pfn : PFN_BITS;
+		/* first 16 bits */
+		uintptr_t order: 5, max_order: 5, on_freelist: 1;
 		enum vm_page_use use : 4;
+
+		/* second 16 bits */
 		bool dirty : 1;
 		bool busy : 1;
-		uintptr_t order : 5;
-		bool on_freelist : 1;
 	};
 
 	/* 32-bit: word 2-3; 64-bit: word 2 */
@@ -137,6 +138,10 @@ typedef struct vm_page {
 
 	/* 32-bit: word 8; 64-bit: word 7 */
 	uintptr_t drumslot;
+
+#if BITS == 64
+	uintptr_t padding;
+#endif
 } vm_page_t;
 
 typedef struct vm_mdl_view_entry {
@@ -199,7 +204,7 @@ size_t vm_mdl_contig_bytes(vm_mdl_t *mdl, voff_t offset);
 /*!
  * @brief Add a region of memory to the VMM's management.
  */
-void vm_region_add(paddr_t base, size_t length);
+void vm_region_add(paddr_t base, paddr_t limit);
 
 /*!
  * @brief Allocate physical page frames.
@@ -305,15 +310,34 @@ vm_npages_to_order(size_t npages)
 }
 
 static inline size_t
+vm_bytes_to_order(size_t bytes)
+{
+	return vm_npages_to_order(ROUNDUP(bytes, PGSIZE) / PGSIZE);
+}
+
+static inline size_t
 vm_order_to_npages(size_t order)
 {
 	return 1 << order;
 }
 
+static inline size_t
+vm_order_to_bytes(size_t order)
+{
+	return vm_order_to_npages(order) * PGSIZE;
+}
+
+static inline pfn_t
+vm_page_pfn(vm_page_t *page)
+{
+	extern vm_page_t *pfndb;
+	return page - pfndb;
+}
+
 static inline paddr_t
 vm_page_paddr(vm_page_t *page)
 {
-	return PFN_TO_PADDR(page->pfn);
+	return PFN_TO_PADDR(vm_page_pfn(page));
 }
 
 static inline vaddr_t

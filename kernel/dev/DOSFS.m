@@ -846,7 +846,7 @@ dos_rw(struct dosfs_state *fs, vnode_t *vn, io_off_t offset, io_off_t bytes,
 	sect.kind = kFile;
 	sect.file.vnode = vn;
 	vm_page_alloc(&vpml4, 0, kPageUseVPML4, false);
-	sect.vpml4 = vmp_page_paddr(vpml4);
+	sect.vpml4 = vm_page_paddr(vpml4);
 	vn->object = &sect;
 
 	state->vfs.device = self;

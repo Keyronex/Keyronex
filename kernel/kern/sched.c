@@ -5,11 +5,7 @@
 #include "kdk/vm.h"
 #include "ki.h"
 
-#if SMP == 1
 kcpu_t **cpus;
-#else
-kcpu_t *cpus[1] = { &bootstrap_cpu };
-#endif
 size_t ncpus;
 
 uintptr_t idle_mask = 1;

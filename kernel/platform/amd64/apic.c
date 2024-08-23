@@ -27,15 +27,14 @@ enum {
 static uint32_t
 lapic_read(kcpu_t *cpu, uint32_t reg)
 {
-	return *(volatile uint32_t *)P2V(
-	    (cpu->cpucb.lapic_base & 0xfffff000) + reg);
+	return *(volatile uint32_t *)(cpu->cpucb.lapic_base + reg);
 }
 
 static void
 lapic_write(kcpu_t *cpu, uint32_t reg, uint32_t val)
 {
-	volatile uint32_t *addr = (volatile uint32_t *)P2V(
-	    (cpu->cpucb.lapic_base & 0xfffff000) + reg);
+	volatile uint32_t *addr = (volatile uint32_t *)(cpu->cpucb.lapic_base +
+	    reg);
 	*addr = val;
 }
 

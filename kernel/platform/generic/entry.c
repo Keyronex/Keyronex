@@ -38,43 +38,31 @@ static kspinlock_t early_lock = KSPINLOCK_INITIALISER;
 // be made volatile or equivalent.
 LIMINE_BASE_REVISION(2);
 
-volatile struct limine_framebuffer_request framebuffer_request = {
-	.id = LIMINE_FRAMEBUFFER_REQUEST,
-	.revision = 0
-};
+volatile struct limine_framebuffer_request fb_request __attribute__((
+    aligned(8))) = { .id = LIMINE_FRAMEBUFFER_REQUEST, .revision = 0 };
 
-static volatile struct limine_hhdm_request hhdm_request = {
-	.id = LIMINE_HHDM_REQUEST,
-	.revision = 0
-};
+static volatile struct limine_hhdm_request hhdm_request
+    __attribute__((aligned(8))) = { .id = LIMINE_HHDM_REQUEST, .revision = 0 };
 
-static volatile struct limine_kernel_address_request kernel_address_request = {
-	.id = LIMINE_KERNEL_ADDRESS_REQUEST,
-	.revision = 0
-};
+volatile struct limine_kernel_address_request kernel_address_request
+    __attribute__((aligned(8))) = { .id = LIMINE_KERNEL_ADDRESS_REQUEST,
+	    .revision = 0 };
 
-static volatile struct limine_kernel_file_request kernel_file_request = {
-	.id = LIMINE_KERNEL_FILE_REQUEST,
-	.revision = 0
-};
+static volatile struct limine_kernel_file_request kernel_file_request
+    __attribute__((aligned(8))) = { .id = LIMINE_KERNEL_FILE_REQUEST,
+	    .revision = 0 };
 
-static volatile struct limine_memmap_request memmap_request = {
-	.id = LIMINE_MEMMAP_REQUEST,
-	.revision = 0
-};
+volatile struct limine_memmap_request memmap_request __attribute__((
+    aligned(8))) = { .id = LIMINE_MEMMAP_REQUEST, .revision = 0 };
 
-volatile struct limine_module_request module_request = {
-	.id = LIMINE_MODULE_REQUEST,
-	.revision = 0
-};
+volatile struct limine_module_request module_request __attribute__((
+    aligned(8))) = { .id = LIMINE_MODULE_REQUEST, .revision = 0 };
 
-volatile struct limine_rsdp_request rsdp_request = { .id = LIMINE_RSDP_REQUEST,
-	.revision = 0 };
+volatile struct limine_rsdp_request rsdp_request
+    __attribute__((aligned(8))) = { .id = LIMINE_RSDP_REQUEST, .revision = 0 };
 
-static volatile struct limine_smp_request smp_request = {
-	.id = LIMINE_SMP_REQUEST,
-	.revision = 0
-};
+static volatile struct limine_smp_request smp_request
+    __attribute__((aligned(8))) = { .id = LIMINE_SMP_REQUEST, .revision = 0 };
 
 struct ex_boot_config boot_config = {
 	.root = "9p:trans=virtio,server=sysroot,aname=/"
@@ -101,6 +89,7 @@ common_core_init(kcpu_t *cpu, kthread_t *thread, struct limine_smp_info *smpi)
 	__atomic_add_fetch(&cpus_up, 1, __ATOMIC_RELAXED);
 }
 
+#if SMP
 static void
 ap_init(struct limine_smp_info *smpi)
 {
@@ -110,6 +99,7 @@ ap_init(struct limine_smp_info *smpi)
 	/* this is now that CPU's idle thread loop */
 	hcf();
 }
+#endif
 
 #if defined(__amd64__)
 #define SMPR_BSP_ID bsp_lapic_id
@@ -126,10 +116,8 @@ ap_init(struct limine_smp_info *smpi)
 static void
 smp_allocate(void)
 {
-#if !defined(__m68k__)
 	struct limine_smp_response *smpr = smp_request.response;
 	ncpus = smpr->cpu_count;
-#endif
 
 	cpus = kmem_alloc(sizeof(kcpu_t *) * ncpus);
 	threads = kmem_alloc(sizeof(kthread_t *) * ncpus);
@@ -219,19 +207,7 @@ _start(void)
 	ki_thread_common_init(&thread0, &bootstrap_cpu,
 	    &kernel_process->kprocess, "idle0");
 
-	struct limine_memmap_entry **entries = memmap_request.response->entries;
-
-	for (int i = 0; i < memmap_request.response->entry_count; i++) {
-		if (entries[i]->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE)
-			kprintf("Bootloader reclaimable from 0x%zx to 0x%zx\n",
-			    entries[i]->base, entries[i]->base + entries[i]->length);
-		if (entries[i]->type != LIMINE_MEMMAP_USABLE ||
-		    entries[i]->base < 0x100000)
-			continue;
-
-		vm_region_add(entries[i]->base, entries[i]->length);
-	}
-
+	vmp_pmm_init();
 	vmp_kernel_init();
 	kmem_init();
 	obj_init();
@@ -248,5 +224,11 @@ _start(void)
 	ke_thread_resume(ex_init_thread);
 
 	/* idle loop */
+#if defined (__m68k__)
+	for (;;) {
+		asm("stop #0x2000");
+	}
+#else
 	hcf();
+#endif
 }
