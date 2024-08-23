@@ -376,7 +376,7 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		kassert(page->refcnt == 1);
 #endif
 		kassert(page->referent_pte == V2P(pte));
-		vmp_md_pte_create_trans(pte, page->pfn);
+		vmp_md_pte_create_trans(pte, vm_page_pfn(page));
 		ki_tlb_flush_vaddr_globally(vaddr);
 		vmp_page_clean_dcache_postevict(page);
 		vmp_page_release_locked(page);

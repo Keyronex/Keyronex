@@ -97,12 +97,13 @@ enum vm_page_use {
 typedef struct vm_page {
 	/* first word */
 	struct __attribute__((packed)) {
-		uintptr_t pfn : PFN_BITS;
+		/* first 16 bits */
+		uintptr_t order: 5, max_order: 5, on_freelist: 1;
 		enum vm_page_use use : 4;
+
+		/* second 16 bits */
 		bool dirty : 1;
 		bool busy : 1;
-		uintptr_t order : 5;
-		bool on_freelist : 1;
 	};
 
 	/* 32-bit: word 2-3; 64-bit: word 2 */
@@ -139,7 +140,7 @@ typedef struct vm_page {
 	uintptr_t drumslot;
 
 #if BITS == 64
-	uintptr_t padding : 40, max_order : 5;
+	uintptr_t padding;
 #endif
 } vm_page_t;
 
@@ -326,10 +327,17 @@ vm_order_to_bytes(size_t order)
 	return vm_order_to_npages(order) * PGSIZE;
 }
 
+static inline pfn_t
+vm_page_pfn(vm_page_t *page)
+{
+	extern vm_page_t *pfndb;
+	return page - pfndb;
+}
+
 static inline paddr_t
 vm_page_paddr(vm_page_t *page)
 {
-	return PFN_TO_PADDR(page->pfn);
+	return PFN_TO_PADDR(vm_page_pfn(page));
 }
 
 static inline vaddr_t

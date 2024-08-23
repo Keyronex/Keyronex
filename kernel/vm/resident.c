@@ -217,7 +217,6 @@ vm_region_add(paddr_t base, paddr_t limit)
 		page->referent_pte = 0;
 		page->use = kPageUseFree;
 		page->on_freelist = false;
-		page->pfn = pfn;
 	}
 
 	for (paddr_t i = base; i < limit;) {
@@ -226,9 +225,7 @@ vm_region_add(paddr_t base, paddr_t limit)
 		buddy_queue_npages[page->order]++;
 		i += (1 << page->order) * PGSIZE;
 		page->on_freelist = true;
-#if BITS == 64
 		page->max_order = page->order;
-#endif
 	}
 
 	vmstat.nfree += (limit - base) / PGSIZE;
@@ -398,28 +395,15 @@ static vm_page_t *
 page_buddy(vm_page_t *page)
 {
 	paddr_t paddr = vm_page_paddr(page) ^ ((1 << page->order) * PGSIZE);
-#if BITS == 32
-	if (paddr >= vmp_highest_address)
-		return NULL;
-#endif
 	return vm_paddr_to_page(paddr );
 }
 
 static void
 page_free(vm_page_t *page)
 {
-#if BITS == 64
 	while (page->order < page->max_order) {
-#else
-	while (true) {
-#endif
 		vm_page_t *buddy = page_buddy(page);
 
-#if BITS == 32
-		if (buddy == NULL)
-			break;
-#endif
-
 		if (buddy->order != page->order)
 			break;
 		else if (!buddy->on_freelist)
@@ -435,38 +419,6 @@ page_free(vm_page_t *page)
 		}
 
 		page->order++;
-
-#if 0
-		vm_page_t *buddy;
-		intptr_t index = page - preg->pages, buddy_index;
-		size_t pages = 1 << page->order;
-
-		if (index % (2 * pages) == 0)
-			buddy_index = index + pages;
-		else
-			buddy_index = index - pages;
-
-		if ((size_t)buddy_index >= preg->npages || buddy_index < 0)
-			break;
-
-		buddy = &preg->pages[buddy_index];
-
-		if (buddy->order != page->order)
-			break;
-		else if (!buddy->on_freelist)
-			break;
-
-		TAILQ_REMOVE(&buddy_queue[buddy->order], buddy, queue_link);
-		buddy_queue_npages[buddy->order]--;
-
-		if (page > buddy) {
-			vm_page_t *tmp = page;
-			page = buddy;
-			buddy = tmp;
-		}
-
-		page->order++;
-#endif
 	}
 
 	TAILQ_INSERT_HEAD(&buddy_queue[page->order], page, queue_link);
@@ -594,7 +546,8 @@ vmp_page_release_locked(vm_page_t *page)
 		case kPageUseAnonPrivate: {
 			pte_t *thepte = (pte_t *)P2V(page->referent_pte);
 			kassert(vmp_pte_characterise(thepte) == kPTEKindTrans);
-			kassert(vmp_md_soft_pte_pfn(thepte) == page->pfn);
+			kassert(
+			    vmp_md_soft_pte_pfn(thepte) == vm_page_pfn(page));
 		}
 
 		case kPageUseFileShared:
@@ -694,13 +647,14 @@ dump_page(vm_page_t *page)
 
 	if (page_is_pagetable(page))
 		kprintf("%-8zx%-11s%-6hu%-6s%-10s%-6hu%-6hu\n",
-		    (size_t)page->pfn, vm_page_use_str(page->use), page->refcnt,
-		    "n/a", "n/a", page->nonzero_ptes, page->noswap_ptes);
+		    (size_t)vm_page_pfn(page), vm_page_use_str(page->use),
+		    page->refcnt, "n/a", "n/a", page->nonzero_ptes,
+		    page->noswap_ptes);
 	else
 		kprintf("%-8zx%-11s%-6hu%-6s%-10" PRIx64 "%-6s%-6s\n",
-		    (size_t)page->pfn, vm_page_use_str(page->use), page->refcnt,
-		    page->dirty ? "yes" : "no", (uint64_t)page->offset, "n/a",
-		    "n/a");
+		    (size_t)vm_page_pfn(page), vm_page_use_str(page->use),
+		    page->refcnt, page->dirty ? "yes" : "no",
+		    (uint64_t)page->offset, "n/a", "n/a");
 }
 
 void

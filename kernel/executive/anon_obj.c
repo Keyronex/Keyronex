@@ -38,7 +38,7 @@ ex_memory_object_new(ex_memory_object_t *out, size_t size)
 		goto free_obj;
 
 	obj->obj.kind = kAnon;
-	obj->obj.vpml4 = vmp_page_paddr(vpml4);
+	obj->obj.vpml4 = vm_page_paddr(vpml4);
 	ke_mutex_init(&obj->obj.map_entry_list_lock);
 	LIST_INIT(&obj->obj.map_entry_list);
 

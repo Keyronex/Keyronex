@@ -183,9 +183,6 @@ typedef TAILQ_HEAD(, vm_page) page_queue_t;
 /*! @brief Release the PFN database lock. */
 #define vmp_release_pfn_lock(IPL) ke_spinlock_release(&vmp_pfn_lock, IPL)
 
-/* paddr_t vmp_page_paddr(vm_page_t *page) */
-#define vmp_page_paddr(PAGE) ((paddr_t)(PAGE)->pfn << VMP_PAGE_SHIFT)
-
 /* paddr_t vmp_pfn_to_paddr(pfn_t pfn) */
 #define vmp_pfn_to_paddr(PFN) ((paddr_t)PFN << VMP_PAGE_SHIFT)
 
