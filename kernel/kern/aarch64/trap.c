@@ -83,7 +83,14 @@ common_sync(md_intr_frame_t *frame)
 	bool userland = false;
 
 	if (frame->esr == 0x2000000) {
+		kfatal("Unknown ESR!!\n");
+
 		/*
+		 * Old note below. For now, we treat it as a fatal error again,
+		 * as I have not been able to reproduce it recently.
+		 *
+		 * ---
+		 *
 		 * I don't know why this happens nor why tlb invalidation gets
 		 * it going again.
 		 *

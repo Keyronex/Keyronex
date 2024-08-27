@@ -1,0 +1,27 @@
+diff -ruN bash-5.2.15/lib/readline/terminal.c bash-patched/lib/readline/terminal.c
+--- bash-5.2.15/lib/readline/terminal.c	2022-04-05 15:44:17.000000000 +0100
++++ bash-5.2.15/lib/readline/terminal.c	2023-03-27 19:58:44.837301851 +0100
+@@ -103,9 +103,9 @@
+ static int tcap_initialized;
+ 
+ #if !defined (__linux__) && !defined (NCURSES_VERSION)
+-#  if defined (__EMX__) || defined (NEED_EXTERN_PC)
++// #  if defined (__EMX__) || defined (NEED_EXTERN_PC) */
+ extern 
+-#  endif /* __EMX__ || NEED_EXTERN_PC */
++// #  endif /* __EMX__ || NEED_EXTERN_PC */
+ char PC, *BC, *UP;
+ #endif /* !__linux__ && !NCURSES_VERSION */
+ 
+diff -ruN bash-5.2.15/lib/termcap/termcap.c bash-patched/lib/termcap/termcap.c
+--- bash-5.2.15/lib/termcap/termcap.c	2021-09-03 19:17:58.000000000 +0100
++++ bash-5.2.15lib/termcap/termcap.c	2023-03-27 19:58:04.432453262 +0100
+@@ -295,7 +295,7 @@
+ short ospeed;
+ /* If OSPEED is 0, we use this as the actual baud rate.  */
+ int tputs_baud_rate;
+-__private_extern__ char PC = '\0';
++extern char PC = '\0';
+ 
+ /* Actual baud rate if positive;
+    - baud rate / 100 if negative.  */

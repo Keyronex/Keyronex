@@ -470,3 +470,40 @@ packages:
       - args: ['ninja', 'install']
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
+
+################################################################################
+# basic userland
+################################################################################
+
+  - name: bash
+    source:
+      url: https://ftp.gnu.org/gnu/bash/bash-5.2.15.tar.gz
+      version: '5.2.15'
+      subdir: 'sources'
+      format: 'tar.gz'
+      extract_path: 'bash-5.2.15'
+      patch-path-strip: 1
+      regenerate:
+        - args: [ 'libtoolize', '-cfvi' ]
+        - args: [ 'env', 'AUTOHEADER=true', 'autoreconf', '-fvi' ]
+      tools_required:
+        - host-libtool
+        - host-autoconf-2.69
+        - host-automake-1.16
+    tools_required:
+      - host-gcc
+      - host-libtool
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--without-bash-malloc'
+        environ:
+          ac_cv_func_wcswidth: 'no'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', 'install']
+      - args: ['ln', '-sf', '/usr/bin/bash', '@THIS_COLLECT_DIR@/usr/bin/sh']

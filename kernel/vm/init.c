@@ -24,8 +24,6 @@ extern struct limine_framebuffer_request fb_request;
 static paddr_t bump_start, bump_large_base, bump_large_end, bump_small_base;
 static paddr_t kpgtable;
 
-/* Are PFNDB pages L2 (large pages)? If not, they are L1. */
-static bool pfndb_pages_are_l2;
 /* How big are PFNDB pages? */
 static size_t pfndb_pgsize;
 /* How many elements does each PFNDB page fit? */

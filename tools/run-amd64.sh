@@ -49,7 +49,7 @@ virtio_disk_arg="-device virtio-blk-pci,drive=drive0,id=virtblk0     -drive file
 # AHCI?
 #
 
-${QEMU_EXE} -smp 4 -hda test.img -m 128 -M q35 \
+${QEMU_EXE} -smp 4 -hda test.img -m 24 -M q35 \
   -cdrom build/amd64/barebones.iso \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
