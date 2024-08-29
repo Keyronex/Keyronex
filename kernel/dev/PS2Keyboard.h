@@ -5,7 +5,22 @@
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "uacpi/namespace.h"
 
+struct ps2_info {
+	uacpi_namespace_node *mouse_node;
+	uint16_t cmd_port, data_port;
+	uint8_t gsi, mouse_gsi;
+};
+
 @interface PS2Keyboard : DKDevice {
+	struct ps2_info m_info;
+
+	struct intr_entry m_intrEntry;
+	kdpc_t m_dpc;
+
+	uint8_t m_scancodeBuf[64];
+	uint8_t m_head, m_tail, m_count;
+
+	bool isShifted, isCtrled, isExtended, isCapsLocked;
 }
 
 + (BOOL)probeWithProvider:(DKACPIPlatform *)provider
