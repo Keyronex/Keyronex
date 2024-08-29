@@ -51,7 +51,7 @@ typedef enum ipl {
 	kIPL0 = 0,
 	kIPLAST = 1,
 	kIPLDPC = 2,
-	kIPLDevice = 14,
+	kIPLDevice = 13,
 	kIPLHigh = 15,
 } ipl_t;
 

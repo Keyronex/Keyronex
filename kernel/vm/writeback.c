@@ -198,8 +198,10 @@ vmp_writeback(void *)
 			nio_prepared++;
 		}
 
+#if TRACE_WRITEBACK
 		if (nio_prepared != 0)
 			kprintf("nio_prepared == %zu\n", nio_prepared);
+#endif
 
 		if (!vmp_writer_should_run())
 			ke_event_clear(&vmp_writer_event);

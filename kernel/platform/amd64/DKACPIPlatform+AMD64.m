@@ -55,8 +55,8 @@ parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
 
 	for (int i = 0; i < 16; i++) {
 		isa_intr_overrides[i].gsi = i;
-		isa_intr_overrides[i].lopol = i;
-		isa_intr_overrides[i].gsi = i;
+		isa_intr_overrides[i].lopol = false;
+		isa_intr_overrides[i].edge = false;
 	}
 
 	dk_acpi_madt_walk((struct acpi_madt *)madt.virt_addr, parse_ioapics,
