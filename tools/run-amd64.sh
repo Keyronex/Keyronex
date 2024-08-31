@@ -2,10 +2,11 @@ PORT=amd64
 
 qemu_args=
 
-while getopts "9dknr:spq:" optchar; do
+while getopts "9deknr:spq:" optchar; do
 	case $optchar in
 	9) virtio_9p=1 ;;
 	d) virtio_disk=1 ;;
+	e) e1000=1 ;;
 	r) root=$OPTARG ;;
 	s) serial_stdio=1 ;;
 	k) qemu_args="$qemu_args -enable-kvm" ;;
@@ -22,6 +23,10 @@ qemu_args="$qemu_args -s"
 virtio_9p_arg="-device pci-bridge,id=bridge0,chassis_nr=1 \
 	-device virtio-9p-pci,id=pci9p,bus=bridge0,fsdev=sysroot,mount_tag=sysroot \
   -fsdev local,id=sysroot,security_model=none,path=build/amd64/system-root"
+
+if [ "$e1000" = "1" ]; then
+	qemu_args="-net tap,ifname=tap0,script=no,downscript=no -net nic,model=e1000e"
+fi
 
 if [ "$serial_stdio" = "1" ]; then
 	qemu_args="${qemu_args} -serial stdio"
@@ -53,4 +58,4 @@ ${QEMU_EXE} -smp 4 -hda test.img -m 24 -M q35 \
   -cdrom build/amd64/barebones.iso \
   ${virtio_gpu_arg} \
   ${virtio_trace_arg} \
-  ${qemu_args}  -net tap,ifname=tap0,script=no,downscript=no -net nic,model=e1000e \
+  ${qemu_args}  \
