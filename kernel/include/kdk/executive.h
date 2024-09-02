@@ -4,6 +4,15 @@
 #include "kdk/kern.h"
 
 /*!
+ * @brief 0 or negative errno value.
+ *
+ * This is the return type of most executive services that don't return a value
+ * on success. Successful results are indicated by a zero value, unsuccessful
+ * results by a negative errno. There are no positive values.
+ */
+typedef int32_t ex_err_ret_t;
+
+/*!
  * @brief Descriptor number or negative errno value.
  *
  * This is the return type of most executive services that return a descriptor

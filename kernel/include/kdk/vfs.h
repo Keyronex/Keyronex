@@ -119,15 +119,20 @@ typedef struct vfs_vnode_iter {
 } vfs_vnode_iter_t;
 
 struct vnode_ops {
+	void (*inactive)(vnode_t *vn);
+
 	io_result_t (*cached_read)(vnode_t *vnode, vaddr_t user_addr,
 	    io_off_t off, size_t size);
 	io_result_t (*cached_write)(vnode_t *vnode, vaddr_t user_addr,
 	    io_off_t off, size_t size);
-	int (*seek)(vnode_t *vnode, io_off_t old, io_off_t *new);
 	io_off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte,
 	    size_t bytes_read, io_off_t seqno);
+
+	int (*seek)(vnode_t *vnode, io_off_t old, io_off_t *new);
+	int (*getattr)(vnode_t *vnode, vattr_t *attr);
+	int (*ioctl)(vnode_t *vnode, unsigned long cmd, void *data);
+
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
-	void (*inactive)(vnode_t *vn);
 };
 
 struct vfs_ops {

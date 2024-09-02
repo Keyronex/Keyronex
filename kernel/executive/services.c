@@ -174,6 +174,14 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 		return ex_service_file_seek(ex_curproc(), arg1, arg2,
 		    arg3);
 
+	case kKrxFileStat:
+		return ex_service_file_stat(ex_curproc(), arg1,
+		    (const char *)arg2, arg3, (struct stat *)arg4);
+
+	case kKrxFileIoCtl:
+		return ex_service_file_ioctl(ex_curproc(), arg1, arg2,
+		    (void *)arg3);
+
 	case kKrxThreadExit:
 		krx_thread_exit();
 

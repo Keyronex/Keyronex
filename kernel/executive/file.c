@@ -222,3 +222,104 @@ ex_service_file_seek(eprocess_t *proc, descnum_t handle, io_off_t offset,
 
 	return r;
 }
+
+ex_err_ret_t
+ex_service_file_stat(eprocess_t *proc, int fd, const char *path, int flags,
+    struct stat *sb)
+{
+	void *obj;
+	struct file *file;
+	vattr_t vattr;
+	int r;
+
+	if (fd == AT_FDCWD) {
+		namecache_handle_t nch;
+
+		r = vfs_lookup(root_nch, &nch, path, 0);
+		if (r != 0)
+			return r;
+
+		r = nch.nc->vp->ops->getattr(nch.nc->vp, &vattr);
+	} else {
+		kassert(fd >= 0);
+		kassert(flags & AT_EMPTY_PATH || *path == '\0');
+
+		obj = ex_object_space_lookup(proc->objspace, fd);
+		if (obj == NULL)
+			return -EBADF;
+
+		file = obj;
+		r = file->vnode->ops->getattr(file->vnode, &vattr);
+		obj_release(file);
+	}
+
+	if (r != 0)
+		return r;
+
+	memset(sb, 0x0, sizeof(*sb));
+	sb->st_mode = vattr.mode & ~S_IFMT;
+
+	switch (vattr.type) {
+	case VREG:
+		sb->st_mode |= S_IFREG;
+		break;
+
+	case VDIR:
+		sb->st_mode |= S_IFDIR;
+		break;
+
+	case VCHR:
+		sb->st_mode |= S_IFCHR;
+		break;
+
+	case VLNK:
+		sb->st_mode |= S_IFLNK;
+		break;
+
+	case VSOCK:
+		sb->st_mode |= S_IFSOCK;
+		break;
+
+	case VFIFO:
+		sb->st_mode |= S_IFIFO;
+		break;
+
+	case VNON:
+	case VITER_MARKER:
+		kfatal("Should be unreachable!\n");
+	}
+
+	sb->st_size = vattr.size;
+	sb->st_blocks = ROUNDUP(vattr.size, 512) / 512;
+	sb->st_blksize = 512;
+	sb->st_atim = vattr.atim;
+	sb->st_ctim = vattr.ctim;
+	sb->st_mtim = vattr.mtim;
+	sb->st_ino = vattr.fileid;
+	sb->st_dev = vattr.fsid;
+
+	return 0;
+}
+
+ex_size_ret_t
+ex_service_file_ioctl(eprocess_t *proc, descnum_t handle, int request,
+    void *arg)
+{
+	void *obj;
+	struct file *file;
+	int r;
+
+	obj = ex_object_space_lookup(proc->objspace, handle);
+	if (obj == NULL)
+		return -EBADF;
+
+	file = obj;
+	if (file->vnode->ops->ioctl == NULL) {
+		obj_release(file);
+		return -ENOSYS;
+	}
+	r = file->vnode->ops->ioctl(file->vnode, request, arg);
+	obj_release(file);
+
+	return r;
+}

@@ -39,7 +39,7 @@
 struct ncstat {
 	size_t inactive;
 	size_t max_inactive;
-} ncstat = { 0, 256 };
+} ncstat = { 0, 1 };
 
 static int64_t nc_cmp(struct namecache *x, struct namecache *y);
 static void nc_trim_lru(void);
@@ -161,6 +161,7 @@ do_trim(namecache_t *ncp)
 	ke_mutex_release(&ncp->mutex);
 	nc_free(ncp);
 	nc_release_internal(parent, true);
+	ncstat.inactive--;
 }
 
 static void
@@ -234,9 +235,14 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 			/* make a negative entry */
 			found->refcnt = 0;
 			found->vp = NULL;
+			ke_wait(&lru_mutex, "nc_retain:lru_mutex", false, false,
+			    -1);
 			TAILQ_INSERT_TAIL(&lru_queue, found, lru_entry);
 			ncstat.inactive++;
 			ke_mutex_release(&nc->mutex);
+			if (ncstat.inactive > ncstat.max_inactive)
+				nc_trim_lru();
+			ke_mutex_release(&lru_mutex);
 			return -ENOENT;
 		} else {
 			found->refcnt = 1;

@@ -7,7 +7,8 @@
  * @brief Kernel console.
  */
 
-#include <abi-bits/errno.h>
+#include <errno.h>
+#include <termios.h>
 
 #include "kdk/executive.h"
 #include "kdk/file.h"
@@ -64,7 +65,13 @@ ex_console_open(eprocess_t *proc)
 	return num;
 }
 
-io_result_t
+static io_result_t
+console_read(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
+{
+	return io_result(0, -ENOTTY);
+}
+
+static io_result_t
 console_write(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 {
 	char *buf;
@@ -96,7 +103,33 @@ console_seek(vnode_t *vnode, io_off_t old_offset, io_off_t *new_offset)
 	return -ESPIPE;
 }
 
+static int
+console_getattr(vnode_t *vn, vattr_t *attr)
+{
+	(void)vn;
+
+	memset(attr, 0, sizeof(*attr));
+	attr->type = VCHR;
+
+	return 0;
+}
+
+static int
+console_ioctl(vnode_t *vnode, unsigned long cmd, void *data)
+{
+	switch (cmd) {
+	case TIOCGWINSZ:
+		return 0;
+
+	default:
+		return -EINVAL;
+	}
+}
+
 static struct vnode_ops console_vnops = {
+	.cached_read = console_read,
 	.cached_write = console_write,
-	.seek = console_seek
+	.seek = console_seek,
+	.getattr = console_getattr,
+	.ioctl = console_ioctl,
 };
