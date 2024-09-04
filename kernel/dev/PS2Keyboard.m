@@ -10,6 +10,9 @@ enum {
 	kPS2InputBufferFull = 0x2,
 };
 
+/* executive/kconsole.c - temporary */
+void ex_console_input(int c);
+
 static void dpc_handler(void *arg);
 static bool intr_handler(md_intr_frame_t *frame, void *arg);
 
@@ -205,7 +208,7 @@ translateScancode(struct ps2_kb_state *state, uint8_t code)
 			ch -= 64;
 		}
 
-		(void)kprintf("%c", ch);
+		ex_console_input(ch);
 	}
 }
 

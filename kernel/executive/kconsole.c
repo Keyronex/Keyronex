@@ -7,18 +7,28 @@
  * @brief Kernel console.
  */
 
-#include <errno.h>
-#include <termios.h>
+#include <sys/errno.h>
+#include <sys/termios.h>
+
+#include <stddef.h>
 
 #include "kdk/executive.h"
 #include "kdk/file.h"
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/poll.h"
 #include "kdk/vfs.h"
 
 static vnode_t *kconsole_vnode;
 static struct vnode_ops console_vnops;
+static pollhead_t console_pollhead;
+
+static kspinlock_t console_lock;
+static char in_buf[4096];
+size_t in_buf_len = 0;
+size_t in_read_head = 0;
+size_t in_write_head = 0;
 
 static io_result_t
 io_result(int result, size_t count)
@@ -39,8 +49,29 @@ copyin(vaddr_t udata, size_t len, char **out)
 }
 
 void
+ex_console_input(int c)
+{
+	ipl_t ipl = ke_spinlock_acquire(&console_lock);
+
+	if (in_buf_len == sizeof(in_buf)) {
+		ke_spinlock_release(&console_lock, ipl);
+		return;
+	}
+
+	in_buf[in_write_head++] = c;
+	if (in_write_head == sizeof(in_buf))
+		in_write_head = 0;
+	in_buf_len++;
+	ke_spinlock_release(&console_lock, ipl);
+
+	pollhead_deliver_events(&console_pollhead, EPOLLIN);
+}
+
+void
 ex_console_init(void)
 {
+	ke_spinlock_init(&console_lock);
+	pollhead_init(&console_pollhead);
 	kconsole_vnode = vnode_new(NULL, VCHR, &console_vnops, NULL, NULL, 0);
 }
 
@@ -68,7 +99,41 @@ ex_console_open(eprocess_t *proc)
 static io_result_t
 console_read(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 {
-	return io_result(0, -ENOTTY);
+	ipl_t ipl;
+	size_t nread = 0;
+
+	ipl = ke_spinlock_acquire(&console_lock);
+
+	if (in_buf_len == 0) {
+		ke_spinlock_release(&console_lock, ipl);
+		return io_result(-EAGAIN, 0);
+	}
+
+	while (nread < size) {
+		char c;
+
+		if (in_buf_len == 0)
+			break;
+
+		c = in_buf[in_read_head++];
+		if (in_read_head == sizeof(in_buf))
+			in_read_head = 0;
+
+		in_buf_len--;
+
+		/* must copyout without holding spinlocks in case of fault */
+		ke_spinlock_release(&console_lock, ipl);
+		memcpy((void *)(user_addr + nread), &c, sizeof(char));
+		ke_spinlock_acquire(&console_lock);
+
+		nread++;
+	}
+
+	ke_spinlock_release(&console_lock, ipl);
+
+	kprintf("\n\nConsole Read %d\n\n", nread);
+
+	return io_result(0, nread);
 }
 
 static io_result_t
@@ -126,10 +191,19 @@ console_ioctl(vnode_t *vnode, unsigned long cmd, void *data)
 	}
 }
 
+static int
+console_chpoll(vnode_t *vnode, struct poll_entry *poll)
+{
+	if (poll != NULL)
+		pollhead_register(&console_pollhead, poll);
+	return EPOLLOUT | (in_buf_len ? EPOLLIN : 0);
+}
+
 static struct vnode_ops console_vnops = {
 	.cached_read = console_read,
 	.cached_write = console_write,
 	.seek = console_seek,
 	.getattr = console_getattr,
 	.ioctl = console_ioctl,
+	.chpoll = console_chpoll,
 };

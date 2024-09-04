@@ -32,9 +32,13 @@ kernel_sources += [
 if (cpu != 'm68k')
 	kernel_sources += [
 		files('acpi/DKACPIPCIFirmwareInterface.m', 'acpi/DKACPIPlatform.m',
-			'acpi/uacpi_integration.m', 'E1000.m', 'PS2Keyboard.m',),
+			'acpi/uacpi_integration.m', 'E1000.m',),
 		uacpi_sources,
 	]
 	freestanding_c_args += [ '-DUACPI_FORMATTED_LOGGING=1' ]
 	freestanding_include_dirs += uacpi_includes
+endif
+
+if (cpu == 'amd64')
+	kernel_sources += files('PS2Keyboard.m')
 endif

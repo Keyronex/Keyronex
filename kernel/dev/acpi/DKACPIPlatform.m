@@ -2,7 +2,6 @@
 #include <string.h>
 
 #include "dev/pci/DKPCIBus.h"
-#include "dev/PS2Keyboard.h"
 #include "dev/acpi/DKACPIPCIFirmwareInterface.h"
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/acpi/tables.h"
@@ -22,6 +21,9 @@
 #include "uacpi/uacpi.h"
 #include "uacpi/utilities.h"
 
+#ifdef __amd64
+#include "dev/PS2Keyboard.h"
+#endif
 
 struct pcie_ecam {
 	paddr_t phys;
@@ -72,10 +74,12 @@ iteration_callback(void *user, uacpi_namespace_node *node)
 
 	if (uacpi_device_matches_pnp_id(node, pci_list))
 		[self makePCIBusFromNode:node];
+#ifdef __amd64
 	else if (uacpi_device_matches_pnp_id(node,
 		     (const char *const[]) { "PNP0303", "PNP030B", "PNP0320",
 			 NULL }))
 		[PS2Keyboard probeWithProvider:self acpiNode:node];
+#endif
 
 	return UACPI_NS_ITERATION_DECISION_CONTINUE;
 }
