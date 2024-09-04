@@ -65,7 +65,8 @@ of Keyronex:
   - [x] Futexes.
   - [x] Virtual Filesystem Switch.
   - [x] Namecache, including "NullFS" (bind mount) support.
-  - [ ] (incomplete) Object-oriented, handle-based userland interface.
+  - [x] Object-oriented, handle-based userland interface.
+  - [x] Executive Poll (EPoll), a readiness-notification API.
   - [ ] (not yet started) File write-behind
   - [ ] (not yet started) IPC mechanism (will be L4 like or Mach like?)
 
@@ -74,7 +75,7 @@ of Keyronex:
   - [x] ACPI-based device discovery for ACPI-supported ports.
   - [x] VirtIO Disk, basic GPU, and 9p port.
   - [x] Intel E1000 NIC driver.
-  - [ ] (not yet started) PS/2 keyboard.
+  - [x] PS/2 keyboard.
   - [ ] (incomplete) Windows "StorPort" driver shim.
   - [ ] (incomplete) FAT, Ext2 filesystems..
   - [ ] (incomplete) 9p filesystem (both VirtIO and TCP transport).

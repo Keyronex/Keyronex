@@ -10,6 +10,7 @@
 
 #include "dev.h"
 
+struct poll_entry;
 RB_HEAD(ubc_window_tree, ubc_window);
 
 /* TODO: make away with `uint8_t name_len`; it duplicates part of RB key. */
@@ -131,6 +132,12 @@ struct vnode_ops {
 	int (*seek)(vnode_t *vnode, io_off_t old, io_off_t *new);
 	int (*getattr)(vnode_t *vnode, vattr_t *attr);
 	int (*ioctl)(vnode_t *vnode, unsigned long cmd, void *data);
+
+	/*!
+	 * Returns events, if there are any pending. If a poll_entry is passed,
+	 * then it should link it onto its pollhead
+	 */
+	int (*chpoll)(vnode_t *vnode, struct poll_entry *poll);
 
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
 };

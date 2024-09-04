@@ -135,6 +135,8 @@ ex_service_file_read_cached(eprocess_t *proc, descnum_t handle, vaddr_t ubuf,
 	if (obj == NULL)
 		return -EBADF;
 
+	kprintf("EX_SERVICE_FILE_READ_CACHED %d\n", handle);
+
 	file = obj;
 	if (file->vnode->ops->cached_read != NULL) {
 		ke_wait(&file->offset_mutex, "offset_mutex", false, false, -1);

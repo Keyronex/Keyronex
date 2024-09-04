@@ -16,6 +16,7 @@
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
+#include "kdk/poll.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
 #include "kdk/file.h"
@@ -181,6 +182,17 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 	case kKrxFileIoCtl:
 		return ex_service_file_ioctl(ex_curproc(), arg1, arg2,
 		    (void *)arg3);
+
+	case kKrxEPollCreate:
+		return ex_service_epoll_create(ex_curproc(), arg1);
+
+	case kKrxEPollCtl:
+		return ex_service_epoll_ctl(ex_curproc(), arg1, arg2, arg3,
+		    (struct epoll_event *)arg4);
+
+	case kKrxEPollWait:
+		return ex_service_epoll_wait(ex_curproc(), arg1,
+		    (struct epoll_event *)arg2, arg3, arg4);
 
 	case kKrxThreadExit:
 		krx_thread_exit();
