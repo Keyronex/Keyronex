@@ -9,6 +9,8 @@
  * @brief Open File object.
  */
 typedef struct file {
+	kspinlock_t epoll_lock;
+	LIST_HEAD(, poll_entry) epoll_watches;
 	namecache_handle_t nch;
 	vnode_t *vnode;
 	kmutex_t offset_mutex;

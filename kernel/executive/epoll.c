@@ -64,15 +64,14 @@ struct poll_entry {
 	/*! links the entry to te epoll::ready list */
 	LIST_ENTRY(poll_entry) ready_link;
 
-#if 0
-	/*! links the entry to the file_t's epoll watches */
-	LIST_ENTRY(epoll_entry) file_list_entry;
-#endif
+	/*! links the entry to the file_t::epoll_watches */
+	LIST_ENTRY(poll_entry) file_list_entry;
 
 	/*! links the entry onto the waited object's pollhead */
 	LIST_ENTRY(poll_entry) pollhead_entry;
 
 	descnum_t desc;
+	/*! A non-owning reference. */
 	struct file *file;
 
 	struct epoll_event event;
@@ -96,6 +95,10 @@ struct poll_entry {
  *
  * - epoll::mutex -> pollhead::lock -> epoll::ready_lock
  *
+ * The epoll_teardown_mutex synchronises teardown of epoll instances with the
+ * automatic removal of watches of watched files that have been closed
+ * elsewhere.
+ *
  */
 struct epoll {
 	kmutex_t mutex;
@@ -103,8 +106,10 @@ struct epoll {
 	LIST_HEAD(, poll_entry) watches;
 	LIST_HEAD(, poll_entry) ready;
 	kevent_t event;
+	bool deleted;
 };
 
+static kmutex_t epoll_teardown_mutex = KMUTEX_INITIALIZER(epoll_teardown_mutex);
 static struct vnode_ops epoll_vnops;
 
 static inline struct epoll *
@@ -169,7 +174,8 @@ watch_add(struct epoll *ep, descnum_t desc, struct file *watch_file,
 
 	LIST_INSERT_HEAD(&ep->watches, entry, epoll_watch_link);
 
-	r = watch_file->vnode->ops->chpoll(watch_file->vnode, entry);
+	r = watch_file->vnode->ops->chpoll(watch_file->vnode, entry,
+	    kChpollPoll);
 	/*
 	 * could be done from chpoll if we export an appropriate API?
 	 * maybe better here to avoid more complicated call stacks and simplify
@@ -183,9 +189,40 @@ watch_add(struct epoll *ep, descnum_t desc, struct file *watch_file,
 		ke_spinlock_release(&ep->ready_lock, ipl);
 	}
 
+	ke_spinlock_acquire_nospl(&entry->file->epoll_lock);
+	LIST_INSERT_HEAD(&watch_file->epoll_watches, entry, file_list_entry);
+	ke_spinlock_release_nospl(&entry->file->epoll_lock);
+
 	ke_mutex_release(&ep->mutex);
 
 	return 0;
+}
+
+static void
+watch_del(struct epoll *ep, struct poll_entry *entry)
+{
+	ipl_t ipl;
+
+	entry->file->vnode->ops->chpoll(entry->file->vnode, entry,
+	    kChpollRemove);
+
+	ipl = spldpc();
+
+	ke_spinlock_acquire_nospl(&entry->file->epoll_lock);
+	kassert(LIST_ELEM_IS_INSERTED(entry, file_list_entry));
+	LIST_REMOVE_AND_ZERO(entry, file_list_entry);
+	ke_spinlock_release_nospl(&entry->file->epoll_lock);
+
+	ke_spinlock_acquire_nospl(&ep->ready_lock);
+	if (LIST_ELEM_IS_INSERTED(entry, ready_link))
+		LIST_REMOVE_AND_ZERO(entry, ready_link);
+	ke_spinlock_release_nospl(&ep->ready_lock);
+
+	splx(ipl);
+
+	LIST_REMOVE_AND_ZERO(entry, epoll_watch_link);
+
+	kmem_free(entry, sizeof(struct poll_entry));
 }
 
 void
@@ -227,6 +264,76 @@ pollhead_register(pollhead_t *ph, struct poll_entry *pe)
 	ke_spinlock_release(&ph->lock, ipl);
 }
 
+void
+pollhead_unregister(pollhead_t *ph, struct poll_entry *pe)
+{
+	ipl_t ipl = ke_spinlock_acquire(&ph->lock);
+	LIST_REMOVE_AND_ZERO(pe, pollhead_entry);
+	ke_spinlock_release(&ph->lock, ipl);
+}
+
+void
+epoll_delete(struct epoll *ep)
+{
+	struct poll_entry *entry, *tmp;
+
+	ke_wait(&epoll_teardown_mutex, "epoll_delete:epoll_teardown_mutex", 0,
+	    0, -1);
+
+	LIST_FOREACH_SAFE (entry, &ep->watches, epoll_watch_link, tmp) {
+		ipl_t ipl;
+
+		entry->file->vnode->ops->chpoll(entry->file->vnode, entry,
+		    kChpollRemove);
+
+		ipl = spldpc();
+
+		ke_spinlock_acquire_nospl(&entry->file->epoll_lock);
+		kassert(LIST_ELEM_IS_INSERTED(entry, file_list_entry));
+		LIST_REMOVE_AND_ZERO(entry, file_list_entry);
+		ke_spinlock_release_nospl(&entry->file->epoll_lock);
+
+		ke_spinlock_acquire_nospl(&ep->ready_lock);
+		if (LIST_ELEM_IS_INSERTED(entry, ready_link))
+			LIST_REMOVE_AND_ZERO(entry, ready_link);
+		ke_spinlock_release_nospl(&ep->ready_lock);
+
+		splx(ipl);
+
+		LIST_REMOVE_AND_ZERO(entry, epoll_watch_link);
+
+		kmem_free(entry, sizeof(struct poll_entry));
+	}
+
+	ke_mutex_release(&epoll_teardown_mutex);
+}
+
+void
+poll_watched_file_did_close(file_t *file)
+{
+	ipl_t ipl;
+
+	ke_wait(&epoll_teardown_mutex,
+	    "epoll_watched_file_did_close:epoll_teardown_mutex", 0, 0, -1);
+
+	ipl = ke_spinlock_acquire(&file->epoll_lock);
+	while (!LIST_EMPTY(&file->epoll_watches)) {
+		struct epoll *ep;
+		struct poll_entry *entry;
+
+		entry = LIST_FIRST(&file->epoll_watches);
+		ke_spinlock_release(&file->epoll_lock, ipl);
+
+		ep = entry->epoll;
+
+		ke_wait(&ep->mutex, "epoll_watched_file_did_close:ep->mutex", 0,
+		    0, -1);
+		watch_del(ep, entry);
+		ke_mutex_release(&ep->mutex);
+	}
+	ke_spinlock_release(&file->epoll_lock, ipl);
+}
+
 ex_err_ret_t
 ex_service_epoll_ctl(eprocess_t *proc, descnum_t epdesc, int op, descnum_t desc,
     struct epoll_event *event)
@@ -254,6 +361,7 @@ ex_service_epoll_ctl(eprocess_t *proc, descnum_t epdesc, int op, descnum_t desc,
 	switch (op) {
 	case EPOLL_CTL_ADD:
 		r = watch_add(ep, desc, watch_file, event);
+		obj_release(watch_file);
 		break;
 
 	case EPOLL_CTL_MOD:
@@ -296,7 +404,7 @@ process_ready(struct epoll *ep, int maxevents, struct epoll_event *revents)
 			 *
 			 */
 			r = entry->file->vnode->ops->chpoll(entry->file->vnode,
-			    NULL);
+			    NULL, kChpollPoll);
 			if ((r & entry->event.events) != 0) {
 				revents[nrevents] = entry->event;
 				revents[nrevents++].events = r &
@@ -402,6 +510,7 @@ ex_service_epoll_create(eprocess_t *proc, int flags)
 	LIST_INIT(&ep->watches);
 	LIST_INIT(&ep->ready);
 	ke_event_init(&ep->event, false);
+	ep->deleted = false;
 
 	ex_object_space_reserved_insert(proc->objspace, descnum, file);
 

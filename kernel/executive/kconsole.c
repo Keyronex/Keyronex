@@ -192,10 +192,15 @@ console_ioctl(vnode_t *vnode, unsigned long cmd, void *data)
 }
 
 static int
-console_chpoll(vnode_t *vnode, struct poll_entry *poll)
+console_chpoll(vnode_t *vnode, struct poll_entry *poll, enum chpoll_mode mode)
 {
-	if (poll != NULL)
+	if (poll != NULL && mode == kChpollPoll)
 		pollhead_register(&console_pollhead, poll);
+	else if (mode == kChpollRemove) {
+		kassert(poll != NULL);
+		pollhead_unregister(&console_pollhead, poll);
+		return 0;
+	}
 	return EPOLLOUT | (in_buf_len ? EPOLLIN : 0);
 }
 

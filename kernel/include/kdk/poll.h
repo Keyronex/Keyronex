@@ -11,6 +11,8 @@
 #include <kdk/executive.h>
 #include <kdk/vfs.h>
 
+struct file;
+
 typedef struct pollhead {
 	kspinlock_t lock;
 	LIST_HEAD(, poll_entry) pollers;
@@ -22,6 +24,11 @@ void pollhead_init(pollhead_t *ph);
 void pollhead_deliver_events(pollhead_t *ph, int revents);
 /*! @brief Register a poller with a pollhead. */
 void pollhead_register(pollhead_t *ph, struct poll_entry *pe);
+/*! @brief Deregister a poller with a pollhead. */
+void pollhead_unregister(pollhead_t *ph, struct poll_entry *pe);
+
+/*! @brief Called when a poll-watched file is closed. */
+void poll_watched_file_did_close(struct file *file);
 
 ex_desc_ret_t ex_service_epoll_create(eprocess_t *proc, int flags);
 ex_err_ret_t ex_service_epoll_ctl(eprocess_t *proc, descnum_t epdesc, int op,

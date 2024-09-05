@@ -17,6 +17,7 @@
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
+#include "kdk/poll.h"
 #include "kdk/vfs.h"
 #include "object.h"
 
@@ -47,15 +48,15 @@ copyin_str(const char *ustr, char **out)
 void
 ex_file_free(obj_t *obj)
 {
-#if 0
-	file_t *file = file;
+	file_t *file = obj;
+
+	if (!LIST_EMPTY(&file->epoll_watches))
+		poll_watched_file_did_close(file);
+
 	if (file->nch.nc != NULL)
 		nchandle_release(file->nch);
 	else
 	 	vn_release(file->vnode);
-#else
-	(void)obj;
-#endif
 }
 
 file_t *

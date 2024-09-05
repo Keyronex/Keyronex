@@ -119,6 +119,14 @@ typedef struct vfs_vnode_iter {
 	vfs_t *vfs;
 } vfs_vnode_iter_t;
 
+/*!
+ * What kind of chpoll operation is being done.
+ */
+enum chpoll_mode {
+	kChpollPoll,
+	kChpollRemove,
+};
+
 struct vnode_ops {
 	void (*inactive)(vnode_t *vn);
 
@@ -137,7 +145,8 @@ struct vnode_ops {
 	 * Returns events, if there are any pending. If a poll_entry is passed,
 	 * then it should link it onto its pollhead
 	 */
-	int (*chpoll)(vnode_t *vnode, struct poll_entry *poll);
+	int (*chpoll)(vnode_t *vnode, struct poll_entry *poll,
+	    enum chpoll_mode mode);
 
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
 };
