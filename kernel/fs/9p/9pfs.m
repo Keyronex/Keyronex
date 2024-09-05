@@ -33,6 +33,7 @@
 #include "kdk/vfs.h"
 #include "lwip/ip_addr.h"
 #include "net/keysock_dev.h"
+#include "vm/ubc.h"
 
 typedef uint32_t fid_t;
 
@@ -494,10 +495,57 @@ out:
 	return r;
 }
 
-void
-ninep_inactive(vnode_t *dvn)
+bool
+ninep_inactive(vnode_t *vn)
 {
-	kfatal("Implement me\n");
+	struct ninep_node *dn = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+	ipl_t ipl;
+
+	extern kspinlock_t ubc_lock;
+
+	ke_wait(&fs->node_cache_lock, "9p inactive", false, false, -1);
+	ipl = ke_spinlock_acquire(&ubc_lock);
+	ke_spinlock_acquire_nospl(&fs->vfs->vnode_list_lock);
+
+	if (__atomic_load_n(&vn->refcount, __ATOMIC_ACQUIRE != 1) {
+		/* Reference was made. Retry. */
+		ke_spinlock_release_nospl(&fs->vfs->vnode_list_lock);
+		ke_spinlock_release(&ubc_lock, ipl);
+		ke_mutex_release(&fs->node_cache_lock);
+		return false;
+	}
+
+	/*
+	 * Now that these locks are held, there is no way that the vnode can
+	 * still be referenced.
+	 */
+
+	/* Remove the vnode from the per-VFS vnode list. */
+	vfs_vn_remove(vn);
+	ke_spinlock_release_nospl(&fs->vfs->vnode_list_lock);
+
+	/* Remove all UBC windows to the vnode. */
+	ubc_purge_vnode(vn);
+	ke_spinlock_release(&ubc_lock, ipl);
+
+	/* Remove the node from the QID to node cache. */
+	RB_REMOVE(ninep_node_rb, &fs->node_cache, dn);
+
+#if 1
+	/* print in bold red */
+	kprintf("\033[1;31mNinePFS: Deleted a node with QID %lu\033[0m\n",
+	    dn->qid.path);
+	/* for debugging, let's junk them not free them for now */
+	memset(vn, 0x1234, sizeof(*vn));
+	memset(dn, 0x1234, sizeof(*dn));
+#else
+	/* need vm object teardown if there is one; free node; free vnode. */
+#endif
+
+	ke_mutex_release(&fs->node_cache_lock);
+
+	return true;
 }
 
 @implementation NinepFS

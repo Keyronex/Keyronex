@@ -34,7 +34,7 @@
 } while (0)
 
 
-#define LIST_ELEM_IS_INSERTED(elm, field) ((elm)->field.le_next != NULL)
+#define LIST_ELEM_IS_INSERTED(elm, field) ((elm)->field.le_prev != NULL)
 
 static inline int
 memcpy_from_user(void *dst, const void *src, size_t len)
@@ -516,3 +516,14 @@ ex_service_epoll_create(eprocess_t *proc, int flags)
 
 	return descnum;
 }
+
+static bool epoll_inactive(vnode_t *vn)
+{
+	struct epoll *ep = VTOEP(vn);
+	epoll_delete(ep);
+	return true;
+}
+
+static struct vnode_ops epoll_vnops = {
+	.inactive = epoll_inactive,
+};

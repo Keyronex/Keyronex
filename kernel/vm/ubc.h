@@ -1,7 +1,7 @@
 #ifndef KRX_VM_UBC_H
 #define KRX_VM_UBC_H
 
-#include "kdk/vfs.h"
+#include <kdk/vfs.h>
 
 #define UBC_WINDOW_SIZE (256 * 1024)
 
@@ -12,6 +12,8 @@ typedef struct ubc_window {
 	RB_ENTRY(ubc_window) rb_entry;
 	TAILQ_ENTRY(ubc_window) queue_entry; /* LRU or freelist */
 } ubc_window_t;
+
+void ubc_purge_vnode(vnode_t *vnode);
 
 extern ubc_window_t *window_array;
 extern size_t window_count;

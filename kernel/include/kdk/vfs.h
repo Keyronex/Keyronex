@@ -128,7 +128,8 @@ enum chpoll_mode {
 };
 
 struct vnode_ops {
-	void (*inactive)(vnode_t *vn);
+	/*! Returns true if freed, false if not and should retry. */
+	bool (*inactive)(vnode_t *vn);
 
 	io_result_t (*cached_read)(vnode_t *vnode, vaddr_t user_addr,
 	    io_off_t off, size_t size);
@@ -169,8 +170,13 @@ vn_has_cache(vnode_t *vnode)
 	return vnode->object != NULL;
 }
 
+/*! @brief Remove vnode from per-VFS list (caller needs vfs vn list lock!) */
+void vfs_vn_remove(vnode_t *vnode);
+/*! @brief Initialise a per-VFS vnode list iterator. */
 void vfs_vn_iter_init(vfs_vnode_iter_t *it, vfs_t *vfs);
+/*! @brief Get the next vnode from the per-VFS vnode list iterator. */
 vnode_t *vfs_vn_iter_next(vfs_vnode_iter_t *it);
+/*! @brief Destroy a per-VFS vnode list iterator. */
 void vfs_vn_iter_destroy(vfs_vnode_iter_t *it);
 
 /*! Write bytes to a given address */

@@ -77,17 +77,10 @@ size_t window_count;
 RB_GENERATE(ubc_window_tree, ubc_window, rb_entry, ubc_window_cmp);
 
 static void
-window_replace(ubc_window_t *window)
+unmap_window(ubc_window_t *window)
 {
 	pte_t *pte = NULL;
 	vaddr_t window_addr = ubc_window_addr(window);
-
-	window->refcnt++;
-	kprintf(" -VN- reTAIN in window_replace\n");
-	vn_retain(window->vnode);
-	TAILQ_REMOVE(&ubc_lruqueue, window, queue_entry);
-	RB_REMOVE(ubc_window_tree, &window->vnode->ubc_windows, window);
-	ke_spinlock_release(&ubc_lock, kIPLAST);
 
 	KE_WAIT(&kernel_procstate.ws_mutex, false, false, -1);
 	(void)vmp_acquire_pfn_lock();
@@ -110,9 +103,23 @@ window_replace(ubc_window_t *window)
 	}
 
 	vmp_release_pfn_lock(kIPLAST);
+	ke_mutex_release(&kernel_procstate.ws_mutex);
+}
+
+static void
+window_replace(ubc_window_t *window)
+{
+	window->refcnt++;
+	kprintf(" -VN- reTAIN in window_replace\n");
+	vn_retain(window->vnode);
+	TAILQ_REMOVE(&ubc_lruqueue, window, queue_entry);
+	RB_REMOVE(ubc_window_tree, &window->vnode->ubc_windows, window);
+	ke_spinlock_release(&ubc_lock, kIPLAST);
+
 	kprintf(" -VN- reLEASE in window_replace\n");
 	vn_release(window->vnode);
-	ke_mutex_release(&kernel_procstate.ws_mutex);
+
+	unmap_window(window);
 
 	ke_spinlock_acquire(&ubc_lock);
 	window->refcnt = 0;
@@ -208,6 +215,22 @@ ubc_io(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size, bool write)
 	ke_mutex_release(vnode->rwlock);
 
 	return done;
+}
+
+void
+ubc_purge_vnode(vnode_t *vnode)
+{
+	ubc_window_t *win;
+
+	while (!RB_EMPTY(&vnode->ubc_windows)) {
+		win = RB_MIN(ubc_window_tree, &vnode->ubc_windows);
+		if (win->refcnt == 0)
+			TAILQ_REMOVE(&ubc_lruqueue, win, queue_entry);
+		RB_REMOVE(ubc_window_tree, &win->vnode->ubc_windows, win);
+		ke_spinlock_release(&ubc_lock, kIPLAST);
+		unmap_window(win);
+		ke_spinlock_acquire(&ubc_lock);
+	}
 }
 
 void

@@ -151,7 +151,7 @@ vn_retain(vnode_t *vnode)
 	uint32_t count = __atomic_fetch_add(&vnode->refcount, 1,
 	    __ATOMIC_RELAXED);
 	if (count == 0)
-		kprintf("ref from 0\n");
+		kfatal("ref from 0\n");
 	kassert(count < 0xfffffff0);
 	return vnode;
 }
@@ -173,8 +173,14 @@ vn_release(vnode_t *vnode)
 				kfatal("just call obj_release in a worker");
 				return;
 			} else {
-				kprintf(" -VN-   FREE %p\n", vnode);
-				return;
+				bool succeeded = vnode->ops->inactive(vnode);
+				if (succeeded)
+					return;
+#if 1
+				/* normal condition, but let's keep an eye on */
+				kprintf("\033[1;31mvn release race\033[0m\n");
+#endif
+				/* if not, retry... */
 			}
 		} else {
 			kassert("unreached\n");
@@ -209,6 +215,13 @@ vfs_release(vfs_t *vfs)
 	uint32_t ret = __atomic_fetch_sub(&vfs->file_refcnt, 2,
 	    __ATOMIC_RELEASE);
 	kprintf(" -VFS- reLEASE %p to %d\n", vfs, ret - 2);
+}
+
+void
+vfs_vn_remove(vnode_t *vnode)
+{
+	kassert(ke_spinlock_held(&vnode->vfs->vnode_list_lock));
+	TAILQ_REMOVE(&vnode->vfs->vnode_list, vnode, vnode_list_entry);
 }
 
 void

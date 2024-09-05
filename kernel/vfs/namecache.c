@@ -257,7 +257,9 @@ nc_lookup(struct namecache *nc, struct namecache **out, const char *name)
 		return -ENOENT;
 	}
 
+	ke_wait(&found->mutex, "nc_lookup:found->mutex", false, false, -1);
 	nc_retain(found);
+	ke_mutex_release(&found->mutex);
 	ke_mutex_release(&nc->mutex);
 
 	*out = found;
