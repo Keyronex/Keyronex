@@ -5,6 +5,8 @@
 
 #include "kdk/vm.h"
 
+struct vmp_forkpage;
+
 #define VMP_TABLE_LEVELS 4
 #define VMP_PAGE_SHIFT 12
 
@@ -20,6 +22,8 @@ enum software_pte_kind {
 	kSoftPteKindBusy,
 	/*! PTE is transitional between memory and disk; not in working set. */
 	kSoftPteKindTrans,
+	/*! PTE is a fork pointer. */
+	kSoftPteKindFork,
 };
 
 struct vmp_md_procstate {
@@ -152,6 +156,16 @@ vmp_md_pte_create_swap(pte_t *ppte, pfn_t pfn)
 }
 
 static inline void
+vmp_md_pte_create_fork(pte_t *ppte, struct vmp_forkpage *forkpage)
+{
+	pte_t pte;
+	pte.sw.valid = 0;
+	pte.sw.data = (uintptr_t)forkpage << 3;
+	pte.sw.kind = kSoftPteKindFork;
+	ppte->value = pte.value;
+}
+
+static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	pte->value = 0;
@@ -186,10 +200,12 @@ vmp_pte_characterise(pte_t *pte)
 		return kPTEKindBusy;
 	else if (pte->sw.kind == kSoftPteKindTrans)
 		return kPTEKindTrans;
-	else {
-		kassert(pte->sw.kind == kSoftPteKindSwap);
+	else if (pte->sw.kind == kSoftPteKindSwap)
 		return kPTEKindSwap;
-	}
+	else if (pte->sw.kind == kSoftPteKindFork)
+		return kPTEKindFork;
+	else
+		kfatal("Unexpected PTE kind\n");
 }
 
 static inline pfn_t
@@ -199,6 +215,13 @@ vmp_md_soft_pte_pfn(pte_t *pte)
 	    vmp_pte_characterise(pte) == kPTEKindTrans ||
 	    vmp_pte_characterise(pte) == kPTEKindSwap);
 	return pte->sw.data;
+}
+
+static inline struct vmp_forkpage *
+vmp_md_soft_pte_forkpage(pte_t *pte)
+{
+	kassert(vmp_pte_characterise(pte) == kPTEKindFork);
+	return (struct vmp_forkpage *)((uintptr_t)pte->sw.data >> 3);
 }
 
 /* new stuff */
@@ -212,6 +235,12 @@ static inline paddr_t
 vmp_pte_hw_paddr(pte_t *pte, int level)
 {
 	return (paddr_t)pte->hw.pfn << VMP_PAGE_SHIFT;
+}
+
+static inline void
+vmp_md_pte_hw_set_readonly(pte_t *pte)
+{
+	pte->hw.writeable = 0;
 }
 
 

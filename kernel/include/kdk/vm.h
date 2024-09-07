@@ -61,15 +61,14 @@ struct vm_stat {
 };
 
 enum vm_page_use {
-	kPageUseInvalid = 0,
-
+	kPageUseDeleted,
 	kPageUsePFNDB,
 	kPageUseFree,
-	kPageUseDeleted,
 	kPageUseKWired,
 	kPageUseAnonPrivate,
 	kPageUseFileShared,
 	kPageUseAnonShared,
+	kPageUseAnonFork,
 
 	/*! Page is a pagetable (leaf). */
 	kPageUsePML1,
@@ -169,6 +168,7 @@ enum vmp_pte_kind {
 	kPTEKindTrans,
 	kPTEKindSwap,
 	kPTEKindBusy,
+	kPTEKindFork,
 	kPTEKindValid,
 };
 
@@ -275,6 +275,8 @@ int vm_ps_dump_vadtree(vm_procstate_t *vmps);
 
 /*! Set up a new pagefile. */
 int vm_pagefile_add(struct vnode *vnode);
+
+int vm_fork(struct eprocess *parent, struct eprocess *child);
 
 extern struct vm_stat vmstat;
 

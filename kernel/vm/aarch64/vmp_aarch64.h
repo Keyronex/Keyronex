@@ -23,6 +23,8 @@ enum software_pte_kind {
 	kSoftPteKindBusy,
 	/*! PTE is transitional between memory and disk; not in working set. */
 	kSoftPteKindTrans,
+	/*! PTE is fork-transitional. */
+	kSoftPteKindFork,
 };
 
 struct vmp_md_procstate {

@@ -89,7 +89,7 @@ c_exception(md_intr_frame_t *iframe)
 		break;
 
 	case 0x80: /* trap #0 */
-		iframe->d0 = ex_syscall_dispatch(iframe->d0, iframe->d1,
+		iframe->d0 = ex_syscall_dispatch(frame, iframe->d0, iframe->d1,
 		    iframe->d2, iframe->d3, iframe->d4, iframe->d5, iframe->a0,
 		    &iframe->d1);
 		break;

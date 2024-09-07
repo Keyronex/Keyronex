@@ -508,7 +508,7 @@ ninep_inactive(vnode_t *vn)
 	ipl = ke_spinlock_acquire(&ubc_lock);
 	ke_spinlock_acquire_nospl(&fs->vfs->vnode_list_lock);
 
-	if (__atomic_load_n(&vn->refcount, __ATOMIC_ACQUIRE != 1) {
+	if (__atomic_load_n(&vn->refcount, __ATOMIC_ACQUIRE) != 1) {
 		/* Reference was made. Retry. */
 		ke_spinlock_release_nospl(&fs->vfs->vnode_list_lock);
 		ke_spinlock_release(&ubc_lock, ipl);

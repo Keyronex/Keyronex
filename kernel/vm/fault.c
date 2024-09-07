@@ -163,6 +163,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 
 		return kVMFaultRetRetry;
 
+	case kPTEKindFork:
 	case kPTEKindValid:
 	case kPTEKindSwap:
 	case kPTEKindTrans:
@@ -297,6 +298,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 
 		return 0;
 
+	case kPTEKindFork:
 	case kPTEKindTrans:
 		/* currently impossible? */
 		kfatal("impossible\n");
@@ -454,8 +456,9 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		 * writeable because of dirty-bit emulation.
 		 * - this is a CoW page - either object or forked.
 		 */
-
-		if (old_page->use == kPageUseAnonPrivate) {
+		if (old_page->use == kPageUseAnonFork) {
+			kfatal("Implement anon fork dirty fault\n");
+		} else if (old_page->use == kPageUseAnonPrivate) {
 			/* Dirty fault. */
 
 			vmp_md_pte_create_hw(state.pte,

@@ -124,7 +124,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		break;
 
 	case kIntVecSyscall:
-		frame->rax = ex_syscall_dispatch(frame->rax, frame->rdi,
+		frame->rax = ex_syscall_dispatch(frame, frame->rax, frame->rdi,
 		    frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9,
 		    &frame->rdi);
 		break;
