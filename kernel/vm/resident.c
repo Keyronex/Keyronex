@@ -550,6 +550,7 @@ vmp_page_release_locked(vm_page_t *page)
 			    vmp_md_soft_pte_pfn(thepte) == vm_page_pfn(page));
 		}
 
+		case kPageUseAnonFork:
 		case kPageUseFileShared:
 			/* continue with logic below */
 			break;

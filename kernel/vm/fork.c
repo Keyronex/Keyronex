@@ -7,6 +7,7 @@
 #include <kdk/kmem.h>
 #include <kdk/vm.h>
 
+#include "kern/ki.h"
 #include "vmp.h"
 
 struct fork_state {
@@ -235,6 +236,7 @@ vm_fork(eprocess_t *parent, eprocess_t *child)
 {
 	vm_map_entry_t *entry;
 	struct fork_state fork_state;
+	ipl_t ipl;
 
 	/*
 	 * First, acquire exclusively the map locks of parent.
@@ -278,6 +280,10 @@ vm_fork(eprocess_t *parent, eprocess_t *child)
 	kassert(fork_state.forkpage_index == fork_state.n_anonymous);
 
 	parent->vm->n_anonymous = 0;
+
+	ipl = vmp_acquire_pfn_lock();
+	ki_tlb_flush_globally();
+	vmp_release_pfn_lock(ipl);
 
 	ex_rwlock_release_write(&parent->vm->map_lock);
 

@@ -104,6 +104,10 @@ void ki_tlb_flush_vaddr_locally(uintptr_t vaddr);
  * @brief Flush a TLB entry for a given vaddr on every core.
  */
 void ki_tlb_flush_vaddr_globally(uintptr_t vaddr);
+/*!
+ * @brief Flush the entire TLB globally.
+ */
+void ki_tlb_flush_globally(void);
 
 void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
 
