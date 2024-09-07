@@ -354,6 +354,63 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 	return 0;
 }
 
+/*
+ * Routine for dirty faults on a forked page. The page is validly mapped and
+ * present in the working set at entry.
+ */
+static int
+vmp_do_fork_dirty_fault(eprocess_t *process, vm_procstate_t *vmps,
+    struct fault_info *area_info, struct vmp_pte_wire_state *state,
+    vaddr_t vaddr)
+{
+	vm_page_t *page = vmp_pte_hw_page(state->pte, 1);
+	struct vmp_forkpage *anon = page->owner;
+	vm_page_t *priv_page;
+	bool free = false;
+
+	if (anon->refcount == 1) {
+		pfn_t pfn = vmp_md_pte_hw_pfn(state->pte, 1);
+
+		priv_page = vm_paddr_to_page(vmp_pfn_to_paddr(pfn));
+		vmp_md_pte_create_hw(state->pte, pfn, true,
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
+		priv_page->use = kPageUseAnonPrivate;
+	} else {
+		int r = vmp_page_alloc_locked(&priv_page, kPageUseAnonPrivate,
+		    false);
+		if (r < 0) {
+			vmp_pte_wire_state_release(state, false);
+			vmp_release_pfn_lock(kIPLAST);
+			return kVMFaultRetPageShortage;
+		}
+
+		memcpy((void *)vm_page_direct_map_addr(priv_page),
+		    (void *)vm_page_direct_map_addr(page), PGSIZE);
+		vmp_md_pte_create_hw(state->pte, vm_page_pfn(priv_page), true,
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
+	}
+
+	priv_page->offset = vaddr / PGSIZE;
+	priv_page->referent_pte = V2P((vaddr_t)state->pte);
+	priv_page->process = process;
+
+	vmstat.nanonprivate++;
+	vmstat.nanonfork--;
+
+	vmps->n_anonymous++;
+
+	if (--anon->refcount == 0)
+		free = true;
+
+	vmp_pte_wire_state_release(state, false);
+	vmp_release_pfn_lock(kIPLAST);
+
+	if (free)
+		kmem_free(anon, sizeof(struct vmp_forkpage));
+
+	return 0;
+}
+
 int
 vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 {
@@ -457,7 +514,8 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		 * - this is a CoW page - either object or forked.
 		 */
 		if (old_page->use == kPageUseAnonFork) {
-			kfatal("Implement anon fork dirty fault\n");
+			r = vmp_do_fork_dirty_fault(process, vmps, &area_info,
+			    &state, vaddr);
 		} else if (old_page->use == kPageUseAnonPrivate) {
 			/* Dirty fault. */
 
