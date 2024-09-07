@@ -8,6 +8,7 @@
 #include <kdk/vm.h>
 
 #include "kern/ki.h"
+#include "vm/amd64/vmp_amd64.h"
 #include "vmp.h"
 
 struct fork_state {
@@ -36,8 +37,7 @@ is_private(pte_t *pte)
 
 	case kPTEKindValid: {
 		vm_page_t *page = vmp_pte_hw_page(pte, 1);
-		return page->use == kPageUseAnonPrivate ||
-		    page->use == kPageUseAnonFork;
+		return page->use == kPageUseAnonPrivate;
 
 	default:
 		kfatal("illegal\n");
@@ -77,13 +77,14 @@ convert_page(pfn_t pfn, struct vmp_forkpage *forkpage)
 {
 	vm_page_t *page = vm_paddr_to_page(vmp_pfn_to_paddr(pfn));
 
+	if (page->use != kPageUseAnonPrivate)
+		kprintf("page %p: not anon private!\n", page);
 	kassert(page->use == kPageUseAnonPrivate);
-	vmstat.nanonprivate--;
-	vmstat.nanonfork++;
 	vmstat.nanonprivate--;
 	vmstat.nanonfork++;
 	page->use = kPageUseAnonFork;
 	page->owner = forkpage;
+	page->referent_pte = V2P(&forkpage->pte);
 
 	vmp_md_pte_create_hw(&forkpage->pte, pfn, true, true, true, true);
 }
@@ -132,7 +133,11 @@ forkpage_retain(pte_t *pte)
 {
 	struct vmp_forkpage *forkpage;
 
-	forkpage = vmp_md_soft_pte_forkpage(pte);
+	if (!vmp_md_pte_is_valid(pte))
+		forkpage = vmp_md_soft_pte_forkpage(pte);
+	else
+		forkpage = vmp_pte_hw_page(pte, 1)->owner;
+
 	forkpage->refcount++;
 
 	return forkpage;

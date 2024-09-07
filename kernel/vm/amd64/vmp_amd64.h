@@ -160,7 +160,7 @@ vmp_md_pte_create_fork(pte_t *ppte, struct vmp_forkpage *forkpage)
 {
 	pte_t pte;
 	pte.sw.valid = 0;
-	pte.sw.data = (uintptr_t)forkpage << 3;
+	pte.sw.data = (uintptr_t)forkpage >> 3;
 	pte.sw.kind = kSoftPteKindFork;
 	ppte->value = pte.value;
 }
@@ -221,7 +221,7 @@ static inline struct vmp_forkpage *
 vmp_md_soft_pte_forkpage(pte_t *pte)
 {
 	kassert(vmp_pte_characterise(pte) == kPTEKindFork);
-	return (struct vmp_forkpage *)((uintptr_t)pte->sw.data >> 3);
+	return (struct vmp_forkpage *)((uintptr_t)pte->sw.data << 3);
 }
 
 /* new stuff */
