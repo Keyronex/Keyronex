@@ -169,6 +169,14 @@ ki_icache_synchronise_range(vaddr_t base, vaddr_t limit)
 void
 ki_tlb_flush_vaddr_locally(vaddr_t addr)
 {
+	if (addr == -1UL) {
+		asm volatile("dsb st\n\t"
+			     "tlbi vmalle1is\n\t"
+			     "dsb sy\n\t"
+			     "isb\n\t" ::
+				 : "memory");
+		return;
+	}
 	asm volatile("dsb st\n\t"
 		     "tlbi vaae1, %0\n\t"
 		     "dsb sy\n\t"
@@ -207,6 +215,11 @@ ki_tlb_flush_vaddr_globally(vaddr_t addr)
 		__asm__("isb");
 
 	ki_tlb_flush_vaddr_locally(addr);
+}
+
+void ki_tlb_flush_globally(void)
+{
+	ki_tlb_flush_vaddr_globally(-1UL);
 }
 
 void

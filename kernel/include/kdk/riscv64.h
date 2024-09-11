@@ -83,7 +83,7 @@ struct intr_entry {
 
 typedef struct md_pcb {
 	uintptr_t user_sp;
-	uintptr_t user_tp;
+	uintptr_t user_tp; /* UNUSED */
 	uintptr_t supervisor_sp;
 	riscv64_context_t *sp;
 	uint64_t fp[66];

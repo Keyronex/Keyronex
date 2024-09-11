@@ -4,7 +4,6 @@
 .global c_thread_trampoline
 
 #define TP_USER_SP 0*8
-#define TP_USER_TP 1*8
 #define TP_KERNEL_SP 2*8
 
 #define FRAME_RA 0*8

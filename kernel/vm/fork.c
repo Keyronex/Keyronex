@@ -8,7 +8,6 @@
 #include <kdk/vm.h>
 
 #include "kern/ki.h"
-#include "vm/amd64/vmp_amd64.h"
 #include "vmp.h"
 
 struct fork_state {

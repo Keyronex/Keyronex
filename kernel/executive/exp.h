@@ -7,7 +7,7 @@
 
 void ex_init(void *);
 
-uintptr_t ex_syscall_dispatch( md_intr_frame_t *frame, enum krx_syscall syscall, uintptr_t arg1,
+uintptr_t ex_syscall_dispatch(md_intr_frame_t *frame, enum krx_syscall syscall, uintptr_t arg1,
     uintptr_t arg2, uintptr_t arg3, uintptr_t arg4, uintptr_t arg5,
     uintptr_t arg6, uintptr_t *out1);
 
