@@ -163,6 +163,7 @@ do_file_read(eprocess_t *process, vm_procstate_t *vmps,
 
 		return kVMFaultRetRetry;
 
+	case kPTEKindFork:
 	case kPTEKindValid:
 	case kPTEKindSwap:
 	case kPTEKindTrans:
@@ -297,6 +298,7 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 
 		return 0;
 
+	case kPTEKindFork:
 	case kPTEKindTrans:
 		/* currently impossible? */
 		kfatal("impossible\n");
@@ -344,6 +346,204 @@ vmp_do_obj_fault(eprocess_t *process, vm_procstate_t *vmps,
 	}
 
 	/* this effectively steals the reference we have on the page */
+	r = vmp_wsl_insert(vmps, vaddr, true);
+	if (r == NIL_WSE) {
+		kfatal("Working set insertion failed - evict & unref page!!\n");
+	}
+
+	return 0;
+}
+
+/*!
+ * Routine for dirty faults on a forked page. The page is validly mapped and
+ * present in the working set at entry.
+ * @pre Map rwlock held read, working set mutex held, PFN lock held.
+ * @post PFN lock released.
+ */
+static int
+vmp_do_fork_dirty_fault(eprocess_t *process, vm_procstate_t *vmps,
+    struct fault_info *area_info, struct vmp_pte_wire_state *state,
+    vaddr_t vaddr)
+{
+	vm_page_t *page = vmp_pte_hw_page(state->pte, 1);
+	struct vmp_forkpage *anon = page->owner;
+	vm_page_t *priv_page;
+	bool free = false;
+
+	if (anon->refcount == 1) {
+		pfn_t pfn = vmp_md_pte_hw_pfn(state->pte, 1);
+
+		priv_page = vm_paddr_to_page(vmp_pfn_to_paddr(pfn));
+		vmp_md_pte_create_hw(state->pte, pfn, true,
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
+		priv_page->use = kPageUseAnonPrivate;
+		vmstat.nanonprivate++;
+	} else {
+		int r = vmp_page_alloc_locked(&priv_page, kPageUseAnonPrivate,
+		    false);
+		if (r < 0) {
+			vmp_pte_wire_state_release(state, false);
+			vmp_release_pfn_lock(kIPLAST);
+			return kVMFaultRetPageShortage;
+		}
+
+		memcpy((void *)vm_page_direct_map_addr(priv_page),
+		    (void *)vm_page_direct_map_addr(page), PGSIZE);
+		vmp_md_pte_create_hw(state->pte, vm_page_pfn(priv_page), true,
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
+	}
+
+	priv_page->offset = vaddr / PGSIZE;
+	priv_page->referent_pte = V2P((vaddr_t)state->pte);
+	priv_page->process = process;
+
+	vmps->n_anonymous++;
+
+	if (--anon->refcount == 0) {
+		free = true;
+		vmstat.nanonfork--;
+	}
+
+	vmp_pte_wire_state_release(state, false);
+	vmp_release_pfn_lock(kIPLAST);
+
+	if (free)
+		kmem_free(anon, sizeof(struct vmp_forkpage));
+
+	return 0;
+}
+
+/*!
+ * Routine for read faults on a forked page. The page is not yet mapped validly.
+ * @pre Map rwlock held read, working set mutex held, PFN lock held.
+ * @post PFN lock released.
+ */
+static int
+vmp_do_fork_fault(eprocess_t *process, vm_procstate_t *vmps,
+    struct fault_info *area_info, struct vmp_pte_wire_state *state,
+    vaddr_t vaddr)
+{
+	int r;
+	struct vmp_forkpage *anon = vmp_md_soft_pte_forkpage(state->pte);
+
+	switch (vmp_pte_characterise(&anon->pte)) {
+	case kPTEKindValid: {
+
+		pfn_t pfn = vmp_md_pte_hw_pfn(&anon->pte, 1);
+		vm_page_t *page = vm_paddr_to_page(vmp_pfn_to_paddr(pfn));
+
+		vmp_page_retain_locked(page);
+		vmp_md_pte_create_hw(state->pte, pfn, false,
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
+
+		vmp_pte_wire_state_release(state, false);
+		vmp_release_pfn_lock(kIPLAST);
+		break;
+	}
+
+	case kPTEKindSwap: {
+
+		/* logic is from do_file_read - see comments there */
+
+		io_off_t file_byteoffset;
+		vnode_t *vnode;
+		vm_mdl_t *mdl;
+		iop_t *iop;
+		struct vmp_pager_state *pgstate;
+		vm_page_t *page;
+		pfn_t drumslot;
+		vm_page_t *pml1_page = state->pgtable_pages[0];
+
+		vnode = pagefile_vnode;
+		drumslot = vmp_md_soft_pte_pfn(&anon->pte);
+		file_byteoffset = drumslot * PGSIZE;
+
+		r = vmp_page_alloc_locked(&page, kPageUseAnonFork, false);
+		if (r != 0) {
+			vmp_pte_wire_state_release(state, false);
+			vmp_release_pfn_lock(kIPLAST);
+			return kVMFaultRetPageShortage;
+		}
+
+		pgstate = kmem_xalloc(sizeof(*pgstate), kVMemPFNDBHeld);
+		kassert(r == 0);
+
+		pgstate->refcnt = 1;
+		pgstate->vpfn = (vaddr / PGSIZE);
+		pgstate->length = 1;
+		ke_event_init(&pgstate->event, false);
+
+		page->pager_request = pgstate;
+		page->owner = anon;
+		page->offset = -1;
+		page->dirty = false;
+		page->referent_pte = V2P((vaddr_t)&anon->pte);
+		page->drumslot = drumslot;
+
+		/* create busy PTEs in the prototype and anon PTEs */
+		vmp_md_pte_create_busy(&anon->pte, vm_page_pfn(page));
+		vmp_md_pte_create_busy(state->pte, vm_page_pfn(page));
+		vmp_pagetable_page_noswap_pte_created(vmps, pml1_page, false);
+
+		/* additional retain to keep PTE pointer valid */
+		vmp_page_retain_locked(state->pgtable_pages[0]);
+
+		vmp_pte_wire_state_release(state, false);
+		vmp_release_pfn_lock(kIPLAST);
+
+		area_info->map_lock_held = false;
+		ex_rwlock_release_read(&vmps->map_lock);
+		ke_mutex_release(&vmps->ws_mutex);
+
+		mdl = &pgstate->mdl;
+		mdl->nentries = 1;
+		mdl->offset = 0;
+		mdl->write = true;
+		mdl->pages[0] = page;
+		vmp_page_dcache_flush_pre_readin(page);
+		iop = iop_new_vnode_read(vnode, mdl, PGSIZE, file_byteoffset);
+
+		iop_send_sync(iop);
+		iop_free(iop);
+
+		vmp_page_dcache_flush_post_readin(page);
+
+		/*
+		 * we don't need the map_lock, any unmapper will be waiting on
+		 * our busy page
+		 */
+
+		KE_WAIT(&vmps->ws_mutex, false, false, -1);
+		vmp_acquire_pfn_lock();
+
+		kassert(
+		    vm_pfn_to_page(vmp_md_soft_pte_pfn(state->pte)) == page);
+		vmp_md_pte_create_hw(&anon->pte, vm_page_pfn(page), true, true,
+		    true, true);
+
+		kassert(vmp_pte_characterise(state->pte) == kPTEKindBusy);
+
+		if (area_info->executable)
+			vmp_page_sync_icache(page);
+
+		vmp_md_pte_create_hw(state->pte, vm_page_pfn(page), false,
+		    area_info->executable, true, vaddr <= HIGHER_HALF);
+
+		/* reference was taken to preserve pages containing PTE */
+		vmp_page_release_locked(state->pgtable_pages[0]);
+		vmp_release_pfn_lock(kIPLAST);
+
+		/* now release waiters */
+		ke_event_signal(&pgstate->event);
+		vmp_pager_state_release(pgstate);
+
+		break;
+	}
+
+	default:
+		kfatal("Impossible\n");
+	}
+
 	r = vmp_wsl_insert(vmps, vaddr, true);
 	if (r == NIL_WSE) {
 		kfatal("Working set insertion failed - evict & unref page!!\n");
@@ -454,8 +654,10 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		 * writeable because of dirty-bit emulation.
 		 * - this is a CoW page - either object or forked.
 		 */
-
-		if (old_page->use == kPageUseAnonPrivate) {
+		if (old_page->use == kPageUseAnonFork) {
+			r = vmp_do_fork_dirty_fault(process, vmps, &area_info,
+			    &state, vaddr);
+		} else if (old_page->use == kPageUseAnonPrivate) {
 			/* Dirty fault. */
 
 			vmp_md_pte_create_hw(state.pte,
@@ -727,6 +929,9 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 
 		/* and let the collided fault be retried. */
 		return kVMFaultRetRetry;
+	} else if (pte_kind == kPTEKindFork) {
+
+		r = vmp_do_fork_fault(process, vmps, &area_info, &state, vaddr);
 	} else {
 		kfatal("Unexpected PTE state %d\n", pte_kind);
 	}

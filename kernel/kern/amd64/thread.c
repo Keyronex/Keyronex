@@ -71,7 +71,13 @@ volatile uint32_t invlpg_done;
 void
 ki_tlb_flush_vaddr_locally(vaddr_t addr)
 {
-	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
+	if (addr == -1UL) {
+		write_cr3(read_cr3());
+	} else
+		asm volatile("invlpg %0"
+			     :
+			     : "m"(*((const char *)addr))
+			     : "memory");
 }
 
 void
@@ -99,7 +105,13 @@ ki_tlb_flush_vaddr_globally(vaddr_t addr)
 	while (__atomic_load_n(&invlpg_done, __ATOMIC_ACQUIRE) != ncpus)
 		__asm__("pause");
 
-	asm volatile("invlpg %0" : : "m"(*((const char *)addr)) : "memory");
+	ki_tlb_flush_vaddr_locally(addr);
+}
+
+void
+ki_tlb_flush_globally(void)
+{
+	ki_tlb_flush_vaddr_globally(-1UL);
 }
 
 void

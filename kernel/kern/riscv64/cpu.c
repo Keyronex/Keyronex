@@ -75,10 +75,21 @@ ki_tlb_flush_vaddr_locally(vaddr_t addr)
 	asm volatile("sfence.vma %0" : : "r"(addr) : "memory");
 }
 
+void ki_tlb_flush_locally(void)
+{
+	asm volatile("sfence.vma zero" ::: "memory");
+}
+
 void
 ki_tlb_flush_vaddr_globally(vaddr_t addr)
 {
 	ki_tlb_flush_vaddr_locally(addr);
+}
+
+void
+ki_tlb_flush_globally(void)
+{
+	ki_tlb_flush_locally();
 }
 
 void

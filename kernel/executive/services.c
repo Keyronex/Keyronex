@@ -120,10 +120,25 @@ krx_thread_exit(void)
 	ps_exit_this_thread();
 }
 
+static pid_t
+krx_fork(md_intr_frame_t *frame)
+{
+	eprocess_t *newproc;
+	int r;
+
+	r = ps_process_create(&newproc, true);
+	if (r != 0)
+		return r;
+
+	r = vm_fork(ex_curproc(), newproc);
+
+	kfatal("unimplemented!\n");
+}
+
 uintptr_t
-ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
-    uintptr_t arg3, uintptr_t arg4, uintptr_t arg5, uintptr_t arg6,
-    uintptr_t *out1)
+ex_syscall_dispatch(md_intr_frame_t *frame, enum krx_syscall syscall,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
+    uintptr_t arg5, uintptr_t arg6, uintptr_t *out1)
 {
 	switch (syscall) {
 	case kKrxDebugMessage: {
@@ -205,6 +220,9 @@ ex_syscall_dispatch(enum krx_syscall syscall, uintptr_t arg1, uintptr_t arg2,
 
 	case kKrxFutexWake:
 		return krx_futex_wake((int *)arg1);
+
+	case kKrxFork:
+		return krx_fork(frame);
 
 	default:
 		kfatal("unhandled syscall %d\n", syscall);

@@ -120,8 +120,9 @@ common_sync(md_intr_frame_t *frame)
 
 	switch (esr.generic.EC) {
 	case 0x15: /* svc*/ {
-		frame->x0 = ex_syscall_dispatch(frame->x0, frame->x1, frame->x2,
-		    frame->x3, frame->x4, frame->x5, frame->x6, &frame->x1);
+		frame->x0 = ex_syscall_dispatch(frame, frame->x0, frame->x1,
+		    frame->x2, frame->x3, frame->x4, frame->x5, frame->x6,
+		    &frame->x1);
 		break;
 	}
 

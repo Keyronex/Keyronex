@@ -83,8 +83,10 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 	case kPageUsePML2:
 	case kPageUsePML3:
 	case kPageUsePML4:
-	case kPageUseAnonShared:
 		kassert(vmp_pte_characterise(page_pte) == kPTEKindTrans);
+		/* fall through; no trans proto PTEs, at least not yet... */
+	case kPageUseAnonShared:
+	case kPageUseAnonFork:
 		anon = true;
 		frame->dev = pagefile.vnode->vfs->device;
 		frame->vnode = pagefile.vnode;

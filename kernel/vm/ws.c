@@ -393,6 +393,14 @@ vmp_page_evict(vm_procstate_t *vmps, pte_t *pte, vm_page_t *pte_page,
 		vmp_page_release_locked(page);
 		break;
 
+	case kPageUseAnonFork:
+		vmp_md_pte_create_fork(pte, page->owner);
+		vmp_pagetable_page_pte_became_swap(vmps, pte_page);
+		ki_tlb_flush_vaddr_globally(vaddr);
+		vmp_page_clean_dcache_postevict(page);
+		vmp_page_release_locked(page);
+		break;
+
 	default:
 		kfatal("Unhandled page use in working set eviction\n");
 	}

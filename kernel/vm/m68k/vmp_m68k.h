@@ -21,7 +21,7 @@
 #define VMP_LEVEL_2_STEP 16
 #define VMP_LEVEL_1_ENTRIES 1024
 
-struct vmp_pager_state;
+struct vmp_forkpage;
 
 enum software_pte_kind {
 	/*! PTE represents an address in swap. */
@@ -30,6 +30,7 @@ enum software_pte_kind {
 	kSoftPteKindBusy,
 	/*! PTE is transitional between memory and disk; not in working set. */
 	kSoftPteKindTrans,
+	kSoftPteKindFork,
 };
 
 struct vmp_md_procstate {
@@ -74,6 +75,8 @@ vmp_pte_characterise(pte_t *pte)
 		return kPTEKindBusy;
 	else if (pte->sw.kind == kSoftPteKindTrans)
 		return kPTEKindTrans;
+	else if (pte->sw.kind == kSoftPteKindFork)
+		return kPTEKindFork;
 	else {
 		kassert(pte->sw.kind == kSoftPteKindSwap);
 		return kPTEKindSwap;
@@ -131,11 +134,19 @@ vmp_md_pte_create_swap(pte_t *pte, pfn_t swapdesc)
 }
 
 static inline void
+vmp_md_pte_create_fork(pte_t *pte, struct vmp_forkpage *forkpage)
+{
+	uintptr_t value = ((uintptr_t)forkpage - HIGHER_HALF) >> 3;
+	pte->sw.type = 0;
+	pte->sw.data = value;
+	pte->sw.kind = kSoftPteKindFork;
+}
+
+static inline void
 vmp_md_pte_create_zero(pte_t *pte)
 {
 	pte->value = 0;
 }
-
 
 static inline bool
 vmp_md_pte_hw_is_large(pte_t *pte, int level)
@@ -180,6 +191,12 @@ vmp_md_hw_pte_is_writeable(pte_t *pte)
 	return pte->hw_pml1_040.writeprotect == 0;
 }
 
+static inline void
+vmp_md_pte_hw_set_readonly(pte_t *pte)
+{
+	pte->hw_pml1_040.writeprotect = 1;
+}
+
 static inline pfn_t
 vmp_md_soft_pte_pfn(pte_t *pte)
 {
@@ -187,6 +204,13 @@ vmp_md_soft_pte_pfn(pte_t *pte)
 	    vmp_pte_characterise(pte) == kPTEKindTrans ||
 	    vmp_pte_characterise(pte) == kPTEKindSwap);
 	return pte->sw.data;
+}
+
+static inline struct vmp_forkpage *
+vmp_md_soft_pte_forkpage(pte_t *pte)
+{
+	kassert(vmp_pte_characterise(pte) == kPTEKindFork);
+	return (struct vmp_forkpage *)(HIGHER_HALF + (pte->sw.data << 3));
 }
 
 static inline void

@@ -19,8 +19,9 @@ c_trap(md_intr_frame_t *frame)
 
 	case 8: {
 		ki_set_interrupts(1);
-		frame->a0 = ex_syscall_dispatch(frame->a0, frame->a1, frame->a2,
-		    frame->a3, frame->a4, frame->a5, frame->a6, &frame->a1);
+		frame->a0 = ex_syscall_dispatch(frame, frame->a0, frame->a1,
+		    frame->a2, frame->a3, frame->a4, frame->a5, frame->a6,
+		    &frame->a1);
 		frame->sepc += 4;
 		ki_disable_interrupts();
 		return;

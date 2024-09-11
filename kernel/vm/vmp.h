@@ -281,6 +281,8 @@ void vmp_pager_state_release(struct vmp_pager_state *state);
 /*! @brief Early initialisation of the kernel VM map. */
 void vmp_pmm_init(void);
 
+RB_PROTOTYPE(vm_map_entry_rbtree, vm_map_entry, rb_entry, vmp_vad_cmp);
+
 extern kspinlock_t vmp_pfn_lock;
 
 extern struct vmem vmem_kern_nonpaged;

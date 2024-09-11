@@ -44,13 +44,25 @@ ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
 void
 ki_tlb_flush_vaddr_locally(uintptr_t vaddr)
 {
-	asm volatile("pflush (%0)" : : "a"(vaddr));
+	asm volatile("pflush (%0)" : : "a"(vaddr) : "memory");
 }
 
 void
 ki_tlb_flush_vaddr_globally(uintptr_t vaddr)
 {
-	asm volatile("pflush (%0)" : : "a"(vaddr));
+	ki_tlb_flush_vaddr_locally(vaddr);
+}
+
+void
+ki_tlb_flush_locally(void)
+{
+	asm volatile("pflusha" : : : "memory");
+}
+
+void
+ki_tlb_flush_globally(void)
+{
+	ki_tlb_flush_locally();
 }
 
 void

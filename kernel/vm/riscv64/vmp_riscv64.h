@@ -24,6 +24,8 @@
 #define VMP_LEVEL_2_ENTRIES 512
 #define VMP_LEVEL_1_ENTRIES 512
 
+struct vmp_forkpage;
+
 enum software_pte_kind {
 	/*! PTE represents an address in swap. */
 	kSoftPteKindSwap,
@@ -31,6 +33,7 @@ enum software_pte_kind {
 	kSoftPteKindBusy,
 	/*! PTE is transitional between memory and disk; not in working set. */
 	kSoftPteKindTrans,
+	kSoftPteKindFork,
 };
 
 struct vmp_md_procstate {
@@ -119,6 +122,16 @@ vmp_md_pte_create_swap(pte_t *ppte, pfn_t pfn)
 }
 
 static inline void
+vmp_md_pte_create_fork(pte_t *ppte, struct vmp_forkpage *forkpage)
+{
+	pte_t pte;
+	pte.sw.valid = 0;
+	pte.sw.data = (uintptr_t)forkpage >> 3;
+	pte.sw.kind = kSoftPteKindFork;
+	ppte->value = pte.value;
+}
+
+static inline void
 vmp_md_pte_create_zero(pte_t *ppte)
 {
 	pte_t pte;
@@ -153,6 +166,12 @@ vmp_md_hw_pte_is_writeable(pte_t *pte)
 	return pte->hw.write == 1;
 }
 
+static inline void
+vmp_md_pte_hw_set_readonly(pte_t *pte)
+{
+	pte->hw.write = 0;
+}
+
 static inline enum vmp_pte_kind
 vmp_pte_characterise(pte_t *pte)
 {
@@ -164,6 +183,8 @@ vmp_pte_characterise(pte_t *pte)
 		return kPTEKindBusy;
 	else if (pte->sw.kind == kSoftPteKindTrans)
 		return kPTEKindTrans;
+	else if (pte->sw.kind == kSoftPteKindFork)
+		return kPTEKindFork;
 	else {
 		kassert(pte->sw.kind == kSoftPteKindSwap);
 		return kPTEKindSwap;
@@ -177,6 +198,13 @@ vmp_md_soft_pte_pfn(pte_t *pte)
 	    vmp_pte_characterise(pte) == kPTEKindTrans ||
 	    vmp_pte_characterise(pte) == kPTEKindSwap);
 	return pte->sw.data;
+}
+
+static inline struct vmp_forkpage *
+vmp_md_soft_pte_forkpage(pte_t *pte)
+{
+	kassert(vmp_pte_characterise(pte) == kPTEKindFork);
+	return (struct vmp_forkpage *)((uintptr_t)pte->sw.data << 3);
 }
 
 /* new stuff */
