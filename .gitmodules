@@ -3,8 +3,8 @@
 	url = ../../Keyronex/mlibc
 [submodule "vendor/limine"]
 	path = vendor/limine
-	url = https://github.com/limine-bootloader/limine.git
-	branch = v7.x-binary
+	url = ../../Keyronex/limine
+	branch = v8.x-binary
 [submodule "vendor/uacpi"]
 	path = vendor/uacpi
 	url = https://github.com/UltraOS/uACPI.git
