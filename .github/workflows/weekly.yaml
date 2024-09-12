@@ -1,4 +1,4 @@
-name: Weekly Keyronex build
+name: Weekly Build
 
 on:
   workflow_dispatch:
@@ -7,70 +7,25 @@ on:
 
 jobs:
   build-amd64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+    name: amd64-build
+    uses: ./.github/workflows/weekly-common.yaml
+    with:
+      arch: amd64
 
-      - name: Clone submodules
-        run: git submodule update --init
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            autopoint \
-            gettext \
-            git \
-            gperf \
-            help2man \
-            libgmp-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libtool \
-            m4 \
-            meson \
-            pkg-config \
-            python3 \
-            python3-mako \
-            python3-pip \
-            texinfo \
-            yacc \
-            xorriso
-          sudo pip install xbstrap
-
-      - name: Build everything
-        run: make all ARCH=amd64
   build-m68k:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+    name: build-m68k
+    uses: ./.github/workflows/weekly-common.yaml
+    with:
+      arch: m68k
 
-      - name: Clone submodules
-        run: git submodule update --init
+  build-riscv:
+    name: build-riscv
+    uses: ./.github/workflows/weekly-common.yaml
+    with:
+      arch: riscv64
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            autopoint \
-            gettext \
-            git \
-            gperf \
-            help2man \
-            libgmp-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libtool \
-            m4 \
-            meson \
-            pkg-config \
-            python3 \
-            python3-mako \
-            python3-pip \
-            texinfo \
-            yacc \
-            xorriso
-          sudo pip install xbstrap
-
-      - name: Build everything
-        run: make all ARCH=m68k
+  build-aarch64:
+    name: build-aarch64
+    uses: ./.github/workflows/weekly-common.yaml
+    with:
+      arch: aarch64
