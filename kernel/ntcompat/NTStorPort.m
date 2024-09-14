@@ -252,16 +252,12 @@ intx_handler(md_intr_frame_t *frame, void *arg)
 	DKDevLog(self, "Calling HwInitialize\n");
 	BOOLEAN suc = driver->hwinit.HwInitialize(m_HwDeviceExtension);
 
-#ifdef __amd64
 	r = [[platformDevice platformInterruptController]
 	    handleSource:&info->intx_source
 	     withHandler:intx_handler
 		argument:m_deviceExtension
 	      atPriority:kIPLHigh
 		   entry:&m_intxEntry];
-#else
-	r = -1;
-#endif
 	kassert(r == 0);
 
 	if (devExt->passive_init != NULL) {

@@ -11,21 +11,22 @@
 #include "kdk/object.h"
 #include "vm/vmp.h"
 
-struct sbi_return_t {
+typedef struct sbi_return {
 	uintptr_t err, ret;
-};
+} sbi_return_t;
 
-void
+sbi_return_t
 sbi_ecall1(int ext, int func, uintptr_t arg0)
 {
-	struct sbi_return_t ret;
 	register uintptr_t a7 asm("a7") = ext;
 	register uintptr_t a6 asm("a6") = func;
 	register uintptr_t a0 asm("a0") = arg0;
 	register uintptr_t a1 asm("a1");
-	asm volatile("ecall" : "+r"(a0), "=r"(a1) : "r"(a7), "r"(a6));
-	ret.err = a0;
-	ret.ret = a1;
+	asm volatile("ecall"
+		     : "+r"(a0), "=r"(a1)
+		     : "r"(a7), "r"(a6)
+		     : "memory");
+	return (sbi_return_t) { a0, a1 };
 }
 
 void

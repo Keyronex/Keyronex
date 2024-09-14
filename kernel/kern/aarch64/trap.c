@@ -5,6 +5,8 @@
 #include "kdk/libkern.h"
 #include "vm/vmp.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 struct __attribute__((packed)) aarch64_esr {
 	union {
 		struct {

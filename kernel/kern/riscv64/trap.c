@@ -9,6 +9,8 @@
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 void
 c_trap(md_intr_frame_t *frame)
 {

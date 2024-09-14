@@ -122,7 +122,7 @@ smp_allocate(void)
 	cpus = kmem_alloc(sizeof(kcpu_t *) * ncpus);
 	threads = kmem_alloc(sizeof(kthread_t *) * ncpus);
 
-	kprintf("%lu cpus\n", ncpus);
+	kprintf("%zu cpus\n", ncpus);
 	kassert(ncpus <= 64);
 
 #if !defined(__m68k__)

@@ -10,4 +10,4 @@
 #include <kdk/kern.h>
 #include <kdk/vm.h>
 
-static kmutex_t kpaged_mutex = KMUTEX_INITIALIZER(kpaged_mutex)
+static kmutex_t kpaged_mutex = KMUTEX_INITIALIZER(kpaged_mutex);

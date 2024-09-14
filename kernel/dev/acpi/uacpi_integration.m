@@ -491,6 +491,8 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
 		      atPriority:kIPLHigh
 			   entry:&entry->entry];
 #else
+	(void)source;
+	(void)uacpi_intr_handler;
 	kprintf("uacpi_install_interrupt_handler\n");
 	r = 0;
 #endif

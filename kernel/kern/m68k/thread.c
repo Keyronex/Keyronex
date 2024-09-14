@@ -84,5 +84,5 @@ ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 		     "rte\n"
 		     :
 		     : "a"(sp), "a"(ip), "a"(sr)
-		     : "sp", "memory");
+		     : "memory");
 }

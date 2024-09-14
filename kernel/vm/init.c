@@ -302,8 +302,9 @@ map_hhdm(void)
 			type = "unknown";
 		}
 
-		kprintf("Entry %zu: %p-%p, type %s\n", i, (void *)entry->base,
-		    (void *)(entry->base + entry->length), type);
+		kprintf("Entry %zu: %zu-%zu, type %s\n", i,
+		    (uintptr_t)entry->base,
+		    (uintptr_t)(entry->base + entry->length), type);
 
 		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
 		    entry->type != LIMINE_MEMMAP_USABLE)
