@@ -68,6 +68,7 @@ void plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread, struct lim
 	ke_spinlock_acquire_nospl(&early_map_lock);
 	r = vm_ps_map_physical_view(kernel_process->vm, &cpu->cpucb.lapic_base,
 	    PGSIZE, lapic_base, kVMAll, kVMAll, false);
+	kassert(r == 0);
 	ke_spinlock_release_nospl(&early_map_lock);
 	lapic_enable(0xff);
 	setup_cpu_gdt(cpu);

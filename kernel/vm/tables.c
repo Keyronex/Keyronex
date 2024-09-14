@@ -626,6 +626,9 @@ vmp_unmap_range(vm_procstate_t *vmps, vaddr_t start, vaddr_t end)
 			break;
 		}
 
+		case kPTEKindFork:
+			kfatal("Not handled yet\n");
+
 		case kPTEKindZero:
 			continue;
 		}

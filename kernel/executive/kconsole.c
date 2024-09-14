@@ -131,8 +131,6 @@ console_read(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 
 	ke_spinlock_release(&console_lock, ipl);
 
-	kprintf("\n\nConsole Read %d\n\n", nread);
-
 	return io_result(0, nread);
 }
 

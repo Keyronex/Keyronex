@@ -129,7 +129,7 @@ smp_allocate(void)
 	for (size_t i = 0; i < ncpus; i++) {
 		struct limine_smp_info *smpi = smpr->cpus[i];
 
-		kprintf("%zu: SMPI ID %lx\n", i, smpi->SMPI_ID);
+		kprintf("%zu: SMPI ID %zx\n", i, (uintptr_t)smpi->SMPI_ID);
 
 		if (smpi->SMPI_ID == smpr->SMPR_BSP_ID) {
 			smpi->extra_argument = (uint64_t)&bootstrap_cpu;

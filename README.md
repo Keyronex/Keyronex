@@ -31,8 +31,7 @@ apps such as Twm and Xeyes, and the Links text-mode web browser. ]*
 
 [Mintia]: https://github.com/limnarch/mintia
 
-[^1]: The AArch64 port has only had limited testing, and userland code execution
-  only works with a workaround for unknown-ESR exceptions.
+[^1]: The AArch64 port has only had limited testing.
 
 [^2]: The RISC-V 64 port has only been tested under QEMU with `-M virt` and does
   not support SMP yet.
@@ -58,6 +57,9 @@ of Keyronex:
   - [x] Working set-based local page replacement.
   - [x] Page-out of anonymous and file pages, including page tables themselves.
   - [x] Mapped file cache for coherent cached read/write of files.
+  - [x] VM "Fork" operation.
+  - [ ] (not yet started) Proactive writeback for cached files.
+  - [ ] (incomplete) Kernel paged heap allocation.
   - [ ] (incomplete) Global 2nd-chance page queues with balancing and writeback.
 
 - Executive Services
@@ -85,7 +87,7 @@ of Keyronex:
   - [ ] (incomplete) IOP-based socket framework with async send, receive,
   connect, etc.
   - [ ] (incomplete) Kernel debugging GDB port over UDP.
-
+  - [ ] (not yet started) Extended Berkeley Packet Filter (e-BPF).
 - POSIX subsystem server:
   - [ ] (not yet started) Processes, process groups, sessions, TTYs, etc.
 

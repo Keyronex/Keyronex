@@ -116,7 +116,7 @@ int ex_work_enqueue(ex_work_t *work);
 	ex_rwlock_release_read(RWLOCK_)
 
 void ps_early_init(kthread_t *thread0);
-int ps_process_create(eprocess_t **out, bool fork);
+int ps_process_create(eprocess_t **out, eprocess_t *fork);
 int ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
     void *arg, eprocess_t *process);
 int ps_create_kernel_thread(kthread_t **out, const char *name,

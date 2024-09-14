@@ -180,6 +180,7 @@ boot_map_l2(uintptr_t vaddr, uintptr_t paddr, vm_protection_t prot,
 	    prot & kVMExecute, cacheable, false);
 }
 
+#if 0
 static void
 boot_map_l3(uintptr_t vaddr, uintptr_t paddr, vm_protection_t prot,
     bool cacheable)
@@ -189,13 +190,14 @@ boot_map_l3(uintptr_t vaddr, uintptr_t paddr, vm_protection_t prot,
 	vmp_md_pte_create_hwl3(pte, paddr >> VMP_PAGE_SHIFT, prot & kVMWrite,
 	    prot & kVMExecute, cacheable, false);
 }
+#endif
 
 static void
 map_pfndb(void)
 {
 	struct limine_memmap_entry **entries = memmap_request.response->entries;
 	struct limine_memmap_entry *prev = NULL, *largest = NULL;
-	size_t required_pages = 0;
+	size_t rpt_pages = 0;
 
 	for (size_t i = 0; i < memmap_request.response->entry_count; i++) {
 		struct limine_memmap_entry *entry = entries[i];
@@ -214,12 +216,11 @@ map_pfndb(void)
 
 		if (prev && roundedDownStart < prevRoundedUpEnd) {
 			if (roundedUpEnd > prevRoundedUpEnd) {
-				required_pages += (roundedUpEnd -
-						      prevRoundedUpEnd) /
+				rpt_pages += (roundedUpEnd - prevRoundedUpEnd) /
 				    pfndb_page_describes;
 			}
 		} else {
-			required_pages += (roundedUpEnd - roundedDownStart) /
+			rpt_pages += (roundedUpEnd - roundedDownStart) /
 			    pfndb_page_describes;
 		}
 
@@ -231,7 +232,7 @@ map_pfndb(void)
 
 	bump_start = ROUNDUP(largest->base, pfndb_pgsize);
 	bump_large_base = bump_start;
-	bump_large_end = bump_large_base + pfndb_pgsize * required_pages;
+	bump_large_end = bump_large_base + pfndb_pgsize * rpt_pages;
 	bump_small_base = bump_large_end;
 
 	kpgtable = boot_alloc();
@@ -272,9 +273,6 @@ map_pfndb(void)
 
 		prev = entry;
 	}
-
-	kprintf("Total 128MiB blocks required: %zu\n", required_pages);
-	kprintf("Kernel table: %p\n", kpgtable);
 }
 
 static void

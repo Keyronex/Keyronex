@@ -126,13 +126,15 @@ krx_fork(md_intr_frame_t *frame)
 	eprocess_t *newproc;
 	int r;
 
-	r = ps_process_create(&newproc, true);
+	r = ps_process_create(&newproc, ex_curproc());
 	if (r != 0)
 		return r;
 
-	r = vm_fork(ex_curproc(), newproc);
-
+#if 0
 	kfatal("unimplemented!\n");
+#endif
+
+	return -ENOSYS;
 }
 
 uintptr_t

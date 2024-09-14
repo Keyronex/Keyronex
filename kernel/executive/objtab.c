@@ -14,12 +14,11 @@
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
+#include "kdk/misc.h"
 #include "kdk/object.h"
 #include "object.h"
 
 #define KRX_RCU
-
-typedef uint32_t bitmap_32_t;
 
 struct objtab_entries {
 	krcu_entry_t rcu_entry;
@@ -46,36 +45,6 @@ struct ex_object_space {
 
 	struct objtab_entries KRX_RCU *entries;
 };
-
-static inline bool
-bit32_test(bitmap_32_t *bitmap, uint32_t bit)
-{
-	return (bitmap[bit / 32] & (1 << (bit % 32))) != 0;
-}
-
-static inline void
-bit32_set(bitmap_32_t *bitmap, uint32_t bit)
-{
-	bitmap[bit / 32] |= (1 << (bit % 32));
-}
-
-static inline void
-bit32_clear(bitmap_32_t *bitmap, uint32_t bit)
-{
-	bitmap[bit / 32] &= ~(1 << (bit % 32));
-}
-
-static inline size_t
-bit32_size(size_t n_bits)
-{
-	return (n_bits + 31) / 32 * sizeof(bitmap_32_t);
-}
-
-static inline uint32_t
-bit32_nelem(size_t n_bits)
-{
-	return (n_bits + 31) / 32;
-}
 
 ex_object_space_t *
 ex_object_space_create(void)

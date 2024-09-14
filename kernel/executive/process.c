@@ -71,7 +71,7 @@ ps_exit_this_thread(void)
 }
 
 int
-ps_process_create(eprocess_t **out, bool fork)
+ps_process_create(eprocess_t **out, eprocess_t *fork)
 {
 	int r;
 	eprocess_t *proc;
@@ -87,6 +87,11 @@ ps_process_create(eprocess_t **out, bool fork)
 		kfatal("handle this\n");
 
 	vm_ps_init(proc);
+
+	if (fork != NULL)
+		r = vm_fork(fork, proc);
+	kassert(r == 0);
+
 	proc->objspace = ex_object_space_create();
 
 	*out = proc;

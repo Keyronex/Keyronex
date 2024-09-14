@@ -8,6 +8,8 @@
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+
 typedef struct {
 	uint16_t isr_low;
 	uint16_t selector;
@@ -93,7 +95,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	ipl_t ipl = splget(), new_ipl;
 	struct intr_entries *entries;
 	struct intr_entry *entry;
-	uintptr_t cr2;
+	uintptr_t cr2 = 0;
 
 	if (num == 14)
 		cr2 = read_cr2();
@@ -144,7 +146,6 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		kdb_enter(frame);
 		break;
 	}
-
 
 	default: {
 		entries = &intr_entries[num];
