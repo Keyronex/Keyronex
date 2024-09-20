@@ -534,7 +534,8 @@ ninep_inactive(vnode_t *vn)
 
 #if 1
 	/* print in bold red */
-	kprintf("\033[1;31mNinePFS: Deleted a node with QID %lu\033[0m\n",
+	kprintf("\033[1;31mNinePFS: Deleted a node with QID %" PRIu64
+		"\033[0m\n",
 	    dn->qid.path);
 	/* for debugging, let's junk them not free them for now */
 	memset(vn, 0x1234, sizeof(*vn));

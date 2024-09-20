@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "kdk/queue.h"
+#include <kdk/queue.h>
+#include <kdk/aarch64/cpulocal.h>
 
 #define KRX_BIG_ENDIAN 0
 #define KRX_LITTLE_ENDIAN 1

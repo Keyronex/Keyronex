@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <kdk/m68k/cpulocal.h>
+
 #define KRX_BIG_ENDIAN 0
 #define KRX_LITTLE_ENDIAN 1
 
