@@ -11,7 +11,6 @@ size_t ncpus;
 uintptr_t idle_mask = 1;
 kspinlock_t done_lock = KSPINLOCK_INITIALISER;
 struct kthread_queue done_queue = TAILQ_HEAD_INITIALIZER(done_queue);
-extern kthread_t **threads;
 
 void md_raise_dpc_interrupt(void);
 void timer_expiry_dpc(void*);
@@ -50,6 +49,8 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 	cpu->timer_expiry_dpc.cpu = NULL;
 	cpu->timer_expiry_dpc.arg = cpu;
 	cpu->timer_expiry_dpc.callback = timer_expiry_dpc;
+	cpu->local_data->cpu = cpu;
+	cpu->local_data->curthread = idle_thread;
 
 	ki_rcu_per_cpu_init(&cpu->rcu_cpustate);
 }
@@ -167,10 +168,10 @@ ki_reschedule(void)
 	next->timeslice = 5;
 	next->last_cpu = cpu;
 	cpu->curthread = next;
+	KCPU_LOCAL_STORE(curthread, next);
 	cpu->reschedule_reason = kRescheduleReasonNone;
 	cpu->old_thread = old_thread;
 #ifndef __aarch64__ /* FIXME! implementation detail! */
-	threads[cpu->num] = next;
 #else
 	asm volatile ("msr tpidr_el1, %0" : : "r" (next) : "memory");
 #endif

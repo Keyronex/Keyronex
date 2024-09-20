@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 
+#include "kdk/amd64.h"
 #include "kdk/nanoprintf.h"
 #include "kdk/port.h"
 #include "kdk/queue.h"
@@ -250,6 +251,8 @@ struct ki_scheduler {
 typedef struct kcpu {
 	md_cpucb_t cpucb;
 
+	struct kcpu_local_data *local_data;
+
 	/*! (~) */
 	int num;
 
@@ -381,7 +384,12 @@ typedef struct kprocess {
 
 typedef struct kcpu_local_data {
 	struct md_kcpu_local_data md;
+	kcpu_t *cpu;
+	kthread_t *curthread;
 } kcpu_local_data_t;
+
+/*! @brief Get the currently running thread. */
+#define curthread() KCPU_LOCAL_LOAD(curthread)
 
 /*! @brief Get pointer to this core. */
 #define curcpu() ({		      \
@@ -707,6 +715,7 @@ void ke_format_time(nanosecs_t nanosecs, char *out, size_t size);
 
 void ke_set_tcb(uintptr_t tcb);
 
+extern kcpu_local_data_t bootstrap_cpu_local_data;
 extern kcpu_t **cpus;
 extern size_t ncpus;
 

@@ -302,7 +302,7 @@ map_hhdm(void)
 			type = "unknown";
 		}
 
-		kprintf("Entry %zu: %zu-%zu, type %s\n", i,
+		kprintf("Entry %zu: 0x%zx-0x%zx, type %s\n", i,
 		    (uintptr_t)entry->base,
 		    (uintptr_t)(entry->base + entry->length), type);
 

@@ -24,6 +24,8 @@ void plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread,
 extern uintptr_t idle_mask;
 struct kcpu bootstrap_cpu;
 struct kthread thread0;
+kcpu_local_data_t bootstrap_cpu_local_data = { .cpu = &bootstrap_cpu,
+	.curthread = &thread0 };
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
 kthread_t **threads;
 static int cpus_up = 0;
@@ -120,7 +122,6 @@ smp_allocate(void)
 	ncpus = smpr->cpu_count;
 
 	cpus = kmem_alloc(sizeof(kcpu_t *) * ncpus);
-	threads = kmem_alloc(sizeof(kthread_t *) * ncpus);
 
 	kprintf("%zu cpus\n", ncpus);
 	kassert(ncpus <= 64);
@@ -135,17 +136,18 @@ smp_allocate(void)
 			smpi->extra_argument = (uint64_t)&bootstrap_cpu;
 			bootstrap_cpu.num = i;
 			cpus[i] = &bootstrap_cpu;
-			threads[i] = &thread0;
 			bootstrap_cpu.cpucb.SMPI_ID = smpi->SMPI_ID;
 		} else {
-			kcpu_t *cpu = kmem_alloc(sizeof *cpu);
-			kthread_t *thread = kmem_alloc(sizeof *thread);
+			kcpu_t *cpu = kmem_alloc(sizeof(kcpu_t));
+			kthread_t *thread = kmem_alloc(sizeof(kthread_t));
 
 			cpu->num = i;
 			cpu->curthread = thread;
 			cpu->cpucb.SMPI_ID = smpi->SMPI_ID;
+			cpu->local_data = kmem_alloc(sizeof(kcpu_local_data_t));
+			cpu->local_data->curthread = thread;
+			cpu->local_data->cpu = cpu;
 			cpus[i] = cpu;
-			threads[i] = thread;
 			thread->last_cpu = cpu;
 		}
 	}
@@ -195,6 +197,7 @@ void
 _start(void)
 {
 	plat_first_init();
+	bootstrap_cpu.local_data = &bootstrap_cpu_local_data;
 	npf_pprintf(pac_putc, NULL,
 	    "Keyronex-lite/generic (" __DATE__ " " __TIME__ ")\r\n");
 

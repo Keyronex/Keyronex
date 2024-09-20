@@ -110,14 +110,6 @@ typedef struct md_cpucb {
 	struct tss *tss;
 } md_cpucb_t;
 
-static inline struct kthread *
-curthread()
-{
-	struct kthread *val;
-	asm volatile("mov %%gs:0, %0" : "=r"(val));
-	return val;
-}
-
 static inline __attribute__((noreturn)) void
 hcf(void)
 {

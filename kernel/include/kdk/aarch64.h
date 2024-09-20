@@ -105,14 +105,6 @@ hcf(void)
 		asm("wfi");
 }
 
-static inline struct kthread *
-curthread(void)
-{
-	struct kthread *thread;
-	asm volatile("mrs %0, tpidr_el1" : "=r"(thread));
-	return thread;
-}
-
 void md_intr_register(const char *name, uint32_t gsi, ipl_t prio,
     intr_handler_t handler, void *arg, bool shareable,
     struct intr_entry *entry);
