@@ -10,7 +10,11 @@
 #ifndef KRX_RISCV_CPULOCAL_H
 #define KRX_RISCV_CPULOCAL_H
 
+#include <stdint.h>
+
 struct md_kcpu_local_data {
+	uintptr_t saved_user_sp;
+	uintptr_t saved_supervisor_sp;
 };
 
 #define KCPU_LOCAL_OFFSET(FIELD) __builtin_offsetof(kcpu_local_data_t, FIELD)

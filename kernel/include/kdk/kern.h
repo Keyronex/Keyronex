@@ -379,6 +379,10 @@ typedef struct kprocess {
 	LIST_HEAD(, kthread) thread_list;
 } kprocess_t;
 
+typedef struct kcpu_local_data {
+	struct md_kcpu_local_data md;
+} kcpu_local_data_t;
+
 /*! @brief Get pointer to this core. */
 #define curcpu() ({		      \
 	curthread()->last_cpu;        \

@@ -1,1 +1,1 @@
-kernel_sources += files('misc.c', 'thread.c', 'thread.S')
+kernel_sources += files('intr.S', 'misc.c', 'thread.c', 'thread.S')

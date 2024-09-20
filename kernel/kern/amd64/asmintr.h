@@ -5,6 +5,8 @@
 #define TRAP 0x8e
 #define INT_USER 0xee
 
+/* clang-format off */
+
 #define SPECIAL_INTS(X)  \
 	X(0, TRAP)       \
 	X(1, TRAP)       \

@@ -1,4 +1,4 @@
-#include "asmintr.h"
+#include "kern/amd64/asmintr.h"
 #include "executive/exp.h"
 #include "intr.h"
 #include "kdk/amd64.h"
