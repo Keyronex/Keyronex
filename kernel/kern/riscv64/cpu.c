@@ -105,30 +105,13 @@ ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 
 	asm volatile("csrw sstatus, %0\n\t"
 		     "csrw sepc, %1\n\t"
-		     "mv tp, zero\n\t"
 		     "mv sp, %2\n\t"
-		     "csrw sscratch, %3\n\t"
+		     "csrw sscratch, tp\n\t"
+		     "mv tp, zero\n\t"
 		     "sret"
 		     :
-		     : "r"(sstatus), "r"(ip), "r"(sp), "r"(curthread())
+		     : "r"(sstatus), "r"(ip), "r"(sp)
 		     : "memory");
-
-#if 0
-	uintptr_t spsr = 0x60000000;
-	uintptr_t sp_el1 = (uintptr_t)curthread()->kstack_base + KSTACK_SIZE;
-
-	asm volatile("msr sp_el0, %0\n\t"
-		     "msr elr_el1, %1\n\t"
-		     "msr spsr_el1, %2\n\t"
-		     "mov sp, %3\n\t"
-		     "eret\n\t"
-		     "dsb sy\n\t"
-		     "isb\n\t"
-		     :
-		     : "r"(sp), "r"(ip), "r"(spsr), "r"(sp_el1)
-		     : "memory");
-	kfatal("Unreached\n");
-#endif
 }
 
 void
@@ -152,7 +135,11 @@ md_switch(kthread_t *old_thread, kthread_t *new_thread)
 
 	intr = ki_disable_interrupts();
 
-	asm volatile("mv tp, %0" : : "r"(new_thread));
+	old_thread->pcb.user_sp = KCPU_LOCAL_LOAD(md.saved_user_sp);
+	old_thread->pcb.supervisor_sp = KCPU_LOCAL_LOAD(md.saved_supervisor_sp);
+	KCPU_LOCAL_STORE(md.saved_user_sp, new_thread->pcb.user_sp);
+	KCPU_LOCAL_STORE(md.saved_supervisor_sp, new_thread->pcb.supervisor_sp);
+
 	write_satp(ex_curproc()->vm->md.table);
 
 #if 0

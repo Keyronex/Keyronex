@@ -83,6 +83,10 @@
 
 	.cfi_val_offset sp, 304
 
+.if \el == ._el0
+	mrs x18, tpidr_el1
+.endif
+
 	mov x0, sp
 	bl \c_func
 
@@ -160,31 +164,35 @@
 	add sp, sp, #304
 	.cfi_restore sp
 
+.if \el == ._el1
+	mrs x18, tpidr_el1
+.endif
+
 	eret
 	dsb sy
 	isb
 	.cfi_endproc
 .endm
 
-MAKE_HANDLER asm_el1t_sync, c_el1t_sync
-MAKE_HANDLER asm_el1t_irq, c_el1t_irq
-MAKE_HANDLER asm_el1t_fiq, c_el1t_fiq
-MAKE_HANDLER asm_el1t_error, c_el1t_error
+MAKE_HANDLER asm_el1t_sync, c_el1t_sync, ._el1
+MAKE_HANDLER asm_el1t_irq, c_el1t_irq, ._el1
+MAKE_HANDLER asm_el1t_fiq, c_el1t_fiq, ._el1
+MAKE_HANDLER asm_el1t_error, c_el1t_error, ._el1
 
-MAKE_HANDLER asm_el1h_sync, c_el1_sync
-MAKE_HANDLER asm_el1h_intr, c_el1_intr
-MAKE_HANDLER asm_el1h_fiq, c_el1_fiq
-MAKE_HANDLER asm_el1h_error, c_el1_error
+MAKE_HANDLER asm_el1h_sync, c_el1_sync, ._el1
+MAKE_HANDLER asm_el1h_intr, c_el1_intr, ._el1
+MAKE_HANDLER asm_el1h_fiq, c_el1_fiq, ._el1
+MAKE_HANDLER asm_el1h_error, c_el1_error, ._el1
 
-MAKE_HANDLER asm_el0_sync, c_el0_sync
-MAKE_HANDLER asm_el0_intr, c_el0_intr
-MAKE_HANDLER asm_el0_fiq, c_el0_fiq
-MAKE_HANDLER asm_el0_error, c_el0_error
+MAKE_HANDLER asm_el0_sync, c_el0_sync, ._el0
+MAKE_HANDLER asm_el0_intr, c_el0_intr, ._el0
+MAKE_HANDLER asm_el0_fiq, c_el0_fiq, ._el0
+MAKE_HANDLER asm_el0_error, c_el0_error, ._el0
 
-MAKE_HANDLER asm_el0_sync32, c_exception
-MAKE_HANDLER asm_el0_intr32, c_exception
-MAKE_HANDLER asm_el0_fiq32, c_exception
-MAKE_HANDLER asm_el0_error32, c_exception
+MAKE_HANDLER asm_el0_sync32, c_exception, ._el0
+MAKE_HANDLER asm_el0_intr32, c_exception, ._el0
+MAKE_HANDLER asm_el0_fiq32, c_exception, ._el0
+MAKE_HANDLER asm_el0_error32, c_exception, ._el0
 
 .macro	vector, handler
 	.align 7

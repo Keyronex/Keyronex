@@ -8,12 +8,15 @@
 #include "goldfish.h"
 
 extern kthread_t thread0;
+kcpu_local_data_t cpu_local_data;
 
 void
 plat_first_init(void)
 {
 	thread0.last_cpu = &bootstrap_cpu;
 	bootstrap_cpu.curthread = &thread0;
+	cpu_local_data.curthread = &thread0;
+	cpu_local_data.cpu = &bootstrap_cpu;
 	void intr_init(void);
 	intr_init();
 }

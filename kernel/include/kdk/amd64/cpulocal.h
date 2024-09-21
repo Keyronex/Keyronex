@@ -16,14 +16,41 @@ struct md_kcpu_local_data {
 
 #define KCPU_LOCAL_OFFSET(FIELD) __builtin_offsetof(kcpu_local_data_t, FIELD)
 
-#define KCPU_LOCAL_LOAD(FIELD) ({ 				\
-	static struct kcpu_local_data __seg_gs *_local ;	\
-	_local->FIELD;						\
+#define KCPU_LOCAL_LOAD(FIELD) ({ 					\
+	__typeof(((kcpu_local_data_t *)0)->FIELD) value;		\
+	switch(sizeof(value)) 						\
+	{								\
+	case 1: 							\
+	case 2: 							\
+	case 4: 							\
+	case 8: 							\
+		asm volatile("mov %%gs:%c1, %0"				\
+			: "=r"(value)					\
+			: "i"(KCPU_LOCAL_OFFSET(FIELD))			\
+		); 							\
+		break; 							\
+	default:							\
+		__builtin_trap(); 					\
+	} 								\
+	value; 								\
 })
 
-#define KCPU_LOCAL_STORE(FIELD, VALUE) ({			\
-	static struct kcpu_local_data __seg_gs *_local ;	\
-	_local->FIELD = VALUE;					\
+#define KCPU_LOCAL_STORE(FIELD, VALUE) ({ 				\
+	switch(sizeof(((kcpu_local_data_t *)0)->FIELD)) 		\
+	{								\
+	case 1: 							\
+	case 2: 							\
+	case 4: 							\
+	case 8: 							\
+		asm volatile("mov %0, %%gs:%c1"				\
+			: 						\
+			: "r"(VALUE),					\
+			  "i"(KCPU_LOCAL_OFFSET(FIELD))			\
+		);							\
+		break; 							\
+	default:							\
+		__builtin_trap(); 					\
+	} 								\
 })
 
 #endif /* KRX_AMD64_CPULOCAL_H */

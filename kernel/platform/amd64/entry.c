@@ -17,7 +17,6 @@ void intr_init(void);
 void setup_cpu_gdt(kcpu_t *cpu);
 
 extern kthread_t thread0;
-extern kthread_t **threads;
 
 static void
 serial_init()
@@ -44,8 +43,7 @@ pac_putc(int ch, void *ctx)
 
 void plat_first_init(void)
 {
-	static kthread_t *pthread0 = &thread0;
-	wrmsr(kAMD64MSRGSBase, (uint64_t)&pthread0);
+	wrmsr(kAMD64MSRGSBase, (uint64_t)&bootstrap_cpu_local_data);
 	serial_init();
 	intr_init();
 }
@@ -62,7 +60,7 @@ void plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread, struct lim
 	paddr_t lapic_base;
 	int r;
 
-	wrmsr(kAMD64MSRGSBase, (uintptr_t)&threads[cpu->num]);
+	wrmsr(kAMD64MSRGSBase, (uintptr_t)cpu->local_data);
 	idt_load();
 	lapic_base = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
 	ke_spinlock_acquire_nospl(&early_map_lock);

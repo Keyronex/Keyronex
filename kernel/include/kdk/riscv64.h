@@ -84,7 +84,6 @@ struct intr_entry {
 
 typedef struct md_pcb {
 	uintptr_t user_sp;
-	uintptr_t user_tp; /* UNUSED */
 	uintptr_t supervisor_sp;
 	riscv64_context_t *sp;
 	uint64_t fp[66];
@@ -102,14 +101,6 @@ hcf(void)
 {
 	for (;;)
 		asm("wfi");
-}
-
-static inline struct kthread *
-curthread(void)
-{
-	struct kthread *thread;
-	asm volatile("mv %0, tp" : "=r"(thread));
-	return thread;
 }
 
 void md_intr_register(const char *name, uint32_t gsi, ipl_t prio,

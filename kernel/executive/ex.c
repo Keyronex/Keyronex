@@ -235,7 +235,7 @@ ex_init(void *)
 #endif
 
 	eprocess_t *initps;
-	r = ps_process_create(&initps, false);
+	r = ps_process_create(&initps, NULL);
 	kassert(r == 0);
 
 	r = ps_thread_create(&user_init_thread, "user init thread 0", user_init,

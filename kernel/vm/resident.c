@@ -207,9 +207,13 @@ vm_region_add(paddr_t base, paddr_t limit)
 		vm_page_t *page = &pfndb[pfn];
 		size_t order = MIN2(BUDDY_ORDERS - 1, __builtin_ctz(pfn));
 
+#if 0
 		if ((i + (1 << order) * PGSIZE) > limit)
 			order = MIN2(BUDDY_ORDERS - 1,
-			    __builtin_ctz((limit - i) / PGSIZE));
+			    log2((limit - i) / PGSIZE));
+#endif
+		while ((i + (1 << order) * PGSIZE) > limit)
+			order--;
 
 		page->order = order;
 		page->refcnt = 0;
@@ -252,24 +256,27 @@ vmp_page_unfree(vm_page_t *page, size_t order)
 	 * free is greater or equal to, until initial's order is the order we
 	 * want to free.
 	 */
+	kassert(initial->order >= order);
 	while (initial->order != order) {
 		vm_page_t *second = initial + (1 << (initial->order - 1));
-		size_t newOrder = second->order;
+		size_t new_order;
 
-		kassert(newOrder == initial->order - 1);
+		new_order = second->order;
+		kassert(new_order == initial->order - 1);
 		kassert(initial->on_freelist);
 		kassert(!second->on_freelist);
 
 		second->on_freelist = true;
-		TAILQ_INSERT_HEAD(&buddy_queue[newOrder], second, queue_link);
+		TAILQ_INSERT_HEAD(&buddy_queue[new_order], second, queue_link);
 
 		TAILQ_REMOVE(&buddy_queue[initial->order], initial, queue_link);
 
-		initial->order = newOrder;
-		TAILQ_INSERT_HEAD(&buddy_queue[newOrder], initial, queue_link);
+		initial->order = new_order;
+		TAILQ_INSERT_HEAD(&buddy_queue[new_order], initial, queue_link);
 
 		if (second <= page)
 			initial = second;
+
 	}
 
 	kassert(initial == page);
@@ -292,9 +299,8 @@ vmp_range_unfree(paddr_t base, paddr_t limit)
 		size_t order = MIN2(BUDDY_ORDERS - 1,
 		    __builtin_ctz(i / PGSIZE));
 
-		if ((i + (1 << order) * PGSIZE) > limit)
-			order = MIN2(BUDDY_ORDERS - 1,
-			    __builtin_ctz((limit - i) / PGSIZE));
+		while ((i + (1 << order) * PGSIZE) > limit)
+			order--;
 
 		vmp_page_unfree(page, order);
 		i += (1 << order) * PGSIZE;
