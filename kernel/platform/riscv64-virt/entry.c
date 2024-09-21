@@ -48,7 +48,7 @@ plat_first_init(void)
 
 	uint64_t sstatus;
 
-	asm volatile("mv tp, %0" : : "r"(&thread0));
+	asm volatile("mv tp, %0" : : "r"(&bootstrap_cpu_local_data));
 	asm volatile("csrw sscratch, zero");
 	asm volatile("csrw stvec, %0" : : "r"(trap));
 
