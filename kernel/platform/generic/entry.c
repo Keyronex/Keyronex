@@ -27,7 +27,6 @@ struct kthread thread0;
 kcpu_local_data_t bootstrap_cpu_local_data = { .cpu = &bootstrap_cpu,
 	.curthread = &thread0 };
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
-kthread_t **threads;
 static int cpus_up = 0;
 /*
  * can't rely on mutexes until scheduling is up (and in any case not in idle
@@ -177,7 +176,6 @@ smp_start()
 #else
 	bootstrap_cpu.num = 0;
 	cpus[0] = &bootstrap_cpu;
-	threads[0] = &thread0;
 	common_core_init(&bootstrap_cpu, &thread0, NULL);
 #endif
 
