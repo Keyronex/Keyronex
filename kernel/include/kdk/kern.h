@@ -10,7 +10,6 @@
 
 #include <stdbool.h>
 
-#include "kdk/amd64.h"
 #include "kdk/nanoprintf.h"
 #include "kdk/port.h"
 #include "kdk/queue.h"

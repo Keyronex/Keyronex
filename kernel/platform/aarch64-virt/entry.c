@@ -33,14 +33,14 @@ md_cpu_init(kcpu_t *cpu)
 void
 plat_first_init(void)
 {
+	asm volatile("msr tpidr_el1, %0\n\t"
+		     "mov x18, %0\n\t" ::"r"(&bootstrap_cpu_local_data));
 	asm volatile("mov x0, sp\n"
 		     "msr SPSel, #1\n"
 		     "mov sp, x0\n"
 		     :
 		     :
 		     : "x0");
-
-	asm volatile ("msr tpidr_el1, %0" : : "r" (&thread0) : "memory");
 	intr_init();
 	irq_init();
 }
@@ -49,7 +49,8 @@ void
 plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
 {
 	vmp_set_ttbr1();
-	asm volatile("msr tpidr_el1, %0" : : "r"(cpu->curthread) : "memory");
+	asm volatile("msr tpidr_el1, %0\n\t"
+		     "mov x18, %0\n\t" ::"r"(cpu->local_data));
 	asm volatile("mov x0, sp\n"
 		     "msr SPSel, #1\n"
 		     "mov sp, x0\n"
