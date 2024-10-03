@@ -18,7 +18,7 @@ struct md_kcpu_local_data {
 
 #define KCPU_LOCAL_LOAD(FIELD) ({ 					\
 	__typeof(((kcpu_local_data_t *)0)->FIELD) value;		\
-	switch(sizeof(value)) 						\
+	switch(sizeof(value)) 	/* NOLINT */				\
 	{								\
 	case 1: 							\
 	case 2: 							\
@@ -36,7 +36,7 @@ struct md_kcpu_local_data {
 })
 
 #define KCPU_LOCAL_STORE(FIELD, VALUE) ({ 				\
-	switch(sizeof(((kcpu_local_data_t *)0)->FIELD)) 		\
+	switch(sizeof(((kcpu_local_data_t *)0)->FIELD)) /* NOLINT */	\
 	{								\
 	case 1: 							\
 	case 2: 							\
