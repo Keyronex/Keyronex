@@ -6,6 +6,8 @@ ovmf-aarch64/
 ovmf-riscv64/
 sources/
 
+manual.keyronex.org/
+
 compile_commands.json
 *.xbstrap
 *.img

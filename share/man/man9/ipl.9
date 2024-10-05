@@ -1,0 +1,111 @@
+.Dd October 5, 2024
+.Dt IPL 9
+.Os
+.Sh NAME
+.Nm ipl ,
+.Nm splraise ,
+.Nm spldpc ,
+.Nm splx ,
+.Nm splget
+.Nd raise or lower Interrupt Priority Level (IPL)
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft ipl_t
+.Fn splraise "ipl_t ipl"
+.Ft ipl_t
+.Fn spldpc "ipl_t ipl"
+.Ft void
+.Fn splx "ipl_t ipl"
+.Ft ipl_t
+.Fn splget void
+.Sh DESCRIPTION
+These functions are used to modify the interrupt priority level. They are used
+to block certain categories of interrupts to ensure safe execution of critical
+sections of code.
+
+.Pp
+Interrupts are masked by priority, and priorities are hierarchical. When the
+interrupt priority level is raised, lower-priority interrupts are disabled until
+the priority level is lowered. This affects delivery of interrupts within the
+thread that has raised the level. Levels kIPLDPC and above prevent rescheduling,
+and therefore act on the CPU core as a whole.
+
+.Pp
+Each interrupt handler is associated with an IPL. Entry to an interrupt handler
+is always at the IPL the handler is associated with. The IPL can be further
+raised above that level, but must return to the handler's associated IPL before
+return.
+
+.Pp
+The
+.Xr rcu 9
+and the
+.Xr spinlock 9
+functionalities also modify IPL as part of their duties.
+
+
+.Pp
+These are the interrupt priority levels from low-to-high, with each higher level
+blocking additional interrupts:
+
+.Bl -tag -width kIPLDevice
+
+.It Dv kIPL0
+Allows all interrupts. This is the lowest interrupt priority level. All
+categories of interrupts are unblocked.
+
+.It Dv kIPLAST
+Blocks general non-device interrupts.
+
+.It Dv kIPLDispatch
+Additionally blocks dispatch-level interrupts.
+.Pp
+This is the level at which the scheduler, DPCs, and RCU callbacks run. At this
+level and above, the current processor core will not be rescheduled, RCU grace
+periods will not end, and DPCs will not run.
+
+.It Dv kIPLDevice
+Additionally blocks general device-level interrupts.
+
+.It Dv kIPLClock
+Additionally blocks the harldcock interrupt.
+
+.It Dv kIPLIPI
+Additionally blocks most inter-processor interrupts (IPIs.)
+
+.It Dv kIPLHigh
+Blocks all interrupts. This is the highest interrupt priority level.
+.El
+
+.Pp
+
+Note: On some architectures, consecutive subsets of the first four interrupt
+levels (kIPLHigh, kIPLIPI, kIPLClock, kIPLDevice) may be merged due to
+platform-specific limitations.
+
+.Sh FUNCTIONS
+The following functions are provided for managing the interrupt priority level:
+
+.Bl -tag -width spldpc
+.It Fn splraise "ipl_t ipl"
+Raises the current interrupt priority level to
+.Fa ipl
+and returns the previous IPL.
+.It Fn spldpc void
+Raises the current interrupt priority level to
+.Dv kIPLDPC .
+and returns the previous IPL.
+.It Fn splx "ipl_t ipl"
+Restores the interrupt priority level to
+.Fa ipl .
+This function is used to lower the priority level after completing a section
+that must run at high IPL.
+.It Fn splget void
+Returns the current interrupt priority level.
+
+.El
+
+.Sh HISTORY
+The
+.Nm ipl
+interface has always been in Keyronex.
