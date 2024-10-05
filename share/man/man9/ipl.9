@@ -55,9 +55,9 @@ Allows all interrupts. This is the lowest interrupt priority level. All
 categories of interrupts are unblocked.
 
 .It Dv kIPLAST
-Blocks general non-device interrupts.
+Blocks asynchronous system traps (ASTs) targeting the current thread.
 
-.It Dv kIPLDispatch
+.It Dv kIPLDPC
 Additionally blocks dispatch-level interrupts.
 .Pp
 This is the level at which the scheduler, DPCs, and RCU callbacks run. At this

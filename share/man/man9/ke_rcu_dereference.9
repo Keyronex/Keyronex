@@ -1,0 +1,56 @@
+.Dd October 5, 2024
+.Dt KE_RCU_DEREFERENCE 9
+.Os
+.Sh NAME
+.Nm ke_rcu_dereference ,
+.Nm ke_rcu_assign_pointer ,
+.Nm ke_rcu_exchange_pointer
+.Nd read-copy-update pointer operations
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft T *
+.Fn ke_rcu_dereference "T **pp"
+.Ft void
+.Fn ke_rcu_assign_pointer "T **pp" "T *p"
+.Ft T *
+.Fn ke_rcu_exchange_pointer "T **pp" "T *p"
+.Sh DESCRIPTION
+These are macros for safely reading and updating pointers in data structures
+subject to RCU reclamation.
+.Pp
+.Fn ke_rcu_dereference
+returns the value of the pointer referred to by
+.Fa pp
+for derference by a caller in an RCU reader critical section.
+.Pp
+.Fn ke_rcu_assign_pointer
+updates the pointer referred to by
+.Fa pp
+to the value
+.Fa p
+for use by an RCU writer.
+.Pp
+.Fn ke_rcu_exchange_pointer
+updates the pointer referred to by
+.Fa pp
+to the value
+.Fa p
+and returns the old value for use by an RCU writer.
+.Sh CONTEXT
+.Fn ke_rcu_dereference
+may be called from an RCU reader critical section.
+.Pp
+.Fn ke_rcu_assign_pointer
+and
+.Fn ke_rcu_exchange_pointer
+may be called from RCU writer context.
+.Sh CODE REFERENCES
+These macros are defined in
+.Pa kernel/include/kdk/kern.h
+.Sh SEE ALSO
+.Xr ipl 9 ,
+.Xr rcu 9
+.Sh HISTORY
+The
+.Nm RCU
+interface appeared in Keyronex in 2023.

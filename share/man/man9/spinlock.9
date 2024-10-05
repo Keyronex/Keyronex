@@ -1,0 +1,93 @@
+.Dd October 5, 2024
+.Dt SPINLOCK 9
+.Os
+.Sh NAME
+.Nm spinlock ,
+.Nm ke_spinlock_init ,
+.Nm ke_spinlock_acquire ,
+.Nm ke_spinlock_acquire_at ,
+.Nm ke_spinlock_acquire_nospl ,
+.Nm ke_spinlock_release ,
+.Nm ke_spinlock_release_nospl
+.Nd spinlock mutual exclusion mechanism
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft void
+.Fn ke_spinlock_init "kspinlock_t *lock"
+.Ft ipl_t
+.Fn ke_spinlock_acquire "kspinlock_t *lock"
+.Ft ipl_t
+.Fn ke_spinlock_acquire_at "kspinlock_t *lock" "ipl_t ipl"
+.Ft void
+.Fn ke_spinlock_acquire_nospl "kspinlock_t *lock"
+.Ft void
+.Fn ke_spinlock_release "kspinlock_t *lock" "ipl_t ipl"
+.Ft void
+.Fn ke_spinlock_release_nospl "kspinlock_t *lock"
+.Sh DESCRIPTION
+Spinlocks are a mutual exclusion mechanism used to synchronise shared state such
+that only one CPU can access it at a time.
+.Pp
+The
+.Xr ipl 9
+mechanism is closely integrated with spinlocks; spinlocks may only be held
+at or above DPC level.
+Consequently it is illegal and impossible to try to sleep while holding a mutex,
+neither will the current thread be rescheduled.
+This is how spinlocks synchronise CPUs as opposed to threads as such; in fact,
+the spinlock interface is implemented purely with IPL raising on uniprocessors.
+.Pp
+As they are held at or above DPC level, while holding a spinlock,
+.Xr rcu 9
+grace periods remain in effect, DPCs are masked, rescheduling/waiting is
+prevented, and certain operations forbidden; see
+.Xr ipl 9
+for a full account of the restrictions.
+A particularly salient restriction is that paged memory may not be accessed
+while holding a spinlock, unless the memory has been locked resident.
+.Pp
+Spinlocks are informally associated with a particular IPL, which is the IPL at
+which the spinlock may be acquired and held. This is usually DPC level, but may
+be higher, for example, for spinlocks which may be acquired by device interrupt
+handlers.
+.Pp
+Spinlocks cannot be recursively acquired, and as they are held at a high IPL,
+they are not suitable for long-running operations.
+.Pp
+.Sh FUNCTIONS
+The
+.Fn ke_spinlock_init
+function initialises a spinlock and should be called initially; alternatively,
+the lock may be statically initialised with the macro
+.Dv KPINLOCK_INITIALISER .
+.Pp
+The
+.Fn ke_spinlock_acquire
+function acquires a spinlock, raising the IPL to DPC level, and returns the
+previous IPL, while
+.Fn ke_spinlock_acquire_at
+does the same but raises the IPL to the specified level instead of DPC level,
+and
+.Fn ke_spinlock_acquire_nospl
+acquires a spinlock without raising the IPL - useful for when the IPL is
+already at the required level.
+.Pp
+The
+.Fn ke_spinlock_release
+function releases a spinlock, lowering the IPL to the specified level, which
+will usually be the IPL returned by the lock function.
+.Fn ke_spinlock_release_nospl
+releases a spinlock without lowering the IPL.
+.Sh CONTEXT
+The spinlock functions may be called from any context so long as the IPL is
+at or below the spinlock's associated IPL.
+.Sh CODE REFERENCES
+Spinlocks are implemented inline in
+.Pa kernel/include/kdk/kern.h .
+.Sh SEE ALSO
+.Xr ipl 9 ,
+.Xr rcu 9
+.Sh HISTORY
+The
+.Nm spinlock
+interface has always been in Keyronex.

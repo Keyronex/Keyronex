@@ -1,0 +1,86 @@
+.Dd October 5, 2024
+.Dt RCU 9
+.Os
+.Sh NAME
+.Nm rcu ,
+.Nm ke_rcu_read_lock ,
+.Nm ke_rcu_read_unlock ,
+.Nm ke_rcu_call ,
+.Nm ke_rcu_synchronise
+.Nd read-copy-update work deferral mechanism
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft ipl_t
+.Fn ke_rcu_read_lock void
+.Ft void
+.Fn ke_rcu_read_unlock "ipl_t ipl"
+.Ft void
+.Fn ke_rcu_call "rcu_entry_t *entry" "void (*callback)(void *)" "void *arg"
+.Ft void
+.Fn ke_rcu_synchronise void
+.Sh DESCRIPTION
+The Read-Copy-Update (RCU) mechanism is a mechanism for scheduling work to be
+done after a grace period has passed.
+This is useful for updating or freeing
+data structures by guaranteeing that no readers are accessing the data structure
+by the time it is freed.
+.Pp
+Readers enter an RCU critical section by calling
+.Fn ke_rcu_read_lock
+and leave it by calling
+.Fn ke_rcu_read_unlock .
+These very cheap functions raise and lower the IPL respectively - the IPL is
+raised to
+.Dv kIPLDPC .
+It is forbidden to sleep while within an RCU critical section.
+(See
+.Xr ipl 9
+for further restrictions incurred by the raised IPL.)
+.Pp
+Writers may schedule work by calling
+.Fn ke_rcu_call
+with a pointer to an RCU entry embedded somewhere.
+This schedules a callback to be called with the given argument after a grace
+period has elapsed; this grace period is however long it takes until every
+reader who entered an RCU critical section has left it.
+The callback
+.Fa callback
+will be called with the argument given in
+.Fa arg .
+Note that the RCU entry cannot be used for anything else until the callback has
+ran.
+.Pp
+The
+.Fn ke_rcu_synchronise
+function synchronously awaits the end of the grace period.
+.Pp
+Readers and writers must take care to use appropriate operations on data subject
+to RCU reclamation.
+See
+.Xr ke_rcu_dereference 9
+for routines that readers can use to safely read and writers to safely update
+pointers.
+These may not be necessary in certain cases, particularly when using
+suitable atomic operations, for example when using RCU to provide a fallible
+reference-count retain function.
+.Sh CONTEXT
+An RCU critical section may be explicitly entered from any context at or below
+DPC level, and a critical section is implicit in DPC and interrupt context.
+.Pp
+Writers may schedule work from any context at or below DPC level, but may only
+use
+.Fn ke_rcu_synchronise
+from thread context at IPL < DPC level.
+.Sh CODE REFERENCES
+RCU is implemented in
+.Pa kernel/kern/rcu.c
+.Pp
+The RCU interface is declared in
+.Pa kernel/include/kdk/kern.h
+.Sh SEE ALSO
+.Xr ipl 9 ,
+.Xr ke_rcu_dereference 9
+.Sh HISTORY
+The
+.Nm RCU
+interface appeared in Keyronex in 2023.

@@ -5,17 +5,23 @@
 .Nm intro
 .Nd Introduction to Keyronex kernel internals
 .Sh DESCRIPTION
-This section contains documentation related to the kernel internals of the
-kernel. It covers kernel facilities and functions that are relevant
-to developers of the kernel, drivers, and modules. These manual pages are
-intended to be the primary reference for kernel programming and a complement to
-in-source documentation. Below are presented sections for each high-level
-division of the kernel, containing links to individual subsystems and functions.
-
+This section contains documentation related to the internals of the kernel.
+It covers kernel facilities and functions that are relevant to developers of the
+kernel, drivers, and modules.
+.Pp
+These manual pages are intended to be the primary reference for kernel
+programming and a practical complement to in-source documentation, which focuses
+on theoretical and design aspects.
+.Pp
+Below are presented sections for each high-level division of the kernel,
+containing links to individual subsystems and functions.
 .Sh KERNEL
 .Bl -tag -width Ds
 .It Xr ipl 9
 Interrupt Priority Level mechanism.
-
+.It Xr spinlock 9
+Spin lock mutual exclusion mechanism.
+.It Xr rcu 9
+Read-Copy-Update work deferral mechanism.
 .Sh HISTORY
 The Keyronex kernel manual pages were begun on October the 5th, 2024.
