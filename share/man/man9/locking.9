@@ -53,6 +53,10 @@ context while at IPL less than
 .Dv kIPLDPC ,
 but can be released at that IPL in principle.
 They block, and a thread is put to sleep until the mutex is available.
+.Pp
+See
+.Xr kmutex 9
+for more information.
 .Ss Events
 Events can be waited on only from thread context at low IPL, but may be
 signalled at
@@ -60,11 +64,19 @@ signalled at
 They carry a signalled flag that can be set and cleared, and a thread can wait
 on an event, sleeping until the signalled flag is set. The flag remains set
 until explicitly cleared.
+.Pp
+See
+.Xr kevent 9
+for more information.
 .Ss Semaphores
-Everyone knows what semaphores are. The rules on their use in Keyronex are
+Everyone knows what a semaphore is. The rules on their use in Keyronex are
 similar to those for events: waiting requires low IPL, but signalling is also
 allowed at
 .Dv kIPLDPC .
+.Pp
+See
+.Xr ksemaphore 9
+for more information.
 .Ss RWLocks
 Reader-Writer Locks (or RWLocks) will be implemented in the future.
 They will be the preferred mechanism for most synchronisation (both

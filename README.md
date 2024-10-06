@@ -22,6 +22,10 @@ detailed information is available in the [Platforms] document.
 | Amiga            | m68k         | Planned                  |
 | QEMU Virt m68k   | m68k         | Well-supported           |
 
+Some [manual pages] for the kernel have been written.
+An introduction to the kernel manual pages section can be found at the
+[Introduction].
+
 *[ This is a rewrite  branch which currently lacks features; the previous, more
 featured branch is `23-jul`, which features ports of such apps as the GNU
 Coreutils, BASH shell, Binutils, and GCC, as well as Xorg and some basic X11
@@ -30,6 +34,10 @@ apps such as Twm and Xeyes, and the Links text-mode web browser. ]*
 [Platforms]: docs/platforms.md
 
 [Mintia]: https://github.com/limnarch/mintia
+
+[manual pages]: https://manual.keyronex.org/master/
+
+[Introduction]: https://manual.keyronex.org/master/intro.9.html
 
 [^1]: The AArch64 port has only had limited testing.
 
