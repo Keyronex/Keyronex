@@ -16,7 +16,7 @@ on theoretical and design aspects.
 Below are presented sections for each high-level division of the kernel,
 containing links to individual subsystems and functions.
 .Sh KERNEL
-.Bl -tag -width Ds
+.Bl -tag
 .It Xr ipl 9
 Interrupt Priority Level mechanism.
 .It Xr dpc 9
@@ -27,5 +27,12 @@ Introduction to locking and synchronisation mechanisms.
 Spin lock mutual exclusion mechanism.
 .It Xr rcu 9
 Read-Copy-Update work deferral mechanism.
+.It Xr ke_wait 9
+Dispatcher object waiting mechanism. (See also the dispatcher objects
+.Xr kevent 9 ,
+.Xr kmutex 9 ,
+.Xr ksemaphore 9 ,
+and
+.Xr ktimer 9 .
 .Sh HISTORY
 The Keyronex kernel manual pages were begun on October the 5th, 2024.

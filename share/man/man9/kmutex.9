@@ -1,0 +1,54 @@
+.Dd October 6, 2024
+.Dt KMUTEX 9
+.Os
+.Sh NAME
+.Nm kmutex ,
+.Nm ke_mutex_init ,
+.Nm ke_mutex_release ,
+.Nm ke_mutex_assert_held
+.Nd dispatcher mutex object
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft void
+.Fn ke_mutex_init "kevent_t *mutex"
+.Ft void
+.Fn ke_mutex_release "kmutex_t *mutex"
+.Ft void
+.Fn ke_mutex_assert_held "kmutex_t *mutex"
+.Sh DESCRIPTION
+The dispatcher mutex object is a dispatcher object that can be waited on by
+.Xr ke_wait 9 ,
+defined by the
+.Vt kmutex_t
+type.
+.Pp
+The mutex object is in one of two states: held or not held.
+While a mutex object is held, it cannot be acquired by another thread; the
+thread that holds the mutex must release it first, and until then, waiters will
+be put to sleep.
+.Pp
+The
+.Fn ke_mutex_init
+function initialises a mutex object, setting its state to not held.
+.Pp
+The
+.Fn ke_mutex_release
+function releases a mutex object, setting its state to not held.
+It is an error to release a mutex that is not held.
+.Pp
+The
+.Fn ke_mutex_assert_held
+macro asserts that the mutex is held by the current thread.
+.Sh CONTEXT
+All these functions may be called from any context at or below
+.Dv kIPLDPC .
+.Sh CODE REFERENCES
+These functions are implemented in
+.Pa kernel/kern/mutex.c .
+.Pp
+The interface is declared in
+.Pa kernel/include/kdk/kern.h .
+.Sh SEE ALSO
+.Xr ke_wait 9 ,
+.Sh HISTORY
+These interfaces have always been in Keyronex.

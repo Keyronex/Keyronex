@@ -1,0 +1,63 @@
+.Dd October 6, 2024
+.Dt KEVENT 9
+.Os
+.Sh NAME
+.Nm kevent ,
+.Nm ke_event_init ,
+.Nm ke_event_signal ,
+.Nm ke_event_is_signalled ,
+.Nm ke_event_clear
+.Nd dispatcher event object
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft void
+.Fn ke_event_init "kevent_t *ev" "bool signalled"
+.Ft void
+.Fn ke_event_signal "kevent_t *ev"
+.Ft bool
+.Fn ke_event_is_signalled "kevent_t *ev"
+.Ft bool
+.Fn ke_event_clear "kevent_t *ev"
+.Sh DESCRIPTION
+The dispatcher event object is a dispatcher object that can be waited on by
+.Xr ke_wait 9 ,
+defined by the
+.Vt kevent_t
+type.
+.Pp
+The event object is in one of two states: signalled or not signalled.
+While an event object is signalled, it can be acquired by a waiter. The object
+remains signalled until it is explicitly cleared.
+.Pp
+The
+.Fn ke_event_init
+function initialises an event object, setting its signal state to the value
+specified by the
+.Fa signalled
+parameter.
+.Pp
+The
+.Fn ke_event_signal
+function sets the signal state of the event object to signalled.
+.Pp
+The
+.Fn ke_event_is_signalled
+function returns the signal state of the event object.
+.Pp
+The
+.Fn ke_event_clear
+function sets the signal state of the event object to not signalled.
+.Pp
+.Sh CONTEXT
+All these functions may be called from any context at or below
+.Dv kIPLDPC .
+.Sh CODE REFERENCES
+These functions are implemented in
+.Pa kernel/kern/event.c .
+.Pp
+The interface is declared in
+.Pa kernel/include/kdk/kern.h .
+.Sh SEE ALSO
+.Xr ke_wait 9 ,
+.Sh HISTORY
+These interfaces have always been in Keyronex.

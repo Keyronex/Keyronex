@@ -1,0 +1,65 @@
+.Dd October 6, 2024
+.Dt KTIMER 9
+.Os
+.Sh NAME
+.Nm ktimer ,
+.Nm ke_timer_init ,
+.Nm ke_timer_set ,
+.Nm ke_timer_cancel
+.Nd dispatcher timer object
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft void
+.Fn ke_timer_init "ktimer_t *timer"
+.Ft void
+.Fn ke_timer_set "ktimer_t *timer" "uint64_t nanosecs"
+.Ft void
+.Fn ke_timer_cancel "ktimer_t *timer"
+.Sh DESCRIPTION
+The dispatcher timer object is a dispatcher object that can be waited on by
+.Xr ke_wait 9 ,
+defined by the
+.Vt ktimer_t
+type.
+.Pp
+The timer object is an object that can be set to expire at a certain time in the
+future.
+When the timer expires, it becomes signalled and waiters are awoken, then the
+timer is disabled again and set non-signalled.
+.Pp
+The
+.Fn ke_timer_init
+function initialises a timer object.
+.Pp
+The
+.Fn ke_timer_set
+function sets the timer to expire at the time specified by the
+.Fa nanosecs
+parameter.
+.Pp
+If the timer is already set, an attempt will be made to cancel the timer. If it
+cannot be cancelled, which means the timer is currently becoming signalled, the
+function will spin for a short time until the signalling is complete, and then
+the timer will be set to the new value.
+.Pp
+The
+.Fn ke_timer_cancel
+function tries to cancel the timer. If the timer is already in the process of
+becoming signalled, the function will spin for a short time until the signalling
+is complete, and then the timer will be cancelled.
+.Sh CONTEXT
+All these functions may be called from any context at or below
+.Dv kIPLDPC .
+.Sh CODE REFERENCES
+These functions are implemented in
+.Pa kernel/kern/timer.c .
+.Pp
+Additional logic for the timer is implemented in
+.Pa kernel/kern/clock.c .
+.Pp
+The interface is declared in
+.Pa kernel/include/kdk/kern.h .
+.Sh SEE ALSO
+.Xr ke_wait 9 ,
+.Sh HISTORY
+These interfaces have always been in Keyronex.

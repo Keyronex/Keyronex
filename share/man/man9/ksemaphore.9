@@ -1,0 +1,73 @@
+.Dd October 6, 2024
+.Dt KSEMAPHORE 9
+.Os
+.Sh NAME
+.Nm ksemaphore ,
+.Nm ke_semaphore_init ,
+.Nm ke_semaphore_reset ,
+.Nm ke_semaphore_release ,
+.Nm ke_semaphore_release_maxone
+.Nd dispatcher mutex object
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft void
+.Fn ke_semaphore_init "ksemaphore_t *sem" "unsigned count"
+.Ft void
+.Fn ke_semaphore_reset "ksemaphore_t *sem" "unsigned count"
+.Ft void
+.Fn ke_semaphore_release "ksemaphore_t *sem" "unsigned adjustment"
+.Ft void
+.Fn ke_semaphore_release_maxone "ksemaphore_t *sem"
+.Sh DESCRIPTION
+The dispatcher semaphore object is a dispatcher object that can be waited on by
+.Xr ke_wait 9 ,
+defined by the
+.Vt ksemaphore_t
+type.
+.Pp
+The semaphore object is a counter that can be incremented and decremented.
+When the counter is zero, waiters will be put to sleep until the counter is
+incremented.
+.Pp
+Waiters sleep until the counter is positive, and the counter is decremented when
+a waiter is satisfied.
+.Pp
+The
+.Fn ke_semaphore_init
+function initialises a semaphore object, setting its counter to the value
+specified by the
+.Fa count
+parameter.
+.Pp
+The
+.Fn ke_semaphore_reset
+function resets a semaphore object, setting its counter to the value
+specified by the
+.Fa count
+parameter.
+.Pp
+The
+.Fn ke_semaphore_release
+function increments the counter of a semaphore object by the value
+specified by the
+.Fa adjustment
+parameter.
+.Pp
+The
+.Fn ke_semaphore_release_maxone
+function increments the counter of a semaphore object by one only if the counter
+was zero.
+.Pp
+.Sh CONTEXT
+All these functions may be called from any context at or below
+.Dv kIPLDPC .
+.Sh CODE REFERENCES
+These functions are implemented in
+.Pa kernel/kern/semaphore.c .
+.Pp
+The interface is declared in
+.Pa kernel/include/kdk/kern.h .
+.Sh SEE ALSO
+.Xr ke_wait 9 ,
+.Sh HISTORY
+These interfaces have always been in Keyronex.

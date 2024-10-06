@@ -1,0 +1,119 @@
+.Dd October 6, 2024
+.Dt KE_WAIT 9
+.Os
+.Sh NAME
+.Nm ke_wait ,
+.Nm ke_wait_multi
+.Nd dispatcher object waiting mechanism
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft kwaitstatus_t
+.Fn ke_wait "void *object" "const char *reason" "bool user" "bool alertable" "nanosecs_t timeout"
+.Ft kwaitstatus_t
+.Fn ke_wait_multi "size_t nobjects" "void *objects[]" "const char *reason" "bool wait_all" "bool user" "bool alertable" "nanosecs_t timeout" "kwaitblock_t *waitblocks"
+.Sh DESCRIPTION
+Dispatcher objects are a set of objects provided by the kernel that can be
+waited on by a thread.
+Objects are associated with a signal state; when the object is signalled, it can
+be acquired by a waiter.
+.Pp
+Acquisition may have side effects depending on which object is being waited on;
+for example, when a wait for a mutex is satisfied, the mutex is then owned by
+the waiting thread.
+.Pp
+The
+.Fn ke_wait
+function waits on a single dispatcher object,
+while the
+.Fn ke_wait_multi
+function waits on multiple dispatcher objects - either until all of them bcome
+signalled and all acquired, or until any one of them becomes signalled and is
+acquired.
+.Pp
+If none of the objects is signalled or (for wait-all) all of the objects are not
+signalled at the time of calling the wait function, the waiting thread is put to
+sleep until such time as the object(s) become signalled and the wait can be
+satisfied.
+.Pp
+The object types that can be waited on are as follows:
+.Bl -tag
+.It Vt kevent_t
+An event object. See
+.Xr kevent 9 .
+.It Vt kmutex_t
+A mutex object. See
+.Xr kmutex 9 .
+.It Vt ksemaphore_t
+A semaphore object. See
+.Xr ksemaphore 9 .
+.It Vt ktimer_t
+A timer object. See
+.Xr ktimer 9 .
+.El
+.Pp
+The parameter
+.Fa object
+or
+.Fa objects
+specifies the object(s) to wait on.
+.Pp
+The parameter
+.Fa reason
+specifies a string that describes the reason for waiting, for debugging
+purposes.
+.Pp
+The parameter
+.Fa wait_all
+specifies whether the wait should be satisfied only when all objects are
+signalled and acquired. Otherwise, the wait is satisfied when any one of the
+objects is signalled and acquired.
+.Pp
+The parameter
+.Fa user
+specifies whether the wait is being performed on behalf of a user thread.
+.Pp
+The parameter
+.Fa alertable
+specifies whether the wait can be interrupted by an alert, signal, or AST.
+.Pp
+The parameter
+.Fa timeout
+specifies the maximum time to wait for the object(s) to become signalled, in
+nanoseconds, before returning unsatisfied.
+.Pp
+For waits on greater than 4 objects, the parameter
+.Fa waitblocks
+should point to an array of wait blocks, one for each object being waited on.
+These do not need to be initialised.
+.Sh CONTEXT
+These functions may only be called from thread context at
+.Xr ipl 9
+less than
+.Dv kIPLDPC .
+.Sh RETURN VALUES
+On success, the index of the object that was signalled is returned. For
+.Fn ke_wait ,
+which takes only one argument, this is always 0.
+.Pp
+Otherwise, a negative code is returned. These codes are:
+.Bl -tag
+.It Dv kKernWaitStatusTimedOut
+The wait timed out. No objects have been acquired.
+.It Dv kKernWaitStatusSignalled
+The wait was interrupted by an alert, signal, or AST.
+.It Dv kKernWaitStatusInvalidArgument
+An invalid argument was passed to the function.
+.El
+.Sh CODE REFERENCES
+These functions are implemented in
+.Pa kernel/kern/wait.c .
+.Pp
+The interface is declared in
+.Pa kernel/include/kdk/kern.h .
+.Sh SEE ALSO
+.Xr kevent 9 ,
+.Xr kmutex 9 ,
+.Xr ksemaphore 9 ,
+.Xr ktimer 9
+.Sh HISTORY
+These interfaces have always been in Keyronex.
