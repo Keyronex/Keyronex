@@ -1,0 +1,86 @@
+.Dd October 6, 2024
+.Dt LOCKING 9
+.Os
+.Sh NAME
+.Nm locking
+.Nd introduction to locking and synchronization mechanisms
+.Sh DESCRIPTION
+There are several mechanisms in the Keyronex kernel for synchronisation between
+threads and between threads and interrupt handlers.
+These mechanisms vary in characteristics.
+.Pp
+A major division is between the contexts in which they can be used.
+Context is mostly defined by what
+.Xr ipl 9
+level execution is at.
+.Em Thread context ,
+for example, is generally at low IPL, while
+.Em DPC context
+.Po
+see
+.Xr dpc 9
+.Pc
+is at
+.Dv kIPLDPC ,
+and
+.Em hard interrupt context
+at
+.Dv kIPLDevice .
+In each case, the IPL level can also be temporarily raised - but it cannot be
+lowered below the level at which the context was entered.
+.Pp
+In general, low IPL refers to an IPL less than
+.Dv kIPLDPC ,
+and high IPL to an IPL greater than or equal to
+.Dv kIPLDPC .
+.Ss Spinlocks
+Spinlocks are the most basic locking mechanism in the Keyronex kernel, and the
+only one that can be used in all contexts. Each has an associated an IPL,
+and execution is raised to that level when the lock is held. This IPL must be
+greater than
+.Dv kIPLDPC .
+They do not block, but spin until the lock is available. This is why they are
+not suitable for holding for extended periods of time.
+.Pp
+See
+.Xr spinlock 9
+for more information.
+.Xr ipl 9
+details the restrictions incurred by high-IPL operation inherent to spinlocks.
+.Ss Mutexes
+Mutexes are a heavy-weight mechanism. They can be acquired only from thread
+context while at IPL less than
+.Dv kIPLDPC ,
+but can be released at that IPL in principle.
+They block, and a thread is put to sleep until the mutex is available.
+.Ss Events
+Events can be waited on only from thread context at low IPL, but may be
+signalled at
+.Dv kIPLDPC .
+They carry a signalled flag that can be set and cleared, and a thread can wait
+on an event, sleeping until the signalled flag is set. The flag remains set
+until explicitly cleared.
+.Ss Semaphores
+Everyone knows what semaphores are. The rules on their use in Keyronex are
+similar to those for events: waiting requires low IPL, but signalling is also
+allowed at
+.Dv kIPLDPC .
+.Ss RWLocks
+Reader-Writer Locks (or RWLocks) will be implemented in the future.
+They will be the preferred mechanism for most synchronisation (both
+reader-writer and simple cases) as they will provide priority inheritance,
+adaptively spin, and be small (word-sized).
+The APIs currently exist but the implementation is trivial and lacks the
+features described here.
+.Ss RCU
+Read-Copy-Update is a mechanism that allows reader access to data structures
+without locking or blocking, even while writers are modifying the data, by means
+of deferring the freeing of old data until all readers have finished with it.
+Writers still have to synchronise with each other through traditional means like
+spinlocks or mutexes. RCU is not as easy to use as the other mechanisms.
+.Pp
+See
+.Xr rcu 9
+for more information.
+.Sh HISTORY
+The locking manual page was begun on October the 6th, 2024.

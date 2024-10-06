@@ -78,10 +78,14 @@ Blocks all interrupts. This is the highest interrupt priority level.
 .El
 
 .Pp
-
 Note: On some architectures, consecutive subsets of the first four interrupt
 levels (kIPLHigh, kIPLIPI, kIPLClock, kIPLDevice) may be merged due to
 platform-specific limitations.
+.Pp
+As shorthand, "low IPL" refers to IPL less than
+.Dv kIPLDPC ,
+and "high IPL" refers to IPL greater than or equal to
+.Dv kIPLDPC .
 
 .Sh FUNCTIONS
 The following functions are provided for managing the interrupt priority level:
@@ -102,9 +106,7 @@ This function is used to lower the priority level after completing a section
 that must run at high IPL.
 .It Fn splget void
 Returns the current interrupt priority level.
-
 .El
-
 .Sh HISTORY
 The
 .Nm ipl

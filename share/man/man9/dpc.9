@@ -1,0 +1,46 @@
+.Dd October 6, 2024
+.Dt DPC 9
+.Os
+.Sh NAME
+.Nm dpc ,
+.Nm ke_dpc_enqueue
+.Nd deferred procedure call mechanism
+.Sh SYNOPSIS
+.In kdk/kern.h
+.Ft void
+.Fn ke_dpc_enqueue "kdpc_t *dpc"
+.Sh DESCRIPTION
+The Deferred Procedure Call (DPC) mechanism is a mechanism for scheduling work
+to be carried out at the IPL
+.Dv kIPLDPC .
+(See
+.Xr ipl 9
+for more information on IPL, as the DPC mechanism emerges naturally from it.)
+.Pp
+DPCs consist of an object of type
+.Vt kdpc_t ,
+which contains a function pointer and an argument.
+When a DPC is enqueued, it is executed immediately if the IPL is low; if the IPL
+is above
+.Dv kIPLDPC ,
+the DPC is appended to a per-processor queue, the elements of which are executed
+in order when the IPL falls
+below
+.Dv kIPLDPC .
+.Pp
+DPCs are used primarily to carry out work that has been deferred from a device
+interrupt handler.
+Device interrupt handlers run at an even higher IPL, and hence are unable to
+perform tasks like signalling synchronisation objects.
+It is also undesirable to spend too much time in these handlers, as they block
+other interrupts at
+.Dv kIPLDevice .
+.Sh CODE REFERENCES
+The DPC interface is declared in
+.Pa kernel/include/kdk/kern.h
+.Sh SEE ALSO
+.Xr ipl 9
+.Sh HISTORY
+The
+.Nm DPC
+interface has always been in Keyronex.
