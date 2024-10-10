@@ -215,6 +215,8 @@ cow_pages(struct fork_state *fork_state, eprocess_t *parent, eprocess_t *child,
 
 		/* set up a standby fork pte */
 		vmp_md_pte_create_fork(pte_wire2.pte, forkpage);
+		vmp_pagetable_page_nonzero_pte_created(child->vm,
+		    pte_wire2.pgtable_pages[0]);
 		vmp_pte_wire_state_release(&pte_wire2, false);
 
 		vmp_release_pfn_lock(ipl);

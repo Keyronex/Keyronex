@@ -216,6 +216,8 @@ void vmp_md_delete_table_pointers(vm_procstate_t *ps, vm_page_t *dirpage,
 
 void vmp_pagetable_page_noswap_pte_created(vm_procstate_t *ps, vm_page_t *page,
     bool is_new);
+void vmp_pagetable_page_nonzero_pte_created(vm_procstate_t *ps,
+    vm_page_t *page);
 void vmp_pagetable_page_pte_deleted(vm_procstate_t *ps, vm_page_t *page,
     bool was_swap);
 void vmp_pagetable_page_pte_became_swap(vm_procstate_t *ps, vm_page_t *page);

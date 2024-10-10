@@ -92,6 +92,17 @@ vmp_pagetable_page_noswap_pte_created(vm_procstate_t *ps, vm_page_t *page,
 #endif
 }
 
+void
+vmp_pagetable_page_nonzero_pte_created(vm_procstate_t *ps, vm_page_t *page)
+{
+	kassert(ke_spinlock_held(&vmp_pfn_lock));
+
+	check_page_consistency(page);
+
+	vmp_page_retain_locked(page);
+	page->nonzero_ptes++;
+}
+
 /*!
  * @brief Update pagetable page after PTE(s) made zero within it.
  *

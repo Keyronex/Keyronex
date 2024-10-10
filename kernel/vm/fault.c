@@ -435,6 +435,8 @@ vmp_do_fork_fault(eprocess_t *process, vm_procstate_t *vmps,
 		vmp_page_retain_locked(page);
 		vmp_md_pte_create_hw(state->pte, pfn, false,
 		    area_info->executable, true, vaddr <= HIGHER_HALF);
+		vmp_pagetable_page_noswap_pte_created(vmps,
+		    state->pgtable_pages[0], false);
 
 		vmp_pte_wire_state_release(state, false);
 		vmp_release_pfn_lock(kIPLAST);
