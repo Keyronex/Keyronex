@@ -58,6 +58,7 @@ update_page_use_stats(enum vm_page_use use, int value)
 		CASE(kPageUseDeleted, ndeleted);
 		CASE(kPageUseAnonShared, nanonshare);
 		CASE(kPageUseAnonPrivate, nanonprivate);
+		CASE(kPageUseAnonFork, nanonfork);
 		CASE(kPageUseFileShared, nfileshared);
 		CASE(kPageUseKWired, nkwired);
 		CASE(kPageUsePML4, nprocpgtable);
@@ -749,6 +750,13 @@ vmp_page_steal(vm_page_t *page, enum vm_page_use new_use)
 		vmp_md_pte_create_zero(pte);
 		vmp_pagetable_page_pte_deleted(&kernel_procstate, dirpage,
 		    false);
+		break;
+	}
+
+	case kPageUseAnonFork: {
+		/* a fork PTE is either valid, busy, swap, or zero */
+		kassert(vmp_pte_characterise(pte) == kPTEKindValid);
+		vmp_md_pte_create_swap(pte, page->drumslot);
 		break;
 	}
 
