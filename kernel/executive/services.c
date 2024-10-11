@@ -172,15 +172,17 @@ ex_syscall_dispatch(md_intr_frame_t *frame, enum krx_syscall syscall,
 	switch (syscall) {
 	case kKrxDebugMessage: {
 		char *msg;
-		int r;
+		int len;
 
-		if (arg1 == 0)
-			kfatal("NULL debug message!\n");
+		len = strldup_user(&msg, (const char *)arg1, 4095);
+		if (len < 0) {
+			kprintf("libc output failed (couldn't copy message)\n");
+			return len;
+		}
 
-		r = copyin_str((const char *)arg1, &msg);
-		kassert(r == 0);
 		kprintf("[libc]: %s\n", msg);
-		kmem_strfree(msg);
+		kmem_free(msg, len + 1);
+
 		return 0;
 	}
 

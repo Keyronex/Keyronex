@@ -27,28 +27,13 @@
 #include <kdk/poll.h>
 #include <kdk/vfs.h>
 
+#define LIST_ELEM_IS_INSERTED(elm, field) ((elm)->field.le_prev != NULL)
+
 #define LIST_REMOVE_AND_ZERO(elm, field) do {	\
 	LIST_REMOVE(elm, field);		\
 	(elm)->field.le_prev = NULL;		\
 	(elm)->field.le_next = NULL;		\
 } while (0)
-
-
-#define LIST_ELEM_IS_INSERTED(elm, field) ((elm)->field.le_prev != NULL)
-
-static inline int
-memcpy_from_user(void *dst, const void *src, size_t len)
-{
-	memcpy(dst, src, len);
-	return 0;
-}
-
-static inline int
-memcpy_to_user(void *dst, const void *src, size_t len)
-{
-	memcpy(dst, src, len);
-	return 0;
-}
 
 /*!
  * An epoll entry.

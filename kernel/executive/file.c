@@ -24,27 +24,6 @@
 /* objman.c */
 extern obj_class_t file_class;
 
-size_t
-user_strlen(const char *user_str)
-{
-	return strlen(user_str);
-}
-
-int
-copyin_str(const char *ustr, char **out)
-{
-	int len;
-	char *kstr;
-
-	len = user_strlen(ustr);
-	kstr = kmem_alloc(len + 1);
-	memcpy(kstr, ustr, len);
-
-	kstr[len] = '\0';
-	*out = kstr;
-	return 0;
-}
-
 void
 ex_file_free(obj_t *obj)
 {
@@ -79,17 +58,19 @@ ex_service_file_open(eprocess_t *proc, const char *upath)
 	char *path;
 	namecache_handle_t nch;
 	descnum_t descnum;
-	int r;
+	int r, len;
 
-	r = copyin_str(upath, &path);
-	if (r != 0)
-		return r;
+	len = strldup_user(&path, upath, 4095);
+	if (len < 0)
+		return len;
 
 	r = vfs_lookup(root_nch, &nch, path, 0);
 #if TRACE_SYSCALLS
 	if (r != 0)
 		kprintf("Couldn't find <%s>\n", upath);
 #endif
+
+	kmem_free(path, len + 1);
 
 	if (r == 0) {
 		struct file *file;

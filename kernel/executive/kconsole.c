@@ -36,18 +36,6 @@ io_result(int result, size_t count)
 	return (io_result_t) { .result = result, .count = count };
 }
 
-int
-copyin(vaddr_t udata, size_t len, char **out)
-{
-	char *kdata;
-	kdata = kmem_alloc(len);
-	if (kdata == NULL)
-		return -ENOMEM;
-	memcpy(kdata, (void *)udata, len);
-	*out = kdata;
-	return 0;
-}
-
 void
 ex_console_input(int c)
 {
@@ -144,7 +132,11 @@ console_write(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 	(void)vnode;
 	(void)off;
 
-	r = copyin(user_addr, size, &buf);
+	buf = kmem_alloc(size);
+	if (buf == NULL)
+		return io_result(-ENOMEM, 0);
+
+	r = memcpy_from_user(buf, (void*)user_addr, size);
 	if (r != 0) {
 		kmem_free(buf, size);
 		return io_result(-r, 0);
