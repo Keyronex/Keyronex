@@ -280,3 +280,9 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 	kprintf("Thread %p; CPU %p:\n", curthread(), curcpu());
 	kfatal("Unimplemented\n");
 }
+
+void
+ki_trap_recover(md_intr_frame_t *frame)
+{
+	kfatal("Implement me!\n");
+}

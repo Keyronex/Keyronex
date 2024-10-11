@@ -106,3 +106,9 @@ ki_enter_user_mode(uintptr_t ip, uintptr_t sp)
 		     : "a"(sp), "a"(ip), "a"(sr)
 		     : "memory");
 }
+
+void
+ki_trap_recover(md_intr_frame_t *frame)
+{
+	kfatal("Implement me!\n");
+}

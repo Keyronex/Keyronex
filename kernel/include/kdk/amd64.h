@@ -99,6 +99,17 @@ typedef struct md_pcb {
 	uint8_t fpu[512];
 } md_pcb_t;
 
+typedef struct ktrap_recovery_frame {
+	uint64_t rbx;
+	uint64_t rbp;
+	uint64_t r12;
+	uint64_t r13;
+	uint64_t r14;
+	uint64_t r15;
+	uint64_t rsp;
+	uint64_t rip;
+} ktrap_recovery_frame_t;
+
 typedef struct md_cpucb {
 	/*! local APIC id */
 	uint64_t lapic_id;

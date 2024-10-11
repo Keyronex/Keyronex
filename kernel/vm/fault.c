@@ -589,9 +589,13 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		ex_rwlock_acquire_read(&vmps->map_lock, "vm_fault: acquire map_lock");
 		map_entry = vmp_ps_vad_find(vmps, vaddr);
 
-		if (map_entry == NULL)
-			kfatal("TID %zu: "
-		"VM fault at 0x%zx doesn't have a vad\n", curthread()->tid, vaddr);
+		if (map_entry == NULL) {
+			kprintf("TID %zu: "
+				"VM fault at 0x%zx doesn't have a vad\n",
+			    curthread()->tid, vaddr);
+			ex_rwlock_release_read(&vmps->map_lock);
+			return kVMFaultRetFailure;
+		}
 
 		area_info.object = map_entry->object;
 		area_info.writeable = map_entry->flags.protection & kVMWrite;
@@ -948,6 +952,7 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 }
 
 void md_intr_frame_trace(md_intr_frame_t *frame);
+void ki_trap_recover(md_intr_frame_t *frame);
 
 int
 vmp_fault(md_intr_frame_t *frame, vaddr_t vaddr, bool write, bool execute,
@@ -970,6 +975,10 @@ retry:
 		goto retry;
 
 	case kVMFaultRetFailure: {
+		if (curthread()->in_trap_recoverable) {
+			ki_trap_recover(frame);
+			return ret;
+		}
 		md_intr_frame_trace(frame);
 		kfatal("Stopping.\n");
 	}

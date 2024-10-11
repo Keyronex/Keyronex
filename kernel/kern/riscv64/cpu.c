@@ -185,3 +185,25 @@ md_send_dpc_ipi(kcpu_t *cpu)
 	for (;;)
 		;
 }
+
+void
+ki_trap_recover(md_intr_frame_t *frame)
+{
+	ktrap_recovery_frame_t *recovery = &(curthread()->trap_recovery);
+
+	frame->sepc = recovery->ra;
+	frame->a0 = 1;
+	frame->s0 = recovery->s0;
+	frame->s1 = recovery->s1;
+	frame->s2 = recovery->s2;
+	frame->s3 = recovery->s3;
+	frame->s4 = recovery->s4;
+	frame->s5 = recovery->s5;
+	frame->s6 = recovery->s6;
+	frame->s7 = recovery->s7;
+	frame->s8 = recovery->s8;
+	frame->s9 = recovery->s9;
+	frame->s10 = recovery->s10;
+	frame->s11 = recovery->s11;
+	frame->sp = recovery->sp;
+}

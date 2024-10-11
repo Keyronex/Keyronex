@@ -128,6 +128,12 @@ typedef struct md_cpucb {
 	ipl_t ipl;
 } md_cpucb_t;
 
+typedef struct ktrap_recovery_frame {
+	uint32_t d2, d3, d4, d5, d6, d7;
+	uint32_t a2, a3, a4, a5, a6, sp;
+	uint32_t pc;
+} ktrap_recovery_frame_t;
+
 typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);
 
 /*! A private structure. */

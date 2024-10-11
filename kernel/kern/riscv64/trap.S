@@ -247,3 +247,22 @@ asm_thread_trampoline:
 	call c_thread_trampoline
 	/* if returned, we forked - restore to userland */
 	j fork_return
+
+.globl ke_trap_recovery_save
+ke_trap_recovery_save: /* int (ktrap_recovery_frame_t *) */
+	sd ra, 0(a0)
+	sd s0, 8(a0)
+	sd s1, 16(a0)
+	sd s2, 24(a0)
+	sd s3, 32(a0)
+	sd s4, 40(a0)
+	sd s5, 48(a0)
+	sd s6, 56(a0)
+	sd s7, 64(a0)
+	sd s8, 72(a0)
+	sd s9, 80(a0)
+	sd s10, 88(a0)
+	sd s11, 96(a0)
+	sd sp, 104(a0)
+	li a0, 0
+	ret

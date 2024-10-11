@@ -22,4 +22,19 @@ asm_swtch:
 
 	ret
 
+.globl ke_trap_recovery_save
+ke_trap_recovery_save: /* int (ktrap_recovery_frame_t *frame) */
+	movq (%rsp),%rax
+	movq %rbx, (%rdi)
+	movq %rbp, 8(%rdi)
+	movq %r12, 16(%rdi)
+	movq %r13, 24(%rdi)
+	movq %r14, 32(%rdi)
+	movq %r15, 40(%rdi)
+	movq %rsp, 48(%rdi)
+	movq %rax, 56(%rdi)
+
+	xorl %eax,%eax
+	ret
+
 .section .note.GNU-stack,"",%progbits

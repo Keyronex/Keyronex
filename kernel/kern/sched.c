@@ -254,6 +254,7 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
 	thread->process = proc;
 	thread->port = NULL;
 	thread->port_msg = NULL;
+	thread->in_trap_recoverable = false;
 	ke_timer_init(&thread->wait_timer);
 	ipl = ke_spinlock_acquire(&proc->lock);
 	proc->thread_count++;
@@ -283,4 +284,18 @@ ke_process_init(kprocess_t *proc)
 	LIST_INIT(&proc->thread_list);
 	proc->thread_count = 0;
 	proc->state = kProcessStateLive;
+}
+
+ktrap_recovery_frame_t *
+ke_trap_recovery_begin(void)
+{
+	kthread_t *thread = curthread();
+	thread->in_trap_recoverable = true;
+	return &thread->trap_recovery;
+}
+
+void
+ke_trap_recovery_end(void)
+{
+	curthread()->in_trap_recoverable = false;
 }

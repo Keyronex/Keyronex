@@ -295,3 +295,16 @@ asm_thread_trampoline:
 	eret
 	dsb sy
 	isb
+
+.global ke_trap_recovery_save
+ke_trap_recovery_save: /* int (ktrap_recovery_frame_t *frame) */
+	stp x29, x30, [x0]
+	stp x19, x20, [x0, #16]
+	stp x21, x22, [x0, #32]
+	stp x23, x24, [x0, #48]
+	stp x25, x26, [x0, #64]
+	stp x27, x28, [x0, #80]
+	mov x2, sp
+	str x2, [x0, #96]
+	mov x0, xzr
+	ret

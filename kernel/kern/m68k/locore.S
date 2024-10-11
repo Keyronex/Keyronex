@@ -34,4 +34,12 @@ asm_thread_trampoline: /* (void)(void(*)(void *), void *) */
 
 	rte
 
+.globl ke_trap_recovery_save
+ke_trap_recovery_save: /* int (ktrap_recovery_frame_t *frame) */
+	movea.l 4(%sp),%a0
+	movem.l %d2-%d7/%a2-%a7, %a0@
+	move.l (%sp),48(%a0)
+	clr.l %d0
+	rts
+
 .section .note.GNU-stack,"",%progbits

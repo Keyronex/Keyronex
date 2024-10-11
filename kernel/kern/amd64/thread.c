@@ -164,3 +164,19 @@ ke_set_tcb(uintptr_t tcb)
 {
 	wrmsr(kAMD64MSRFSBase, tcb);
 }
+
+void
+ki_trap_recover(md_intr_frame_t *frame)
+{
+	ktrap_recovery_frame_t *recovery = &(curthread()->trap_recovery);
+
+	frame->rax = 1;
+	frame->rbx = recovery->rbx;
+	frame->rbp = recovery->rbp;
+	frame->r12 = recovery->r12;
+	frame->r13 = recovery->r13;
+	frame->r14 = recovery->r14;
+	frame->r15 = recovery->r15;
+	frame->rsp = recovery->rsp + 8; /* effect a return */
+	frame->rip = recovery->rip;
+}

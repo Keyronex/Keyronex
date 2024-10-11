@@ -72,6 +72,10 @@ typedef struct __attribute__((packed)) md_intr_frame {
 	uint64_t tpidr_el0;
 } md_intr_frame_t;
 
+typedef struct __attribute__((packed)) ktrap_recovery_frame {
+	aarch64_context_t context;
+} ktrap_recovery_frame_t;
+
 typedef bool (*intr_handler_t)(md_intr_frame_t *frame, void *arg);
 
 /*! A private structure. */

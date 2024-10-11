@@ -96,6 +96,12 @@ typedef struct md_cpucb {
 	uint32_t aplic_idc_hartindex;
 } md_cpucb_t;
 
+typedef struct ktrap_recovery_frame {
+	uint64_t ra;
+	uint64_t s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
+	uint64_t sp;
+} ktrap_recovery_frame_t;
+
 static inline __attribute__((noreturn)) void
 hcf(void)
 {

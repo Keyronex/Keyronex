@@ -357,6 +357,11 @@ typedef struct kthread {
 	uintptr_t tcb;
 	/* ID - only needed for userland threads. to move into ethread. */
 	uintptr_t tid;
+
+	/* Is the thread within a trap-recoverable region? */
+	bool in_trap_recoverable;
+	/* Trap recovery state if so. */
+	ktrap_recovery_frame_t trap_recovery;
 } kthread_t;
 
 typedef enum kprocess_state {
@@ -718,6 +723,9 @@ void kputc(int ch, void *unused);
 void ke_format_time(nanosecs_t nanosecs, char *out, size_t size);
 
 void ke_set_tcb(uintptr_t tcb);
+
+ktrap_recovery_frame_t *ke_trap_recovery_begin(void);
+void ke_trap_recovery_end(void);
 
 extern kcpu_local_data_t bootstrap_cpu_local_data;
 extern kcpu_t **cpus;
