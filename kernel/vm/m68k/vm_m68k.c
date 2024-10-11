@@ -19,7 +19,8 @@ static void
 store_urp_and_srp(paddr_t val)
 {
 	asm volatile("movec %0, %%urp\n\t"
-		     "movec %0, %%srp"
+		     "movec %0, %%srp\n\t"
+		     "pflusha\n\t"
 		     :
 		     : "r"(val));
 }

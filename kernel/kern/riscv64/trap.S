@@ -132,6 +132,7 @@ common_save:
 	mv		a0, sp
 	call	c_trap
 
+fork_return:
 	ld		t0, FRAME_SEPC(sp)
 	ld		t1, FRAME_SSTATUS(sp)
 
@@ -244,3 +245,5 @@ asm_thread_trampoline:
 	mv a0, s0
 	mv a1, s1
 	call c_thread_trampoline
+	/* if returned, we forked - restore to userland */
+	j fork_return

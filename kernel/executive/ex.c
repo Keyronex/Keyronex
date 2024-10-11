@@ -238,8 +238,8 @@ ex_init(void *)
 	r = ps_process_create(&initps, NULL);
 	kassert(r == 0);
 
-	r = ps_thread_create(&user_init_thread, "user init thread 0", user_init,
-	    NULL, initps);
+	r = ps_thread_create(&user_init_thread, NULL, "user init thread 0",
+	    user_init, NULL, initps);
 	kassert(r == 0);
 	user_init_thread->user = true;
 

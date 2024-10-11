@@ -4,6 +4,7 @@
  */
 
 #include "kdk/executive.h"
+#include "kdk/libkern.h"
 #include "kdk/riscv64.h"
 #include "kern/ki.h"
 #include "vm/vmp.h"
@@ -58,13 +59,38 @@ c_thread_trampoline(void (*func)(void *), void *arg)
 }
 
 void
-ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
+ki_thread_copy_fpu_state(kthread_t *to)
 {
-	riscv64_context_t *ctx = (riscv64_context_t *)(thread->kstack_base +
-	    KSTACK_SIZE - sizeof(riscv64_context_t));
+	/* TODO */
+}
+
+void
+ke_thread_init_context(kthread_t *thread, md_intr_frame_t *fork_frame,
+    void (*func)(void *), void *arg)
+{
+	riscv64_context_t *ctx;
+
+	if (fork_frame == NULL) {
+		ctx = thread->kstack_base + KSTACK_SIZE -
+		    sizeof(riscv64_context_t);
+
+	} else {
+		md_intr_frame_t *frame;
+
+		/* keep 38 * 8 in sync with trap.S! */
+		frame = thread->kstack_base + KSTACK_SIZE - (38 * 8);
+		ctx = thread->kstack_base + KSTACK_SIZE - (38 * 8) -
+		    sizeof(riscv64_context_t);
+
+		memcpy(frame, fork_frame, sizeof(*fork_frame));
+		frame->a0 = 0;
+		frame->sepc += 4;
+	}
+
 	ctx->ra = (uintptr_t)asm_thread_trampoline;
 	ctx->s0 = (uintptr_t)func;
 	ctx->s1 = (uintptr_t)arg;
+
 	thread->pcb.sp = ctx;
 	thread->pcb.supervisor_sp = (uintptr_t)thread->kstack_base + KSTACK_SIZE;
 }

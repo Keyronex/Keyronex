@@ -13,4 +13,25 @@ asm_swtch: /* (void)(tcb_t *old, tcb_t *new) */
 	movem.l %a1@, %d2-%d7/%a2-%a6 | load new callee-saved registers
 	rts | finally return into new context
 
+.extern thread_trampoline
+
+.global asm_thread_trampoline
+asm_thread_trampoline: /* (void)(void(*)(void *), void *) */
+	jsr thread_trampoline | call thread_trampoline
+
+	# drop the sp we pushed
+	add	 #4, %sp
+
+	# restore the usp we pushed
+	move.l %sp@+, %a0
+	move.l %a0, %usp
+
+	# restore the general regs we pushed
+	movem.l  %sp@+, %d0-%d7/%a0-%a6
+
+	# removed the alignment
+	add #2, %sp
+
+	rte
+
 .section .note.GNU-stack,"",%progbits

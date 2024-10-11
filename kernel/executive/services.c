@@ -13,13 +13,14 @@
 #include <keyronex/syscall.h>
 
 #include "kdk/executive.h"
+#include "kdk/file.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/poll.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
-#include "kdk/file.h"
 #include "object.h"
 
 /* futex.c */
@@ -102,8 +103,8 @@ krx_fork_thread(uintptr_t entry, uintptr_t stack)
 	info->entry = entry;
 	info->stack = stack;
 
-	r = ps_thread_create(&thread, "newthread", user_thread_trampoline, info,
-	    ex_curproc());
+	r = ps_thread_create(&thread, NULL, "newthread", user_thread_trampoline,
+	    info, ex_curproc());
 	if (r != 0) {
 		kmem_free(info, sizeof(*info));
 		return r;
@@ -120,21 +121,47 @@ krx_thread_exit(void)
 	ps_exit_this_thread();
 }
 
+static void
+fork_thread(void *arg)
+{
+	/* nothing to do yet */
+}
+
+void ki_thread_copy_fpu_state(kthread_t *to);
+
 static pid_t
 krx_fork(md_intr_frame_t *frame)
 {
-	eprocess_t *newproc;
+	eprocess_t *newproc = NULL;
+	kthread_t *newthread = NULL;
 	int r;
 
 	r = ps_process_create(&newproc, ex_curproc());
 	if (r != 0)
-		return r;
+		goto error;
 
-#if 0
-	kfatal("unimplemented!\n");
-#endif
+	r = ps_thread_create(&newthread, frame, "newthread", fork_thread,
+	    NULL, newproc);
+	if (r != 0)
+		goto error;
+
+	ki_thread_copy_fpu_state(newthread);
+	newthread->tcb = curthread()->tcb;
+
+	kprintf("TID %zu forked into TID %zu\n", curthread()->tid, newthread->tid);
+
+	ke_thread_resume(newthread);
 
 	return -ENOSYS;
+
+error:
+	if (newthread != NULL)
+		obj_release(newthread);
+
+	if (newproc != NULL)
+		obj_release(newproc);
+
+	return r;
 }
 
 uintptr_t
@@ -146,6 +173,9 @@ ex_syscall_dispatch(md_intr_frame_t *frame, enum krx_syscall syscall,
 	case kKrxDebugMessage: {
 		char *msg;
 		int r;
+
+		if (arg1 == 0)
+			kfatal("NULL debug message!\n");
 
 		r = copyin_str((const char *)arg1, &msg);
 		kassert(r == 0);

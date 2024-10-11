@@ -625,7 +625,12 @@ void ke_timer_set(ktimer_t *timer, uint64_t nanosecs);
  */
 void ke_timer_cancel(ktimer_t *timer);
 
-void ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg);
+/*!
+ * @brief Initialise context for a new thread and set it up to run a function.
+ * @param fork_frame If non-NULL, fork this context.
+ */
+void ke_thread_init_context(kthread_t *thread, md_intr_frame_t *fork_frame,
+    void (*func)(void *), void *arg);
 
 void ke_thread_resume(kthread_t *thread);
 

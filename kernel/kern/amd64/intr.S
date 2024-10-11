@@ -165,10 +165,15 @@ MAKE_ISR_THUNK ._intNoCode, 128 # posix syscalls
 #define INT_ISR_THUNK(VAL) MAKE_ISR_THUNK ._intNoCode, VAL ;
 NORMAL_INTS(INT_ISR_THUNK)
 
+.extern thread_trampoline
 
-.global swtch
-swtch:
-	mov %rdi, %rsp
+.global asm_thread_trampoline
+asm_thread_trampoline:
+	call thread_trampoline
+
+	# frame size is a multiple of 8 not 16 bytes, so ke_thread_init_context()
+	# pushed an extra 8 bytes below the frame. drop that.
+	pop %rax
 
 	pop %rax
 	pop %rbx

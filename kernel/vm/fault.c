@@ -590,7 +590,8 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 		map_entry = vmp_ps_vad_find(vmps, vaddr);
 
 		if (map_entry == NULL)
-			kfatal("VM fault at 0x%zx doesn't have a vad\n", vaddr);
+			kfatal("TID %zu: "
+		"VM fault at 0x%zx doesn't have a vad\n", curthread()->tid, vaddr);
 
 		area_info.object = map_entry->object;
 		area_info.writeable = map_entry->flags.protection & kVMWrite;

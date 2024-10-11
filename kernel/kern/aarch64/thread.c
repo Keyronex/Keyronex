@@ -66,6 +66,14 @@ restore_fp(uint64_t *state)
 }
 
 void
+ki_thread_copy_fpu_state(kthread_t *to)
+{
+	ipl_t ipl = spldpc();
+	save_fp(to->pcb.fp);
+	splx(ipl);
+}
+
+void
 md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {
 	bool intr;
@@ -94,14 +102,30 @@ thread_trampoline(void (*func)(void *), void *arg)
 }
 
 void
-ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
+ke_thread_init_context(kthread_t *thread, md_intr_frame_t *fork_frame,
+    void (*func)(void *), void *arg)
 {
-	uint64_t *sp = thread->kstack_base + KSTACK_SIZE;
+	uint64_t *sp;
+
 	memset(&thread->pcb, 0x0, sizeof(thread->pcb));
+
+	if (fork_frame == NULL) {
+		sp = thread->kstack_base + KSTACK_SIZE;
+	} else {
+		md_intr_frame_t *frame;
+
+		/* keep 304 in sync with trap.S! */
+		sp = thread->kstack_base + KSTACK_SIZE - 304;
+		memcpy(sp, fork_frame, sizeof(*fork_frame));
+
+		frame = (md_intr_frame_t *)sp;
+		frame->x0 = 0;
+	}
+
 	thread->pcb.genregs.x19 = (uint64_t)func;
 	thread->pcb.genregs.x20 = (uint64_t)arg;
 	thread->pcb.genregs.x30 = (uint64_t)asm_thread_trampoline;
-	thread->pcb.genregs.sp = (uint64_t)(sp);
+	thread->pcb.genregs.sp = (uint64_t)sp;
 }
 
 static inline size_t

@@ -83,8 +83,8 @@ struct intr_entry {
 };
 
 typedef struct md_pcb {
-	uintptr_t user_sp;
-	uintptr_t supervisor_sp;
+	uintptr_t user_sp;	 /*!< Scratch space used only in trap entry. */
+	uintptr_t supervisor_sp; /*!< Pre-trap kernel SP, must save/restore. */
 	riscv64_context_t *sp;
 	uint64_t fp[66];
 } md_pcb_t;

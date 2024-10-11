@@ -1,7 +1,7 @@
 #include "kdk/executive.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/misc.h"
-#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "kern/ki.h"
@@ -26,8 +26,8 @@ struct id_allocator tid_allocator = STATIC_IDALLOC_INITIALISER(tid_bitmap,
     UINT16_MAX / 8);
 
 int
-ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
-    void *arg, eprocess_t *ps)
+ps_thread_create(kthread_t **out, md_intr_frame_t *fork_frame, const char *name,
+    void (*fn)(void *), void *arg, eprocess_t *ps)
 {
 	vaddr_t stack;
 	kthread_t *thread;
@@ -44,9 +44,12 @@ ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
 	thread->kstack_base = (void *)stack;
 
 	ki_thread_common_init(thread, NULL, &ps->kprocess, name);
-	ke_thread_init_context(thread, fn, arg);
+	ke_thread_init_context(thread, fork_frame, fn, arg);
 
 	thread->tid = idalloc_alloc(&tid_allocator);
+
+	if (ps != kernel_process)
+		thread->user = true;
 
 	*out = thread;
 	obj_retain(ps);
@@ -58,7 +61,7 @@ int
 ps_create_kernel_thread(kthread_t **out, const char *name, void (*fn)(void *),
     void *arg)
 {
-	return ps_thread_create(out, name, fn, arg, kernel_process);
+	return ps_thread_create(out, NULL, name, fn, arg, kernel_process);
 }
 
 void

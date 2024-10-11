@@ -1,8 +1,9 @@
+#include "kdk/amd64.h"
 #include "kdk/amd64/gdt.h"
 #include "kdk/amd64/regs.h"
 #include "kdk/executive.h"
-#include "kdk/libkern.h"
 #include "kdk/kern.h"
+#include "kdk/libkern.h"
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
@@ -26,6 +27,14 @@ fxrstor(uint8_t *state)
 }
 
 void
+ki_thread_copy_fpu_state(kthread_t *to)
+{
+	ipl_t ipl = spldpc();
+	fxsave(to->pcb.fpu);
+	splx(ipl);
+}
+
+void
 md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {
 	write_cr3(ex_curproc()->vm->md.table);
@@ -43,7 +52,7 @@ md_switch(kthread_t *old_thread, kthread_t *new_thread)
 	asm_swtch(&old_thread->pcb, &new_thread->pcb);
 }
 
-static void
+void
 thread_trampoline(void (*func)(void *), void *arg)
 {
 	ke_spinlock_release_nospl(&curcpu()->old_thread->lock);
@@ -51,16 +60,33 @@ thread_trampoline(void (*func)(void *), void *arg)
 	func(arg);
 }
 
+void asm_thread_trampoline(void);
+
 void
-ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
+ke_thread_init_context(kthread_t *thread, md_intr_frame_t *fork_frame,
+    void (*func)(void *), void *arg)
 {
-	uint64_t *sp = thread->kstack_base + KSTACK_SIZE;
+	uint64_t *sp;
+
 	memset(&thread->pcb, 0x0, sizeof(thread->pcb));
-	//thread->pcb.rip = (uintptr_t)thread_trampoline;
+
+	if (fork_frame == NULL) {
+		sp = thread->kstack_base + KSTACK_SIZE;
+	} else {
+		md_intr_frame_t *frame;
+
+		sp = thread->kstack_base + KSTACK_SIZE - sizeof(*fork_frame);
+		memcpy(sp, fork_frame, sizeof(*fork_frame));
+
+		frame = (md_intr_frame_t *)sp;
+		frame->rax = 0;
+	}
+
 	thread->pcb.rdi = (uint64_t)func;
 	thread->pcb.rsi = (uint64_t)arg;
+
 	sp-= 2;
-	*sp = (uint64_t)thread_trampoline;
+	*sp = (uint64_t)asm_thread_trampoline;
 	thread->pcb.rsp = (uint64_t)(sp);
 	thread->tcb = 0;
 }

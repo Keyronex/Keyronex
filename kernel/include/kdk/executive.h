@@ -117,8 +117,8 @@ int ex_work_enqueue(ex_work_t *work);
 
 void ps_early_init(kthread_t *thread0);
 int ps_process_create(eprocess_t **out, eprocess_t *fork);
-int ps_thread_create(kthread_t **out, const char *name, void (*fn)(void *),
-    void *arg, eprocess_t *process);
+int ps_thread_create(kthread_t **out, md_intr_frame_t *fork_frame,
+    const char *name, void (*fn)(void *), void *arg, eprocess_t *process);
 int ps_create_kernel_thread(kthread_t **out, const char *name,
     void (*fn)(void *), void *arg);
 void ps_exit_this_thread(void);

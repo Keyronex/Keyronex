@@ -17,7 +17,7 @@ md_switch(kthread_t *old_thread, kthread_t *new_thread)
 	asm_swtch(&old_thread->pcb.genregs, &curthread()->pcb.genregs);
 }
 
-static void
+void
 thread_trampoline(void (*func)(void *), void *arg)
 {
 	ke_spinlock_release_nospl(&curcpu()->old_thread->lock);
@@ -26,16 +26,36 @@ thread_trampoline(void (*func)(void *), void *arg)
 }
 
 void
-ke_thread_init_context(kthread_t *thread, void (*func)(void *), void *arg)
+ki_thread_copy_fpu_state(kthread_t *to)
 {
-	uint32_t *sp = thread->kstack_base;
+	/* TODO */
+}
+
+void asm_thread_trampoline(void (*)(void *), void *);
+
+void
+ke_thread_init_context(kthread_t *thread, md_intr_frame_t *fork_frame,
+    void (*func)(void *), void *arg)
+{
+	uint32_t *sp;
+
 	memset(&thread->pcb.genregs, 0x0, sizeof(thread->pcb.genregs));
-	thread->pcb.genregs.pc = (uintptr_t)thread_trampoline;
-	sp = (uint32_t *)((uintptr_t)thread->kstack_base + KSTACK_SIZE -
-	    sizeof(uint32_t));
+	thread->pcb.genregs.pc = (uintptr_t)asm_thread_trampoline;
+
+	if (fork_frame == NULL) {
+		sp = thread->kstack_base + KSTACK_SIZE - sizeof(uint32_t);
+	} else {
+		md_intr_frame_t *frame;
+
+		sp = thread->kstack_base + KSTACK_SIZE - sizeof(*fork_frame);
+		memcpy(sp, fork_frame, sizeof(*fork_frame));
+
+		frame = (void*)sp;
+		frame->d0 = 0;
+	}
+
 	*sp-- = (uint32_t)arg;
 	*sp-- = (uint32_t)func;
-	*sp-- = 0x0;
 	thread->pcb.genregs.sp = (uint32_t)sp;
 	thread->pcb.genregs.sr = 0x2000;
 	thread->tcb = 0;
