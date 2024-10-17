@@ -91,11 +91,13 @@ ps_process_create(eprocess_t **out, eprocess_t *fork)
 
 	vm_ps_init(proc);
 
-	if (fork != NULL)
+	if (fork != NULL) {
 		r = vm_fork(fork, proc);
-	kassert(r == 0);
+		kassert(r == 0);
+	}
 
-	proc->objspace = ex_object_space_create();
+	proc->objspace = ex_object_space_create(
+	    fork != NULL ? fork->objspace : NULL);
 
 	*out = proc;
 

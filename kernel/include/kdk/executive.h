@@ -85,8 +85,8 @@ typedef struct eprocess {
 	ex_object_space_t *objspace;
 } eprocess_t;
 
-/*! @brief Create a new handle table. */
-ex_object_space_t *ex_object_space_create(void);
+/*! @brief Create a new handle table, optionally by forking another. */
+ex_object_space_t *ex_object_space_create(ex_object_space_t *fork);
 
 /*! @brief Resolve an object descriptor number within a space. */
 obj_t *ex_object_space_lookup(ex_object_space_t *table, descnum_t descnum);
@@ -95,7 +95,8 @@ obj_t *ex_object_space_lookup(ex_object_space_t *table, descnum_t descnum);
 descnum_t ex_object_space_reserve(ex_object_space_t *table, bool cloexec);
 
 /*! @brief Insert an entry into a already reserved slot in an object space. */
-void ex_object_space_reserved_insert(ex_object_space_t *table, descnum_t descnum, obj_t *obj);
+void ex_object_space_reserved_insert(ex_object_space_t *table,
+    descnum_t descnum, obj_t *obj);
 
 /*! @brief Free an index in an object space. Returns prior value (if any). */
 int ex_object_space_free_index(ex_object_space_t *table, descnum_t descnum,

@@ -47,11 +47,11 @@ struct ex_object_space {
 };
 
 ex_object_space_t *
-ex_object_space_create(void)
+ex_object_space_create(ex_object_space_t *fork)
 {
 	ex_object_space_t *table;
 	struct objtab_entries *entries;
-	size_t capacity = 64;
+	size_t capacity;
 
 	table = kmem_alloc(sizeof(*table));
 	if (table == NULL)
@@ -64,6 +64,11 @@ ex_object_space_create(void)
 	entries = kmem_alloc(sizeof(*entries));
 	if (entries == NULL)
 		goto fail_entries;
+
+	if (fork != NULL)
+		capacity = fork->entries->capacity;
+	else
+		capacity = 64;
 
 	entries->capacity = capacity;
 	entries->n_open = 0;
@@ -79,9 +84,25 @@ ex_object_space_create(void)
 	if (entries->cloexec == NULL)
 		goto fail;
 
-	memset(entries->objptrs, 0, capacity * sizeof(obj_t *));
-	memset(entries->open, 0, bit32_size(capacity));
-	memset(entries->cloexec, 0, bit32_size(capacity));
+	if (fork != NULL) {
+		for (size_t i = 0; i < capacity; i++) {
+			if (bit32_test(fork->entries->open, i)) {
+				obj_t *obj = fork->entries->objptrs[i];
+				kassert(obj != NULL);
+				obj = obj_tryretain_rcu(obj);
+				kassert(obj != NULL);
+				ke_rcu_assign_pointer(entries->objptrs[i], obj);
+			}
+		}
+		memcpy(entries->open, fork->entries->open,
+		    bit32_size(capacity));
+		memcpy(entries->cloexec, fork->entries->cloexec,
+		    bit32_size(capacity));
+	} else {
+		memset(entries->objptrs, 0, capacity * sizeof(obj_t *));
+		memset(entries->open, 0, bit32_size(capacity));
+		memset(entries->cloexec, 0, bit32_size(capacity));
+	}
 
 	ke_rcu_assign_pointer(table->entries, entries);
 
