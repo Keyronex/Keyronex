@@ -377,7 +377,7 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 	ke_spinlock_release(&zone->lock, ipl);
 
 #if KMEM_SANITY_CHECKS == 1
-	*(void**)ret = (void*)0xbee9bee9;
+	memset(ret, 0xbe, zone->size);
 #endif
 
 	return ret;

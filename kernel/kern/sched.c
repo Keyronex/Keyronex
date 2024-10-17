@@ -42,7 +42,9 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 	cpu->reschedule_reason = kRescheduleReasonNone;
 	cpu->idle_thread = idle_thread;
 	cpu->curthread = idle_thread;
+	ke_spinlock_init(&cpu->sched_lock);
 	TAILQ_INIT(&cpu->timer_queue);
+	TAILQ_INIT(&cpu->runqueue);
 	cpu->done_thread_dpc.cpu = NULL;
 	cpu->done_thread_dpc.arg = cpu;
 	cpu->done_thread_dpc.callback = done_thread_dpc;

@@ -27,8 +27,11 @@
 #include <kdk/poll.h>
 #include <kdk/vfs.h>
 
+#define LIST_ENTRY_INIT(elm, field) do {	\
+	(elm)->field.le_prev = NULL;		\
+	(elm)->field.le_next = NULL;		\
+} while (0)
 #define LIST_ELEM_IS_INSERTED(elm, field) ((elm)->field.le_prev != NULL)
-
 #define LIST_REMOVE_AND_ZERO(elm, field) do {	\
 	LIST_REMOVE(elm, field);		\
 	(elm)->field.le_prev = NULL;		\
@@ -156,6 +159,7 @@ watch_add(struct epoll *ep, descnum_t desc, struct file *watch_file,
 	entry->desc = desc;
 	entry->file = watch_file;
 	entry->event = event;
+	LIST_ENTRY_INIT(entry, ready_link);
 
 	LIST_INSERT_HEAD(&ep->watches, entry, epoll_watch_link);
 
@@ -488,6 +492,7 @@ ex_service_epoll_create(eprocess_t *proc, int flags)
 		return -EMFILE;
 	}
 
+	file->nch = (namecache_handle_t) { NULL, NULL };
 	file->vnode = vnode;
 
 	ke_mutex_init(&ep->mutex);

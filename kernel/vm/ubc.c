@@ -160,6 +160,7 @@ retry:
 
 	window->vnode = vnode;
 	window->offset = offset / UBC_WINDOW_SIZE;
+	RB_INSERT(ubc_window_tree, &vnode->ubc_windows, window);
 
 	return window;
 }

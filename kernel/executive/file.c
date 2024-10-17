@@ -49,6 +49,9 @@ ex_file_new(void)
 	ke_mutex_init(&file->offset_mutex);
 	file->offset = 0;
 
+	ke_spinlock_init(&file->epoll_lock);
+	LIST_INIT(&file->epoll_watches);
+
 	return file;
 }
 
