@@ -1,5 +1,5 @@
 [submodule "mlibc"]
-	path = mlibc
+	path = vendor/mlibc
 	url = ../../Keyronex/mlibc
 [submodule "vendor/limine"]
 	path = vendor/limine

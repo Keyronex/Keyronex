@@ -19,6 +19,7 @@ sources:
     subdir: 'vendor'
 
   - name: 'mlibc'
+    subdir: 'vendor'
 
   - name: pkgconf
     subdir: 'sources'
