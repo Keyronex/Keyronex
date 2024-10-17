@@ -313,7 +313,7 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 	ipl = ke_spinlock_acquire(&zone->lock);
 
 	slab = STAILQ_FIRST(&zone->slablist);
-	if (!slab || slab->nfree == 0) {
+	if (slab == NULL || slab->nfree == 0) {
 		/* no slabs or all full (full slabs always at tail of queue) */
 		if (zone->size > kSmallSlabMax) {
 			slab = large_slab_new(zone, flags);
@@ -376,13 +376,9 @@ kmem_xzonealloc(kmem_zone_t *zone, vmem_flag_t flags)
 
 	ke_spinlock_release(&zone->lock, ipl);
 
-
-	if (zone == &kmem_1024)
-		{
-			//kprintf("BREAK HERE!\n");
-			//for (;;) ;
-		}
+#if KMEM_SANITY_CHECKS == 1
 	*(void**)ret = (void*)0xbee9bee9;
+#endif
 
 	return ret;
 }
@@ -396,11 +392,13 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 
 	ipl = ke_spinlock_acquire(&zone->lock);
 
+#if KMEM_SANITY_CHECKS == 1
 	if (*(void**)ptr == (void*)0xFeedFee3) {
 		kfatal("Double free?\n");
 	}
 	memset(ptr, 0x42, zone->size);
 	*(void**)ptr = (void*)0xFeedFee3;
+#endif
 
 	if (zone->size <= kSmallSlabMax) {
 		slab = (struct kmem_slab *)SMALL_SLAB_HDR(PGROUNDDOWN(ptr));
@@ -426,10 +424,8 @@ kmem_xzonefree(kmem_zone_t *zone, void *ptr, vmem_flag_t flags)
 			}
 		}
 
-		if (!newfree) {
+		if (newfree == NULL)
 			kfatal("kmem_slabfree: invalid pointer %p", ptr);
-			return;
-		}
 
 		SLIST_REMOVE(&zone->bufctllist, newfree, kmem_bufctl,
 		    entrylist);
