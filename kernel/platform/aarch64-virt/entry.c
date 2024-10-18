@@ -69,6 +69,8 @@ plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread,
 	/* fpen */
 	asm volatile("msr cpacr_el1, %0" ::"r"(cpacr | (0b11 << 20)));
 	cpu->cpucb.mpidr = smpi->mpidr;
+	cpu->cpucb.ipl = 0;
+	cpu->cpucb.hard_ipl = 0;
 }
 
 void

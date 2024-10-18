@@ -75,6 +75,7 @@ common_core_init(kcpu_t *cpu, kthread_t *thread, struct limine_smp_info *smpi)
 	char *name;
 
 	plat_common_core_early_init(cpu, thread, smpi);
+	ki_cpu_init(cpu, thread);
 
 	/* guard allocations */
 	ke_spinlock_acquire_nospl(&early_lock);
@@ -82,8 +83,6 @@ common_core_init(kcpu_t *cpu, kthread_t *thread, struct limine_smp_info *smpi)
 	ki_thread_common_init(thread, cpu, &kernel_process->kprocess, name);
 	ke_spinlock_release_nospl(&early_lock);
 	thread->state = kThreadStateRunning;
-
-	ki_cpu_init(cpu, thread);
 
 	plat_common_core_late_init(cpu, thread, smpi);
 
