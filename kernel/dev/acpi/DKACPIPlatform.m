@@ -35,6 +35,8 @@ struct pcie_ecam {
 static DKACPIPlatform *acpiplatform = NULL;
 struct pcie_ecam *ecam;
 
+extern vaddr_t rsdp_address;
+
 #define ACPI_PCI_ROOT_BUS_PNP_ID "PNP0A03"
 #define ACPI_PCIE_ROOT_BUS_PNP_ID "PNP0A08"
 
@@ -126,10 +128,6 @@ mcfg_walk(void)
 
 - (instancetype)initWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
 {
-	struct uacpi_init_params params = {
-		.rsdp = V2P(rsdp),
-		.log_level = UACPI_LOG_INFO,
-	};
 	int r;
 
 	self = [super initWithProvider:provider];
@@ -138,7 +136,7 @@ mcfg_walk(void)
 	[self registerDevice];
 	DKLogAttach(self);
 
-	r = uacpi_initialize(&params);
+	r = uacpi_initialize(0);
 	kassert(r == UACPI_STATUS_OK);
 
 	mcfg_walk();
@@ -175,6 +173,7 @@ mcfg_walk(void)
 
 + (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
 {
+	rsdp_address = rsdp;
 	[[self alloc] initWithProvider:provider rsdp:rsdp];
 
 	return YES;

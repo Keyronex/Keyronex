@@ -10,6 +10,8 @@
 #include "uacpi/types.h"
 #include "vm/vmp.h"
 
+vaddr_t rsdp_address;
+
 #ifdef __amd64__
 #include "platform/amd64/IOAPIC.h"
 #include "kdk/amd64/portio.h"
@@ -525,13 +527,13 @@ uacpi_kernel_free_spinlock(uacpi_handle handle)
 }
 
 uacpi_cpu_flags
-uacpi_kernel_spinlock_lock(uacpi_handle handle)
+uacpi_kernel_lock_spinlock(uacpi_handle handle)
 {
 	return ke_spinlock_acquire(handle);
 }
 
 void
-uacpi_kernel_spinlock_unlock(uacpi_handle handle, uacpi_cpu_flags ipl)
+uacpi_kernel_unlock_spinlock(uacpi_handle handle, uacpi_cpu_flags ipl)
 {
 	ke_spinlock_release(handle, ipl);
 }
@@ -633,4 +635,11 @@ uacpi_kernel_reset_event(uacpi_handle opaque)
 {
 	ksemaphore_t *semaphore = opaque;
 	ke_semaphore_reset(semaphore, 0);
+}
+
+uacpi_status
+uacpi_kernel_get_rsdp(uacpi_phys_addr *out_rdsp_address)
+{
+	*out_rdsp_address = V2P(rsdp_address);
+	return UACPI_STATUS_OK;
 }

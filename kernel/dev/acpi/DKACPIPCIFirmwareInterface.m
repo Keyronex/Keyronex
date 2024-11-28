@@ -190,6 +190,8 @@ search_adr(uacpi_handle arg, uacpi_namespace_node *node)
 
 	uacpi_free_pci_routing_table(pci_routes);
 
+	kprintf("PCI pin %d routed to GSI %d\n", info->pin, source->id);
+
 	return 0;
 }
 
