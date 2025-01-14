@@ -80,8 +80,7 @@ nc_free(struct namecache *ncp)
 	kassert(ncp->mutex.owner == NULL);
 	kassert(RB_EMPTY(&ncp->entries));
 	if (ncp->vp != NULL) {
-		kprintf(" -VN- reLEASE in nc_free()\n");
-		vn_release(ncp->vp);
+		VN_RELEASE(ncp->vp, "(nc_free)");
 		ncp->vp = NULL;
 	}
 	kmem_strfree(ncp->name);

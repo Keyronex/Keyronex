@@ -99,7 +99,7 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 		frame->dev = vnode->vfs->device;
 		frame->vnode = vnode;
 		/* retain a reference on the vnode  */
-		vn_retain(vnode);
+		VN_RETAIN(vnode, "(for writeback)");
 		break;
 
 	default:
@@ -236,9 +236,8 @@ vmp_writeback(void *)
 					 * adjustment would have been made.
 					 */
 					vmp_release_pfn_lock(ipl);
-					kprintf(" -VN- reLEASE (0 dirty))\n");
-					/* x-ref vnode dirty refcount */
-					vn_release(obj->file.vnode);
+					VN_RELEASE(obj->file.vnode,
+					    "(0 dirty left)");
 				} else {
 					vmp_release_pfn_lock(ipl);
 				}
@@ -247,8 +246,7 @@ vmp_writeback(void *)
 				 * release the reference we took on vnode in
 				 * prepare_cluster_write()
 				 */
-				kprintf(" -VN- reLEASE in writeback daemon\n");
-				vn_release(obj->file.vnode);
+				VN_RELEASE(obj->file.vnode, "(writeback done)");
 				ipl = vmp_acquire_pfn_lock();
 			}
 		}

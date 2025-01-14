@@ -726,11 +726,9 @@ vmp_do_fault(vaddr_t vaddr, bool write, bool execute, bool user)
 					 * until dirty pages have all been
 					 * written.
 					 */
-					kprintf(
-					    " -VN- reTAIN Vnode %p has its first dirty page\n",
-					    area_info.object->file.vnode);
+					VN_RETAIN(area_info.object->file.vnode,
+					    "(first dirty page)");
 					/* x-ref vnode dirty refcount */
-					vn_retain(area_info.object->file.vnode);
 				}
 			}
 

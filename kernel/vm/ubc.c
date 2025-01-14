@@ -110,14 +110,11 @@ static void
 window_replace(ubc_window_t *window)
 {
 	window->refcnt++;
-	kprintf(" -VN- reTAIN in window_replace\n");
-	vn_retain(window->vnode);
+	VN_RETAIN(window->vnode, "window_replace");
 	TAILQ_REMOVE(&ubc_lruqueue, window, queue_entry);
 	RB_REMOVE(ubc_window_tree, &window->vnode->ubc_windows, window);
 	ke_spinlock_release(&ubc_lock, kIPLAST);
-
-	kprintf(" -VN- reLEASE in window_replace\n");
-	vn_release(window->vnode);
+	VN_RELEASE(window->vnode, "window_replace");
 
 	unmap_window(window);
 
@@ -251,7 +248,20 @@ ubc_remove_vfs(vfs_t *vfs)
 void
 ubc_init(void)
 {
+#if 0
+	/*
+	 * Enough windows to have 3/4 of the total memory used at once by the
+	 * UBC.
+	 *
+	 * If sizeof(ubc_window_t) == 128 and UBC_WINDOW_SIZE = 256kib, then
+	 * the overhead for the UBC window control blocks amounts to:
+	 *   (1 gib / 256 kib) * 128 bytes = 512 kib.
+	 */
+	window_count = MIN2(KVM_UBC_SIZE / UBC_WINDOW_SIZE,
+	    ((vmstat.ntotal / 4) * 3) / (UBC_WINDOW_SIZE / PGSIZE));
+#else
 	window_count = 2;
+#endif
 
 	window_array = kmem_alloc(sizeof(ubc_window_t) * window_count);
 

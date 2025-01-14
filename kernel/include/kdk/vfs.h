@@ -164,6 +164,21 @@ void vnode_setup_cache(vnode_t *vnode);
 vnode_t *vn_retain(vnode_t *vnode);
 void vn_release(vnode_t *vnode);
 
+#ifdef LOG_VFS_REFCOUNT
+#define VN_RELEASE(VN, MSG) ({
+	kprintf("(VN release) %p -> now %d %s\n", VN, VN->refcount - 1, MSG);
+	vn_release(VN);
+})
+#define VN_RETAIN(VN, MSG) ({
+	kprintf("(VN retain) %p -> now %d %s\n", VN, VN->refcount + 1, MSG);
+	vn_retain(VN);
+})
+#else
+#define VN_RELEASE(VN, MSG) vn_release(VN)
+#define VN_RETAIN(VN, MSG) vn_retain(VN)
+#endif
+
+
 static inline bool
 vn_has_cache(vnode_t *vnode)
 {

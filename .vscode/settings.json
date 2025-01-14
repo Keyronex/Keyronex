@@ -29,6 +29,7 @@
 	"files.associations": {
 		"*.inc": "c",
 		"format": "c"
-	}
+	},
+	"makefile.configureOnOpen": false
 
 }

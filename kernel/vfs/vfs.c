@@ -65,7 +65,9 @@ vnode_new(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, kmutex_t *rwlock,
 	vnode_t *vnode = vnode_alloc();
 	ipl_t ipl;
 
+#if LOG_VFS_REFCOUNT
 	kprintf(" -VN-  CREATE in vnode_new (rc == 1)\n");
+#endif
 	vnode->refcount = 1;
 
 	vnode->type = type;
@@ -200,12 +202,16 @@ vfs_try_retain(vfs_t *vfs)
 
 		if (__atomic_compare_exchange_n(&vfs->file_refcnt, &current,
 			desired, 0, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+#if LOG_VFS_REFCOUNT
 			kprintf(" -VFS- reTAIN %p to %d\n", vfs, desired);
+#endif
 			return 0;
 		}
 	}
 
+#if LOG_VFS_REFCOUNT
 	kprintf(" -VFS- reTAIN %p FAILED\n", vfs);
+#endif
 	return -1;
 }
 
@@ -214,7 +220,11 @@ vfs_release(vfs_t *vfs)
 {
 	uint32_t ret = __atomic_fetch_sub(&vfs->file_refcnt, 2,
 	    __ATOMIC_RELEASE);
+#if LOG_VFS_REFCOUNT
 	kprintf(" -VFS- reLEASE %p to %d\n", vfs, ret - 2);
+#else
+	(void)ret;
+#endif
 }
 
 void
