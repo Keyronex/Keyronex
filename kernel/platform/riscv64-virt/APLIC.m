@@ -150,7 +150,7 @@ volatile struct aplic_mmio *mmio;
 	kmem_asprintf(obj_name_ptr(self), "apic-%d", apic_entry->id);
 
 	r = vm_ps_map_physical_view(kernel_process->vm, &vaddr,
-	    sizeof(struct aplic_mmio), apic_entry->base_addr, kVMAll, kVMAll,
+	    sizeof(struct aplic_mmio), apic_entry->address, kVMAll, kVMAll,
 	    false);
 	kassert(r == 0);
 
