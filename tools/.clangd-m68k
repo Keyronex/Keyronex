@@ -15,3 +15,14 @@ If:
 CompileFlags:
   Add: [--target=m68k-elf ]
   CompilationDatabase: build/m68k/pkg-builds/mlibc
+---
+If:
+  PathMatch: posix_server/.*
+CompileFlags:
+  Add:
+    - '-isystem'
+    - '/ws/Projects/Keylite/build/m68k/system-root/usr/include/c++/13.2.0'
+    - '-isystem'
+    - '/ws/Projects/Keylite/build/m68k/system-root/usr/include/c++/13.2.0/m68k-keyronex'
+    - '--target=m68k-elf'
+  CompilationDatabase: build/m68k/pkg-builds/posix_server

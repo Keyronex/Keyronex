@@ -1,7 +1,8 @@
 #ifndef KRX_KDK_EXECUTIVE_H
 #define KRX_KDK_EXECUTIVE_H
 
-#include "kdk/kern.h"
+#include <kdk/kern.h>
+#include <kdk/object.h>
 
 /*!
  * @brief 0 or negative errno value.

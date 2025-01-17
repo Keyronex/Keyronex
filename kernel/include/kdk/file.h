@@ -5,16 +5,26 @@
 #include "kdk/vm.h"
 #include "kdk/vfs.h"
 
+enum file_flags {
+	/*! This handle may not be duplicated. */
+	kHandleUnshareable = 1,
+};
+
 /*!
  * @brief Open File object.
  */
 typedef struct file {
+	enum file_flags flags;
 	kspinlock_t epoll_lock;
 	LIST_HEAD(, poll_entry) epoll_watches;
-	namecache_handle_t nch;
-	vnode_t *vnode;
-	kmutex_t offset_mutex;
-	io_off_t offset;
+	union {
+		struct {
+			namecache_handle_t nch;
+			vnode_t *vnode;
+			kmutex_t offset_mutex;
+			io_off_t offset;
+		};
+	};
 } file_t;
 
 file_t *ex_file_new(void);

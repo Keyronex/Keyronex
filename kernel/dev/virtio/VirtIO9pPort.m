@@ -104,7 +104,7 @@ static int counter = 0;
 
 	[self registerDevice];
 
-	DKLogAttachExtra(self, "Tag: %s\n", m_tagName);
+	DKLogAttachExtra(self, "Tag: %s", m_tagName);
 
 	return self;
 }

@@ -13,7 +13,7 @@
 #define SMP 1
 #define ENDIAN KRX_LITTLE_ENDIAN
 #define BITS 64
-#define KERN_HZ 64
+#define KERN_HZ 1000
 #define KSTACK_SIZE 32768
 
 #define PGSIZE 0x1000

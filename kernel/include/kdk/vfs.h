@@ -4,11 +4,10 @@
 #include <sys/stat.h>
 
 #include <fcntl.h>
+#include <kdk/dev.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
-
-#include "dev.h"
 
 struct poll_entry;
 RB_HEAD(ubc_window_tree, ubc_window);
@@ -82,10 +81,18 @@ typedef struct vnode {
 	/*! Paging I/O rqlock. */
 	kmutex_t *paging_rwlock;
 
-	/*! UBC windows into this vnode; protected by UBC spinlock */
-	struct ubc_window_tree ubc_windows;
-	/*! this vnode's VM object */
-	vm_object_t *object;
+	union {
+		/*! for VREG */
+		struct {
+			/*!
+			 * UBC windows into this vnode; protected by UBC
+			 * spinlock
+			 */
+			struct ubc_window_tree ubc_windows;
+			/*! this vnode's VM object */
+			vm_object_t *object;
+		};
+	};
 } vnode_t;
 
 typedef struct vfs {
@@ -177,7 +184,6 @@ void vn_release(vnode_t *vnode);
 #define VN_RELEASE(VN, MSG) vn_release(VN)
 #define VN_RETAIN(VN, MSG) vn_retain(VN)
 #endif
-
 
 static inline bool
 vn_has_cache(vnode_t *vnode)

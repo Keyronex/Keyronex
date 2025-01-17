@@ -1,18 +1,13 @@
 #ifndef KRX_KDK_OBJECT_H
 #define KRX_KDK_OBJECT_H
 
+#include <kdk/queue.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "kdk/queue.h"
-
 typedef uint8_t obj_class_t;
-
-typedef struct handle {
-	/*! actual object */
-	void *object;
-} handle_t;
+typedef void obj_t;
 
 typedef void (*obj_free_fn_t)(void *);
 
