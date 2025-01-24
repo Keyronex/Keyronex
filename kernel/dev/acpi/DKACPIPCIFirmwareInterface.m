@@ -65,8 +65,8 @@ struct node_search {
 	uacpi_namespace_node *node;
 };
 
-uacpi_ns_iteration_decision
-search_adr(uacpi_handle arg, uacpi_namespace_node *node)
+uacpi_iteration_decision
+search_adr(uacpi_handle arg, uacpi_namespace_node *node, uacpi_u32)
 {
 	struct node_search *search = arg;
 	uint64_t adr;
@@ -74,14 +74,14 @@ search_adr(uacpi_handle arg, uacpi_namespace_node *node)
 
 	r = uacpi_eval_adr(node, &adr);
 	if (r != UACPI_STATUS_OK)
-		return UACPI_NS_ITERATION_DECISION_CONTINUE;
+		return UACPI_ITERATION_DECISION_CONTINUE;
 
 	if (adr == search->adr) {
 		search->node = node;
-		return UACPI_NS_ITERATION_DECISION_BREAK;
+		return UACPI_ITERATION_DECISION_BREAK;
 	}
 
-	return UACPI_NS_ITERATION_DECISION_CONTINUE;
+	return UACPI_ITERATION_DECISION_CONTINUE;
 }
 
 - (void)createDownstreamBus:(uint8_t)bus
@@ -92,7 +92,7 @@ search_adr(uacpi_handle arg, uacpi_namespace_node *node)
 {
 	struct node_search search = { .adr = (slot << 16) | fun, .node = NULL };
 
-	uacpi_namespace_for_each_node_depth_first(acpiNode, search_adr,
+	uacpi_namespace_for_each_child_simple(acpiNode, search_adr,
 	    &search);
 
 	[[DKACPIPCIFirmwareInterface alloc] initWithProvider:upstream

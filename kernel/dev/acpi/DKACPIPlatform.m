@@ -67,8 +67,8 @@ extern vaddr_t rsdp_address;
 	(void)pcibus;
 }
 
-static uacpi_ns_iteration_decision
-iteration_callback(void *user, uacpi_namespace_node *node)
+static uacpi_iteration_decision
+iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32)
 {
 	const char *pci_list[] = { ACPI_PCI_ROOT_BUS_PNP_ID,
 		ACPI_PCIE_ROOT_BUS_PNP_ID, NULL };
@@ -83,7 +83,7 @@ iteration_callback(void *user, uacpi_namespace_node *node)
 		[PS2Keyboard probeWithProvider:self acpiNode:node];
 #endif
 
-	return UACPI_NS_ITERATION_DECISION_CONTINUE;
+	return UACPI_ITERATION_DECISION_CONTINUE;
 }
 
 void
@@ -163,7 +163,8 @@ mcfg_walk(void)
 	sb = uacpi_namespace_get_predefined(UACPI_PREDEFINED_NAMESPACE_SB);
 	kassert(sb != NULL);
 
-	uacpi_namespace_for_each_node_depth_first(sb, iteration_callback, self);
+
+	uacpi_namespace_for_each_child_simple(sb, iteration_callback, self);
 }
 
 - (void)iterateArchSpecificEarlyTables

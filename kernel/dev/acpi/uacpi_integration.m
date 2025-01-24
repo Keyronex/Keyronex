@@ -4,6 +4,7 @@
 #include "dev/pci/DKPCIBus.h"
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
+#include "kdk/libkern.h"
 #include "kdk/vm.h"
 #include "uacpi/kernel_api.h"
 #include "uacpi/status.h"
@@ -359,10 +360,11 @@ uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size, uacpi_handle *out_handle)
 	*out_handle = (uacpi_handle)base;
 	return UACPI_STATUS_OK;
 }
+
 void
 uacpi_kernel_io_unmap(uacpi_handle)
 {
-	kfatal("Implement me\n");
+	/* epsilon */
 }
 
 uacpi_status
@@ -382,23 +384,41 @@ uacpi_kernel_io_write(uacpi_handle handle, uacpi_size offset,
 }
 
 uacpi_status
-uacpi_kernel_pci_read(uacpi_pci_address *address, uacpi_size offset,
+uacpi_kernel_pci_device_open(uacpi_pci_address address,
+    uacpi_handle *out_handle)
+{
+	kassert(sizeof(uacpi_pci_address) <= sizeof(uacpi_handle));
+	memcpy(out_handle, &address, sizeof(address));
+	return UACPI_STATUS_OK;
+}
+
+void uacpi_kernel_pci_device_close(uacpi_handle)
+{
+	/* epsilon */
+}
+
+uacpi_status
+uacpi_kernel_pci_read(uacpi_handle device, uacpi_size offset,
     uacpi_u8 byte_width, uacpi_u64 *value)
 {
+	uacpi_pci_address address;
+
+	memcpy(&address, &device, sizeof(address));
+
 	switch (byte_width) {
 	case 1:
-		*value = pci_readb(address->segment, address->bus,
-		    address->device, address->function, offset);
+		*value = pci_readb(address.segment, address.bus, address.device,
+		    address.function, offset);
 		break;
 
 	case 2:
-		*value = pci_readw(address->segment, address->bus,
-		    address->device, address->function, offset);
+		*value = pci_readw(address.segment, address.bus, address.device,
+		    address.function, offset);
 		break;
 
 	case 4:
-		*value = pci_readl(address->segment, address->bus,
-		    address->device, address->function, offset);
+		*value = pci_readl(address.segment, address.bus, address.device,
+		    address.function, offset);
 		break;
 
 	default:
@@ -409,23 +429,27 @@ uacpi_kernel_pci_read(uacpi_pci_address *address, uacpi_size offset,
 }
 
 uacpi_status
-uacpi_kernel_pci_write(uacpi_pci_address *address, uacpi_size offset,
+uacpi_kernel_pci_write(uacpi_handle device, uacpi_size offset,
     uacpi_u8 byte_width, uacpi_u64 value)
 {
+	uacpi_pci_address address;
+
+	memcpy(&address, &device, sizeof(address));
+
 	switch (byte_width) {
 	case 1:
-		pci_writeb(address->segment, address->bus, address->device,
-		    address->function, offset, value);
+		pci_writeb(address.segment, address.bus, address.device,
+		    address.function, offset, value);
 		break;
 
 	case 2:
-		pci_writew(address->segment, address->bus, address->device,
-		    address->function, offset, value);
+		pci_writew(address.segment, address.bus, address.device,
+		    address.function, offset, value);
 		break;
 
 	case 4:
-		pci_writel(address->segment, address->bus, address->device,
-		    address->function, offset, value);
+		pci_writel(address.segment, address.bus, address.device,
+		    address.function, offset, value);
 		break;
 
 	default:
@@ -575,14 +599,14 @@ uacpi_kernel_free_mutex(uacpi_handle opaque)
 	kmem_free(opaque, sizeof(kmutex_t));
 }
 
-uacpi_bool
+uacpi_status
 uacpi_kernel_acquire_mutex(uacpi_handle opaque, uacpi_u16 timeout)
 {
 	kmutex_t *mutex = opaque;
 	kwaitresult_t w = ke_wait(mutex, "uacpi_kernel_acquire_mutex", false,
 	    false, timeout == 0xffff ? -1 : (nanosecs_t)timeout * NS_PER_S);
 	kassert(w == kKernWaitStatusOK || w == kKernWaitStatusTimedOut);
-	return w == kKernWaitStatusOK ? true : false;
+	return w == kKernWaitStatusOK ? UACPI_STATUS_OK : UACPI_STATUS_TIMEOUT;
 }
 
 void
@@ -642,4 +666,10 @@ uacpi_kernel_get_rsdp(uacpi_phys_addr *out_rdsp_address)
 {
 	*out_rdsp_address = V2P(rsdp_address);
 	return UACPI_STATUS_OK;
+}
+
+uacpi_u64
+uacpi_kernel_get_nanoseconds_since_boot(void)
+{
+	return cpus[0]->nanos;
 }

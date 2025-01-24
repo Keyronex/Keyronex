@@ -30,17 +30,17 @@ static const char codes_shifted[] = { '\0', '\e', '!', '@', '#', '$', '%', '^',
 
 @implementation PS2Keyboard
 
-uacpi_ns_iteration_decision
+uacpi_status
 mouse_dev_cb(void *user, uacpi_namespace_node *node)
 {
 	struct ps2_info *info = user;
 
 	kassert(info->mouse_node == NULL);
 	info->mouse_node = node;
-	return UACPI_NS_ITERATION_DECISION_BREAK;
+	return UACPI_ITERATION_DECISION_BREAK;
 }
 
-static uacpi_resource_iteration_decision
+static uacpi_status
 resource_cb(void *user, uacpi_resource *resource)
 {
 	struct ps2_info *info = user;
@@ -60,10 +60,10 @@ resource_cb(void *user, uacpi_resource *resource)
 			info->data_port = resource->io.minimum;
 	}
 
-	return UACPI_RESOURCE_ITERATION_CONTINUE;
+	return UACPI_ITERATION_DECISION_CONTINUE;
 }
 
-static uacpi_resource_iteration_decision
+static uacpi_status
 mouse_resource_cb(void *user, uacpi_resource *resource)
 {
 	struct ps2_info *info = user;
@@ -71,7 +71,7 @@ mouse_resource_cb(void *user, uacpi_resource *resource)
 	if (resource->type == UACPI_RESOURCE_TYPE_IRQ)
 		info->mouse_gsi = resource->irq.irqs[0];
 
-	return UACPI_RESOURCE_ITERATION_CONTINUE;
+	return UACPI_ITERATION_DECISION_CONTINUE;
 }
 
 + (BOOL)findResources:(uacpi_namespace_node *)node
