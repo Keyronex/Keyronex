@@ -70,7 +70,8 @@ rebuild-kernel: ${BUILD_SETUP_TARGET}
 build-all: ${BUILD_SETUP_TARGET}
 	(cd ${BUILD_DIR} && xbstrap install -c --all)
 
-image: build-all
+iso: build-all
+	env ARCH=$(ARCH) PLATFORM=$(PLATFORM) tools/mkiso.sh
 
 debug:
 	gdb-multiarch -x tools/gdbinit-$(PLATFORM)
