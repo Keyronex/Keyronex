@@ -1,7 +1,6 @@
 #if 0
 #include "dev/DKNIC.h"
 #endif
-#include "kdk/dev.h"
 #include "kdk/kern.h"
 #include "lwip/init.h"
 #include "lwip/timeouts.h"

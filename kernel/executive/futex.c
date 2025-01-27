@@ -1,6 +1,5 @@
 #include <errno.h>
 
-#include "kdk/dev.h"
 #include "kdk/executive.h"
 #include "kdk/kmem.h"
 #include "kdk/kern.h"
@@ -9,7 +8,7 @@
 typedef struct futex {
 	RB_ENTRY(futex) rb_entry;
 	void *object;
-	io_off_t offset;
+	size_t offset;
 	ksemaphore_t semaphore;
 	size_t refcnt;
 } futex_t;
@@ -49,7 +48,7 @@ futex_cmp(futex_t *a, futex_t *b)
  * creation not requested.
  */
 static futex_t *
-futex_find(void *object, io_off_t offset, bool create)
+futex_find(void *object, size_t offset, bool create)
 {
 	futex_t *found, key;
 
@@ -86,7 +85,7 @@ futex_release(futex_t *futex)
 }
 
 static int
-get_object_and_offset(uintptr_t uaddr, void **object, io_off_t *offset)
+get_object_and_offset(uintptr_t uaddr, void **object, size_t *offset)
 {
 	vm_map_entry_t *entry;
 
@@ -120,7 +119,7 @@ krx_futex_wait(int *u_pointer, int expected, nanosecs_t ns)
 	ipl_t ipl;
 	futex_t *futex;
 	void *object;
-	io_off_t offset;
+	size_t offset;
 	kwaitresult_t w;
 	int r;
 
@@ -167,7 +166,7 @@ krx_futex_wake(int *u_pointer)
 	ipl_t ipl;
 	futex_t *futex;
 	void *object;
-	io_off_t offset;
+	size_t offset;
 	int r;
 
 	r = get_object_and_offset((uintptr_t)u_pointer, &object, &offset);

@@ -1,3 +1,4 @@
+#if 0 /* DK refactoring */
 #include <sys/socket.h>
 
 #include <netinet/in.h>
@@ -383,3 +384,5 @@ new_tcpnode(void)
 
 	return so;
 }
+
+#endif
