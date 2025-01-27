@@ -142,9 +142,11 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		break;
 
 	case kIntVecEnterDebugger: {
+#if 0 /* DK refactoring */
 		extern void kdb_enter(md_intr_frame_t *frame);
 		kdb_enter(frame);
 		break;
+#endif
 	}
 
 	default: {

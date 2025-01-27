@@ -1,4 +1,6 @@
+#if 0
 #include "dev/DKNIC.h"
+#endif
 #include "kdk/dev.h"
 #include "kdk/kern.h"
 #include "lwip/init.h"
@@ -17,6 +19,7 @@ kdpc_t ingress_dpc;
 kspinlock_t ingress_lock = KSPINLOCK_INITIALISER;
 TAILQ_HEAD(, pbuf_rx) ingress_queue = TAILQ_HEAD_INITIALIZER(ingress_queue);
 
+#if 0
 static void
 ingress_callback(void *)
 {
@@ -42,6 +45,7 @@ ingress_callback(void *)
 		}
 	}
 }
+#endif
 
 void
 ksp_reset_timer(uint32_t abs)
@@ -67,13 +71,17 @@ net_init(void)
 	lwip_timer.dpc = &lwip_timer_dpc;
 	lwip_timer_dpc.cpu = NULL;
 	lwip_timer_dpc.callback = lwip_timer_expiry;
+
+#if 0 /* DK refactoring */
 	ingress_dpc.callback = ingress_callback;
+#endif
 
 	lwip_init();
 
 	kprintf("net_init: Keyronex Sockets for Kernel, version 2\n");
 }
 
+#if 0 /* DK refactoring */
 void
 ksk_packet_in(struct pbuf_rx *pbuf)
 {
@@ -84,6 +92,7 @@ ksk_packet_in(struct pbuf_rx *pbuf)
 	ke_spinlock_release_nospl(&ingress_lock);
 	ke_dpc_enqueue(&ingress_dpc);
 }
+#endif
 
 typedef void (*tcpip_callback_fn)(void *ctx);
 

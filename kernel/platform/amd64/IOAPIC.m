@@ -1,3 +1,4 @@
+#if 0
 
 #include "IOAPIC.h"
 #include "dev/acpi/DKAACPIPlatform.h"
@@ -147,3 +148,4 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 }
 
 @end
+#endif

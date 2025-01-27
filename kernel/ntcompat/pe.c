@@ -18,8 +18,10 @@ find_func(const char *module, const char *symbol)
 	if (strcmp(module, "NTOSKRNL.exe") == 0 ||
 	    strcmp(module, "ntoskrnl.exe") == 0)
 		table = ntoskrnl_exports;
+#if 0 /* DK refactoring */
 	else if (strcmp(module, "storport.sys") == 0)
 		table = storport_exports;
+#endif
 
 	if (!table)
 		return NULL;

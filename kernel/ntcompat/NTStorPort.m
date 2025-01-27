@@ -1,4 +1,4 @@
-
+#if 0
 #include "NTStorPort.h"
 #include "dev/pci/DKPCIBus.h"
 #include "dev/pci_reg.h"
@@ -445,3 +445,4 @@ trimstr(char *str, size_t length)
 }
 
 @end
+#endif

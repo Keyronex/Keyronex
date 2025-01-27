@@ -1,3 +1,5 @@
+#if 0
+
 /*
  * Copyright (c) 2023 NetaScale Object Solutions.
  * Created on Sun May 12 2024.
@@ -916,3 +918,4 @@ struct vfs_ops ninep_vfsops = {
 	.mount = ninep_mount,
 	.sync = ninep_sync,
 };
+#endif

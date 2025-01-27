@@ -1,3 +1,5 @@
+#if 0
+
 /*
  * Copyright (c) 2024 NetaScale Object Solutions.
  * Created on Sun Aug 11 2024.
@@ -66,3 +68,5 @@ parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
 }
 
 @end
+
+#endif

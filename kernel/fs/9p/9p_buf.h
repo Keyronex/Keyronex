@@ -12,8 +12,8 @@
 #ifndef KRX_VIOFAM_9PFS_REG_H
 #define KRX_VIOFAM_9PFS_REG_H
 
-#include "dev/safe_endian.h"
-#include "kdk/dev.h"
+#include <ddk/safe_endian.h>
+#include <kdk/dev.h>
 
 enum ninep_kind {
 	k9pLerror = 6,

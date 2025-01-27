@@ -1,3 +1,5 @@
+#if 0
+
 #include "ddk/DKDevice.h"
 #include "dev/acpi/DKAACPIPlatform.h"
 #include "dev/SimpleFB.h"
@@ -62,3 +64,5 @@ extern volatile struct limine_framebuffer_request fb_request;
 }
 
 @end
+
+#endif

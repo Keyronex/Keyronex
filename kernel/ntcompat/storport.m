@@ -1,3 +1,4 @@
+#if 0
 #include "dev/pci/DKPCIBus.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
@@ -546,3 +547,4 @@ image_export_t storport_exports[] = {
 	EXPORT_NT_FUNC(StorPortRegistryRead),
 	{NULL, NULL}
 };
+#endif
