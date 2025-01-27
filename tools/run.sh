@@ -95,7 +95,7 @@ case "$ARCH" in
 		;;
 
 	amd64) ${QEMU_EXE} -cdrom ${ISO} -no-reboot -cpu host -enable-kvm \
-	    ${qemu_args} -net none ;;
+	    ${qemu_args} -smp ${cores} ;;
 
 	m68k) ${QEMU_EXE} -M virt -m 128 \
 	    -kernel build/m68k/pkg-builds/m68k-virt-loader/lisp \

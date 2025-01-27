@@ -10,7 +10,7 @@ ddk_init(void)
 {
 	extern void (*init_array_start)(void), (*init_array_end)(void);
 
-	kprintf("ddk_init: DeviceKit version 3 for Keyronex-lite\n");
+	kprintf("ddk_init: DDK version 4\n");
 
 	for (void (**func)(void) = &init_array_start; func != &init_array_end;
 	     func++)

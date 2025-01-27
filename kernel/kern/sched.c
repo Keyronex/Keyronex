@@ -257,6 +257,7 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
 	thread->port = NULL;
 	thread->port_msg = NULL;
 	thread->in_trap_recoverable = false;
+	thread->tcb = 0;
 	ke_timer_init(&thread->wait_timer);
 	ipl = ke_spinlock_acquire(&proc->lock);
 	proc->thread_count++;

@@ -121,14 +121,17 @@ smp_allocate(void)
 
 	cpus = kmem_alloc(sizeof(kcpu_t *) * ncpus);
 
-	kprintf("%zu cpus\n", ncpus);
+	kprintf("smp_allocate: %zu cpus\n", ncpus);
 	kassert(ncpus <= 64);
 
 #if !defined(__m68k__)
 	for (size_t i = 0; i < ncpus; i++) {
 		struct limine_smp_info *smpi = smpr->cpus[i];
 
+/* uncomment to trace SMP ID, whatever that is */
+#if 0
 		kprintf("%zu: SMPI ID %zx\n", i, (uintptr_t)smpi->SMPI_ID);
+#endif
 
 		if (smpi->SMPI_ID == smpr->SMPR_BSP_ID) {
 			smpi->extra_argument = (uint64_t)&bootstrap_cpu;
@@ -186,6 +189,22 @@ smp_start()
 	idle_mask = (1 << ncpus) - 1;
 }
 
+#define MSG                                                                    \
+	"\n"                                                                   \
+	"------------------------------------------------------------------\n" \
+	"                      Keyronex Operating System                   \n" \
+	"------------------------------------------------------------------\n\n"
+
+#if defined(__m68k__)
+#define ARCH_NAME "m68k"
+#elif defined(__amd64__)
+#define ARCH_NAME "amd64"
+#elif defined(__aarch64__)
+#define ARCH_NAME "aarch64"
+#elif defined(__riscv)
+#define ARCH_NAME "riscv64"
+#endif
+
 // The following will be our kernel's entry point.
 // If renaming _start() to something else, make sure to change the
 // linker script accordingly.
@@ -195,8 +214,11 @@ _start(void)
 {
 	plat_first_init();
 	bootstrap_cpu.local_data = &bootstrap_cpu_local_data;
+
+	npf_pprintf(pac_putc, NULL, MSG);
+
 	npf_pprintf(pac_putc, NULL,
-	    "Keyronex-lite/generic (" __DATE__ " " __TIME__ ")\r\n");
+	    "Keyronex/" ARCH_NAME " (" __DATE__ " " __TIME__ ")\r\n");
 
 	/* set up initial threading structures */
 

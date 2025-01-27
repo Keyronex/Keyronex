@@ -702,12 +702,12 @@ void kputc(int ch, void *unused);
 #define kvpprintf(...) vpprintf_wrapper(kputc, __VA_ARGS__)
 
 /*! @brief Kernel fatal - prints out on PAC and main console and halts. */
-#define kfatal(...) {				\
-	splraise(kIPLHigh);			\
-	kprintf("at %s:%d (%s):\n", __FILE__,	\
-	    __LINE__, __FUNCTION__); 		\
-	kprintf(__VA_ARGS__); 		\
-	hcf();					\
+#define kfatal(...) {						\
+	splraise(kIPLHigh);					\
+	kprintf("fatal error at %s:%d (%s):\n", __FILE__,	\
+	    __LINE__, __FUNCTION__); 				\
+	kprintf("  " __VA_ARGS__); 				\
+	hcf();							\
 }
 
 /*! @brief Kernel assertion - prints out on PAC console. */
