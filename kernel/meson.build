@@ -109,7 +109,9 @@ if not headers_only
 	subdir('lwip')
 	subdir('objfwrt')
 
-	kernel_sources = [ files('libkern/libkern.c') ]
+	kernel_sources = [ files('libkern/libkern.c', 'libkern/murmurhash.c',
+		'libkern/OSDictionary.m', 'libkern/OSMapTable.m', 'libkern/OSNumber.m',
+		'libkern/OSObject.m', 'libkern/OSString.m') ]
 
 	subdir('dev')
 	subdir('executive')
