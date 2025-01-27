@@ -52,6 +52,8 @@ ex_console_input(int c)
 	in_buf_len++;
 	ke_spinlock_release(&console_lock, ipl);
 
+	kputc(c, NULL);
+
 	pollhead_deliver_events(&console_pollhead, EPOLLIN);
 }
 

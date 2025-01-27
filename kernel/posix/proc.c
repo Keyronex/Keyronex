@@ -7,8 +7,16 @@
  * @brief POSIX process.
  */
 
-#include "kdk/executive.h"
+#include <kdk/executive.h>
+#include <kdk/kern.h>
+
+static kspinlock_t proctree_lock;
 
 typedef struct psx_proc {
+	eprocess_t *eprocess;
 	uintptr_t pid;
 } psx_proc_t;
+
+typedef struct psx_thread {
+	kthread_t *kthread;
+} psx_thread_t;
