@@ -4,6 +4,11 @@
  */
 
 #include <kdk/kern.h>
+#include <limine.h>
+
+#include "dev/acpi/DKACPIPlatform.h"
+
+extern struct limine_rsdp_request rsdp_request;
 
 void
 ddk_init(void)
@@ -15,12 +20,13 @@ ddk_init(void)
 	for (void (**func)(void) = &init_array_start; func != &init_array_end;
 	     func++)
 		(*func)();
-}
 
-void
-ddk_early_init(void)
-{
-	kprintf("ddk_early_init\n");
+	if (rsdp_request.response != NULL) {
+		kprintf("ddk_init: probing ACPI platform\n");
+		[[DKACPIPlatform alloc] init];
+	} else {
+		kfatal("ddk_init: no platform class usable\n");
+	}
 }
 
 void

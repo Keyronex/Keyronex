@@ -12,7 +12,7 @@
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
-void ddk_init(void), ddk_early_init(void);
+void ddk_init(void);
 
 void plat_first_init(void);
 void plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi);
@@ -236,7 +236,6 @@ _start(void)
 	ps_early_init(&thread0);
 	smp_allocate();
 	ddk_init();
-	ddk_early_init();
 	smp_start();
 #if 0
 	ntcompat_init();

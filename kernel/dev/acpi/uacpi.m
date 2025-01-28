@@ -1,21 +1,25 @@
-#include <ctype.h>
+/*
+ * Copyright (c) 2024-2025 NetaScale Object Solutions.
+ * Created on Wed Apr 17 2024.
+ */
+/*!
+ * @file uacpi.m
+ * @brief uACPI kernel API implementation.
+ */
 
-#include "ddk/DKDevice.h"
-#include "dev/pci/DKPCIBus.h"
-#include "kdk/kern.h"
-#include "kdk/kmem.h"
-#include "kdk/libkern.h"
-#include "kdk/vm.h"
-#include "uacpi/kernel_api.h"
-#include "uacpi/status.h"
-#include "uacpi/types.h"
+#include <kdk/kern.h>
+#include <kdk/kmem.h>
+#include <kdk/libkern.h>
+#include <limine.h>
+#include <uacpi/kernel_api.h>
+
+#include "dev/pci/ecam.h"
 #include "vm/vmp.h"
 
-vaddr_t rsdp_address;
+extern struct limine_rsdp_request rsdp_request;
 
-#ifdef __amd64__
-#include "platform/amd64/IOAPIC.h"
-#include "kdk/amd64/portio.h"
+#if defined(__amd64__)
+#include <kdk/amd64/portio.h>
 
 uint8_t
 pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
@@ -76,60 +80,8 @@ pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
 	outl(0xCF8, address);
 	outl(0xCFC + (offset & 3), value);
 }
+
 #else
-
-struct ecam_view {
-	RB_ENTRY(ecam_view) entry;
-	uint16_t seg;
-	uint32_t bus;
-	vaddr_t base;
-};
-
-RB_HEAD(ecam_view_tree, ecam_view) ecam_views;
-RB_PROTOTYPE_STATIC(ecam_view_tree, ecam_view, entry, ecam_view_cmp);
-
-static int
-ecam_view_cmp(struct ecam_view *a, struct ecam_view *b)
-{
-	if (a->seg < b->seg)
-		return -1;
-	if (a->seg > b->seg)
-		return 1;
-	if (a->bus < b->bus)
-		return -1;
-	if (a->bus > b->bus)
-		return 1;
-	return 0;
-}
-
-RB_GENERATE_STATIC(ecam_view_tree, ecam_view, entry, ecam_view_cmp);
-
-static vaddr_t
-find_or_make_view(uint16_t seg, uint8_t bus)
-{
-	struct ecam_view key, *view;
-
-	key.seg = seg;
-	key.bus = bus;
-	view = RB_FIND(ecam_view_tree, &ecam_views, &key);
-
-	if (view == NULL) {
-		int r;
-		paddr_t phys;
-
-		phys = [DKPCIBus getECAMBaseForSegment:seg bus:bus];
-
-		view = kmem_alloc(sizeof(*view));
-		view->seg = seg;
-		view->bus = bus;
-		r = vm_ps_map_physical_view(&kernel_procstate, &view->base,
-		    0x100000, phys, kVMAll, kVMAll, false);
-		kassert(r == 0);
-		RB_INSERT(ecam_view_tree, &ecam_views, view);
-	}
-
-	return view->base;
-}
 
 #define PCI_CONFIG_OFFSET(slot, function, offset) \
 	((slot << 15) | (function << 12) | (offset))
@@ -138,8 +90,8 @@ uint8_t
 pci_readb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
-	vaddr_t base = find_or_make_view(seg, bus);
-	return *(volatile uint8_t *)(base +
+	vaddr_t ecam = ecam_get_view(address.segment, address.bus);
+	return *(volatile uint8_t *)(ecam +
 	    PCI_CONFIG_OFFSET(slot, function, offset));
 }
 
@@ -147,8 +99,8 @@ uint16_t
 pci_readw(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
-	vaddr_t base = find_or_make_view(seg, bus);
-	return *(volatile uint16_t *)(base +
+	vaddr_t ecam = ecam_get_view(address.segment, address.bus);
+	return *(volatile uint16_t *)(ecam +
 	    PCI_CONFIG_OFFSET(slot, function, offset));
 }
 
@@ -156,8 +108,8 @@ uint32_t
 pci_readl(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset)
 {
-	vaddr_t base = find_or_make_view(seg, bus);
-	return *(volatile uint32_t *)(base +
+	vaddr_t ecam = ecam_get_view(address.segment, address.bus);
+	return *(volatile uint32_t *)(ecam +
 	    PCI_CONFIG_OFFSET(slot, function, offset));
 }
 
@@ -165,8 +117,8 @@ void
 pci_writeb(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint8_t value)
 {
-	vaddr_t base = find_or_make_view(seg, bus);
-	*(volatile uint8_t *)(base +
+	vaddr_t ecam = ecam_get_view(address.segment, address.bus);
+	*(volatile uint8_t *)(ecam +
 	    PCI_CONFIG_OFFSET(slot, function, offset)) = value;
 }
 
@@ -174,18 +126,18 @@ void
 pci_writew(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint16_t value)
 {
-    vaddr_t base = find_or_make_view(seg, bus);
-    *(volatile uint16_t *)(base +
-	PCI_CONFIG_OFFSET(slot, function, offset)) = value;
+	vaddr_t ecam = ecam_get_view(address.segment, address.bus);
+	*(volatile uint16_t *)(ecam +
+	    PCI_CONFIG_OFFSET(slot, function, offset)) = value;
 }
 
 void
 pci_writel(uint16_t seg, uint32_t bus, uint32_t slot, uint32_t function,
     uint32_t offset, uint32_t value)
 {
-    vaddr_t base = find_or_make_view(seg, bus);
-    *(volatile uint32_t *)(base +
-	PCI_CONFIG_OFFSET(slot, function, offset)) = value;
+	vaddr_t ecam = ecam_get_view(address.segment, address.bus);
+	*(volatile uint32_t *)(ecam +
+	    PCI_CONFIG_OFFSET(slot, function, offset)) = value;
 }
 
 #endif
@@ -259,9 +211,11 @@ uacpi_kernel_map(uacpi_phys_addr physical, uacpi_size length)
 	vaddr_t vaddr;
 	int r;
 
+#if TRACE_UACPI_MAPPINGS
 	kprintf("mapping 0x%zx length 0x%lx\n", physical, length);
+#endif
 
-	r = vm_ps_map_physical_view(kernel_process->vm, &vaddr, vsize, paddr,
+	r = vm_ps_map_physical_view(&kernel_procstate, &vaddr, vsize, paddr,
 	    kVMRead | kVMWrite, kVMRead | kVMWrite, false);
 	kassert(r == 0);
 
@@ -273,89 +227,91 @@ uacpi_kernel_unmap(void *ptr, uacpi_size length)
 {
 }
 
+_Static_assert(sizeof(uacpi_pci_address) <= sizeof(uacpi_handle),
+    "uacpi_pci_address must fit in uacpi_handle");
+
 uacpi_status
-uacpi_kernel_raw_memory_read(uacpi_phys_addr address, uacpi_u8 byte_width,
-    uacpi_u64 *out)
+uacpi_kernel_pci_device_open(uacpi_pci_address address,
+    uacpi_handle *out_handle)
 {
-	kprintf("reading 0x%zx length 0x%x\n", address, byte_width);
-	kfatal("Implement me\n");
+	kassert(sizeof(uacpi_pci_address) <= sizeof(uacpi_handle));
+	memcpy(out_handle, &address, sizeof(address));
+	return UACPI_STATUS_OK;
+}
+
+void
+uacpi_kernel_pci_device_close(uacpi_handle)
+{
+	/* epsilon */
 }
 
 uacpi_status
-uacpi_kernel_raw_memory_write(uacpi_phys_addr address, uacpi_u8 byte_width,
-    uacpi_u64 in)
+uacpi_kernel_pci_read8(uacpi_handle device, uacpi_size offset, uacpi_u8 *value)
 {
-	kprintf("writing 0x%zx length 0x%x\n", address, byte_width);
-	kfatal("Implement me\n");
-}
-
-#ifdef __amd64__
-uacpi_status
-uacpi_kernel_raw_io_write(uacpi_io_addr address, uacpi_u8 byte_width,
-    uacpi_u64 in_value)
-{
-	switch (byte_width) {
-	case 1:
-		outb(address, in_value);
-		break;
-
-	case 2:
-		outw(address, in_value);
-		break;
-
-	case 4:
-		outl(address, in_value);
-		break;
-
-	default:
-		kfatal("Unexpected\n");
-	}
-
+	uacpi_pci_address address;
+	memcpy(&address, &device, sizeof(address));
+	*value = pci_readb(address.segment, address.bus, address.device,
+	    address.function, offset);
 	return UACPI_STATUS_OK;
 }
 
 uacpi_status
-uacpi_kernel_raw_io_read(uacpi_io_addr address, uacpi_u8 byte_width,
-    uacpi_u64 *out_value)
+uacpi_kernel_pci_read16(uacpi_handle device, uacpi_size offset,
+    uacpi_u16 *value)
 {
-	switch (byte_width) {
-	case 1:
-		*out_value = inb(address);
-		break;
-
-	case 2:
-		*out_value = inw(address);
-		break;
-
-	case 4:
-		*out_value = inl(address);
-		break;
-
-	default:
-		kfatal("Unexpected\n");
-	}
-
+	uacpi_pci_address address;
+	memcpy(&address, &device, sizeof(address));
+	*value = pci_readw(address.segment, address.bus, address.device,
+	    address.function, offset);
 	return UACPI_STATUS_OK;
 }
-#else
+
 uacpi_status
-uacpi_kernel_raw_io_read(uacpi_io_addr, uacpi_u8, uacpi_u64 *)
+uacpi_kernel_pci_read32(uacpi_handle device, uacpi_size offset,
+    uacpi_u32 *value)
 {
-	kfatal("Implement me\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	uacpi_pci_address address;
+	memcpy(&address, &device, sizeof(address));
+	*value = pci_readl(address.segment, address.bus, address.device,
+	    address.function, offset);
+	return UACPI_STATUS_OK;
 }
 
 uacpi_status
-uacpi_kernel_raw_io_write(uacpi_io_addr, uacpi_u8, uacpi_u64)
+uacpi_kernel_pci_write8(uacpi_handle device, uacpi_size offset, uacpi_u8 value)
 {
-	kfatal("Implement me\n");
-	return UACPI_STATUS_UNIMPLEMENTED;
+	uacpi_pci_address address;
+	memcpy(&address, &device, sizeof(address));
+	pci_writeb(address.segment, address.bus, address.device,
+	    address.function, offset, value);
+	return UACPI_STATUS_OK;
 }
 
-#endif
+uacpi_status
+uacpi_kernel_pci_write16(uacpi_handle device, uacpi_size offset,
+    uacpi_u16 value)
+{
+	uacpi_pci_address address;
+	memcpy(&address, &device, sizeof(address));
+	pci_writew(address.segment, address.bus, address.device,
+	    address.function, offset, value);
+	return UACPI_STATUS_OK;
+}
 
 uacpi_status
-uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size, uacpi_handle *out_handle)
+uacpi_kernel_pci_write32(uacpi_handle device, uacpi_size offset,
+    uacpi_u32 value)
+{
+	uacpi_pci_address address;
+	memcpy(&address, &device, sizeof(address));
+	pci_writel(address.segment, address.bus, address.device,
+	    address.function, offset, value);
+	return UACPI_STATUS_OK;
+}
+
+uacpi_status
+uacpi_kernel_io_map(uacpi_io_addr base, uacpi_size len,
+    uacpi_handle *out_handle)
 {
 	*out_handle = (uacpi_handle)base;
 	return UACPI_STATUS_OK;
@@ -368,99 +324,85 @@ uacpi_kernel_io_unmap(uacpi_handle)
 }
 
 uacpi_status
-uacpi_kernel_io_read(uacpi_handle handle, uacpi_size offset,
-    uacpi_u8 byte_width, uacpi_u64 *value)
+uacpi_kernel_io_read8(uacpi_handle handle, uacpi_size offset,
+    uacpi_u8 *out_value)
 {
-	return uacpi_kernel_raw_io_read((uacpi_io_addr)handle + offset,
-	    byte_width, value);
-}
-
-uacpi_status
-uacpi_kernel_io_write(uacpi_handle handle, uacpi_size offset,
-    uacpi_u8 byte_width, uacpi_u64 value)
-{
-	return uacpi_kernel_raw_io_write((uacpi_io_addr)handle + offset,
-	    byte_width, value);
-}
-
-uacpi_status
-uacpi_kernel_pci_device_open(uacpi_pci_address address,
-    uacpi_handle *out_handle)
-{
-	kassert(sizeof(uacpi_pci_address) <= sizeof(uacpi_handle));
-	memcpy(out_handle, &address, sizeof(address));
+#if defined(__amd64__)
+	*out_value = inb((uintptr_t)handle + offset);
 	return UACPI_STATUS_OK;
-}
-
-void uacpi_kernel_pci_device_close(uacpi_handle)
-{
-	/* epsilon */
-}
-
-uacpi_status
-uacpi_kernel_pci_read(uacpi_handle device, uacpi_size offset,
-    uacpi_u8 byte_width, uacpi_u64 *value)
-{
-	uacpi_pci_address address;
-
-	memcpy(&address, &device, sizeof(address));
-
-	switch (byte_width) {
-	case 1:
-		*value = pci_readb(address.segment, address.bus, address.device,
-		    address.function, offset);
-		break;
-
-	case 2:
-		*value = pci_readw(address.segment, address.bus, address.device,
-		    address.function, offset);
-		break;
-
-	case 4:
-		*value = pci_readl(address.segment, address.bus, address.device,
-		    address.function, offset);
-		break;
-
-	default:
-		return UACPI_STATUS_INVALID_ARGUMENT;
-	}
-
-	return UACPI_STATUS_OK;
+#else
+	kfatal("IO operations not supported on this architecture");
+	return UACPI_STATUS_ERROR;
+#endif
 }
 
 uacpi_status
-uacpi_kernel_pci_write(uacpi_handle device, uacpi_size offset,
-    uacpi_u8 byte_width, uacpi_u64 value)
+uacpi_kernel_io_read16(uacpi_handle handle, uacpi_size offset,
+    uacpi_u16 *out_value)
 {
-	uacpi_pci_address address;
-
-	memcpy(&address, &device, sizeof(address));
-
-	switch (byte_width) {
-	case 1:
-		pci_writeb(address.segment, address.bus, address.device,
-		    address.function, offset, value);
-		break;
-
-	case 2:
-		pci_writew(address.segment, address.bus, address.device,
-		    address.function, offset, value);
-		break;
-
-	case 4:
-		pci_writel(address.segment, address.bus, address.device,
-		    address.function, offset, value);
-		break;
-
-	default:
-		return UACPI_STATUS_INVALID_ARGUMENT;
-	}
-
+#if defined(__amd64__)
+	*out_value = inw((uintptr_t)handle + offset);
 	return UACPI_STATUS_OK;
+#else
+	kfatal("IO operations not supported on this architecture");
+	return UACPI_STATUS_ERROR;
+#endif
+}
+
+uacpi_status
+uacpi_kernel_io_read32(uacpi_handle handle, uacpi_size offset,
+    uacpi_u32 *out_value)
+{
+#if defined(__amd64__)
+	*out_value = inl((uintptr_t)handle + offset);
+	return UACPI_STATUS_OK;
+#else
+	kfatal("IO operations not supported on this architecture");
+	return UACPI_STATUS_ERROR;
+#endif
+}
+
+uacpi_status
+uacpi_kernel_io_write8(uacpi_handle handle, uacpi_size offset,
+    uacpi_u8 in_value)
+{
+#if defined(__amd64__)
+	outb((uintptr_t)handle + offset, in_value);
+	return UACPI_STATUS_OK;
+#else
+	kfatal("IO operations not supported on this architecture");
+	return UACPI_STATUS_ERROR;
+#endif
+}
+
+uacpi_status
+uacpi_kernel_io_write16(uacpi_handle handle, uacpi_size offset,
+    uacpi_u16 in_value)
+{
+#if defined(__amd64__)
+	outw((uintptr_t)handle + offset, in_value);
+	return UACPI_STATUS_OK;
+#else
+	kfatal("IO operations not supported on this architecture");
+	return UACPI_STATUS_ERROR;
+#endif
+}
+
+uacpi_status
+uacpi_kernel_io_write32(uacpi_handle handle, uacpi_size offset,
+    uacpi_u32 in_value)
+{
+#if defined(__amd64__)
+	outl((uintptr_t)handle + offset, in_value);
+	return UACPI_STATUS_OK;
+#else
+	kfatal("IO operations not supported on this architecture");
+	return UACPI_STATUS_ERROR;
+#endif
 }
 
 uacpi_u64
-uacpi_kernel_get_ticks(void)
+uacpi_kernel_get_nanoseconds_since_boot(void)
 {
 	return cpus[0]->nanos;
 }
@@ -497,6 +439,7 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
     uacpi_interrupt_handler handler, uacpi_handle ctx,
     uacpi_handle *out_irq_handle)
 {
+#if 0
 	int r;
 	struct uacpi_interrupt *entry;
 	dk_interrupt_source_t source;
@@ -504,7 +447,6 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
 	entry = kmem_alloc(sizeof(*entry));
 	entry->handler = handler;
 	entry->ctx = ctx;
-
 
 #ifdef __amd64__
 	source.id = isa_intr_overrides[irq].gsi;
@@ -526,6 +468,7 @@ uacpi_kernel_install_interrupt_handler(uacpi_u32 irq,
 	kassert (r == 0);
 
 	*out_irq_handle = ctx;
+#endif
 
 	return UACPI_STATUS_OK;
 }
@@ -664,12 +607,6 @@ uacpi_kernel_reset_event(uacpi_handle opaque)
 uacpi_status
 uacpi_kernel_get_rsdp(uacpi_phys_addr *out_rdsp_address)
 {
-	*out_rdsp_address = V2P(rsdp_address);
+	*out_rdsp_address = V2P(rsdp_request.response->address);
 	return UACPI_STATUS_OK;
-}
-
-uacpi_u64
-uacpi_kernel_get_nanoseconds_since_boot(void)
-{
-	return cpus[0]->nanos;
 }

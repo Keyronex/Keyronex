@@ -110,8 +110,8 @@ if not headers_only
 	subdir('objfwrt')
 
 	kernel_sources = [ files('libkern/libkern.c', 'libkern/murmurhash.c',
-		'libkern/OSDictionary.m', 'libkern/OSMapTable.m', 'libkern/OSNumber.m',
-		'libkern/OSObject.m', 'libkern/OSString.m') ]
+		'libkern/OSArray.m', 'libkern/OSDictionary.m', 'libkern/OSMapTable.m',
+		'libkern/OSNumber.m', 'libkern/OSObject.m', 'libkern/OSString.m') ]
 
 	subdir('dev')
 	subdir('executive')
