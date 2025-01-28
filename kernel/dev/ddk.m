@@ -14,6 +14,7 @@ void
 ddk_init(void)
 {
 	extern void (*init_array_start)(void), (*init_array_end)(void);
+	DKDevice *platformDevice;
 
 	kprintf("ddk_init: DDK version 4\n");
 
@@ -23,10 +24,12 @@ ddk_init(void)
 
 	if (rsdp_request.response != NULL) {
 		kprintf("ddk_init: probing ACPI platform\n");
-		[[DKACPIPlatform alloc] init];
+		platformDevice = [[DKACPIPlatform alloc] init];
 	} else {
 		kfatal("ddk_init: no platform class usable\n");
 	}
+
+	[platformDevice start];
 }
 
 void

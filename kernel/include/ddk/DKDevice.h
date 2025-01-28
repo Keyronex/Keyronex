@@ -13,19 +13,26 @@
 #include <libkern/OSObject.h>
 #include <kdk/queue.h>
 
+#define kAnsiYellow "\e[0;33m"
+#define kAnsiReset  "\e[0m"
+
 @class DKAxis;
 
 /*!
  * @brief DeviceKit device class.
  */
 @interface DKDevice : OSObject {
-	const char *m_name;
+	char *m_name;
 	TAILQ_TYPE_ENTRY(DKDevice) m_queue_link;
 }
 
 @property (readonly) const char *name;
 
++ (void)drainStartQueue;
+- (void)addToStartQueue;
 - (void)start;
+
+- (void)attachChild:(DKDevice *)child onAxis:(DKAxis *)axis;
 
 @end
 

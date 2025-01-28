@@ -12,17 +12,9 @@
 #include <kdk/kern.h>
 
 kspinlock_t gStartQueueLock;
-dk_device_queue_t gStartQueue;
+dk_device_queue_t gStartQueue = TAILQ_HEAD_INITIALIZER(gStartQueue);
 
-#define kAnsiYellow "\e[0;33m"
-#define kAnsiReset  "\e[0m"
-
-enum nodeKind { kRoot, kChild, kLastChild };
-
-static void printTree(DKDevice *dev, char *prefix, enum nodeKind kind,
-    DKAxis *axis);
-
-static void
+void
 DKLogAttach(DKDevice *child, DKDevice *parent)
 {
 	const char *dev_name;
@@ -43,7 +35,10 @@ DKLogAttach(DKDevice *child, DKDevice *parent)
 
 @implementation DKDevice
 
-@synthesize name = m_name;
+- (const char *)name
+{
+	return m_name;
+}
 
 - (void)addToStartQueue
 {
@@ -65,11 +60,11 @@ DKLogAttach(DKDevice *child, DKDevice *parent)
 	ke_spinlock_release(&gStartQueueLock, ipl);
 }
 
-- (void)attachToParent:(DKDevice *)parent onAxis:(DKAxis *)axis
+- (void)attachChild:(DKDevice *)child onAxis:(DKAxis *)axis
 {
-	[axis addChild:self ofParent:parent];
+	[axis addChild:child ofParent:self];
 	if (axis == gDeviceAxis)
-		DKLogAttach(self, parent);
+		DKLogAttach(child, self);
 }
 
 - (void)start

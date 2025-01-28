@@ -18,6 +18,7 @@
  */
 @interface DKAxis : OSObject {
 	const char *m_name;
+	DKDevice *m_root;
 	OSDictionary *m_parents;
 	OSDictionary *m_children;
 }
@@ -27,6 +28,8 @@
 + (instancetype)axisWithName:(const char *)name;
 
 - (void)addChild:(DKDevice *)child ofParent:(DKDevice *)parent;
+
+- (void)printSubtreeOfDevice:(DKDevice *)device;
 
 @end
 

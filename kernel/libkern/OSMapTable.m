@@ -167,6 +167,8 @@ OSMapTableSetValue(OSMapTable *table, const void *key, const void *value)
 	bucket = &table->buckets[index];
 
 	if (bucket->key == NULL) {
+		table->key_callbacks.retain(key);
+		table->value_callbacks.retain(value);
 		bucket->key = (void *)key;
 		bucket->value = (void *)value;
 		table->entries_n++;
@@ -174,10 +176,8 @@ OSMapTableSetValue(OSMapTable *table, const void *key, const void *value)
 	}
 
 	if (table->key_callbacks.isEqual(bucket->key, key)) {
-		if (table->key_callbacks.release)
-			table->key_callbacks.release(bucket->key);
-		if (table->value_callbacks.release)
-			table->value_callbacks.release(bucket->value);
+		table->key_callbacks.release(bucket->key);
+		table->value_callbacks.release(bucket->value);
 
 		bucket->key = (void *)key;
 		bucket->value = (void *)value;
@@ -187,10 +187,11 @@ OSMapTableSetValue(OSMapTable *table, const void *key, const void *value)
 	for (struct bucket *cur = bucket->next; cur != NULL; cur = cur->next) {
 		if (table->key_callbacks.isEqual(cur->key, key)) {
 			/* replace */
-			if (table->key_callbacks.release)
-				table->key_callbacks.release(cur->key);
-			if (table->value_callbacks.release)
-				table->value_callbacks.release(cur->value);
+			table->key_callbacks.release(cur->key);
+			table->value_callbacks.release(cur->value);
+
+			table->key_callbacks.retain(key);
+			table->value_callbacks.retain(value);
 
 			cur->key = (void *)key;
 			cur->value = (void *)value;
@@ -201,6 +202,9 @@ OSMapTableSetValue(OSMapTable *table, const void *key, const void *value)
 	struct bucket *new_bucket = kmem_alloc(sizeof(struct bucket));
 	if (new_bucket == NULL)
 		return false;
+
+	table->key_callbacks.retain(key);
+	table->value_callbacks.retain(value);
 
 	new_bucket->key = (void *)key;
 	new_bucket->value = (void *)value;
@@ -229,10 +233,8 @@ OSMapTableRemove(OSMapTable *table, const void *key)
 	    table->key_callbacks.isEqual(bucket->key, key)) {
 		struct bucket *next = bucket->next;
 
-		if (table->key_callbacks.release)
-			table->key_callbacks.release(bucket->key);
-		if (table->value_callbacks.release)
-			table->value_callbacks.release(bucket->value);
+		table->key_callbacks.release(bucket->key);
+		table->value_callbacks.release(bucket->value);
 
 		if (next != NULL) {
 			bucket->key = next->key;
@@ -252,10 +254,8 @@ OSMapTableRemove(OSMapTable *table, const void *key)
 	     prev = cur, cur = cur->next) {
 		if (table->key_callbacks.isEqual(cur->key, key)) {
 			/* Release key and value if callbacks exist */
-			if (table->key_callbacks.release)
-				table->key_callbacks.release(cur->key);
-			if (table->value_callbacks.release)
-				table->value_callbacks.release(cur->value);
+			table->key_callbacks.release(cur->key);
+			table->value_callbacks.release(cur->value);
 
 			/* Remove from chain */
 			prev->next = cur->next;
@@ -280,18 +280,14 @@ OSMapTableDestroy(OSMapTable *table)
 		bucket = &table->buckets[i];
 
 		if (bucket->key) {
-			if (table->key_callbacks.release)
-				table->key_callbacks.release(bucket->key);
-			if (table->value_callbacks.release)
-				table->value_callbacks.release(bucket->value);
+			table->key_callbacks.release(bucket->key);
+			table->value_callbacks.release(bucket->value);
 		}
 
 		for (cur = bucket->next; cur != NULL; cur = next) {
-			next = cur->next;
-			if (table->key_callbacks.release)
-				table->key_callbacks.release(cur->key);
-			if (table->value_callbacks.release)
-				table->value_callbacks.release(cur->value);
+				next = cur->next;
+			table->key_callbacks.release(cur->key);
+			table->value_callbacks.release(cur->value);
 			kmem_free(cur, sizeof(struct bucket));
 		}
 	}

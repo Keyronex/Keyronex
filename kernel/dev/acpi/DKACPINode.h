@@ -12,7 +12,13 @@
 
 #include <ddk/DKDevice.h>
 
-@interface DKACPINode : DKDevice
+struct uacpi_namespace_node;
+
+@interface DKACPINode : DKDevice {
+	struct uacpi_namespace_node *m_nsNode;
+}
+
+- (instancetype)initWithNamespaceNode:(struct uacpi_namespace_node *)node;
 
 @end
 

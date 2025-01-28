@@ -94,7 +94,7 @@ case "$ARCH" in
 	    -cdrom ${ISO} -boot d ${qemu_args}
 		;;
 
-	amd64) ${QEMU_EXE} -cdrom ${ISO} -no-reboot -cpu host -enable-kvm \
+	amd64) ${QEMU_EXE} -cdrom ${ISO} -no-reboot \
 	    ${qemu_args} -smp ${cores} ;;
 
 	m68k) ${QEMU_EXE} -M virt -m 128 \
