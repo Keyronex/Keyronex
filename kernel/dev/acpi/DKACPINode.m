@@ -11,8 +11,15 @@
 #include <kdk/kmem.h>
 #include <kdk/libkern.h>
 #include <uacpi/namespace.h>
+#include <uacpi/uacpi.h>
+#include <uacpi/utilities.h>
 
 #include "dev/acpi/DKACPINode.h"
+#include "dev/acpi/DKACPIPlatform.h"
+#include "dev/pci/DKPCIBridge.h"
+
+#define PCI_ROOT_PNP_ID "PNP0A03"
+#define PCI_EXPRESS_ROOT_PNP_ID "PNP0A08"
 
 extern DKAxis *gACPIAxis;
 kspinlock_t gStartDevicesQueueLock;
@@ -93,6 +100,27 @@ iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32 depth)
 
 - (void)startDevices
 {
+	static const uacpi_char *pci_root_ids[] = { PCI_ROOT_PNP_ID,
+		PCI_EXPRESS_ROOT_PNP_ID, UACPI_NULL };
+
+	if (uacpi_device_matches_pnp_id(m_nsNode, pci_root_ids)) {
+		DKPCIRootBridge *bridge;
+		uint64_t seg = 0, bus = 0;
+		int r;
+
+		r = uacpi_eval_integer(m_nsNode, "_SEG", NULL, &seg);
+		if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND)
+			kfatal("failed to evaluate _SEG: %d\n", r);
+
+		r = uacpi_eval_integer(m_nsNode, "_BBN", NULL, &bus);
+		if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND)
+			kfatal("failed to evaluate _BBN: %d\n", r);
+
+		bridge = [[DKPCIRootBridge alloc] initWithSegment:seg bus:bus];
+		[[DKACPIPlatform root] attachChild:bridge onAxis:gDeviceAxis];
+		[bridge start];
+	}
+
 	for (DKACPINode *node in [gACPIAxis childrenOf:self])
 		[node addToStartDevicesQueue];
 }

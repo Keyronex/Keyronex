@@ -3,6 +3,7 @@
  * Created on Sun Jul 28 2024.
  */
 
+#if 0
 #include "GICv2Distributor.h"
 #include "gic.h"
 
@@ -26,3 +27,4 @@
 }
 
 @end
+#endif

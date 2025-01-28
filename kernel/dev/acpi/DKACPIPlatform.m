@@ -13,8 +13,14 @@
 void DKLogAttach(DKDevice *child, DKDevice *parent);
 
 DKAxis *gACPIAxis;
+DKACPIPlatform *gACPIPlatform;
 
 @implementation DKACPIPlatform
+
++ (instancetype)root
+{
+	return gACPIPlatform;
+}
 
 - (instancetype)init
 {
@@ -37,6 +43,7 @@ DKAxis *gACPIAxis;
 	self = [super initWithNamespaceNode:uacpi_namespace_root()];
 	[gACPIAxis addChild:self ofParent:nil];
 	DKLogAttach(self, nil);
+	gACPIPlatform = self;
 
 	return self;
 }

@@ -3,18 +3,19 @@
  * Created on Wed Sep 20 2023.
  */
 
+#include <ddk/DKAxis.h>
 #include <kdk/kern.h>
 #include <limine.h>
 
 #include "dev/acpi/DKACPIPlatform.h"
 
 extern struct limine_rsdp_request rsdp_request;
+DKDevice *gPlatformDevice;
 
 void
 ddk_init(void)
 {
 	extern void (*init_array_start)(void), (*init_array_end)(void);
-	DKDevice *platformDevice;
 
 	kprintf("ddk_init: DDK version 4\n");
 
@@ -24,16 +25,16 @@ ddk_init(void)
 
 	if (rsdp_request.response != NULL) {
 		kprintf("ddk_init: probing ACPI platform\n");
-		platformDevice = [[DKACPIPlatform alloc] init];
+		gPlatformDevice = [[DKACPIPlatform alloc] init];
 	} else {
 		kfatal("ddk_init: no platform class usable\n");
 	}
-
-	[platformDevice start];
 }
 
 void
 ddk_autoconf(void)
 {
-	kprintf("ddk_autoconf\n");
+	[gPlatformDevice start];
+	[DKDevice drainStartQueue];
+	[gDeviceAxis printSubtreeOfDevice:gPlatformDevice];
 }

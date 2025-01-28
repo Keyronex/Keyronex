@@ -1,3 +1,4 @@
+#if 0
 /*
  * Copyright (c) 2024 NetaScale Object Solutions.
  * Created on Sun Aug 11 2024.
@@ -112,3 +113,4 @@ gtdt_walk(void)
 }
 
 @end
+#endif

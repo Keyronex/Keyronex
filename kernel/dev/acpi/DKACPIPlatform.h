@@ -18,6 +18,8 @@
 @interface DKACPIPlatform : DKACPINode {
 }
 
++ (instancetype)root;
+
 @end
 
 #endif /* KRX_ACPI_DKACPIPLATFORM_H */
