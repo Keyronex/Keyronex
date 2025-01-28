@@ -10,6 +10,7 @@
 #ifndef LIBKERN_OSARRAY_H_
 #define LIBKERN_OSARRAY_H_
 
+#include <libkern/OSEnumerator.h>
 #include <libkern/OSObject.h>
 
 /*!
@@ -78,6 +79,10 @@
  * @param object The object with which to replace the object at index.
  */
 - (void)replaceObjectAtIndex:(size_t)index withObject:(id)object;
+
+- (int)countByEnumeratingWithState:(OSFastEnumerationState *)state
+			   objects:(id __unsafe_unretained[])buffer
+			     count:(int)len;
 
 @end
 

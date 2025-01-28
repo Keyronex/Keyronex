@@ -45,6 +45,8 @@ DKAxis *gACPIAxis;
 {
 	[super start];
 	[DKDevice drainStartQueue];
+	[self startDevices];
+	[DKACPINode drainStartDevicesQueue];
 }
 
 @end

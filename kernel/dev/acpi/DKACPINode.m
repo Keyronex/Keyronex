@@ -7,6 +7,7 @@
  * @brief Defines the ACPI node device class.
  */
 
+#include <ddk/DKAxis.h>
 #include <kdk/kmem.h>
 #include <kdk/libkern.h>
 #include <uacpi/namespace.h>
@@ -14,8 +15,25 @@
 #include "dev/acpi/DKACPINode.h"
 
 extern DKAxis *gACPIAxis;
+kspinlock_t gStartDevicesQueueLock;
+dk_device_queue_t gStartDevicesQueue = TAILQ_HEAD_INITIALIZER(
+    gStartDevicesQueue);
 
 @implementation DKACPINode
+
++ (void)drainStartDevicesQueue
+{
+	DKACPINode *device;
+	ipl_t ipl = ke_spinlock_acquire(&gStartDevicesQueueLock);
+	while ((device = (DKACPINode *)TAILQ_FIRST(&gStartDevicesQueue)) !=
+	    NULL) {
+		TAILQ_REMOVE(&gStartDevicesQueue, device, m_queue_link);
+		ke_spinlock_release(&gStartDevicesQueueLock, ipl);
+		[device startDevices];
+		ipl = ke_spinlock_acquire(&gStartDevicesQueueLock);
+	}
+	ke_spinlock_release(&gStartDevicesQueueLock, ipl);
+}
 
 - (instancetype)initWithNamespaceNode:(struct uacpi_namespace_node *)node
 {
@@ -64,6 +82,19 @@ iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32 depth)
 {
 	uacpi_namespace_for_each_child_simple(m_nsNode, iteration_callback,
 	    self);
+}
+
+- (void)addToStartDevicesQueue
+{
+	ipl_t ipl = ke_spinlock_acquire(&gStartDevicesQueueLock);
+	TAILQ_INSERT_TAIL(&gStartDevicesQueue, self, m_queue_link);
+	ke_spinlock_release(&gStartDevicesQueueLock, ipl);
+}
+
+- (void)startDevices
+{
+	for (DKACPINode *node in [gACPIAxis childrenOf:self])
+		[node addToStartDevicesQueue];
 }
 
 @end

@@ -163,4 +163,30 @@
 	return hash;
 }
 
+- (int)countByEnumeratingWithState:(OSFastEnumerationState *)state
+			   objects:(id __unsafe_unretained[])buffer
+			     count:(int)len
+{
+	unsigned long index, count;
+
+	/* On first call, initialize the state */
+	if (state->state == 0) {
+		state->mutationsPtr = (unsigned long *)self;
+		state->state = 1;
+		state->itemsPtr = (id __unsafe_unretained *)_objects;
+		state->extra[0] = 0;
+	}
+
+	index = state->extra[0];
+	count = MIN2(len, _count - index);
+
+	if (count > 0) {
+		state->itemsPtr = (id __unsafe_unretained *)&_objects[index];
+		state->extra[0] = index + count;
+		return count;
+	} else {
+		return 0;
+	}
+}
+
 @end

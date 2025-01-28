@@ -11,6 +11,7 @@
 #define KRX_DEV_DKAXIS_H
 
 #include <ddk/DKDevice.h>
+#include <libkern/OSArray.h>
 #include <libkern/OSDictionary.h>
 
 /*!
@@ -28,6 +29,9 @@
 + (instancetype)axisWithName:(const char *)name;
 
 - (void)addChild:(DKDevice *)child ofParent:(DKDevice *)parent;
+
+- (OSArray *)childrenOf:(DKDevice *)object;
+- (OSArray *)parentsOf:(DKDevice *)object;
 
 - (void)printSubtreeOfDevice:(DKDevice *)device;
 

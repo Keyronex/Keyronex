@@ -69,6 +69,16 @@ static kmutex_t gAxisLock;
 	ke_mutex_release(&gAxisLock);
 }
 
+- (OSArray *)childrenOf:(DKDevice *)device
+{
+	return [m_children objectForKey:device];
+}
+
+- (OSArray *)parentsOf:(DKDevice *)device
+{
+	return [m_parents objectForKey:device];
+}
+
 enum nodeKind { kRoot, kChild, kLastChild };
 
 static void

@@ -18,7 +18,12 @@ struct uacpi_namespace_node;
 	struct uacpi_namespace_node *m_nsNode;
 }
 
++ (void)drainStartDevicesQueue;
+
 - (instancetype)initWithNamespaceNode:(struct uacpi_namespace_node *)node;
+
+- (void)addToStartDevicesQueue;
+- (void)startDevices;
 
 @end
 
