@@ -6,6 +6,7 @@
 #include <ddk/DKPCIDevice.h>
 #include <ddk/reg/pci.h>
 #include <kdk/kmem.h>
+#include <ddk/DKAxis.h>
 
 #define UNPACK_ADDRESS(addr) \
 	(addr).segment, (addr).bus, (addr).slot, (addr).function
@@ -52,6 +53,7 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	matchData.vendor = pci_readw(UNPACK_ADDRESS(m_address), kVendorID);
 	matchData.class = pci_readb(UNPACK_ADDRESS(m_address), kClass);
 	matchData.subclass = pci_readb(UNPACK_ADDRESS(m_address), kSubclass);
+	matchData.prog_if = pci_readb(UNPACK_ADDRESS(m_address), kProgIF);
 
 	LIST_FOREACH (entry, &match_list, qlink) {
 		uint8_t result = [entry->matchingClass
@@ -63,9 +65,10 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	}
 
 	if (highestMatchClass != nil) {
-		kprintf("matched\n");
-	} else {
-		kprintf("not matched\n");
+		DKDevice<DKPCIDeviceMatching> *dev = [[(id)highestMatchClass alloc]
+		    initWithPCIDevice:self];
+		[self attachChild:dev onAxis:gDeviceAxis];
+		[dev addToStartQueue];
 	}
 }
 
@@ -123,6 +126,93 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 		kprintf("%d.%d.%d.%d: Unknown PCI header type %d\n",
 		    UNPACK_ADDRESS(m_address), headerType);
 	}
+}
+
+- (uint8_t)configRead8:(uint16_t)offset
+{
+	return pci_readb(UNPACK_ADDRESS(m_address), offset);
+}
+
+- (uint16_t)configRead16:(uint16_t)offset
+{
+	return pci_readw(UNPACK_ADDRESS(m_address), offset);
+}
+
+- (uint32_t)configRead32:(uint16_t)offset
+{
+	return pci_readl(UNPACK_ADDRESS(m_address), offset);
+}
+
+- (void)configWrite8:(uint16_t)offset value:(uint8_t)value
+{
+	pci_writeb(UNPACK_ADDRESS(m_address), offset, value);
+}
+
+- (void)configWrite16:(uint16_t)offset value:(uint16_t)value
+{
+	pci_writew(UNPACK_ADDRESS(m_address), offset, value);
+}
+
+- (void)configWrite32:(uint16_t)offset value:(uint32_t)value
+{
+	pci_writel(UNPACK_ADDRESS(m_address), offset, value);
+}
+
+- (DKPCIBarInfo)barInfo:(uint8_t)bar
+{
+	DKPCIBarInfo info = { 0 };
+	uint32_t barOffset = kBAR0 + (bar * 4);
+
+	uint32_t originalBarValue = [self configRead32:barOffset];
+	uint32_t barValue = originalBarValue;
+
+	if (barValue & 0x1) {
+		info.type = kPCIBarIO;
+		info.base = barValue & ~0x3;
+
+		[self configWrite32:barOffset value:0xFFFFFFFF];
+		uint32_t sizeValue = [self configRead32:barOffset];
+		[self configWrite32:barOffset value:originalBarValue];
+
+		info.size = (~sizeValue + 1) & 0xFFFFFFFC;
+	} else {
+		bool is64Bit = ((barValue & 0x6) == 0x4);
+		uint64_t base = barValue & ~0xF;
+
+		info.type = kPCIBarMem;
+
+		if (is64Bit) {
+			uint32_t upperBarOffset = barOffset + 4;
+			uint32_t originalBarUpperValue = [self
+			    configRead32:upperBarOffset];
+			uint32_t barValueUpper = originalBarUpperValue;
+
+			base |= ((uint64_t)barValueUpper << 32);
+			info.base = base;
+
+			[self configWrite32:barOffset value:0xFFFFFFFF];
+			[self configWrite32:upperBarOffset value:0xFFFFFFFF];
+
+			uint32_t sizeLower = [self configRead32:barOffset];
+			uint32_t sizeUpper = [self configRead32:upperBarOffset];
+			[self configWrite32:upperBarOffset
+				      value:originalBarUpperValue];
+			[self configWrite32:barOffset value:originalBarValue];
+
+			info.size = (((uint64_t)(~sizeUpper) << 32) |
+			    (~sizeLower)) + 1;
+		} else {
+			info.base = base;
+
+			[self configWrite32:barOffset value:0xFFFFFFFF];
+			uint32_t sizeValue = [self configRead32:barOffset];
+			[self configWrite32:barOffset value:originalBarValue];
+
+			info.size = (~sizeValue + 1) & 0xFFFFFFF0;
+		}
+	}
+
+	return info;
 }
 
 @end

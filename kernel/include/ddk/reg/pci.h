@@ -13,6 +13,7 @@ enum {
 	kStatus = 0x6,	 /* bit 4 = capabilities list exists */
 	kSubclass = 0xa,
 	kClass = 0xb,
+	kProgIF = 0x9,
 	kHeaderType = 0xe, /* bit 7 = is multifunction */
 	kBAR0 = 0x10,
 	kSecondaryBus = 0x19,

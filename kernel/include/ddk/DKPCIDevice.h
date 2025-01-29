@@ -9,6 +9,7 @@
 #include <ddk/DKDevice.h>
 
 @class DKPCIBridge;
+@class DKPCIDevice;
 
 typedef struct DKPCIAddress {
 	uint16_t segment;
@@ -20,8 +21,9 @@ typedef struct DKPCIAddress {
 typedef struct DKPCIMatchData {
 	uint16_t vendor;
 	uint16_t device;
-	uint16_t class;
-	uint16_t subclass;
+	uint8_t class;
+	uint8_t subclass;
+	uint8_t prog_if;
 } DKPCIMatchData;
 
 typedef struct DKPCIBarInfo {
@@ -37,6 +39,8 @@ typedef struct DKPCIBarInfo {
 
 + (uint8_t)probeWithMatchData:(DKPCIMatchData *)matchData;
 
+- (instancetype)initWithPCIDevice:(DKPCIDevice *)pciDevice;
+
 @end
 
 @interface DKPCIDevice : DKDevice {
@@ -48,6 +52,8 @@ typedef struct DKPCIBarInfo {
 
 - (instancetype)initWithBridge:(DKPCIBridge *)bridge
 		       address:(DKPCIAddress *)address;
+
+- (DKPCIBarInfo)barInfo:(uint8_t)bar;
 
 @end
 
