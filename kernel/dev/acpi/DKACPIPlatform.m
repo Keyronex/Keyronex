@@ -4,6 +4,7 @@
  */
 
 #include <ddk/DKAxis.h>
+#include <ddk/DKPlatformRoot.h>
 #include <kdk/kern.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
@@ -44,6 +45,7 @@ DKACPIPlatform *gACPIPlatform;
 	[gACPIAxis addChild:self ofParent:nil];
 	DKLogAttach(self, nil);
 	gACPIPlatform = self;
+	gPlatformRoot = self;
 
 	return self;
 }
@@ -54,6 +56,13 @@ DKACPIPlatform *gACPIPlatform;
 	[DKDevice drainStartQueue];
 	[self startDevices];
 	[DKACPINode drainStartDevicesQueue];
+}
+
+- (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
+				    msixAddress:(out uint32_t *)msixAddress
+				       msixData:(out uint32_t *)msixData
+{
+	kfatal("Method must be overridden by platform-specific category.\n");
 }
 
 @end

@@ -11,11 +11,12 @@
 #define KRX_ACPI_DKACPIPLATFORM_H
 
 #include <ddk/DKDevice.h>
+#include <ddk/DKPlatformRoot.h>
 #include <uacpi/uacpi.h>
 
 #include "dev/acpi/DKACPINode.h"
 
-@interface DKACPIPlatform : DKACPINode {
+@interface DKACPIPlatform : DKACPINode <DKPlatformRoot> {
 }
 
 + (instancetype)root;

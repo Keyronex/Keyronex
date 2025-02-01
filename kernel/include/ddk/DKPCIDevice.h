@@ -7,9 +7,11 @@
 #define KRX_DDK_DKPCIDEVICE_H
 
 #include <ddk/DKDevice.h>
+#include <kdk/vmtypes.h>
 
 @class DKPCIBridge;
 @class DKPCIDevice;
+struct intr_entry;
 
 typedef struct DKPCIAddress {
 	uint16_t segment;
@@ -46,6 +48,11 @@ typedef struct DKPCIBarInfo {
 @interface DKPCIDevice : DKDevice {
 	DKPCIBridge *m_bridge;
 	DKPCIAddress m_address;
+
+	/* MSI-X state */
+	vaddr_t m_msixTable;
+	uint16_t m_msixCap;
+	uint16_t m_lastAllocatedMSIxVector; /* bump allocation for now */
 }
 
 + (void)registerMatchingClass:(Class<DKPCIDeviceMatching>)matchingClass;
@@ -53,7 +60,29 @@ typedef struct DKPCIBarInfo {
 - (instancetype)initWithBridge:(DKPCIBridge *)bridge
 		       address:(DKPCIAddress *)address;
 
+
+
 - (DKPCIBarInfo)barInfo:(uint8_t)bar;
+
+- (uint8_t)configRead8:(uint16_t)offset;
+- (uint16_t)configRead16:(uint16_t)offset;
+- (uint32_t)configRead32:(uint16_t)offset;
+- (void)configWrite8:(uint16_t)offset value:(uint8_t)value;
+- (void)configWrite16:(uint16_t)offset value:(uint16_t)value;
+- (void)configWrite32:(uint16_t)offset value:(uint32_t)value;
+
+- (uint16_t)findCapabilityByID:(uint8_t)id;
+- (uint16_t)findCapabilityByID:(uint8_t)id startingOffset:(uint16_t)offset;
+
+- (void)setCommandFlag:(uint16_t)flag enabled:(bool)enabled;
+- (void)setMemorySpace:(bool)enabled;
+- (void)setBusMastering:(bool)enabled;
+- (void)setInterrupts:(bool)enabled;
+
+- (uint16_t)availableMSIxVectors;
+- (int)setMSIx:(bool)enabled;
+- (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry;
+
 
 @end
 

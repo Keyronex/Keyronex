@@ -3,10 +3,14 @@
  * Created on Fri Nov 01 2024.
  */
 
+#include <ddk/DKAxis.h>
 #include <ddk/DKPCIDevice.h>
 #include <ddk/reg/pci.h>
 #include <kdk/kmem.h>
-#include <ddk/DKAxis.h>
+
+#include "ddk/DKPlatformRoot.h"
+#include "kdk/vm.h"
+#include "vm/vmp.h"
 
 #define UNPACK_ADDRESS(addr) \
 	(addr).segment, (addr).bus, (addr).slot, (addr).function
@@ -158,6 +162,31 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	pci_writel(UNPACK_ADDRESS(m_address), offset, value);
 }
 
+- (void)setCommandFlag:(uint16_t)flag enabled:(bool)enabled
+{
+	uint16_t cmd = [self configRead16:kCommand];
+	if (enabled)
+		cmd |= flag;
+	else
+		cmd &= ~flag;
+	[self configWrite16:kCommand value:cmd];
+}
+
+- (void)setMemorySpace:(bool)enabled
+{
+	[self setCommandFlag:0x2 enabled:enabled];
+}
+
+- (void)setBusMastering:(bool)enabled
+{
+	[self setCommandFlag:0x4 enabled:enabled];
+}
+
+- (void)setInterrupts:(bool)enabled
+{
+	[self setCommandFlag:0x400 enabled:enabled];
+}
+
 - (DKPCIBarInfo)barInfo:(uint8_t)bar
 {
 	DKPCIBarInfo info = { 0 };
@@ -213,6 +242,112 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	}
 
 	return info;
+}
+
+- (uint16_t)findCapabilityByID:(uint8_t)id
+{
+	return [self findCapabilityByID:id startingOffset:0];
+}
+
+- (uint16_t)findCapabilityByID:(uint8_t)id startingOffset:(uint16_t)offset
+{
+	uint8_t capOffset = offset ? [self configRead8:offset + 1] :
+				     [self configRead8:kCapabilitiesPointer];
+	while (capOffset != 0) {
+		uint8_t capID = [self configRead8:capOffset];
+		if (capID == id)
+			return capOffset;
+		capOffset = [self configRead8:capOffset + 1];
+	}
+	return 0;
+}
+
+- (uint16_t)availableMSIxVectors
+{
+	uint16_t capOffset = [self findCapabilityByID:0x11];
+	uint16_t msixControl;
+
+	if (capOffset == 0)
+		return 0;
+
+	msixControl = [self configRead16:capOffset + 0x02];
+
+	return (msixControl & 0x07FF) + 1;
+}
+
+- (int)setMSIx:(bool)enabled
+{
+	uint16_t capOffset = [self findCapabilityByID:0x11];
+	uint16_t msixControl;
+	uint32_t tableOffset, barNo, tableBase;
+	DKPCIBarInfo barInfo;
+	int r;
+
+	kassert(enabled);
+
+	if (capOffset == 0) {
+		kprintf("MSI-X capability not found\n");
+		return -1;
+	}
+
+	msixControl = [self configRead16:capOffset + 0x02];
+	if (enabled) {
+		msixControl |= 0x8000;
+		m_msixCap = capOffset;
+	} else {
+		msixControl &= ~0x8000;
+		m_msixCap = 0;
+	}
+
+	[self configWrite16:capOffset + 0x02 value:msixControl];
+
+	tableOffset = [self configRead32:capOffset + 0x04];
+	barNo = tableOffset & 0x7;
+	tableBase = tableOffset & ~0x7;
+
+	barInfo = [self barInfo:barNo];
+
+	r = vm_ps_map_physical_view(&kernel_procstate, &m_msixTable, PGSIZE,
+	    barInfo.base + tableBase, kVMRead | kVMWrite, kVMRead | kVMWrite,
+	    false);
+	if (r != 0)
+		return r;
+}
+
+- (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
+{
+	vaddr_t vectorAddressOffset;
+	vaddr_t vectorDataOffset;
+	vaddr_t vectorControlOffset;
+	uint32_t vectorControl;
+	uint16_t msixVector;
+	uint32_t address;
+	uint32_t data;
+	int r;
+
+	if (m_lastAllocatedMSIxVector >= [self availableMSIxVectors])
+		return -1;
+	else
+		msixVector = m_lastAllocatedMSIxVector++;
+
+	vectorAddressOffset = m_msixTable + (msixVector * 16);
+	vectorDataOffset = m_msixTable + (msixVector * 16) + 8;
+	vectorControlOffset = m_msixTable + (msixVector * 16) + 12;
+
+	r = [gPlatformRoot allocateLeastLoadedMSIxInterruptForEntry:entry
+							msixAddress:&address
+							   msixData:&data];
+	if (r != 0)
+		return r;
+
+	*(volatile uint32_t *)vectorAddressOffset = address;
+	*(volatile uint32_t *)vectorDataOffset = data;
+	vectorControl = *(volatile uint32_t *)vectorControlOffset;
+	vectorControl &= ~0x1;
+	__sync_synchronize();
+	*(volatile uint32_t *)vectorControlOffset = vectorControl;
+
+	return 0;
 }
 
 @end

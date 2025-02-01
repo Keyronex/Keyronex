@@ -1,19 +1,34 @@
-#if 0
-
 /*
  * Copyright (c) 2024 NetaScale Object Solutions.
  * Created on Sun Aug 11 2024.
  */
 
-#include "IOAPIC.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "dev/acpi/tables.h"
-#include "kdk/libkern.h"
-#include "uacpi/tables.h"
-#include "uacpi/uacpi.h"
+#include <kdk/amd64.h>
+#include <kdk/kern.h>
+
+#include "dev/acpi/DKACPIPlatform.h"
+
+DKDevice<DKPlatformRoot> *gPlatformRoot;
 
 @implementation DKACPIPlatform (AMD64_)
 
+- (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
+				    msixAddress:(out uint32_t *)msixAddress
+				       msixData:(out uint32_t *)msixData
+{
+	uint8_t vector;
+	int r = md_intr_alloc("MSI-X", kIPLDevice, entry->handler, entry->arg,
+	    false, &vector, entry);
+	if (r != 0)
+		return r;
+
+	*msixAddress = cpus[0]->cpucb.lapic_base;
+	*msixData = (cpus[0]->cpucb.lapic_base << 24) | vector;
+
+	return 0;
+}
+
+#if 0
 static void
 parse_ioapics(struct acpi_entry_hdr *item, void *arg)
 {
@@ -66,7 +81,6 @@ parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
 	dk_acpi_madt_walk((struct acpi_madt *)madt.virt_addr,
 	    parse_isa_overrides, self);
 }
+#endif
 
 @end
-
-#endif
