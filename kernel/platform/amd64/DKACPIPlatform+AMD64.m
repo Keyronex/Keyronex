@@ -4,6 +4,7 @@
  */
 
 #include <kdk/amd64.h>
+#include <kdk/amd64/regs.h>
 #include <kdk/kern.h>
 
 #include "dev/acpi/DKACPIPlatform.h"
@@ -22,8 +23,8 @@ DKDevice<DKPlatformRoot> *gPlatformRoot;
 	if (r != 0)
 		return r;
 
-	*msixAddress = cpus[0]->cpucb.lapic_base;
-	*msixData = (cpus[0]->cpucb.lapic_base << 24) | vector;
+	*msixAddress = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
+	*msixData = (cpus[0]->cpucb.lapic_id << 24) | vector;
 
 	return 0;
 }

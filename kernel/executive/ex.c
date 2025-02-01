@@ -221,6 +221,8 @@ ex_init(void *)
 	test_anon();
 #endif
 
+	for (;;) ;
+
 	mount_root();
 
 #if 0

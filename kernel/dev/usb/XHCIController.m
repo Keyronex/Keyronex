@@ -16,14 +16,46 @@
 #define XHCI_EVENT_RING_SIZE 256
 #define XHCI_CMD_RING_SIZE 256
 
-/* Ring */
-struct xhci_ring {
+struct ring {
 	volatile struct xhci_trb *trbs;
 	uintptr_t paddr;
 	uint32_t size;
 	uint32_t cycle_bit;
 	uint32_t enqueue_idx;
 	uint32_t dequeue_idx;
+};
+
+struct protocol {
+	uint8_t major;
+	uint8_t minor;
+	uint8_t slot_type;
+	uint8_t port_count;
+	uint8_t port_offset;
+};
+
+enum port_state {
+	kPortStateNotConnected,
+	kPortStateResetting,
+	kPortStateEnabled,
+	kPortStateSlotEnabled,
+	kPortStateAddressed,
+};
+
+struct cmd {
+	TAILQ_ENTRY(cmd) link;
+	uint32_t type;
+	uint64_t params;
+	paddr_t trb_paddr;
+
+	void (*callback)(void *);
+	void *context;
+};
+
+struct port {
+	uint8_t port_num;
+	struct protocol *protocol;
+	enum port_state state;
+	struct cmd cmd;
 };
 
 @interface XHCIController : DKDevice <DKPCIDeviceMatching> {
@@ -35,13 +67,26 @@ struct xhci_ring {
 	volatile struct xhci_host_rt_regs *m_rtRegs;
 	volatile leu32_t *m_doorBells;
 
-	struct xhci_ring *m_cmdRing;
-	struct xhci_ring *m_eventRing;
+	struct ring *m_cmdRing;
+	struct ring *m_eventRing;
 	struct xhci_erst_entry *m_erstTable;
 	struct xhci_dcbaa_entry *m_dcbaa;
 	size_t m_maxSlots;
 	paddr_t m_erstTablePhys;
 	paddr_t m_dcbaaPhys;
+
+	struct intr_entry m_intrEntry;
+	kdpc_t m_dpc;
+
+	struct protocol *m_protocols;
+	size_t m_nProtocols;
+
+	size_t m_nPorts;
+	struct port *m_ports;
+
+	TAILQ_HEAD(, cmd) m_pendingCmds;
+	TAILQ_HEAD(, cmd) m_inflightCmds;
+	kspinlock_t m_cmdQueueLock;
 }
 
 + (void)load;
@@ -100,14 +145,9 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	return 0;
 }
 
-/**
- * Create a new ring structure of the given size (in TRBs).
- * Returns a pointer to a newly allocated struct xhci_ring on success,
- * or NULL on failure.
- */
-- (struct xhci_ring *)createRingWithSize:(size_t)numTrbs
+- (struct ring *)createRingWithSize:(size_t)numTrbs
 {
-	struct xhci_ring *ring = kmem_alloc(sizeof(*ring));
+	struct ring *ring = kmem_alloc(sizeof(*ring));
 	volatile struct xhci_trb *linkTRB;
 	vaddr_t vaddr;
 	paddr_t paddr;
@@ -241,10 +281,364 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	m_doorBells[0] = to_leu32(0);
 }
 
+- (void)enqueueOneCommandToRing:(struct cmd *)cmd
+{
+	struct ring *ring = m_cmdRing;
+	volatile struct xhci_trb *trb = &ring->trbs[ring->enqueue_idx];
+
+	memset((void *)trb, 0, sizeof(*trb));
+
+	trb->params = to_leu64(cmd->params);
+	trb->status = to_leu32(0);
+	trb->control = to_leu32((cmd->type << 10) | (ring->cycle_bit & 1));
+
+	cmd->trb_paddr = ring->paddr +
+	    (ring->enqueue_idx * sizeof(struct xhci_trb));
+
+	ring->enqueue_idx++;
+	if (ring->enqueue_idx == ring->size - 1) {
+		ring->enqueue_idx = 0;
+		ring->cycle_bit ^= 1;
+	}
+
+	[self ringCommandDoorbell];
+}
+
+- (void)drainPendingCommands
+{
+	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
+
+	while (true) {
+		struct cmd *cmd = TAILQ_FIRST(&m_pendingCmds);
+		if (cmd == NULL)
+			break;
+
+		if (![self ringHasSpace:m_cmdRing needed:1])
+			break;
+
+		TAILQ_REMOVE(&m_pendingCmds, cmd, link);
+		[self enqueueOneCommandToRing:cmd];
+		TAILQ_INSERT_TAIL(&m_inflightCmds, cmd, link);
+	}
+
+	ke_spinlock_release(&m_cmdQueueLock, ipl);
+}
+
+- (bool)ringHasSpace:(struct ring *)ring needed:(unsigned)needed
+{
+	unsigned used;
+	unsigned usable = ring->size - 1; /* -1 for the link TRB. */
+
+	if (ring->enqueue_idx >= ring->dequeue_idx)
+		used = ring->enqueue_idx - ring->dequeue_idx;
+	else
+		used = usable - (ring->dequeue_idx - ring->enqueue_idx);
+
+	unsigned free = usable - used;
+
+	return (free >= needed);
+}
+
+- (void)completeCommandTRBAtPAddr:(paddr_t)paddr withCode:(uint32_t)code
+{
+	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
+	struct cmd *cmd;
+
+	TAILQ_FOREACH (cmd, &m_inflightCmds, link) {
+		if (cmd->trb_paddr == paddr) {
+			/* completions should be in-order */
+			kassert(paddr == m_cmdRing->paddr +
+			    (m_cmdRing->dequeue_idx * sizeof(struct xhci_trb)));
+			cmd->params = code;
+			TAILQ_REMOVE(&m_inflightCmds, cmd, link);
+			m_cmdRing->dequeue_idx++;
+			ke_spinlock_release(&m_cmdQueueLock, ipl);
+			return;
+		}
+	}
+
+	kfatal("XHCI: TRB completion for unknown command\n");
+}
+
+- (void)deferredProcessing
+{
+	volatile struct xhci_interrupt_regs *ir = &m_rtRegs->IR[0];
+	struct ring *eventRing = m_eventRing;
+
+	for (;;) {
+		volatile struct xhci_trb *trb =
+		    &eventRing->trbs[eventRing->dequeue_idx];
+
+		uint32_t control = from_leu32(trb->control);
+		uint32_t trbCycle = control & 0x1; /* bit 0 = cycle bit. */
+		uint32_t trbType = (control >> 10) & 0x3F;
+
+		uint64_t erdp;
+
+		if (trbCycle != eventRing->cycle_bit)
+			break;
+
+		switch (trbType) {
+		case TRB_TYPE_EVENT_PORT_STATUS: {
+			uint64_t params = from_leu64(trb->params);
+			uint8_t portNum = (params >> 24) & 0xff;
+			[self updatePortState:&m_ports[portNum - 1]];
+			break;
+		}
+
+		case TRB_TYPE_EVENT_CMD_COMPLETE: {
+			uint32_t code = (from_leu32(trb->status) >> 24) & 0xFF;
+			uint32_t slotId = (from_leu32(trb->status) >> 0) & 0xFF;
+			paddr_t paddr = from_leu64(trb->params);
+
+			(void)slotId;
+
+			[self completeCommandTRBAtPAddr:paddr withCode:code];
+			break;
+		}
+
+		default:
+			kprintf("XHCI: Unhandled event TRB type %u\n", trbType);
+			break;
+		}
+
+		eventRing->dequeue_idx++;
+		if (eventRing->dequeue_idx == eventRing->size) {
+			eventRing->dequeue_idx = 0;
+			eventRing->cycle_bit ^= 1;
+		}
+
+		erdp = (uint64_t)eventRing->paddr +
+		    (eventRing->dequeue_idx * sizeof(struct xhci_trb));
+		ir->ERDP_lo = to_leu32((uint32_t)erdp | (1 << 3));
+		ir->ERDP_hi = to_leu32((uint32_t)(erdp >> 32));
+	}
+}
+
+static void
+xhci_dpc(void *arg)
+{
+	XHCIController *self = arg;
+	[self deferredProcessing];
+	[self drainPendingCommands];
+}
+
+static bool
+xhci_interrupt(md_intr_frame_t *frame, void *arg)
+{
+	XHCIController *self = arg;
+#if 0 /* ? inapplicable with MSI-X */
+	volatile struct xhci_interrupt_regs *ir = &self->m_rtRegs->IR[0];
+	uint32_t status;
+
+	status = from_leu32(ir->IMAN);
+	if (!(status & XHCI_IMAN_IP)) {
+		kprintf("IMAN not set\n");
+		return false;
+	}
+
+	ir->IMAN = to_leu32(status);
+#endif
+
+	ke_dpc_enqueue(&self->m_dpc);
+
+	return true;
+}
+
+- (void)processCapabilities
+{
+	uint16_t off = (from_leu32(m_capRegs->HCCPARAMS1) >> 16) << 2;
+
+	if (off == 0) {
+		kprintf("XHCI: Extended capabilities pointer is 0\n");
+		return;
+	}
+
+	while (true) {
+		volatile leu32_t *capReg = (volatile leu32_t *)(m_mmioBase +
+		    off);
+		uint32_t cap = from_leu32(*capReg);
+		uint8_t capId;
+		uint8_t capNext;
+
+		capId = cap & 0xFF;
+		capNext = (cap >> 8) & 0xFF;
+
+		if (capId == 0)
+			break;
+
+		if (capId == 2) {
+			uint8_t major = (cap >> 24) & 0xFF;
+			uint8_t minor = (cap >> 16) & 0xFF;
+			uint32_t portInfo = from_leu32(capReg[2]);
+			uint8_t portOffset = portInfo & 0xFF;
+			uint8_t portCount = (portInfo >> 8) & 0xFF;
+			uint32_t slotInfo = from_leu32(capReg[3]);
+			uint8_t slotType = slotInfo & 0xF;
+
+			m_protocols = kmem_realloc(m_protocols,
+			    sizeof(struct protocol) * m_nProtocols,
+			    sizeof(struct protocol) * (m_nProtocols + 1));
+
+			m_protocols[m_nProtocols].major = major;
+			m_protocols[m_nProtocols].minor = minor;
+			m_protocols[m_nProtocols].port_offset = portOffset - 1;
+			m_protocols[m_nProtocols].port_count = portCount;
+			m_protocols[m_nProtocols].slot_type = slotType;
+
+			kprintf(
+			    "XHCI: Protocol %u.%u, %u ports starting at %u, slot type %u\n",
+			    major, minor, portCount, portOffset, slotType);
+
+			m_nProtocols++;
+		}
+
+		if (capNext == 0)
+			break;
+
+		off += capNext << 2;
+	}
+}
+
+static inline void
+xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
+{
+	uint32_t ps = from_leu32(pregs->PORTSC) & ~XHCI_PORTSC_PED;
+	ps |= mask;
+	pregs->PORTSC = to_leu32(ps);
+}
+
+- (void)startPortReset:(struct port *)port
+{
+	volatile struct xhci_port_regs *pregs =
+	    &m_opRegs->ports[port->port_num];
+	uint32_t ps = from_leu32(pregs->PORTSC);
+
+	kprintf("XHCI: port %u: Starting reset\n", port->port_num);
+
+	ps |= XHCI_PORTSC_PR;
+	pregs->PORTSC = to_leu32(ps);
+}
+
+- (void)postCommand:(struct cmd *)cmd
+	   withType:(uint32_t)cmdType
+	     params:(uint64_t)params
+{
+	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
+
+	cmd->type = cmdType;
+	cmd->params = params;
+
+	TAILQ_INSERT_TAIL(&m_pendingCmds, cmd, link);
+
+	ke_spinlock_release(&m_cmdQueueLock, ipl);
+
+	ke_dpc_enqueue(&m_dpc);
+}
+
+- (void)enableSlotForPort:(struct port *)port
+{
+	[self postCommand:&port->cmd
+		 withType:TRB_TYPE_CMD_ENABLE_SLOT |
+		 ((uint32_t)port->protocol->slot_type << 16)
+		   params:0];
+}
+
+- (void)updatePortState:(struct port *)port
+{
+	volatile struct xhci_port_regs *pregs =
+	    &m_opRegs->ports[port->port_num];
+	uint32_t portsc = from_leu32(pregs->PORTSC);
+
+	bool ccs = (portsc & XHCI_PORTSC_CCS) != 0; /* Current Connect Status */
+	bool ped = (portsc & XHCI_PORTSC_PED) != 0; /* Port Enabled */
+	bool pr = (portsc & XHCI_PORTSC_PR) != 0;   /* Port Reset */
+	bool plsInU0 = ((portsc >> 5) & 0xF) == 0;  /* Link state = U0? */
+
+	bool csc = (portsc & XHCI_PORTSC_CSC) != 0; /* Connect Status Chane */
+	bool prc = (portsc & XHCI_PORTSC_PRC) != 0; /* Port Reset Chane */
+	bool pec = (portsc & XHCI_PORTSC_PEC) != 0; /* Port Enable Change */
+
+	switch (port->state) {
+
+	/* waiting for CSC */
+	case kPortStateNotConnected:
+		if (ccs) {
+			if (csc)
+				xhci_clear_port_changes(pregs, XHCI_PORTSC_CSC);
+
+			port->state = kPortStateResetting;
+			[self startPortReset:port];
+		} else {
+			kprintf("XHCI: spurious 1\n");
+		}
+		break;
+
+	/* waiting for PR to complete */
+	case kPortStateResetting:
+		if (!pr) {
+			kprintf("XHCI: Port %u: reset done, portsc=0x%x\n",
+			    port->port_num, portsc);
+
+			if (prc) {
+				xhci_clear_port_changes(pregs, XHCI_PORTSC_PRC);
+			}
+
+			if (ped) {
+				kprintf("XHCI: Port %u: now enabled\n",
+				    port->port_num);
+				port->state = kPortStateEnabled;
+				[self enableSlotForPort:port];
+			} else {
+				kprintf(
+				    "XHCI: Port %u: reset done but not enabled\n",
+				    port->port_num);
+				port->state = kPortStateNotConnected;
+			}
+		}
+		break;
+
+	default:
+		kfatal("XHCI: port state change in unrecognised state\n");
+		break;
+	}
+
+	if (!ccs && port->state != kPortStateNotConnected) {
+		kprintf("XHCI: Port %u: device disconnected\n", port->port_num);
+		port->state = kPortStateNotConnected;
+	}
+
+	if (pec) {
+		xhci_clear_port_changes(pregs, XHCI_PORTSC_PEC);
+	}
+}
+
+- (void)enumeratePorts
+{
+	for (size_t i = 0; i < m_nPorts; i++) {
+		struct port *port = &m_ports[i];
+		struct protocol *protocol = port->protocol;
+		volatile struct xhci_port_regs *regs = &m_opRegs->ports[i];
+
+		kassert(protocol != NULL);
+
+		if (from_leu32(regs->PORTSC) & XHCI_PORTSC_CCS)
+			[self updatePortState:port];
+	}
+}
+
 - (void)start
 {
 	DKPCIBarInfo barInfo = [m_pciDevice barInfo:0];
 	int r;
+
+	TAILQ_INIT(&m_pendingCmds);
+	TAILQ_INIT(&m_inflightCmds);
+	ke_spinlock_init(&m_cmdQueueLock);
+
+	[m_pciDevice setBusMastering:true];
+	[m_pciDevice setMemorySpace:true];
+	[m_pciDevice setInterrupts:false];
 
 	r = vm_ps_map_physical_view(&kernel_procstate, &m_mmioBase,
 	    PGROUNDUP(barInfo.size), barInfo.base, kVMRead | kVMWrite,
@@ -258,6 +652,8 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	    from_leu32(m_capRegs->RTSOFF));
 	m_doorBells = (volatile leu32_t *)(m_mmioBase +
 	    from_leu32(m_capRegs->DBOFF));
+
+	[self processCapabilities];
 
 	uint32_t cmd = from_leu32(m_opRegs->USBCMD);
 	if (cmd & XHCI_CMD_RUN) {
@@ -277,6 +673,42 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 		return;
 	}
 
+	m_intrEntry.handler = xhci_interrupt;
+	m_intrEntry.arg = self;
+	m_dpc.cpu = NULL;
+	m_dpc.callback = xhci_dpc;
+	m_dpc.arg = self;
+
+	r = [m_pciDevice setMSIx:true];
+	if (r != 0) {
+		kprintf("XHCI: failed to enable MSI-X\n");
+		return;
+	}
+
+	r = [m_pciDevice allocateLeastLoadedMSIxInterruptForEntry:&m_intrEntry];
+	if (r != 0) {
+		kprintf("XHCI: failed to allocate MSI-X interrupt\n");
+		return;
+	}
+
+	m_nPorts = from_leu32(m_capRegs->HCSPARAMS1) >> 24;
+	m_ports = kmem_alloc(sizeof(struct port) * m_nPorts);
+
+	for (size_t i = 0; i < m_nProtocols; i++) {
+		struct protocol *protocol = &m_protocols[i];
+		for (size_t j = 0; j < protocol->port_count; j++) {
+			struct port *port;
+
+			kassert(protocol->port_offset + j < m_nPorts);
+
+			port = &m_ports[protocol->port_offset + j];
+
+			port->port_num = protocol->port_offset + j;
+			port->protocol = protocol;
+			port->state = kPortStateNotConnected;
+		}
+	}
+
 	m_opRegs->CONFIG = to_leu32((uint32_t)m_maxSlots);
 
 	cmd = from_leu32(m_opRegs->USBCMD);
@@ -288,6 +720,7 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 
 	kprintf("XHCI Controller set up\n");
 
+	[self enumeratePorts];
 }
 
 @end

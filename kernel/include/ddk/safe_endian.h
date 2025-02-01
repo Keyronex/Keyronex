@@ -35,7 +35,7 @@ typedef struct beu64 {
 
 #define from_leu16(LEU16) le16_to_native((LEU16).value)
 #define from_leu32(LEU32) le32_to_native((LEU32).value)
-#define from_leu64(LEU32) le64_to_native((LEU64).value)
+#define from_leu64(LEU64) le64_to_native((LEU64).value)
 
 #define from_beu16(BEU16) be16_to_native((BEU16).value)
 #define from_beu32(BEU32) be32_to_native((BEU32).value)
