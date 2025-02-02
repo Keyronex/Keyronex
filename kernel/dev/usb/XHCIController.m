@@ -12,6 +12,8 @@
 #include "vm/vmp.h"
 #include "xhci_reg.h"
 
+@class XHCIController;
+
 #define XHCI_RING_SIZE 256
 #define XHCI_EVENT_RING_SIZE 256
 #define XHCI_CMD_RING_SIZE 256
@@ -36,18 +38,18 @@ struct protocol {
 enum port_state {
 	kPortStateNotConnected,
 	kPortStateResetting,
-	kPortStateEnabled,
-	kPortStateSlotEnabled,
+	kPortStateEnablingSlot,
+	kPortStateAddressingDevice,
 	kPortStateAddressed,
 };
 
 struct cmd {
 	TAILQ_ENTRY(cmd) link;
-	uint32_t type;
-	uint64_t params;
+	struct xhci_trb trb;
 	paddr_t trb_paddr;
 
-	void (*callback)(void *);
+	void (*callback)(XHCIController *, struct cmd *, uint8_t code,
+	    uint8_t slot_id, void *);
 	void *context;
 };
 
@@ -56,6 +58,16 @@ struct port {
 	struct protocol *protocol;
 	enum port_state state;
 	struct cmd cmd;
+
+	uint8_t slot;
+
+	vm_page_t *context_page;
+	volatile struct xhci_input_ctx *input_ctx;
+	paddr_t input_ctx_phys;
+	volatile struct xhci_device_ctx *device_ctx;
+	paddr_t device_ctx_phys;
+
+	struct ring *ep0_ring;
 };
 
 @interface XHCIController : DKDevice <DKPCIDeviceMatching> {
@@ -288,9 +300,10 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 
 	memset((void *)trb, 0, sizeof(*trb));
 
-	trb->params = to_leu64(cmd->params);
+	trb->params = cmd->trb.params;
 	trb->status = to_leu32(0);
-	trb->control = to_leu32((cmd->type << 10) | (ring->cycle_bit & 1));
+	trb->control = to_leu32(from_leu32((cmd->trb.control)) |
+	    (ring->cycle_bit & 1));
 
 	cmd->trb_paddr = ring->paddr +
 	    (ring->enqueue_idx * sizeof(struct xhci_trb));
@@ -339,7 +352,9 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	return (free >= needed);
 }
 
-- (void)completeCommandTRBAtPAddr:(paddr_t)paddr withCode:(uint32_t)code
+- (void)completeCommandTRBAtPAddr:(paddr_t)paddr
+			 withCode:(uint32_t)code
+			   slotID:(uint32_t)slotID
 {
 	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
 	struct cmd *cmd;
@@ -349,10 +364,11 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 			/* completions should be in-order */
 			kassert(paddr == m_cmdRing->paddr +
 			    (m_cmdRing->dequeue_idx * sizeof(struct xhci_trb)));
-			cmd->params = code;
 			TAILQ_REMOVE(&m_inflightCmds, cmd, link);
 			m_cmdRing->dequeue_idx++;
 			ke_spinlock_release(&m_cmdQueueLock, ipl);
+
+			cmd->callback(self, cmd, code, slotID, cmd->context);
 			return;
 		}
 	}
@@ -388,12 +404,13 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 
 		case TRB_TYPE_EVENT_CMD_COMPLETE: {
 			uint32_t code = (from_leu32(trb->status) >> 24) & 0xFF;
-			uint32_t slotId = (from_leu32(trb->status) >> 0) & 0xFF;
+			uint32_t slotId = (from_leu32(trb->control) >> 24) &
+			    0xFF;
 			paddr_t paddr = from_leu64(trb->params);
 
-			(void)slotId;
-
-			[self completeCommandTRBAtPAddr:paddr withCode:code];
+			[self completeCommandTRBAtPAddr:paddr
+					       withCode:code
+						 slotID:slotId];
 			break;
 		}
 
@@ -521,13 +538,8 @@ xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
 }
 
 - (void)postCommand:(struct cmd *)cmd
-	   withType:(uint32_t)cmdType
-	     params:(uint64_t)params
 {
 	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
-
-	cmd->type = cmdType;
-	cmd->params = params;
 
 	TAILQ_INSERT_TAIL(&m_pendingCmds, cmd, link);
 
@@ -536,12 +548,78 @@ xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
 	ke_dpc_enqueue(&m_dpc);
 }
 
+static void
+address_device_done(XHCIController *self, struct cmd *cmd, uint8_t code,
+    uint8_t slot_id, void *context)
+{
+	kfatal("Results: code %d slot_id %d\n", code, slot_id);
+}
+
+- (void)setupDeviceContextForPort:(struct port *)port
+{
+	volatile struct xhci_input_ctx *input_ctx = port->input_ctx;
+	volatile struct xhci_slot_ctx *slot_ctx = &input_ctx->slot;
+	volatile struct xhci_ep_ctx *ep0_ctx = &input_ctx->ep[0];
+	struct ring *ep0_ring = port->ep0_ring;
+	uint32_t route_string = 0; /* root hub port */
+
+	input_ctx->ctrl.drop_flags = to_leu32(0);
+	input_ctx->ctrl.add_flags = to_leu32(0x3); /* Slot and EP0 contexts */
+
+	slot_ctx->field1 = to_leu32(SLOT_CTX_00_SET_ROUTE_STRING(route_string) |
+	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(1));
+	slot_ctx->field2 = to_leu32(
+	    SLOT_CTX_04_SET_ROOT_HUB_PORT(port->port_num + 1));
+	slot_ctx->field3 = to_leu32(0);
+	slot_ctx->field4 = to_leu32(0);
+
+	ep0_ctx->field1 = to_leu32(0);
+	ep0_ctx->field2 = to_leu32(
+	    (3 << 1) | (4 << 3)); /* CErr 3, EPType ctrl */
+	ep0_ctx->dequeue_ptr = to_leu64(ep0_ring->paddr | ep0_ring->cycle_bit);
+	ep0_ctx->tx_info = to_leu32(8 << 16); /* average TRB Length = 8 */
+
+	port->cmd.callback = address_device_done;
+
+	port->cmd.trb.params = to_leu64(port->input_ctx_phys);
+	port->cmd.trb.status = to_leu32(0);
+	port->cmd.trb.control = to_leu32((TRB_TYPE_CMD_ADDRESS_DEV << 10) |
+	    (port->slot << 24));
+
+	[self postCommand:&port->cmd];
+}
+
+static void
+port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
+    uint8_t slot_id, void *context)
+{
+	struct port *port = context;
+
+	if (code != 1) {
+		kprintf("XHCI: Port %u: slot assignment failed (%d)\n",
+		    port->port_num, code);
+		kfatal("Todo: handle slot assignment failure\n");
+		return;
+	}
+
+	kprintf("XHCI: Port %u: slot assigned (%d)\n", port->port_num, slot_id);
+
+	port->slot = slot_id;
+	port->state = kPortStateAddressingDevice;
+
+	[self setupDeviceContextForPort:port];
+}
+
 - (void)enableSlotForPort:(struct port *)port
 {
-	[self postCommand:&port->cmd
-		 withType:TRB_TYPE_CMD_ENABLE_SLOT |
-		 ((uint32_t)port->protocol->slot_type << 16)
-		   params:0];
+	port->cmd.callback = port_enable_slot_done;
+	port->cmd.context = port;
+	port->cmd.trb.params = to_leu64(0);
+	port->cmd.trb.status = to_leu32(0);
+	port->cmd.trb.control = to_leu32((TRB_TYPE_CMD_ENABLE_SLOT << 10) |
+	    ((uint32_t)port->protocol->slot_type << 16));
+	kprintf("POSTING COMMAND!\n");
+	[self postCommand:&port->cmd];
 }
 
 - (void)updatePortState:(struct port *)port
@@ -587,7 +665,7 @@ xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
 			if (ped) {
 				kprintf("XHCI: Port %u: now enabled\n",
 				    port->port_num);
-				port->state = kPortStateEnabled;
+				port->state = kPortStateEnablingSlot;
 				[self enableSlotForPort:port];
 			} else {
 				kprintf(
@@ -706,6 +784,30 @@ xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
 			port->port_num = protocol->port_offset + j;
 			port->protocol = protocol;
 			port->state = kPortStateNotConnected;
+
+			r = vm_page_alloc(&port->context_page, 0, kPageUseKWired,
+			    false);
+			if (r != 0) {
+				kprintf("XHCI: Failed to allocate context page\n");
+				return;
+			}
+
+			port->input_ctx_phys = vm_page_paddr(port->context_page);
+			port->device_ctx_phys = port->input_ctx_phys +
+			    ROUNDUP(sizeof(struct xhci_input_ctx), 64);
+
+			port->input_ctx = (volatile struct xhci_input_ctx *)
+			    P2V(port->input_ctx_phys);
+			port->device_ctx = (volatile struct xhci_device_ctx *)
+			    P2V(port->device_ctx_phys);
+
+			memset((void *)port->input_ctx, 0,
+			    sizeof(struct xhci_input_ctx));
+			memset((void *)port->device_ctx, 0,
+			    sizeof(struct xhci_device_ctx));
+
+			port->ep0_ring = [self
+			    createRingWithSize:XHCI_RING_SIZE];
 		}
 	}
 

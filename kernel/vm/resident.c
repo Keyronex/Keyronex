@@ -17,6 +17,7 @@
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/vm.h"
+#include "kdk/vmtypes.h"
 #include "vmp.h"
 #include "vmp_dynamics.h"
 
@@ -120,6 +121,20 @@ mdl_translate(vaddr_t vaddr, bool paged)
 		    vm_paddr_to_page(PGROUNDDOWN(paddr)));
 		vmp_release_pfn_lock(ipl);
 		return page;
+	}
+}
+
+paddr_t
+vm_translate(vaddr_t vaddr)
+{
+	if (vaddr >= HHDM_BASE && vaddr <= (HHDM_BASE + HHDM_SIZE)) {
+		return V2P(vaddr) + (vaddr % PGSIZE);
+	} else {
+		ipl_t ipl = vmp_acquire_pfn_lock();
+		paddr_t paddr;
+		paddr = vmp_md_translate(vaddr);
+		vmp_release_pfn_lock(ipl);
+		return paddr + (vaddr % PGSIZE);
 	}
 }
 

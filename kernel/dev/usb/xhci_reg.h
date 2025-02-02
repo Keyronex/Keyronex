@@ -177,28 +177,94 @@ struct __attribute__((packed)) xhci_dcbaa_entry {
 	leu64_t dev_context_ptr;
 };
 
-/* Slot Context */
-struct __attribute__((packed)) xhci_slot_context {
+/* Context sizes - 6.1 */
+#define CTX_64BYTE 0x0
+#define CTX_32BYTE 0x1
+
+/* Slot State - 4.5.3 */
+#define SLOT_STATE_DISABLED 0
+#define SLOT_STATE_ENABLED 1
+#define SLOT_STATE_DEFAULT 2
+#define SLOT_STATE_ADDRESSED 3
+#define SLOT_STATE_CONFIGURED 4
+
+/* Root Hub Port Speed IDs - 4.19.7 */
+#define XHCI_SPEED_FULL 1
+#define XHCI_SPEED_LOW 2
+#define XHCI_SPEED_HIGH 3
+#define XHCI_SPEED_SUPER 4
+#define XHCI_SPEED_SUPER_PLUS 5
+
+/* Slot Context Field Accessors */
+#define SLOT_CTX_00_ROUTE_STRING(f1) ((f1)&0xFFFFF)
+#define SLOT_CTX_00_MTT(f2) (((f2) >> 25) & 0x1)
+#define SLOT_CTX_00_HUB(f2) (((f2) >> 26) & 0x1)
+#define SLOT_CTX_00_CONTEXT_ENTRIES(f2) (((f2) >> 27) & 0x1F)
+
+#define SLOT_CTX_00_SET_ROUTE_STRING(val) (((val)&0xFFFFF))
+#define SLOT_CTX_00_SET_MTT(val) ((((val)&0x1) << 25))
+#define SLOT_CTX_00_SET_HUB(val) ((((val)&0x1) << 26))
+#define SLOT_CTX_00_SET_CONTEXT_ENTRIES(val) ((((val)&0x1F) << 27))
+
+#define SLOT_CTX_04_SET_ROOT_HUB_PORT(val) (((val)&0xFF) << 16)
+#define SLOT_CTX_04_SET_NUM_PORTS(val) (((val)&0xFF) << 24)
+
+#define SLOT_CTX_08_SET_INTERRUPTER_TARGET(val) (((val)&0xF) << 0)
+
+/* Slot Context - 6.2.2 */
+struct __attribute__((packed)) xhci_slot_ctx {
 	leu32_t field1;
 	leu32_t field2;
 	leu32_t field3;
 	leu32_t field4;
-	uint32_t reserved[4];
+	leu32_t reserved[4];
 };
 
-/* Endpoint Context */
-struct __attribute__((packed)) xhci_ep_context {
+/* Endpoint Context Field Accessors */
+#define EP_CTX_INTERVAL(f1) (((f1) >> 16) & 0xFF)
+#define EP_CTX_LSA(f1) (((f1) >> 15) & 0x1)
+#define EP_CTX_MAX_PSTREAMS(f1) (((f1) >> 10) & 0x1F)
+#define EP_CTX_MULT(f1) (((f1) >> 8) & 0x3)
+#define EP_CTX_STATE(f1) (((f1) >> 0) & 0x7)
+
+#define EP_CTX_SET_INTERVAL(f1, val) ((f1) |= (((val)&0xFF) << 16))
+#define EP_CTX_SET_LSA(f1, val) ((f1) |= (((val)&0x1) << 15))
+#define EP_CTX_SET_MAX_PSTREAMS(f1, val) ((f1) |= (((val)&0x1F) << 10))
+#define EP_CTX_SET_MULT(f1, val) ((f1) |= (((val)&0x3) << 8))
+#define EP_CTX_SET_STATE(f1, val) ((f1) |= (((val)&0x7) << 0))
+
+/* Endpoint Context - 6.2.3 */
+struct __attribute__((packed)) xhci_ep_ctx {
 	leu32_t field1;
 	leu32_t field2;
-	leu64_t tr_dequeue_pointer;
-	leu32_t field4;
-	uint32_t reserved[3];
+	leu64_t dequeue_ptr;
+	leu32_t tx_info;
+	leu32_t reserved[3];
+};
+
+/* Input Control Context - 6.2.5.1 */
+struct __attribute__((packed)) xhci_input_control_ctx {
+	leu32_t drop_flags;
+	leu32_t add_flags;
+	leu32_t reserved[6];
+};
+
+/* Input Context - 6.2.5 */
+struct __attribute__((packed)) xhci_input_ctx {
+	struct xhci_input_control_ctx ctrl;
+	struct xhci_slot_ctx slot;
+	struct xhci_ep_ctx ep[31];
 };
 
 /* Device Context */
-struct __attribute__((packed)) xhci_dev_context {
-	struct xhci_slot_context slot;
-	struct xhci_ep_context endpoints[31];
+struct __attribute__((packed)) xhci_device_ctx {
+	struct xhci_slot_ctx slot;
+	struct xhci_ep_ctx ep[31];
 };
+
+/* Max Packet Size based on speed */
+#define XHCI_DEFAULT_MAX_PACKET_SIZE_FS 8
+#define XHCI_DEFAULT_MAX_PACKET_SIZE_HS 64
+#define XHCI_DEFAULT_MAX_PACKET_SIZE_SS 512
 
 #endif /* KRX_USB_XHCI_REG_H */
