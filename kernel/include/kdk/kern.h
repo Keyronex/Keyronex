@@ -525,6 +525,8 @@ ke_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 	splx(oldipl);
 }
 
+void ke_dpc_init(kdpc_t *dpc, void (*callback)(void *), void *arg);
+
 void ke_dpc_enqueue(kdpc_t *dpc);
 
 /*!

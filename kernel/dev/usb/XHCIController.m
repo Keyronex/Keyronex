@@ -4,11 +4,13 @@
  */
 
 #include <ddk/DKPCIDevice.h>
+#include <ddk/DKUSBDevice.h>
+#include <kdk/executive.h>
 #include <kdk/kern.h>
+#include <kdk/kmem.h>
 #include <kdk/libkern.h>
 #include <kdk/vm.h>
 
-#include "kdk/kmem.h"
 #include "vm/vmp.h"
 #include "xhci_reg.h"
 
@@ -18,13 +20,33 @@
 #define XHCI_EVENT_RING_SIZE 256
 #define XHCI_CMD_RING_SIZE 256
 
+TAILQ_HEAD(req_tailq, req);
+
 struct ring {
+	XHCIController *controller;
+
+	kspinlock_t lock;
+
+	/* for non-event rings only */
+	struct ring *event_ring;
+
+	enum ring_type {
+		kRingTypeCommand,
+		kRingTypeEvent,
+		kRingTypeControl,
+	} type;
+
 	volatile struct xhci_trb *trbs;
-	uintptr_t paddr;
+	paddr_t paddr;
 	uint32_t size;
 	uint32_t cycle_bit;
 	uint32_t enqueue_idx;
 	uint32_t dequeue_idx;
+
+	/* For event rings, in-flight; for others, pending. */
+	struct req_tailq cmds;
+	/* For event rings, process completions; for others, start pendings. */
+	kdpc_t dpc;
 };
 
 struct protocol {
@@ -43,21 +65,31 @@ enum port_state {
 	kPortStateAddressed,
 };
 
-struct cmd {
-	TAILQ_ENTRY(cmd) link;
-	struct xhci_trb trb;
+/*!
+ * A pending or in-flight command.
+ */
+struct req {
+	TAILQ_ENTRY(req) link;
+	struct ring *ring;
+	union {
+		struct xhci_trb trb;
+	};
 	paddr_t trb_paddr;
-
-	void (*callback)(XHCIController *, struct cmd *, uint8_t code,
+	void (*callback)(XHCIController *, struct req *, uint8_t code,
 	    uint8_t slot_id, void *);
 	void *context;
 };
 
+/*!
+ * A root port on the controller.
+ *
+ * This struct needs to be disaggregated into a device and a port.
+ */
 struct port {
 	uint8_t port_num;
 	struct protocol *protocol;
 	enum port_state state;
-	struct cmd cmd;
+	struct req cmd;
 
 	uint8_t slot;
 
@@ -70,7 +102,7 @@ struct port {
 	struct ring *ep0_ring;
 };
 
-@interface XHCIController : DKDevice <DKPCIDeviceMatching> {
+@interface XHCIController : DKUSBController <DKPCIDeviceMatching> {
 	DKPCIDevice *m_pciDevice;
 
 	vaddr_t m_mmioBase;
@@ -88,7 +120,6 @@ struct port {
 	paddr_t m_dcbaaPhys;
 
 	struct intr_entry m_intrEntry;
-	kdpc_t m_dpc;
 
 	struct protocol *m_protocols;
 	size_t m_nProtocols;
@@ -96,9 +127,7 @@ struct port {
 	size_t m_nPorts;
 	struct port *m_ports;
 
-	TAILQ_HEAD(, cmd) m_pendingCmds;
-	TAILQ_HEAD(, cmd) m_inflightCmds;
-	kspinlock_t m_cmdQueueLock;
+	kthread_t *m_controllerThread;
 }
 
 + (void)load;
@@ -106,6 +135,15 @@ struct port {
 + (uint8_t)probeWithMatchData:(DKPCIMatchData *)matchData;
 
 @end
+
+@interface XHCIController()
+
+- (void)queueRequest:(struct req *)cmd toRing:(struct ring *)ring;
+
+@end
+
+static void event_dpc(void *);
+static void dispatch_dpc(void *);
 
 @implementation XHCIController
 
@@ -157,7 +195,9 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	return 0;
 }
 
-- (struct ring *)createRingWithSize:(size_t)numTrbs
+- (struct ring *)createRingWithType:(enum ring_type)type
+			       size:(size_t)numTrbs
+			  eventRing:(struct ring *)eventRing
 {
 	struct ring *ring = kmem_alloc(sizeof(*ring));
 	volatile struct xhci_trb *linkTRB;
@@ -166,6 +206,9 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 
 	if (ring == NULL)
 		return NULL;
+
+	if (type != kRingTypeEvent && eventRing == NULL)
+		kfatal("Non-event rings must have an associated event ring\n");
 
 	memset(ring, 0, sizeof(*ring));
 
@@ -176,12 +219,22 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 		return NULL;
 	}
 
+	ring->controller = self;
+	ke_spinlock_init(&ring->lock);
+	ring->type = type;
+	ring->event_ring = eventRing;
 	ring->trbs = (volatile struct xhci_trb *)vaddr;
 	ring->size = (uint32_t)numTrbs;
 	ring->cycle_bit = 1;
 	ring->enqueue_idx = 0;
 	ring->dequeue_idx = 0;
 	ring->paddr = paddr;
+	TAILQ_INIT(&ring->cmds);
+
+	if (ring->type == kRingTypeEvent)
+		ke_dpc_init(&ring->dpc, event_dpc, ring);
+	else
+		ke_dpc_init(&ring->dpc, dispatch_dpc, ring);
 
 	memset((void *)ring->trbs, 0, ringBytes);
 
@@ -250,12 +303,16 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 		m_dcbaa[0].dev_context_ptr = to_leu64(scratchBufsPaddr);
 	}
 
-	m_cmdRing = [self createRingWithSize:XHCI_CMD_RING_SIZE];
-	if (m_cmdRing == NULL)
+	m_eventRing = [self createRingWithType:kRingTypeEvent
+					  size:XHCI_EVENT_RING_SIZE
+				     eventRing:NULL];
+	if (m_eventRing == NULL)
 		return -1;
 
-	m_eventRing = [self createRingWithSize:XHCI_EVENT_RING_SIZE];
-	if (m_eventRing == NULL)
+	m_cmdRing = [self createRingWithType:kRingTypeCommand
+					size:XHCI_CMD_RING_SIZE
+				   eventRing:m_eventRing];
+	if (m_cmdRing == NULL)
 		return -1;
 
 	r = dk_allocate_and_map((vaddr_t *)&m_erstTable, &m_erstTablePhys,
@@ -293,7 +350,7 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	m_doorBells[0] = to_leu32(0);
 }
 
-- (void)enqueueOneCommandToRing:(struct cmd *)cmd
+- (void)enqueueOneCommandToRing:(struct req *)cmd
 {
 	struct ring *ring = m_cmdRing;
 	volatile struct xhci_trb *trb = &ring->trbs[ring->enqueue_idx];
@@ -317,24 +374,51 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	[self ringCommandDoorbell];
 }
 
-- (void)drainPendingCommands
+- (void)dispatchPendingRequestsOnRing:(struct ring *)ring
 {
-	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
+	ipl_t ipl;
+
+	ipl = ke_spinlock_acquire(&ring->event_ring->lock);
+	ke_spinlock_acquire_nospl(&ring->lock);
 
 	while (true) {
-		struct cmd *cmd = TAILQ_FIRST(&m_pendingCmds);
+		struct req *cmd = TAILQ_FIRST(&ring->cmds);
+		size_t needed;
+
 		if (cmd == NULL)
 			break;
 
-		if (![self ringHasSpace:m_cmdRing needed:1])
+		switch (ring->type) {
+		case kRingTypeCommand:
+			needed = 1;
 			break;
 
-		TAILQ_REMOVE(&m_pendingCmds, cmd, link);
+		case kRingTypeControl:
+			needed = 3;
+			break;
+
+		case kRingTypeEvent:
+			kfatal("Event rings do not dispatch requests\n");
+		}
+
+		if (![self ringHasSpace:ring needed:needed])
+			break;
+
+		TAILQ_REMOVE(&ring->cmds, cmd, link);
+
 		[self enqueueOneCommandToRing:cmd];
-		TAILQ_INSERT_TAIL(&m_inflightCmds, cmd, link);
+		TAILQ_INSERT_TAIL(&ring->event_ring->cmds, cmd, link);
 	}
 
-	ke_spinlock_release(&m_cmdQueueLock, ipl);
+	ke_spinlock_release_nospl(&ring->lock);
+	ke_spinlock_release(&ring->event_ring->lock, ipl);
+}
+
+static void
+dispatch_dpc(void *arg)
+{
+	struct ring *ring = (struct ring *)arg;
+	[ring->controller dispatchPendingRequestsOnRing:ring];
 }
 
 - (bool)ringHasSpace:(struct ring *)ring needed:(unsigned)needed
@@ -352,29 +436,69 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	return (free >= needed);
 }
 
-- (void)completeCommandTRBAtPAddr:(paddr_t)paddr
-			 withCode:(uint32_t)code
-			   slotID:(uint32_t)slotID
+- (void)completeCommandTRBOnEventRing:(struct ring *)eventRing
+			      atPAddr:(paddr_t)paddr
+			     withCode:(uint32_t)code
+			       slotID:(uint32_t)slotID
 {
-	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
-	struct cmd *cmd;
+	ipl_t ipl = ke_spinlock_acquire(&eventRing->lock);
+	struct req *cmd;
 
-	TAILQ_FOREACH (cmd, &m_inflightCmds, link) {
+	kassert(eventRing->type == kRingTypeEvent);
+
+	TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
 		if (cmd->trb_paddr == paddr) {
 			/* completions should be in-order */
 			kassert(paddr == m_cmdRing->paddr +
 			    (m_cmdRing->dequeue_idx * sizeof(struct xhci_trb)));
-			TAILQ_REMOVE(&m_inflightCmds, cmd, link);
+			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
 			m_cmdRing->dequeue_idx++;
-			ke_spinlock_release(&m_cmdQueueLock, ipl);
+			ke_spinlock_release(&eventRing->lock, ipl);
 
 			cmd->callback(self, cmd, code, slotID, cmd->context);
+
+			ke_dpc_enqueue(&m_cmdRing->dpc);
 			return;
 		}
 	}
 
 	kfatal("XHCI: TRB completion for unknown command\n");
 }
+
+#if 0
+
+- (void)requestDevice:(dk_usb_device_t)device
+	       packet:(const void *)packet
+	       length:(size_t)length
+		  out:(void *)dataOut
+	    outLength:(size_t)outLength
+{
+	struct port *port = (struct port *)device;
+	struct ring *ep0_ring = port->ep0_ring;
+
+#if 0
+	if (length > 0) {
+		trbType = TRB_TYPE_NORMAL;
+		trbControl = (1 << 24) | (1 << 27) | (1 << 31);
+		trbParams = vm_page_paddr(port->device_ctx_page) +
+		    offsetof(struct xhci_device_ctx, ep[0].dequeue_ptr);
+		trbLength = length;
+	}
+
+	trb->control = to_leu32(trbControl | (trbType << 10));
+	trb->status = to_leu32(trbStatus);
+	trb->params = to_leu64(trbParams);
+
+	ep0_ring->enqueue_idx++;
+	if (ep0_ring->enqueue_idx == ep0_ring->size) {
+		ep0_ring->enqueue_idx = 0;
+		ep0_ring->cycle_bit ^= 1;
+	}
+
+	[self ringCommandDoorbell];
+#endif
+}
+#endif
 
 - (void)deferredProcessing
 {
@@ -408,9 +532,11 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 			    0xFF;
 			paddr_t paddr = from_leu64(trb->params);
 
-			[self completeCommandTRBAtPAddr:paddr
-					       withCode:code
-						 slotID:slotId];
+			[self completeCommandTRBOnEventRing:eventRing
+
+						    atPAddr:paddr
+						   withCode:code
+						     slotID:slotId];
 			break;
 		}
 
@@ -433,11 +559,10 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 }
 
 static void
-xhci_dpc(void *arg)
+event_dpc(void *arg)
 {
-	XHCIController *self = arg;
-	[self deferredProcessing];
-	[self drainPendingCommands];
+	struct ring *ring = arg;
+	[ring->controller deferredProcessing];
 }
 
 static bool
@@ -457,7 +582,7 @@ xhci_interrupt(md_intr_frame_t *frame, void *arg)
 	ir->IMAN = to_leu32(status);
 #endif
 
-	ke_dpc_enqueue(&self->m_dpc);
+	ke_dpc_enqueue(&self->m_eventRing->dpc);
 
 	return true;
 }
@@ -537,22 +662,20 @@ xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
 	pregs->PORTSC = to_leu32(ps);
 }
 
-- (void)postCommand:(struct cmd *)cmd
+- (void)queueRequest:(struct req *)cmd toRing:(struct ring *)ring
 {
-	ipl_t ipl = ke_spinlock_acquire(&m_cmdQueueLock);
+	ipl_t ipl = ke_spinlock_acquire(&ring->lock);
+	TAILQ_INSERT_TAIL(&ring->cmds, cmd, link);
+	ke_spinlock_release(&ring->lock, ipl);
 
-	TAILQ_INSERT_TAIL(&m_pendingCmds, cmd, link);
-
-	ke_spinlock_release(&m_cmdQueueLock, ipl);
-
-	ke_dpc_enqueue(&m_dpc);
+	ke_dpc_enqueue(&ring->dpc);
 }
 
 static void
-address_device_done(XHCIController *self, struct cmd *cmd, uint8_t code,
+address_device_done(XHCIController *self, struct req *cmd, uint8_t code,
     uint8_t slot_id, void *context)
 {
-	kfatal("Results: code %d slot_id %d\n", code, slot_id);
+	kprintf("Device addressed: code %d slot_id %d\n", code, slot_id);
 }
 
 - (void)setupDeviceContextForPort:(struct port *)port
@@ -586,11 +709,11 @@ address_device_done(XHCIController *self, struct cmd *cmd, uint8_t code,
 	port->cmd.trb.control = to_leu32((TRB_TYPE_CMD_ADDRESS_DEV << 10) |
 	    (port->slot << 24));
 
-	[self postCommand:&port->cmd];
+	[self queueRequest:&port->cmd toRing:m_cmdRing];
 }
 
 static void
-port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
+port_enable_slot_done(XHCIController *self, struct req *cmd, uint8_t code,
     uint8_t slot_id, void *context)
 {
 	struct port *port = context;
@@ -618,8 +741,7 @@ port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
 	port->cmd.trb.status = to_leu32(0);
 	port->cmd.trb.control = to_leu32((TRB_TYPE_CMD_ENABLE_SLOT << 10) |
 	    ((uint32_t)port->protocol->slot_type << 16));
-	kprintf("POSTING COMMAND!\n");
-	[self postCommand:&port->cmd];
+	[self queueRequest:&port->cmd toRing:m_cmdRing];
 }
 
 - (void)updatePortState:(struct port *)port
@@ -705,14 +827,23 @@ port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
 	}
 }
 
+- (void)controllerThread
+{
+	[self enumeratePorts];
+}
+
+static void
+controller_thread(void *arg)
+{
+	XHCIController *self = (XHCIController *)arg;
+	[self controllerThread];
+	ps_exit_this_thread();
+}
+
 - (void)start
 {
 	DKPCIBarInfo barInfo = [m_pciDevice barInfo:0];
 	int r;
-
-	TAILQ_INIT(&m_pendingCmds);
-	TAILQ_INIT(&m_inflightCmds);
-	ke_spinlock_init(&m_cmdQueueLock);
 
 	[m_pciDevice setBusMastering:true];
 	[m_pciDevice setMemorySpace:true];
@@ -753,9 +884,6 @@ port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
 
 	m_intrEntry.handler = xhci_interrupt;
 	m_intrEntry.arg = self;
-	m_dpc.cpu = NULL;
-	m_dpc.callback = xhci_dpc;
-	m_dpc.arg = self;
 
 	r = [m_pciDevice setMSIx:true];
 	if (r != 0) {
@@ -807,7 +935,9 @@ port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
 			    sizeof(struct xhci_device_ctx));
 
 			port->ep0_ring = [self
-			    createRingWithSize:XHCI_RING_SIZE];
+			    createRingWithType:kRingTypeControl
+					  size:XHCI_RING_SIZE
+				     eventRing:m_eventRing];
 		}
 	}
 
@@ -822,7 +952,11 @@ port_enable_slot_done(XHCIController *self, struct cmd *cmd, uint8_t code,
 
 	kprintf("XHCI Controller set up\n");
 
-	[self enumeratePorts];
+	// ps_create_kernel_thread(&m_controllerThread, "xhci controller
+	// thread",
+	//	    controller_thread, self);
+	//	ke_thread_resume(m_controllerThread);
+	[self controllerThread];
 }
 
 @end

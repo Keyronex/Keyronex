@@ -58,6 +58,14 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 }
 
 void
+ke_dpc_init(kdpc_t *dpc, void (*callback)(void *), void *arg)
+{
+	dpc->callback = callback;
+	dpc->arg = arg;
+	dpc->cpu = NULL;
+}
+
+void
 ke_dpc_enqueue(kdpc_t *dpc)
 {
 	if (splget() < kIPLDPC) {

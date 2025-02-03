@@ -81,6 +81,11 @@ struct iop_stack_data_connect {
 	struct sockaddr_storage *sockaddr;
 };
 
+/*! For kIOPTypeUSBDeviceRequest */
+struct iop_stack_data_usb_device_request {
+	struct dk_usb_dev_req *request;
+};
+
 /*!
  * A frame in an I/O packet stack.
  */
