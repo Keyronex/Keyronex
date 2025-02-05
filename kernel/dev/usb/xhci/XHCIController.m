@@ -5,16 +5,20 @@
 
 #include <ddk/DKPCIDevice.h>
 #include <ddk/DKUSBDevice.h>
+#include <ddk/DKUSBHub.h>
+#include <ddk/reg/usb.h>
 #include <kdk/executive.h>
 #include <kdk/kern.h>
 #include <kdk/kmem.h>
 #include <kdk/libkern.h>
 #include <kdk/vm.h>
 
+#include "ddk/DKAxis.h"
 #include "vm/vmp.h"
 #include "xhci_reg.h"
 
 @class XHCIController;
+@class XHCIRootHub;
 
 #define XHCI_RING_SIZE 256
 #define XHCI_EVENT_RING_SIZE 256
@@ -29,6 +33,7 @@ struct ring {
 
 	/* for non-event rings only */
 	struct ring *event_ring;
+	struct device *port;
 
 	enum ring_type {
 		kRingTypeCommand,
@@ -55,14 +60,18 @@ struct protocol {
 	uint8_t slot_type;
 	uint8_t port_count;
 	uint8_t port_offset;
+	XHCIRootHub *hub;
 };
 
-enum port_state {
-	kPortStateNotConnected,
-	kPortStateResetting,
-	kPortStateEnablingSlot,
-	kPortStateAddressingDevice,
-	kPortStateAddressed,
+struct device {
+	uint8_t port;
+	uint8_t slot;
+	vm_page_t *context_page;
+	volatile struct xhci_input_ctx *input_ctx;
+	paddr_t input_ctx_phys;
+	volatile struct xhci_device_ctx *device_ctx;
+	paddr_t device_ctx_phys;
+	struct ring *ep0_ring;
 };
 
 /*!
@@ -71,35 +80,25 @@ enum port_state {
 struct req {
 	TAILQ_ENTRY(req) link;
 	struct ring *ring;
+	paddr_t trb_paddr;
+
 	union {
 		struct xhci_trb trb;
+		struct {
+			const void *packet;
+			size_t length;
+			void *out;
+			size_t out_length;
+		} ctrl;
 	};
-	paddr_t trb_paddr;
-	void (*callback)(XHCIController *, struct req *, uint8_t code,
-	    uint8_t slot_id, void *);
+
+	struct {
+		uint8_t code;
+		uint8_t slot_id;
+	} result;
+
+	void (*callback)(XHCIController *, struct req *, void *);
 	void *context;
-};
-
-/*!
- * A root port on the controller.
- *
- * This struct needs to be disaggregated into a device and a port.
- */
-struct port {
-	uint8_t port_num;
-	struct protocol *protocol;
-	enum port_state state;
-	struct req cmd;
-
-	uint8_t slot;
-
-	vm_page_t *context_page;
-	volatile struct xhci_input_ctx *input_ctx;
-	paddr_t input_ctx_phys;
-	volatile struct xhci_device_ctx *device_ctx;
-	paddr_t device_ctx_phys;
-
-	struct ring *ep0_ring;
 };
 
 @interface XHCIController : DKUSBController <DKPCIDeviceMatching> {
@@ -124,10 +123,14 @@ struct port {
 	struct protocol *m_protocols;
 	size_t m_nProtocols;
 
-	size_t m_nPorts;
 	struct port *m_ports;
 
 	kthread_t *m_controllerThread;
+
+	/* Device/hub tree state. */
+	// kmutex_t m_treeLock; not needed? we have a single thread
+	TAILQ_TYPE_HEAD(, DKUSBHub) m_allHubs;
+	kevent_t m_reenumerationEvent;
 }
 
 + (void)load;
@@ -136,9 +139,25 @@ struct port {
 
 @end
 
-@interface XHCIController()
+@interface XHCIRootHub : DKUSBHub {
+	struct protocol *m_protocol;
+}
 
+- (instancetype)initWithController:(XHCIController *)controller
+			  protocol:(struct protocol *)protocol;
+
+@end
+
+@interface XHCIController ()
+
+- (struct ring *)createRingWithType:(enum ring_type)type
+			       size:(size_t)numTrbs
+			  eventRing:(struct ring *)eventRing;
+- (void)dispatchPendingRequestsOnRing:(struct ring *)ring;
 - (void)queueRequest:(struct req *)cmd toRing:(struct ring *)ring;
+- (bool)ringHasSpace:(struct ring *)ring needed:(unsigned)needed;
+
+- (void)ringCommandDoorbell;
 
 @end
 
@@ -170,29 +189,6 @@ static void dispatch_dpc(void *);
 	}
 
 	return self;
-}
-
-static int
-dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
-{
-	vm_page_t *page;
-	int r;
-
-	r = vm_page_alloc(&page, vm_bytes_to_order(size), kPageUseKWired,
-	    false);
-	if (r != 0)
-		return r;
-
-	r = vm_ps_map_physical_view(&kernel_procstate, out_vaddr,
-	    PGROUNDUP(size), vm_page_paddr(page), kVMRead | kVMWrite,
-	    kVMRead | kVMWrite, false);
-	if (r != 0) {
-		vm_page_delete(page);
-		vm_page_release(page);
-		return r;
-	}
-	*out_paddr = vm_page_paddr(page);
-	return 0;
 }
 
 - (struct ring *)createRingWithType:(enum ring_type)type
@@ -350,28 +346,70 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 	m_doorBells[0] = to_leu32(0);
 }
 
-- (void)enqueueOneCommandToRing:(struct req *)cmd
+static inline paddr_t
+enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
+    uint32_t control)
 {
-	struct ring *ring = m_cmdRing;
 	volatile struct xhci_trb *trb = &ring->trbs[ring->enqueue_idx];
+	paddr_t trb_paddr;
 
 	memset((void *)trb, 0, sizeof(*trb));
+	trb->params = to_leu64(params);
+	trb->status = to_leu32(status);
+	trb->control = to_leu32(control | (ring->cycle_bit & 1));
 
-	trb->params = cmd->trb.params;
-	trb->status = to_leu32(0);
-	trb->control = to_leu32(from_leu32((cmd->trb.control)) |
-	    (ring->cycle_bit & 1));
-
-	cmd->trb_paddr = ring->paddr +
-	    (ring->enqueue_idx * sizeof(struct xhci_trb));
+	trb_paddr = ring->paddr + (ring->enqueue_idx * sizeof(struct xhci_trb));
 
 	ring->enqueue_idx++;
 	if (ring->enqueue_idx == ring->size - 1) {
+		/* skip the link TRB */
 		ring->enqueue_idx = 0;
 		ring->cycle_bit ^= 1;
 	}
 
-	[self ringCommandDoorbell];
+	return trb_paddr;
+}
+
+- (void)enqueueOneCommandToRing:(struct req *)cmd
+{
+	struct ring *ring = cmd->ring;
+
+	if (ring->type == kRingTypeCommand) {
+		cmd->trb_paddr = enqueue_trb(ring, from_leu64(cmd->trb.params),
+		    0, from_leu32(cmd->trb.control));
+		[self ringCommandDoorbell];
+		return;
+	} else if (ring->type == kRingTypeControl) {
+		cmd->trb_paddr = enqueue_trb(ring,
+		    *((uint64_t *)cmd->ctrl.packet), 8,
+		    (TRB_TYPE_SETUP_STAGE << 10) | TRB_FLAGS_IDT);
+
+		uint32_t dataControl = (TRB_TYPE_DATA_STAGE << 10);
+		if (cmd->ctrl.length > 0) {
+			dk_usb_setup_packet_t *setupPacket =
+			    (dk_usb_setup_packet_t *)cmd->ctrl.packet;
+
+			if (setupPacket->bmRequestType & 0x80)
+				/* IN transfer */
+				dataControl |= (1 << 16);
+
+			(void)enqueue_trb(ring, (uint64_t)V2P(cmd->ctrl.out),
+			    (uint32_t)cmd->ctrl.out_length, dataControl);
+		} else {
+			/* dummy data TRB */
+			(void)enqueue_trb(ring, 0, 0, dataControl);
+		}
+
+		(void)enqueue_trb(ring, 0, 0,
+		    (TRB_TYPE_STATUS_STAGE << 10) | TRB_FLAGS_IOC);
+
+#if 0
+		struct port *port = ring->port;
+		if (port && port->slot) {
+			m_doorBells[port->slot] = to_leu32(0x00000001);
+		}
+#endif
+	}
 }
 
 - (void)dispatchPendingRequestsOnRing:(struct ring *)ring
@@ -383,7 +421,7 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 
 	while (true) {
 		struct req *cmd = TAILQ_FIRST(&ring->cmds);
-		size_t needed;
+		size_t needed = 0;
 
 		if (cmd == NULL)
 			break;
@@ -407,6 +445,7 @@ dk_allocate_and_map(vaddr_t *out_vaddr, paddr_t *out_paddr, size_t size)
 		TAILQ_REMOVE(&ring->cmds, cmd, link);
 
 		[self enqueueOneCommandToRing:cmd];
+
 		TAILQ_INSERT_TAIL(&ring->event_ring->cmds, cmd, link);
 	}
 
@@ -449,13 +488,16 @@ dispatch_dpc(void *arg)
 	TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
 		if (cmd->trb_paddr == paddr) {
 			/* completions should be in-order */
+			kassert(cmd->ring == m_cmdRing);
 			kassert(paddr == m_cmdRing->paddr +
 			    (m_cmdRing->dequeue_idx * sizeof(struct xhci_trb)));
 			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
 			m_cmdRing->dequeue_idx++;
 			ke_spinlock_release(&eventRing->lock, ipl);
 
-			cmd->callback(self, cmd, code, slotID, cmd->context);
+			cmd->result.code = code;
+			cmd->result.slot_id = slotID;
+			cmd->callback(self, cmd, cmd->context);
 
 			ke_dpc_enqueue(&m_cmdRing->dpc);
 			return;
@@ -466,7 +508,6 @@ dispatch_dpc(void *arg)
 }
 
 #if 0
-
 - (void)requestDevice:(dk_usb_device_t)device
 	       packet:(const void *)packet
 	       length:(size_t)length
@@ -475,28 +516,15 @@ dispatch_dpc(void *arg)
 {
 	struct port *port = (struct port *)device;
 	struct ring *ep0_ring = port->ep0_ring;
+	struct req *req = kmem_alloc(sizeof(*req));
 
-#if 0
-	if (length > 0) {
-		trbType = TRB_TYPE_NORMAL;
-		trbControl = (1 << 24) | (1 << 27) | (1 << 31);
-		trbParams = vm_page_paddr(port->device_ctx_page) +
-		    offsetof(struct xhci_device_ctx, ep[0].dequeue_ptr);
-		trbLength = length;
-	}
+	req->ctrl.packet = packet;
+	req->ctrl.length = length;
+	req->ctrl.out = dataOut;
+	req->ctrl.out_length = outLength;
+	req->callback = NULL;
 
-	trb->control = to_leu32(trbControl | (trbType << 10));
-	trb->status = to_leu32(trbStatus);
-	trb->params = to_leu64(trbParams);
-
-	ep0_ring->enqueue_idx++;
-	if (ep0_ring->enqueue_idx == ep0_ring->size) {
-		ep0_ring->enqueue_idx = 0;
-		ep0_ring->cycle_bit ^= 1;
-	}
-
-	[self ringCommandDoorbell];
-#endif
+	[self queueRequest:req toRing:ep0_ring];
 }
 #endif
 
@@ -522,7 +550,16 @@ dispatch_dpc(void *arg)
 		case TRB_TYPE_EVENT_PORT_STATUS: {
 			uint64_t params = from_leu64(trb->params);
 			uint8_t portNum = (params >> 24) & 0xff;
-			[self updatePortState:&m_ports[portNum - 1]];
+
+			for (size_t i = 0; i < m_nProtocols; i++) {
+				struct protocol *proto = &m_protocols[i];
+
+				if (portNum >= proto->port_offset &&
+				    portNum < proto->port_offset +
+					    proto->port_count) {
+					[proto->hub requestReenumeration];
+				}
+			}
 			break;
 		}
 
@@ -533,7 +570,6 @@ dispatch_dpc(void *arg)
 			paddr_t paddr = from_leu64(trb->params);
 
 			[self completeCommandTRBOnEventRing:eventRing
-
 						    atPAddr:paddr
 						   withCode:code
 						     slotID:slotId];
@@ -642,194 +678,32 @@ xhci_interrupt(md_intr_frame_t *frame, void *arg)
 	}
 }
 
-static inline void
-xhci_clear_port_changes(volatile struct xhci_port_regs *pregs, uint32_t mask)
-{
-	uint32_t ps = from_leu32(pregs->PORTSC) & ~XHCI_PORTSC_PED;
-	ps |= mask;
-	pregs->PORTSC = to_leu32(ps);
-}
-
-- (void)startPortReset:(struct port *)port
-{
-	volatile struct xhci_port_regs *pregs =
-	    &m_opRegs->ports[port->port_num];
-	uint32_t ps = from_leu32(pregs->PORTSC);
-
-	kprintf("XHCI: port %u: Starting reset\n", port->port_num);
-
-	ps |= XHCI_PORTSC_PR;
-	pregs->PORTSC = to_leu32(ps);
-}
-
 - (void)queueRequest:(struct req *)cmd toRing:(struct ring *)ring
 {
 	ipl_t ipl = ke_spinlock_acquire(&ring->lock);
+	cmd->ring = ring;
 	TAILQ_INSERT_TAIL(&ring->cmds, cmd, link);
 	ke_spinlock_release(&ring->lock, ipl);
 
 	ke_dpc_enqueue(&ring->dpc);
 }
 
-static void
-address_device_done(XHCIController *self, struct req *cmd, uint8_t code,
-    uint8_t slot_id, void *context)
-{
-	kprintf("Device addressed: code %d slot_id %d\n", code, slot_id);
-}
-
-- (void)setupDeviceContextForPort:(struct port *)port
-{
-	volatile struct xhci_input_ctx *input_ctx = port->input_ctx;
-	volatile struct xhci_slot_ctx *slot_ctx = &input_ctx->slot;
-	volatile struct xhci_ep_ctx *ep0_ctx = &input_ctx->ep[0];
-	struct ring *ep0_ring = port->ep0_ring;
-	uint32_t route_string = 0; /* root hub port */
-
-	input_ctx->ctrl.drop_flags = to_leu32(0);
-	input_ctx->ctrl.add_flags = to_leu32(0x3); /* Slot and EP0 contexts */
-
-	slot_ctx->field1 = to_leu32(SLOT_CTX_00_SET_ROUTE_STRING(route_string) |
-	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(1));
-	slot_ctx->field2 = to_leu32(
-	    SLOT_CTX_04_SET_ROOT_HUB_PORT(port->port_num + 1));
-	slot_ctx->field3 = to_leu32(0);
-	slot_ctx->field4 = to_leu32(0);
-
-	ep0_ctx->field1 = to_leu32(0);
-	ep0_ctx->field2 = to_leu32(
-	    (3 << 1) | (4 << 3)); /* CErr 3, EPType ctrl */
-	ep0_ctx->dequeue_ptr = to_leu64(ep0_ring->paddr | ep0_ring->cycle_bit);
-	ep0_ctx->tx_info = to_leu32(8 << 16); /* average TRB Length = 8 */
-
-	port->cmd.callback = address_device_done;
-
-	port->cmd.trb.params = to_leu64(port->input_ctx_phys);
-	port->cmd.trb.status = to_leu32(0);
-	port->cmd.trb.control = to_leu32((TRB_TYPE_CMD_ADDRESS_DEV << 10) |
-	    (port->slot << 24));
-
-	[self queueRequest:&port->cmd toRing:m_cmdRing];
-}
-
-static void
-port_enable_slot_done(XHCIController *self, struct req *cmd, uint8_t code,
-    uint8_t slot_id, void *context)
-{
-	struct port *port = context;
-
-	if (code != 1) {
-		kprintf("XHCI: Port %u: slot assignment failed (%d)\n",
-		    port->port_num, code);
-		kfatal("Todo: handle slot assignment failure\n");
-		return;
-	}
-
-	kprintf("XHCI: Port %u: slot assigned (%d)\n", port->port_num, slot_id);
-
-	port->slot = slot_id;
-	port->state = kPortStateAddressingDevice;
-
-	[self setupDeviceContextForPort:port];
-}
-
-- (void)enableSlotForPort:(struct port *)port
-{
-	port->cmd.callback = port_enable_slot_done;
-	port->cmd.context = port;
-	port->cmd.trb.params = to_leu64(0);
-	port->cmd.trb.status = to_leu32(0);
-	port->cmd.trb.control = to_leu32((TRB_TYPE_CMD_ENABLE_SLOT << 10) |
-	    ((uint32_t)port->protocol->slot_type << 16));
-	[self queueRequest:&port->cmd toRing:m_cmdRing];
-}
-
-- (void)updatePortState:(struct port *)port
-{
-	volatile struct xhci_port_regs *pregs =
-	    &m_opRegs->ports[port->port_num];
-	uint32_t portsc = from_leu32(pregs->PORTSC);
-
-	bool ccs = (portsc & XHCI_PORTSC_CCS) != 0; /* Current Connect Status */
-	bool ped = (portsc & XHCI_PORTSC_PED) != 0; /* Port Enabled */
-	bool pr = (portsc & XHCI_PORTSC_PR) != 0;   /* Port Reset */
-	bool plsInU0 = ((portsc >> 5) & 0xF) == 0;  /* Link state = U0? */
-
-	bool csc = (portsc & XHCI_PORTSC_CSC) != 0; /* Connect Status Chane */
-	bool prc = (portsc & XHCI_PORTSC_PRC) != 0; /* Port Reset Chane */
-	bool pec = (portsc & XHCI_PORTSC_PEC) != 0; /* Port Enable Change */
-
-	switch (port->state) {
-
-	/* waiting for CSC */
-	case kPortStateNotConnected:
-		if (ccs) {
-			if (csc)
-				xhci_clear_port_changes(pregs, XHCI_PORTSC_CSC);
-
-			port->state = kPortStateResetting;
-			[self startPortReset:port];
-		} else {
-			kprintf("XHCI: spurious 1\n");
-		}
-		break;
-
-	/* waiting for PR to complete */
-	case kPortStateResetting:
-		if (!pr) {
-			kprintf("XHCI: Port %u: reset done, portsc=0x%x\n",
-			    port->port_num, portsc);
-
-			if (prc) {
-				xhci_clear_port_changes(pregs, XHCI_PORTSC_PRC);
-			}
-
-			if (ped) {
-				kprintf("XHCI: Port %u: now enabled\n",
-				    port->port_num);
-				port->state = kPortStateEnablingSlot;
-				[self enableSlotForPort:port];
-			} else {
-				kprintf(
-				    "XHCI: Port %u: reset done but not enabled\n",
-				    port->port_num);
-				port->state = kPortStateNotConnected;
-			}
-		}
-		break;
-
-	default:
-		kfatal("XHCI: port state change in unrecognised state\n");
-		break;
-	}
-
-	if (!ccs && port->state != kPortStateNotConnected) {
-		kprintf("XHCI: Port %u: device disconnected\n", port->port_num);
-		port->state = kPortStateNotConnected;
-	}
-
-	if (pec) {
-		xhci_clear_port_changes(pregs, XHCI_PORTSC_PEC);
-	}
-}
-
-- (void)enumeratePorts
-{
-	for (size_t i = 0; i < m_nPorts; i++) {
-		struct port *port = &m_ports[i];
-		struct protocol *protocol = port->protocol;
-		volatile struct xhci_port_regs *regs = &m_opRegs->ports[i];
-
-		kassert(protocol != NULL);
-
-		if (from_leu32(regs->PORTSC) & XHCI_PORTSC_CCS)
-			[self updatePortState:port];
-	}
-}
-
 - (void)controllerThread
 {
-	[self enumeratePorts];
+	while (true) {
+		DKUSBHub *hub, *save;
+
+		ke_wait(&m_reenumerationEvent, "xhci controller thread wait", 0,
+		    0, -1);
+		ke_event_clear(&m_reenumerationEvent);
+
+		kprintf("Woke up\n");
+
+		TAILQ_FOREACH_SAFE (hub, &m_allHubs, m_controllerHubsLink,
+		    save) {
+			[hub enumerate];
+		}
+	}
 }
 
 static void
@@ -897,50 +771,6 @@ controller_thread(void *arg)
 		return;
 	}
 
-	m_nPorts = from_leu32(m_capRegs->HCSPARAMS1) >> 24;
-	m_ports = kmem_alloc(sizeof(struct port) * m_nPorts);
-
-	for (size_t i = 0; i < m_nProtocols; i++) {
-		struct protocol *protocol = &m_protocols[i];
-		for (size_t j = 0; j < protocol->port_count; j++) {
-			struct port *port;
-
-			kassert(protocol->port_offset + j < m_nPorts);
-
-			port = &m_ports[protocol->port_offset + j];
-
-			port->port_num = protocol->port_offset + j;
-			port->protocol = protocol;
-			port->state = kPortStateNotConnected;
-
-			r = vm_page_alloc(&port->context_page, 0, kPageUseKWired,
-			    false);
-			if (r != 0) {
-				kprintf("XHCI: Failed to allocate context page\n");
-				return;
-			}
-
-			port->input_ctx_phys = vm_page_paddr(port->context_page);
-			port->device_ctx_phys = port->input_ctx_phys +
-			    ROUNDUP(sizeof(struct xhci_input_ctx), 64);
-
-			port->input_ctx = (volatile struct xhci_input_ctx *)
-			    P2V(port->input_ctx_phys);
-			port->device_ctx = (volatile struct xhci_device_ctx *)
-			    P2V(port->device_ctx_phys);
-
-			memset((void *)port->input_ctx, 0,
-			    sizeof(struct xhci_input_ctx));
-			memset((void *)port->device_ctx, 0,
-			    sizeof(struct xhci_device_ctx));
-
-			port->ep0_ring = [self
-			    createRingWithType:kRingTypeControl
-					  size:XHCI_RING_SIZE
-				     eventRing:m_eventRing];
-		}
-	}
-
 	m_opRegs->CONFIG = to_leu32((uint32_t)m_maxSlots);
 
 	cmd = from_leu32(m_opRegs->USBCMD);
@@ -952,11 +782,334 @@ controller_thread(void *arg)
 
 	kprintf("XHCI Controller set up\n");
 
-	// ps_create_kernel_thread(&m_controllerThread, "xhci controller
-	// thread",
-	//	    controller_thread, self);
-	//	ke_thread_resume(m_controllerThread);
-	[self controllerThread];
+	TAILQ_INIT(&m_allHubs);
+	ke_event_init(&m_reenumerationEvent, false);
+
+	for (size_t i = 0; i < m_nProtocols; i++) {
+		XHCIRootHub *hub = [[XHCIRootHub alloc]
+		    initWithController:self
+			      protocol:&m_protocols[i]];
+
+		m_protocols[i].hub = hub;
+
+		[self attachChild:hub onAxis:gDeviceAxis];
+		[hub start];
+	}
+
+	ps_create_kernel_thread(&m_controllerThread, "xhci controller thread",
+	    controller_thread, self);
+	ke_thread_resume(m_controllerThread);
+}
+
+static void synch_callback(XHCIController *controller, struct req *cmd, void *context)
+{
+	ke_event_signal((kevent_t *)context);
+}
+
+- (void)synchronousRequest:(struct req *)cmd toRing:(struct ring *)ring
+{
+	kevent_t event;
+	ke_event_init(&event, false);
+	cmd->callback = synch_callback;
+	cmd->context = &event;
+	[self queueRequest:cmd toRing:m_cmdRing];
+	ke_wait(&event, "xhci synchronous request", 0, 0, -1);
+}
+
+- (void)addChildHub:(DKUSBHub *)hub
+{
+	TAILQ_INSERT_TAIL(&m_allHubs, hub, m_controllerHubsLink);
+}
+
+- (int)getRootHubPort:(size_t)port status:(usb_port_status_and_change_t *)stat
+{
+	volatile struct xhci_port_regs *pregs = &m_opRegs->ports[port];
+	uint32_t ps = from_leu32(pregs->PORTSC);
+
+	stat->status = 0;
+	stat->change = 0;
+
+	switch (XHCI_PORTSC_SPEED(ps)) {
+	case 0:
+		/* super speed */
+		break;
+
+	case 1:
+		stat->status |= PORT_STATUS_FULL_SPEED;
+		break;
+
+	case 2:
+		stat->status |= PORT_STATUS_LOW_SPEED;
+		break;
+
+	case 3:
+		stat->status |= PORT_STATUS_HIGH_SPEED;
+		break;
+
+	default:
+		stat->status |= PORT_STATUS_OTHER_SPEED;
+		break;
+	}
+
+	if (ps & XHCI_PORTSC_CCS)
+		stat->status |= PORT_STATUS_CURRENT_CONNECT;
+	if (ps & XHCI_PORTSC_PED)
+		stat->status |= PORT_STATUS_ENABLE_DISABLE;
+	if (ps & XHCI_PORTSC_PR)
+		stat->status |= PORT_STATUS_RESET;
+	if (ps & XHCI_PORTSC_OCA)
+		stat->status |= PORT_STATUS_OVER_CURRENT;
+	if (ps & stat->status) {
+		if (stat->status & PORT_STATUS_OTHER_SPEED)
+			stat->status |= PORT_STATUS_PORT_POWER_SS;
+		else
+			stat->status |= PORT_STATUS_POWER;
+	}
+
+	if (ps & XHCI_PORTSC_CSC)
+		stat->change |= PORT_CHANGE_CONNECT_STATUS;
+	if (ps & XHCI_PORTSC_PEC)
+		stat->change |= PORT_CHANGE_ENABLE_DISABLE;
+	if (ps & XHCI_PORTSC_PRC)
+		stat->change |= PORT_CHANGE_RESET;
+	if (ps & XHCI_PORTSC_WRC)
+		stat->change |= PORT_CHANGE_RESET_BH;
+	if (ps & XHCI_PORTSC_PLC)
+		stat->change |= PORT_CHANGE_LINK_STATE;
+
+	return 0;
+}
+
+- (int)setRootHubPortFeature:(size_t)port feature:(uint16_t)feature
+{
+	volatile struct xhci_port_regs *pregs = &m_opRegs->ports[port];
+	uint32_t ps = from_leu32(pregs->PORTSC);
+
+	ps &= ~XHCI_PORTSC_CMD_BITS_CLEAR;
+
+	switch (feature) {
+	case PORT_ENABLE:
+		ps |= XHCI_PORTSC_PED;
+		break;
+
+	case PORT_RESET:
+		ps |= XHCI_PORTSC_PR;
+		break;
+
+	case PORT_POWER:
+		ps |= XHCI_PORTSC_PP;
+		break;
+
+	default:
+		return -1;
+	}
+
+	pregs->PORTSC = to_leu32(ps);
+
+	return 0;
+}
+
+- (int)clearPortFeature:(size_t)port feature:(uint16_t)feature
+{
+	volatile struct xhci_port_regs *pregs = &m_opRegs->ports[port];
+	uint32_t ps = from_leu32(pregs->PORTSC);
+
+	ps &= ~XHCI_PORTSC_CMD_BITS_CLEAR;
+
+	switch (feature) {
+	case PORT_ENABLE:
+		ps &= ~XHCI_PORTSC_PED;
+		break;
+
+	case PORT_POWER:
+		ps &= ~XHCI_PORTSC_PP;
+		break;
+
+	case C_PORT_CONNECTION:
+		ps &= ~XHCI_PORTSC_CSC;
+		break;
+
+	case C_PORT_ENABLE:
+		ps &= ~XHCI_PORTSC_PEC;
+		break;
+
+	case C_PORT_RESET:
+		ps &= ~XHCI_PORTSC_PRC;
+		break;
+
+	default:
+		return -1;
+	}
+
+	pregs->PORTSC = to_leu32(ps);
+
+	return 0;
+}
+
+- (void)requestReenumeration
+{
+	ke_event_signal(&m_reenumerationEvent);
+}
+
+- (int)enableSlotForDevice:(struct device *)dev
+{
+	struct req cmd;
+	uint8_t slot_type;
+
+	for (size_t i = 0; i < m_nProtocols; i++)
+		if (m_protocols[i].port_offset <= dev->port &&
+		    dev->port <
+			m_protocols[i].port_offset + m_protocols[i].port_count)
+			slot_type = m_protocols[i].slot_type;
+
+	cmd.trb.params = to_leu64(0);
+	cmd.trb.status = to_leu32(0);
+	cmd.trb.control = to_leu32(
+	    (TRB_TYPE_CMD_ENABLE_SLOT << 10) | ((uint32_t)slot_type << 16));
+
+	[self synchronousRequest:&cmd toRing:m_cmdRing];
+	if (cmd.result.code != 1)
+		kfatal("Enable slot failed\n");
+
+	dev->slot = cmd.result.slot_id;
+
+	return 0;
+}
+
+- (int)addressDevice:(struct device *)dev
+{
+	volatile struct xhci_input_ctx *input_ctx = dev->input_ctx;
+	volatile struct xhci_slot_ctx *slot_ctx = &input_ctx->slot;
+	volatile struct xhci_ep_ctx *ep0_ctx = &input_ctx->ep[0];
+	struct ring *ep0_ring = dev->ep0_ring;
+	uint32_t route_string = 0; /* root hub port */
+	struct req cmd;
+
+	input_ctx->ctrl.drop_flags = to_leu32(0);
+	input_ctx->ctrl.add_flags = to_leu32(0x3); /* Slot and EP0 contexts */
+
+	slot_ctx->field1 = to_leu32(SLOT_CTX_00_SET_ROUTE_STRING(route_string) |
+	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(1));
+	slot_ctx->field2 = to_leu32(
+	    SLOT_CTX_04_SET_ROOT_HUB_PORT(dev->port + 1));
+	slot_ctx->field3 = to_leu32(0);
+	slot_ctx->field4 = to_leu32(0);
+
+	ep0_ctx->field1 = to_leu32(0);
+	ep0_ctx->field2 = to_leu32((3 << 1) | (4 << 3)); /* CErr 3, EPType ctrl */
+	ep0_ctx->dequeue_ptr = to_leu64(ep0_ring->paddr | ep0_ring->cycle_bit);
+	ep0_ctx->tx_info = to_leu32(8 << 16); /* average TRB Length = 8 */
+
+	cmd.callback = NULL;
+
+	cmd.trb.params = to_leu64(dev->input_ctx_phys);
+	cmd.trb.status = to_leu32(0);
+	cmd.trb.control = to_leu32((TRB_TYPE_CMD_ADDRESS_DEV << 10) |
+	    (dev->slot << 24));
+
+	[self synchronousRequest:&cmd toRing:m_cmdRing];
+	if (cmd.result.code != 1)
+		kfatal("Address device failed\n");
+
+	return 0;
+}
+
+- (int)setupDeviceContextForRootPort:(size_t)port
+			deviceHandle:(out dk_usb_device_t *)handle
+{
+	struct device *dev;
+	int r;
+
+	dev = kmem_alloc(sizeof(*dev));
+
+	r = vm_page_alloc(&dev->context_page, 0, kPageUseKWired, false);
+	if (r != 0) {
+		kprintf("XHCI: Failed to allocate context page\n");
+		return -1;
+	}
+
+	dev->port = port;
+
+	dev->input_ctx_phys = vm_page_paddr(dev->context_page);
+	dev->device_ctx_phys = dev->input_ctx_phys +
+	    ROUNDUP(sizeof(struct xhci_input_ctx), 64);
+
+	dev->input_ctx = (volatile struct xhci_input_ctx *)P2V(
+	    dev->input_ctx_phys);
+	dev->device_ctx = (volatile struct xhci_device_ctx *)P2V(
+	    dev->device_ctx_phys);
+
+	memset((void *)dev->input_ctx, 0, sizeof(struct xhci_input_ctx));
+	memset((void *)dev->device_ctx, 0, sizeof(struct xhci_device_ctx));
+
+	dev->ep0_ring = [self createRingWithType:kRingTypeControl
+					    size:XHCI_RING_SIZE
+				       eventRing:m_eventRing];
+	dev->ep0_ring->port = dev;
+
+	r = [self enableSlotForDevice:dev];
+
+	r = [self addressDevice:dev];
+
+	*handle = (dk_usb_device_t)dev;
+
+	return 0;
+}
+
+@end
+
+#define M_CONTROLLER ((XHCIController *)m_controller)
+
+@implementation XHCIRootHub
+
+- (instancetype)initWithController:(XHCIController *)controller
+			  protocol:(struct protocol *)protocol
+{
+	if ((self = [super init])) {
+		m_nPorts = protocol->port_count;
+
+		m_controller = controller;
+		m_protocol = protocol;
+		kmem_asprintf(&m_name, "xHCIRootHubUSB%u.%u", protocol->major,
+		    protocol->minor);
+
+		[M_CONTROLLER addChildHub:self];
+	}
+
+	return self;
+}
+
+- (int)getPortStatus:(size_t)port status:(usb_port_status_and_change_t *)status
+{
+	return [M_CONTROLLER getRootHubPort:m_protocol->port_offset + port
+				     status:status];
+}
+
+- (int)setPortFeature:(size_t)port feature:(uint16_t)feature
+{
+	return
+	    [M_CONTROLLER setRootHubPortFeature:m_protocol->port_offset + port
+					feature:feature];
+}
+
+- (int)clearPortFeature:(size_t)port feature:(uint16_t)feature
+{
+	return [M_CONTROLLER clearPortFeature:m_protocol->port_offset + port
+				      feature:feature];
+}
+
+- (int)setupDeviceContextForPort:(size_t)port
+		    deviceHandle:(out dk_usb_device_t *)handle
+{
+	return [M_CONTROLLER
+	    setupDeviceContextForRootPort:m_protocol->port_offset + port
+			     deviceHandle:handle];
+}
+
+- (void)requestReenumeration
+{
+	__atomic_store_n(&m_needsEnumeration, true, __ATOMIC_RELAXED);
+	[M_CONTROLLER requestReenumeration];
 }
 
 @end

@@ -4,7 +4,9 @@
  */
 
 #include <ddk/DKUSBDevice.h>
+#include <ddk/DKUSBHub.h>
 #include <kdk/kern.h>
+#include <kdk/kmem.h>
 
 @implementation DKUSBController
 
@@ -22,16 +24,30 @@
 @implementation DKUSBDevice
 
 - (instancetype)initWithController:(DKUSBController *)controller
-			    device:(dk_usb_device_t)device
+			       hub:(DKUSBHub *)hub
+			      port:(size_t)port;
 {
-	if (self = [super init]) {
+	if ((self = [super init])) {
 		m_controller = controller;
-		m_device = device;
-	}
+		m_hub = hub;
+		m_port = port;
 
-	//[m_controller ]
+		kmem_asprintf(&m_name, "usbDevice%d", port);
+	}
 
 	return self;
 }
+
+- (void) start
+{
+	int r;
+
+	r = [m_hub setupDeviceContextForPort:m_port deviceHandle:&m_devHandle];
+	if (r != 0)
+		kfatal("Failed to setup device context for port %zu\n", m_port);
+
+	kprintf("%s: device on port %zu\n", [self name], m_port);
+}
+
 
 @end

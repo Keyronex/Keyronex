@@ -26,15 +26,28 @@ struct __attribute__((packed)) xhci_host_cap_regs {
 	leu32_t HCCPARAMS2;
 };
 
-/* Port Status & Control */
+/* Port Status & Control(Table 5-27) */
 #define XHCI_PORTSC_CCS (1 << 0)  /* Current Connect Status */
 #define XHCI_PORTSC_PED (1 << 1)  /* Port Enabled/Disabled */
 #define XHCI_PORTSC_OCA (1 << 3)  /* Over-current Active */
 #define XHCI_PORTSC_PR (1 << 4)	  /* Port Reset */
 #define XHCI_PORTSC_PP (1 << 9)	  /* Port Power */
+#define XHCI_PORTSC_SPEED_MASK (0xF << 10)
+#define XHCI_PORTSC_SPEED_SHIFT 10
+#define XHCI_PORTSC_SPEED(x) (((x) >> XHCI_PORTSC_SPEED_SHIFT) & \
+    XHCI_PORTSC_SPEED_MASK)
+#define XHCI_PORTSC_PS_FS 1
+#define XHCI_PORTSC_PS_LS 2
+#define XHCI_PORTSC_PS_HS 3
+#define XHCI_PORTSC_PS_SS 4
 #define XHCI_PORTSC_CSC (1 << 17) /* Connect Status Change */
 #define XHCI_PORTSC_PEC (1 << 18) /* Port Enabled/Disabled Change */
+#define XHCI_PORTSC_WRC (1 << 19) /* Warm Port Reset Change */
+#define XHCI_PORTSC_OCC (1 << 20) /* Over-current Change */
 #define XHCI_PORTSC_PRC (1 << 21) /* Port Reset Change */
+#define XHCI_PORTSC_PLC (1 << 22) /* Port Link State Change */
+#define XHCI_PORTSC_CEC (1 << 23) /* Config Error Change */
+#define	XHCI_PORTSC_CMD_BITS_CLEAR 0x80ff01ffU
 
 /* 5.4 table 5-19 Host Controller USB Port Register Set */
 struct __attribute__((packed)) xhci_port_regs {

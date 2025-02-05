@@ -13,6 +13,7 @@
 #include <ddk/DKDevice.h>
 
 @class DKUSBController;
+@class DKUSBHub;
 @class DKUSBDevice;
 
 /* A host controller's appropriate state. */
@@ -28,11 +29,14 @@ typedef void *dk_usb_device_t;
 
 @interface DKUSBDevice : DKDevice {
 	DKUSBController *m_controller;
-	dk_usb_device_t m_device;
+	DKUSBHub *m_hub;
+	size_t m_port;
+	dk_usb_device_t m_devHandle;
 }
 
 - (instancetype)initWithController:(DKUSBController *)controller
-			    device:(dk_usb_device_t)device;
+			       hub:(DKUSBHub *)hub
+			      port:(size_t)port;
 
 @end
 
