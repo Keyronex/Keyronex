@@ -102,6 +102,12 @@
 	kfatal("Subclass responsibility\n");
 }
 
+- (int)setupDeviceContextForPort:(size_t)port
+		    deviceHandle:(out dk_usb_device_t *)handle
+{
+	kfatal("Subclass responsibility\n");
+}
+
 - (void)requestReenumeration
 {
 	kfatal("Subclass responsibility\n");

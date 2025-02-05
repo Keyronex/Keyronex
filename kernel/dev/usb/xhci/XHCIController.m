@@ -97,7 +97,7 @@ struct req {
 		uint8_t slot_id;
 	} result;
 
-	void (*callback)(XHCIController *, struct req *, void *);
+	void (*callback)(DKUSBController *, struct req *, void *);
 	void *context;
 };
 
@@ -155,6 +155,7 @@ struct req {
 			  eventRing:(struct ring *)eventRing;
 - (void)dispatchPendingRequestsOnRing:(struct ring *)ring;
 - (void)queueRequest:(struct req *)cmd toRing:(struct ring *)ring;
+- (void)synchronousRequest:(struct req *)cmd toRing:(struct ring *)ring;
 - (bool)ringHasSpace:(struct ring *)ring needed:(unsigned)needed;
 
 - (void)ringCommandDoorbell;
@@ -380,8 +381,9 @@ enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
 		[self ringCommandDoorbell];
 		return;
 	} else if (ring->type == kRingTypeControl) {
-		cmd->trb_paddr = enqueue_trb(ring,
-		    *((uint64_t *)cmd->ctrl.packet), 8,
+		struct device *dev = cmd->ring->port;
+
+		enqueue_trb(ring, *((uint64_t *)cmd->ctrl.packet), 8,
 		    (TRB_TYPE_SETUP_STAGE << 10) | TRB_FLAGS_IDT);
 
 		uint32_t dataControl = (TRB_TYPE_DATA_STAGE << 10);
@@ -400,15 +402,10 @@ enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
 			(void)enqueue_trb(ring, 0, 0, dataControl);
 		}
 
-		(void)enqueue_trb(ring, 0, 0,
+		cmd->trb_paddr = enqueue_trb(ring, 0, 0,
 		    (TRB_TYPE_STATUS_STAGE << 10) | TRB_FLAGS_IOC);
 
-#if 0
-		struct port *port = ring->port;
-		if (port && port->slot) {
-			m_doorBells[port->slot] = to_leu32(0x00000001);
-		}
-#endif
+		m_doorBells[dev->slot] = to_leu32(0x00000001);
 	}
 }
 
@@ -444,9 +441,8 @@ enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
 
 		TAILQ_REMOVE(&ring->cmds, cmd, link);
 
-		[self enqueueOneCommandToRing:cmd];
-
 		TAILQ_INSERT_TAIL(&ring->event_ring->cmds, cmd, link);
+		[self enqueueOneCommandToRing:cmd];
 	}
 
 	ke_spinlock_release_nospl(&ring->lock);
@@ -507,14 +503,13 @@ dispatch_dpc(void *arg)
 	kfatal("XHCI: TRB completion for unknown command\n");
 }
 
-#if 0
-- (void)requestDevice:(dk_usb_device_t)device
+- (void)requestDevice:(dk_usb_device_t)handle
 	       packet:(const void *)packet
 	       length:(size_t)length
 		  out:(void *)dataOut
 	    outLength:(size_t)outLength
 {
-	struct port *port = (struct port *)device;
+	struct device *port = (struct device *)handle;
 	struct ring *ep0_ring = port->ep0_ring;
 	struct req *req = kmem_alloc(sizeof(*req));
 
@@ -522,11 +517,11 @@ dispatch_dpc(void *arg)
 	req->ctrl.length = length;
 	req->ctrl.out = dataOut;
 	req->ctrl.out_length = outLength;
+	req->ring = ep0_ring;
 	req->callback = NULL;
 
-	[self queueRequest:req toRing:ep0_ring];
+	[self synchronousRequest:req toRing:ep0_ring];
 }
-#endif
 
 - (void)deferredProcessing
 {
@@ -536,17 +531,60 @@ dispatch_dpc(void *arg)
 	for (;;) {
 		volatile struct xhci_trb *trb =
 		    &eventRing->trbs[eventRing->dequeue_idx];
-
 		uint32_t control = from_leu32(trb->control);
 		uint32_t trbCycle = control & 0x1; /* bit 0 = cycle bit. */
 		uint32_t trbType = (control >> 10) & 0x3F;
-
 		uint64_t erdp;
 
 		if (trbCycle != eventRing->cycle_bit)
 			break;
 
 		switch (trbType) {
+		case TRB_TYPE_EVENT_TRANSFER: {
+			uint32_t code = (from_leu32(trb->status) >> 24) & 0xFF;
+			paddr_t event_trb_paddr = from_leu64(trb->params);
+			struct ring *origRing;
+			ipl_t ipl = ke_spinlock_acquire(&eventRing->lock);
+			struct req *cmd = NULL;
+
+			TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
+				if (cmd->trb_paddr == event_trb_paddr)
+					break;
+			}
+
+			if (cmd == NULL) {
+				ke_spinlock_release(&eventRing->lock, ipl);
+				kprintf(
+				    "XHCI: Transfer event for unknown command (TRB paddr: 0x%llx)\n",
+				    (unsigned long long)event_trb_paddr);
+				break;
+			}
+
+			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
+
+			origRing = cmd->ring;
+			if (origRing->type == kRingTypeControl) {
+				origRing->dequeue_idx += 3;
+				if (origRing->dequeue_idx >=
+				    origRing->size - 1) {
+					origRing->dequeue_idx %=
+					    (origRing->size - 1);
+					origRing->cycle_bit ^= 1;
+				}
+			} else {
+				kfatal("Unexpected\n");
+			}
+			ke_spinlock_release(&eventRing->lock, ipl);
+
+			cmd->result.code = code;
+			cmd->result.slot_id = 0;
+
+			cmd->callback(self, cmd, cmd->context);
+
+			ke_dpc_enqueue(&origRing->dpc);
+			break;
+		}
+
 		case TRB_TYPE_EVENT_PORT_STATUS: {
 			uint64_t params = from_leu64(trb->params);
 			uint8_t portNum = (params >> 24) & 0xff;
@@ -697,8 +735,6 @@ xhci_interrupt(md_intr_frame_t *frame, void *arg)
 		    0, -1);
 		ke_event_clear(&m_reenumerationEvent);
 
-		kprintf("Woke up\n");
-
 		TAILQ_FOREACH_SAFE (hub, &m_allHubs, m_controllerHubsLink,
 		    save) {
 			[hub enumerate];
@@ -801,7 +837,8 @@ controller_thread(void *arg)
 	ke_thread_resume(m_controllerThread);
 }
 
-static void synch_callback(XHCIController *controller, struct req *cmd, void *context)
+static void
+synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 {
 	ke_event_signal((kevent_t *)context);
 }
@@ -812,7 +849,7 @@ static void synch_callback(XHCIController *controller, struct req *cmd, void *co
 	ke_event_init(&event, false);
 	cmd->callback = synch_callback;
 	cmd->context = &event;
-	[self queueRequest:cmd toRing:m_cmdRing];
+	[self queueRequest:cmd toRing:ring];
 	ke_wait(&event, "xhci synchronous request", 0, 0, -1);
 }
 
@@ -954,18 +991,19 @@ static void synch_callback(XHCIController *controller, struct req *cmd, void *co
 - (int)enableSlotForDevice:(struct device *)dev
 {
 	struct req cmd;
-	uint8_t slot_type;
+	uint8_t slot_type = -1;
 
 	for (size_t i = 0; i < m_nProtocols; i++)
-		if (m_protocols[i].port_offset <= dev->port &&
-		    dev->port <
-			m_protocols[i].port_offset + m_protocols[i].port_count)
+		if (m_protocols[i].port_offset <= dev->port && dev->port <
+		    m_protocols[i].port_offset + m_protocols[i].port_count)
 			slot_type = m_protocols[i].slot_type;
+
+	kassert(slot_type != (uint8_t)-1);
 
 	cmd.trb.params = to_leu64(0);
 	cmd.trb.status = to_leu32(0);
-	cmd.trb.control = to_leu32(
-	    (TRB_TYPE_CMD_ENABLE_SLOT << 10) | ((uint32_t)slot_type << 16));
+	cmd.trb.control = to_leu32((TRB_TYPE_CMD_ENABLE_SLOT << 10) |
+	    ((uint32_t)slot_type << 16));
 
 	[self synchronousRequest:&cmd toRing:m_cmdRing];
 	if (cmd.result.code != 1)
@@ -1077,6 +1115,29 @@ static void synch_callback(XHCIController *controller, struct req *cmd, void *co
 	}
 
 	return self;
+}
+
+- (int)synchronousRequestDevice:(dk_usb_device_t)handle
+			 packet:(const void *)packet
+			 length:(size_t)length
+			    out:(void *)dataOut
+		      outLength:(size_t)outLength
+{
+	struct req cmd;
+	struct device *device = (struct device *)handle;
+	kevent_t event;
+
+	cmd.ctrl.packet = packet;
+	cmd.ctrl.length = length;
+	cmd.ctrl.out = dataOut;
+	cmd.ctrl.out_length = outLength;
+	cmd.callback = synch_callback;
+	cmd.context = &event;
+
+	[M_CONTROLLER synchronousRequest:&cmd toRing:device->ep0_ring];
+	ke_wait(&event, "xhci synchronous request", 0, 0, -1);
+
+	return 0;
 }
 
 - (int)getPortStatus:(size_t)port status:(usb_port_status_and_change_t *)status

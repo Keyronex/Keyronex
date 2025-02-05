@@ -41,6 +41,7 @@ struct usb_port {
 - (int)clearPortFeature:(size_t)port feature:(uint16_t)feature;
 - (int)setupDeviceContextForPort:(size_t)port
 		    deviceHandle:(out dk_usb_device_t *)handle;
+- (void)requestReenumeration;
 
 @end
 
