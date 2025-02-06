@@ -38,11 +38,7 @@ struct ring {
 	uint8_t address;
 	uint16_t max_packet_size;
 
-	enum ring_direction {
-		kRingDirectionIn,
-		kRingDirectionOut,
-		kRingDirectionBidi,
-	} direction;
+	dk_endpoint_direction_t dir;
 
 	enum ring_type {
 		kRingTypeControl = 0,
@@ -178,6 +174,12 @@ struct req {
 static void event_dpc(void *);
 static void dispatch_dpc(void *);
 
+static uint8_t
+endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
+{
+	return (endpoint * 2) + (dir == kDKEndpointDirectionIn ? 1 : 0);
+}
+
 @implementation XHCIController
 
 + (void)load
@@ -252,11 +254,13 @@ static void dispatch_dpc(void *);
 
 	memset((void *)ring->trbs, 0, ringBytes);
 
-	linkTRB = &ring->trbs[numTrbs - 1];
-	linkTRB->params = to_leu64(ring->paddr);
-	linkTRB->status = to_leu32(0);
-	linkTRB->control = to_leu32((TRB_TYPE_LINK << 10) | (1 << 1) |
-	    ring->cycle_bit);
+	if (ring->type != kRingTypeEvent) {
+		linkTRB = &ring->trbs[numTrbs - 1];
+		linkTRB->params = to_leu64(ring->paddr);
+		linkTRB->status = to_leu32(0);
+		linkTRB->control = to_leu32(
+		    (TRB_TYPE_LINK << 10) | (1 << 1) | ring->cycle_bit);
+	}
 
 	return ring;
 }
@@ -428,6 +432,13 @@ enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
 
 		m_doorBells[dev->slot] = to_leu32(0x00000001);
 	} else if (ring->type == kRingTypeInterrupt) {
+		struct device *dev = cmd->ring->port;
+
+		cmd->trb_paddr = enqueue_trb(ring, from_leu64(cmd->trb.params),
+		    from_leu32(cmd->trb.status), from_leu32(cmd->trb.control));
+		m_doorBells[dev->slot] = to_leu32(cmd->ring->address);
+	} else {
+		kfatal("Implement me!\n");
 	}
 }
 
@@ -450,12 +461,16 @@ enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
 			needed = 1;
 			break;
 
+		case kRingTypeInterrupt:
+			needed = 1;
+			break;
+
 		case kRingTypeControl:
 			needed = 3;
 			break;
 
-		case kRingTypeEvent:
-			kfatal("Event rings do not dispatch requests\n");
+		default:
+			kfatal("Other rings do not dispatch requests\n");
 		}
 
 		if (![self ringHasSpace:ring needed:needed])
@@ -544,7 +559,6 @@ dispatch_dpc(void *arg)
 
 	[self synchronousRequest:req toRing:ep0_ring];
 
-	kprintf("req.result.code = %u\n", req->result.code);
 	return req->result.code == 1 ? 0 : -1;
 }
 
@@ -586,8 +600,10 @@ dispatch_dpc(void *arg)
 			}
 
 			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
+			ke_spinlock_release_nospl(&eventRing->lock);
 
 			origRing = cmd->ring;
+			ke_spinlock_acquire_nospl(&origRing->lock);
 			if (origRing->type == kRingTypeControl) {
 				origRing->dequeue_idx += 3;
 				if (origRing->dequeue_idx >=
@@ -597,9 +613,22 @@ dispatch_dpc(void *arg)
 					origRing->cycle_bit ^= 1;
 				}
 			} else {
-				kfatal("Unexpected\n");
+				kassert(origRing->type == kRingTypeBulk ||
+				    origRing->type == kRingTypeInterrupt);
+				origRing->dequeue_idx += 1;
 			}
-			ke_spinlock_release(&eventRing->lock, ipl);
+
+			if (origRing->dequeue_idx >= origRing->size - 1) {
+				volatile struct xhci_trb *linkTRB;
+
+				origRing->dequeue_idx %= (origRing->size - 1);
+
+				linkTRB = &origRing->trbs[origRing->size - 1];
+				linkTRB->control = to_leu32((TRB_TYPE_LINK << 10) |
+				    (1 << 1) | (origRing->cycle_bit ^ 1));
+			}
+
+			ke_spinlock_release(&origRing->lock, ipl);
 
 			cmd->result.code = code;
 			cmd->result.slot_id = 0;
@@ -878,12 +907,6 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	ke_wait(&event, "xhci synchronous request", 0, 0, -1);
 }
 
-static uint8_t
-endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
-{
-	return (endpoint * 2) + (dir == kDKEndpointDirectionIn ? 1 : 0);
-}
-
 - (int)setupEndpointForDevice:(dk_usb_device_t)devHandle
 		     endpoint:(uint8_t)endpoint
 			 type:(dk_endpoint_type_t)type
@@ -898,8 +921,6 @@ endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
 	uint8_t epNum = endpoint_index(endpoint, dir);
 	volatile struct xhci_ep_ctx *epCtx;
 	struct req cmd;
-
-	kfatal("interval = %d\n", interval);
 
 	switch (type) {
 	case kDKEndpointTypeBulk:
@@ -922,11 +943,14 @@ endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
 			      eventRing:m_eventRing];
 
 	ring->port = dev;
+	ring->dir = dir;
+	ring->address = epNum;
 
 	if (dir == kDKEndpointDirectionIn)
 		ring_type += 4;
 
 	epCtx = &dev->input_ctx->ep[epNum - 1];
+	epCtx->field1 = to_leu32(interval << 16);
 	epCtx->field2 = to_leu32((3 << 1) | ((uint32_t)ring_type << 3));
 	epCtx->dequeue_ptr = to_leu64(ring->paddr | ring->cycle_bit);
 	epCtx->tx_info = to_leu32(maxPacket << 16);
@@ -950,6 +974,36 @@ endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
 	*endpointHandle = (dk_usb_endpoint_t)ring;
 
 	return 0;
+}
+
+- (int)allocateTransfer:(out dk_usb_transfer_t *)transfer
+{
+	struct req *req = kmem_alloc(sizeof(*req));
+	*transfer = req;
+	return 0;
+}
+
+- (void)submitTransfer:(dk_usb_transfer_t)transfer
+	      endpoint:(dk_usb_endpoint_t)endpoint
+		buffer:(paddr_t)buffer
+		length:(size_t)length
+	      callback:(void (*)(DKUSBController *, dk_usb_transfer_t,
+			   void *))callback
+		 state:(void *)state
+{
+	struct req *req = transfer;
+
+	req->ring = endpoint;
+
+	req->trb.params = to_leu64(buffer);
+	req->trb.status = to_leu32(length);
+	req->trb.control = to_leu32((TRB_TYPE_NORMAL << 10) | TRB_FLAGS_IOC);
+
+	req->callback = (void (*)(DKUSBController *, struct req *,
+	    void *))callback;
+	req->context = state;
+
+	[self queueRequest:req toRing:endpoint];
 }
 
 - (void)addChildHub:(DKUSBHub *)hub

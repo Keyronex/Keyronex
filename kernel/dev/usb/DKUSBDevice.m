@@ -228,8 +228,6 @@
 	if (r != 0)
 		kfatal("Failed to setup device context for port %zu\n", m_port);
 
-	kprintf("%s: device on port %zu\n", [self name], m_port);
-
 	[self requestDeviceDescriptor];
 	[self requestConfigurationDescriptor];
 	[self matchInterface];

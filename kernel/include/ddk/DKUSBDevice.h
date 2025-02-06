@@ -34,6 +34,7 @@ typedef enum dk_endpoint_type {
 /* A host controller's appropriate state. */
 typedef void *dk_usb_device_t;
 typedef void *dk_usb_endpoint_t;
+typedef void *dk_usb_transfer_t;
 
 @protocol DKUSBDeviceDelegate
 
@@ -91,6 +92,16 @@ typedef void *dk_usb_endpoint_t;
 		maxPacketSize:(uint16_t)maxPacket
 		     interval:(uint8_t)interval
 	       endpointHandle:(out dk_usb_endpoint_t *)endpointHandle;
+
+- (int)allocateTransfer:(out dk_usb_transfer_t *)transfer;
+
+- (void)submitTransfer:(dk_usb_transfer_t)transfer
+	      endpoint:(dk_usb_endpoint_t)endpoint
+		buffer:(paddr_t)buffer
+		length:(size_t)length
+	      callback:(void (*)(DKUSBController *, dk_usb_transfer_t,
+			   void *))callback
+		 state:(void *)state;
 
 @end
 

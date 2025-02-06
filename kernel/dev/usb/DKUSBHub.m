@@ -79,7 +79,7 @@
 
 - (void)enumerate
 {
-	kprintf("%s: enumerating\n", [self name]);
+	kprintf("%s: reenumerating\n", [self name]);
 	while (__atomic_exchange_n(&m_needsEnumeration, 0, __ATOMIC_SEQ_CST)) {
 		for (size_t i = 0; i < m_nPorts; i++) {
 			[self reenumeratePort:i];

@@ -8,6 +8,15 @@
 #include <kdk/libkern.h>
 #include "ddk/DKUSBDevice.h"
 
+struct report {
+	uint8_t modifiers;
+	uint8_t reserved;
+	uint8_t keys[6];
+};
+
+static void kbCallback(DKUSBController *controller, dk_usb_transfer_t,
+    void *context);
+
 @implementation DKUSBKeyboard
 
 - (instancetype)initWithUSBDevice:(DKUSBDevice *)device
@@ -93,6 +102,31 @@
 	return 0;
 }
 
+- (void)interrupt
+{
+
+	kprintf("modifiers: 0x%02x\n", m_report->modifiers);
+	for (int i = 0; i < 6; i++) {
+		if (m_report->keys[i] != 0) {
+			kprintf("key: 0x%02x\n", m_report->keys[i]);
+		}
+	}
+
+	[m_usbDevice.controller submitTransfer:m_transfer
+				      endpoint:m_intrInEp
+					buffer:V2P(m_report)
+					length:sizeof(struct report)
+				      callback:kbCallback
+					 state:self];
+}
+
+static void
+kbCallback(DKUSBController *controller, dk_usb_transfer_t, void *context)
+{
+	DKUSBKeyboard *kb = (DKUSBKeyboard *)context;
+	[kb interrupt];
+}
+
 - (void)start
 {
 	int r;
@@ -114,6 +148,17 @@
 		kprintf("USB Keyboard: Failed to setup endpoints\n");
 		return;
 	}
+
+	m_report = kmem_alloc(sizeof(struct report));
+
+	[m_usbDevice.controller allocateTransfer:&m_transfer];
+
+	[m_usbDevice.controller submitTransfer:m_transfer
+				      endpoint:m_intrInEp
+					buffer:V2P(m_report)
+					length:sizeof(struct report)
+				      callback:kbCallback
+					 state:self];
 }
 
 @end

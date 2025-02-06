@@ -13,6 +13,9 @@
 	const dk_usb_interface_descriptor_t *m_interfaceDescriptor;
 	const dk_usb_endpoint_descriptor_t *m_interruptInEndpoint;
 	dk_usb_endpoint_t m_intrInEp;
+
+	dk_usb_transfer_t m_transfer;
+	struct report *m_report;
 }
 
 - (instancetype)initWithUSBDevice:(DKUSBDevice *)device
