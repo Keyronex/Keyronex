@@ -37,7 +37,6 @@ static void kbCallback(DKUSBController *controller, dk_usb_transfer_t,
 				USB_ENDPOINT_XFER_INT &&
 			    (ep->bEndpointAddress & USB_ENDPOINT_DIR_MASK) ==
 				USB_ENDPOINT_DIR_IN) {
-				kprintf("interrupt endpoint located\n");
 				m_interruptInEndpoint = ep;
 				break;
 			}

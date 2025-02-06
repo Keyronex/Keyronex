@@ -36,20 +36,13 @@ typedef void *dk_usb_device_t;
 typedef void *dk_usb_endpoint_t;
 typedef void *dk_usb_transfer_t;
 
-@protocol DKUSBDeviceDelegate
-
-@end
-
-@protocol DKUSBController
-
-@end
-
 @interface DKUSBDevice : DKDevice {
 	DKUSBController *m_controller;
 	DKUSBHub *m_hub;
 	size_t m_port;
 	dk_usb_device_t m_devHandle;
 
+	dk_usb_device_descriptor_t *m_deviceDescriptor;
 	uint8_t *m_configDescriptor;
 	size_t m_configDescriptorLength;
 }
@@ -79,11 +72,23 @@ typedef void *dk_usb_transfer_t;
 @interface DKUSBController : DKDevice {
 }
 
+- (void)addChildHub:(DKUSBHub *)hub;
+
+- (void)requestReenumeration;
+
+- (int)reconfigureDevice:(dk_usb_device_t)dev
+	    asHubWithTTT:(uint32_t)ttt
+		     mtt:(uint32_t)mtt;
+
 - (int)requestDevice:(dk_usb_device_t)device
 	      packet:(const void *)packet
 	      length:(size_t)length
 		 out:(void *)dataOut
 	   outLength:(size_t)outLength;
+
+- (int)setupDeviceContextForDeviceOnPort:(size_t)port
+			 ofHubWithHandle:(dk_usb_device_t)hub
+			    deviceHandle:(out dk_usb_device_t *)handle;
 
 - (int)setupEndpointForDevice:(dk_usb_device_t)devHandle
 		     endpoint:(uint8_t)endpoint

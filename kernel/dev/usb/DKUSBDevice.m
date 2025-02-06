@@ -53,10 +53,10 @@
 
 	if (current == NULL) {
 		ptr = m_configDescriptor;
-} else {
-	const dk_usb_descriptor_header_t *curr = current;
-	ptr = (const uint8_t *)current + curr->bLength;
-}
+	} else {
+		const dk_usb_descriptor_header_t *curr = current;
+		ptr = (const uint8_t *)current + curr->bLength;
+	}
 
 	while (ptr < end) {
 		const dk_usb_descriptor_header_t *desc =
@@ -92,35 +92,38 @@
 - (int)requestDeviceDescriptor
 {
 	dk_usb_setup_packet_t packet;
-	dk_usb_device_descriptor_t *desc = kmem_alloc(sizeof(*desc));
+	m_deviceDescriptor = kmem_alloc(sizeof(*m_deviceDescriptor));
 
 	packet.bmRequestType = 0x80;
 	packet.bRequest = 6;
 	packet.wValue = to_leu16(0x0100);
 	packet.wIndex = to_leu16(0);
-	packet.wLength = to_leu16(sizeof(*desc));
+	packet.wLength = to_leu16(sizeof(*m_deviceDescriptor));
 
 	[self requestWithPacket:&packet
 			 length:sizeof(packet)
-			    out:desc
-		      outLength:sizeof(*desc)];
+			    out:m_deviceDescriptor
+		      outLength:sizeof(*m_deviceDescriptor)];
 
-#if 0
+#if TRACE_USB_DEVICE
 	kprintf("%s: device descriptor\n", [self name]);
-	kprintf("  bLength: %u\n", desc->bLength);
-	kprintf("  bDescriptorType: %u\n", desc->bDescriptorType);
-	kprintf("  bcdUSB: %u\n", desc->bcdUSB);
-	kprintf("  bDeviceClass: %u\n", desc->bDeviceClass);
-	kprintf("  bDeviceSubClass: %u\n", desc->bDeviceSubClass);
-	kprintf("  bDeviceProtocol: %u\n", desc->bDeviceProtocol);
-	kprintf("  bMaxPacketSize0: %u\n", desc->bMaxPacketSize0);
-	kprintf("  idVendor: 0x%04x\n", from_leu16(desc->idVendor));
-	kprintf("  idProduct: 0x%04x\n", from_leu16(desc->idProduct));
-	kprintf("  bcdDevice: %u\n", from_leu16(desc->bcdDevice));
-	kprintf("  iManufacturer: %u\n", desc->iManufacturer);
-	kprintf("  iProduct: %u\n", desc->iProduct);
-	kprintf("  iSerialNumber: %u\n", desc->iSerialNumber);
-	kprintf("  bNumConfigurations: %u\n", desc->bNumConfigurations);
+	kprintf("  bLength: %u\n", m_deviceDescriptor->bLength);
+	kprintf("  bDescriptorType: %u\n", m_deviceDescriptor->bDescriptorType);
+	kprintf("  bcdUSB: %u\n", m_deviceDescriptor->bcdUSB);
+	kprintf("  bDeviceClass: %u\n", m_deviceDescriptor->bDeviceClass);
+	kprintf("  bDeviceSubClass: %u\n", m_deviceDescriptor->bDeviceSubClass);
+	kprintf("  bDeviceProtocol: %u\n", m_deviceDescriptor->bDeviceProtocol);
+	kprintf("  bMaxPacketSize0: %u\n", m_deviceDescriptor->bMaxPacketSize0);
+	kprintf("  idVendor: 0x%04x\n",
+	    from_leu16(m_deviceDescriptor->idVendor));
+	kprintf("  idProduct: 0x%04x\n",
+	    from_leu16(m_deviceDescriptor->idProduct));
+	kprintf("  bcdDevice: %u\n", from_leu16(m_deviceDescriptor->bcdDevice));
+	kprintf("  iManufacturer: %u\n", m_deviceDescriptor->iManufacturer);
+	kprintf("  iProduct: %u\n", m_deviceDescriptor->iProduct);
+	kprintf("  iSerialNumber: %u\n", m_deviceDescriptor->iSerialNumber);
+	kprintf("  bNumConfigurations: %u\n",
+	    m_deviceDescriptor->bNumConfigurations);
 #endif
 }
 
@@ -230,7 +233,16 @@
 
 	[self requestDeviceDescriptor];
 	[self requestConfigurationDescriptor];
-	[self matchInterface];
+;
+	if (m_deviceDescriptor->bDeviceClass == 0x9) {
+		DKUSBExternalHub *hub = [[DKUSBExternalHub alloc]
+		    initWithController:m_controller
+				  device:self];
+		[self attachChild:hub onAxis:gDeviceAxis];
+		[hub start];
+	} else {
+		[self matchInterface];
+	}
 }
 
 @end

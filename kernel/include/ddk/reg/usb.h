@@ -40,11 +40,21 @@ typedef struct dk_usb_device_descriptor {
 } dk_usb_device_descriptor_t;
 
 /* USB Request Type fields */
+#define USB_DIR_IN 0x80
 #define USB_TYPE_MASK (0x03 << 5)     /* Mask for request type */
 #define USB_TYPE_STANDARD (0x00 << 5) /* Standard request */
 #define USB_TYPE_CLASS (0x01 << 5)    /* Class-specific request */
 #define USB_TYPE_VENDOR (0x02 << 5)   /* Vendor-specific request */
 #define USB_TYPE_RESERVED (0x03 << 5) /* Reserved */
+
+/* Request */
+#define USB_REQ_GET_STATUS 0
+#define USB_REQ_CLEAR_FEATURE 1
+#define USB_REQ_SET_FEATURE 3
+#define USB_REQ_GET_DESCRIPTOR 0x06
+
+/* wValue */
+#define USB_DT_HUB 0x29
 
 /* USB Request Recipient fields */
 #define USB_RECIP_MASK 0x1f	 /* Mask for recipient */
@@ -186,5 +196,15 @@ typedef enum hub_class_feature {
 	PORT_TEST = 21,
 	PORT_INDICATOR = 22,
 } hub_class_feature_t;
+
+typedef struct usb_hub_descriptor {
+	uint8_t bLength;
+	uint8_t bDescriptorType;     /* USB_DT_HUB (0x29) */
+	uint8_t bNbrPorts;	     /* Number of downstream ports */
+	leu16_t wHubCharacteristics; /* Hub characteristics */
+	uint8_t bPwrOn2PwrGood;	     /* Time from power-on to power-good */
+	leu16_t bHubContrCurrent; /* Max current required by hub controller */
+	uint8_t bRemoveAndPower;  /* Device Removable/Port Power Control Mask */
+} usb_hub_descriptor_t;
 
 #endif /* KRX_REG_USB_H */

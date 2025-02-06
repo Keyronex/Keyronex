@@ -59,9 +59,15 @@ ddk_init(void)
 void
 ddk_autoconf(void)
 {
+	ktimer_t timer;
+
 	[gPlatformDevice start];
 	[DKDevice drainStartQueue];
-#if 0
+
+	ke_timer_init(&timer);
+	ke_timer_set(&timer, NS_PER_S * 2);
+	kprintf("ddk_autoconf: waiting for devices to settle...\n");
+	ke_wait(&timer, "wait for timer", 0,0,-1);
+
 	[gDeviceAxis printSubtreeOfDevice:gPlatformDevice];
-#endif
 }

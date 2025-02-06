@@ -32,6 +32,8 @@ struct usb_port {
 	uint32_t m_needsEnumeration;
 }
 
+@property (readonly) dk_usb_device_t devHandle;
+
 - (void)start;
 - (void)enumerate;
 
@@ -45,9 +47,22 @@ struct usb_port {
 
 @end
 
-#if 0
-@interface DKUSBExternalHub: DKUSBHub
+@interface DKUSBExternalHub: DKUSBHub {
+	DKUSBDevice *m_device;
+	struct {
+		leu16_t status;
+		leu16_t changes;
+	} *m_statBuffer;
+	volatile uint32_t *m_statusChangeBitmap;
+
+	const dk_usb_endpoint_descriptor_t *m_intrInEpDesc;
+	dk_usb_endpoint_t m_intrInEp;
+	dk_usb_transfer_t m_transfer;
+}
+
+- (instancetype)initWithController:(DKUSBController *)controller
+			    device:(DKUSBDevice *)device;
+
 @end
-#endif
 
 #endif /* KRX_DDK_DKUSBHUB_H */

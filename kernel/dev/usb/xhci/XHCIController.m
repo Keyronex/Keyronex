@@ -3,6 +3,7 @@
  * Created on Wed Jan 29 2025.
  */
 
+#include <ddk/DKAxis.h>
 #include <ddk/DKPCIDevice.h>
 #include <ddk/DKUSBDevice.h>
 #include <ddk/DKUSBHub.h>
@@ -13,7 +14,6 @@
 #include <kdk/libkern.h>
 #include <kdk/vm.h>
 
-#include "ddk/DKAxis.h"
 #include "vm/vmp.h"
 #include "xhci_reg.h"
 
@@ -71,7 +71,11 @@ struct protocol {
 };
 
 struct device {
-	uint8_t port;
+	/* 1-based port numbers here */
+	uint8_t root_port;
+	uint8_t parent_hub_port;
+	uint8_t parent_hub_slot;
+	uint32_t route_string;
 	uint8_t slot;
 	vm_page_t *context_page;
 	volatile struct xhci_input_ctx *input_ctx;
@@ -526,6 +530,7 @@ dispatch_dpc(void *arg)
 			    (m_cmdRing->dequeue_idx * sizeof(struct xhci_trb)));
 			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
 			m_cmdRing->dequeue_idx++;
+
 			ke_spinlock_release(&eventRing->lock, ipl);
 
 			cmd->result.code = code;
@@ -593,9 +598,9 @@ dispatch_dpc(void *arg)
 
 			if (cmd == NULL) {
 				ke_spinlock_release(&eventRing->lock, ipl);
-				kprintf(
-				    "XHCI: Transfer event for unknown command (TRB paddr: 0x%llx)\n",
-				    (unsigned long long)event_trb_paddr);
+				kprintf("XHCI: Transfer event for unknown"
+					"command (TRB paddr: 0x%zx)\n",
+				    event_trb_paddr);
 				break;
 			}
 
@@ -603,15 +608,10 @@ dispatch_dpc(void *arg)
 			ke_spinlock_release_nospl(&eventRing->lock);
 
 			origRing = cmd->ring;
+
 			ke_spinlock_acquire_nospl(&origRing->lock);
 			if (origRing->type == kRingTypeControl) {
 				origRing->dequeue_idx += 3;
-				if (origRing->dequeue_idx >=
-				    origRing->size - 1) {
-					origRing->dequeue_idx %=
-					    (origRing->size - 1);
-					origRing->cycle_bit ^= 1;
-				}
 			} else {
 				kassert(origRing->type == kRingTypeBulk ||
 				    origRing->type == kRingTypeInterrupt);
@@ -646,8 +646,8 @@ dispatch_dpc(void *arg)
 			for (size_t i = 0; i < m_nProtocols; i++) {
 				struct protocol *proto = &m_protocols[i];
 
-				if (portNum >= proto->port_offset &&
-				    portNum < proto->port_offset +
+				if (portNum > proto->port_offset &&
+				    portNum <= proto->port_offset +
 					    proto->port_count) {
 					[proto->hub requestReenumeration];
 				}
@@ -870,8 +870,6 @@ controller_thread(void *arg)
 	while (from_leu32(m_opRegs->USBSTS) & XHCI_STS_HCH)
 		asm("pause");
 
-	kprintf("XHCI Controller set up\n");
-
 	TAILQ_INIT(&m_allHubs);
 	ke_event_init(&m_reenumerationEvent, false);
 
@@ -950,6 +948,7 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 		ring_type += 4;
 
 	epCtx = &dev->input_ctx->ep[epNum - 1];
+
 	epCtx->field1 = to_leu32(interval << 16);
 	epCtx->field2 = to_leu32((3 << 1) | ((uint32_t)ring_type << 3));
 	epCtx->dequeue_ptr = to_leu64(ring->paddr | ring->cycle_bit);
@@ -1116,15 +1115,15 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 		break;
 
 	case C_PORT_CONNECTION:
-		ps &= ~XHCI_PORTSC_CSC;
+		ps |= XHCI_PORTSC_CSC;
 		break;
 
 	case C_PORT_ENABLE:
-		ps &= ~XHCI_PORTSC_PEC;
+		ps |= XHCI_PORTSC_PEC;
 		break;
 
 	case C_PORT_RESET:
-		ps &= ~XHCI_PORTSC_PRC;
+		ps |= XHCI_PORTSC_PRC;
 		break;
 
 	default:
@@ -1147,8 +1146,9 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	uint8_t slot_type = -1;
 
 	for (size_t i = 0; i < m_nProtocols; i++)
-		if (m_protocols[i].port_offset <= dev->port && dev->port <
-		    m_protocols[i].port_offset + m_protocols[i].port_count)
+		if (m_protocols[i].port_offset <= dev->root_port &&
+		    dev->root_port <
+			m_protocols[i].port_offset + m_protocols[i].port_count)
 			slot_type = m_protocols[i].slot_type;
 
 	kassert(slot_type != (uint8_t)-1);
@@ -1173,16 +1173,16 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	volatile struct xhci_slot_ctx *slot_ctx = &input_ctx->slot;
 	volatile struct xhci_ep_ctx *ep0_ctx = &input_ctx->ep[0];
 	struct ring *ep0_ring = dev->ep0_ring;
-	uint32_t route_string = 0; /* root hub port */
 	struct req cmd;
 
 	input_ctx->ctrl.drop_flags = to_leu32(0);
 	input_ctx->ctrl.add_flags = to_leu32(0x3); /* Slot and EP0 contexts */
 
-	slot_ctx->field1 = to_leu32(SLOT_CTX_00_SET_ROUTE_STRING(route_string) |
+	slot_ctx->field1 = to_leu32(
+	    SLOT_CTX_00_SET_ROUTE_STRING(dev->route_string) |
 	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(1));
 	slot_ctx->field2 = to_leu32(
-	    SLOT_CTX_04_SET_ROOT_HUB_PORT(dev->port + 1));
+	    SLOT_CTX_04_SET_ROOT_HUB_PORT(dev->root_port + 1));
 	slot_ctx->field3 = to_leu32(0);
 	slot_ctx->field4 = to_leu32(0);
 
@@ -1205,21 +1205,35 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	return 0;
 }
 
-- (int)setupDeviceContextForRootPort:(size_t)port
-			deviceHandle:(out dk_usb_device_t *)handle
+- (int)setupDeviceContextForDeviceOnPort:(size_t)port
+			 ofHubWithHandle:(dk_usb_device_t)hub
+			    deviceHandle:(out dk_usb_device_t *)handle
 {
 	struct device *dev;
 	int r;
-
 	dev = kmem_alloc(sizeof(*dev));
+
+	if (hub != NULL) {
+		struct device *hubDev = (struct device *)hub;
+		uint32_t parent_hub_route_string = hubDev->route_string;
+
+		dev->parent_hub_slot = hubDev->slot;
+		dev->parent_hub_port = port;
+		dev->route_string = (parent_hub_route_string << 4) |
+		    (port & 0xF);
+		dev->root_port = hubDev->root_port;
+	} else {
+		dev->route_string = 0;
+		dev->parent_hub_slot = 0;
+		dev->parent_hub_port = 0;
+		dev->root_port = port;
+	}
 
 	r = vm_page_alloc(&dev->context_page, 0, kPageUseKWired, false);
 	if (r != 0) {
 		kprintf("XHCI: Failed to allocate context page\n");
 		return -1;
 	}
-
-	dev->port = port;
 
 	dev->input_ctx_phys = vm_page_paddr(dev->context_page);
 	dev->device_ctx_phys = dev->input_ctx_phys +
@@ -1241,10 +1255,45 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	dev->ep0_ring->port = dev;
 
 	r = [self enableSlotForDevice:dev];
-
 	r = [self addressDevice:dev];
 
 	*handle = (dk_usb_device_t)dev;
+
+	return 0;
+}
+
+- (int)reconfigureDevice:(dk_usb_device_t)devHandle
+	    asHubWithTTT:(uint32_t)ttt
+		     mtt:(uint32_t)mtt
+{
+	struct device *dev = devHandle;
+	volatile struct xhci_input_ctx *input_ctx = dev->input_ctx;
+	volatile struct xhci_slot_ctx *slot_ctx = &input_ctx->slot;
+	struct req cmd;
+	uint32_t num_ports = 1;
+
+	input_ctx->ctrl.add_flags = to_leu32(0x1); /* Slot context only */
+	input_ctx->ctrl.drop_flags = to_leu32(0);
+
+	slot_ctx->field1 = to_leu32(SLOT_CTX_00_SET_ROUTE_STRING(0) |
+	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(1));
+
+	slot_ctx->field2 = to_leu32(
+	    SLOT_CTX_04_SET_ROOT_HUB_PORT(dev->root_port + 1) |
+	    SLOT_CTX_04_SET_NUM_PORTS(num_ports));
+
+	slot_ctx->field4 = to_leu32(0);
+
+	cmd.callback = NULL;
+	cmd.trb.params = to_leu64(dev->input_ctx_phys);
+	cmd.trb.status = to_leu32(0);
+	cmd.trb.control = to_leu32((TRB_TYPE_CMD_CONFIG_EP << 10) |
+	    (dev->slot << 24));
+
+	[self synchronousRequest:&cmd toRing:m_cmdRing];
+
+	if (cmd.result.code != 1)
+		kfatal("Configure endpoint failed\n");
 
 	return 0;
 }
@@ -1295,14 +1344,14 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 		    deviceHandle:(out dk_usb_device_t *)handle
 {
 	return [M_CONTROLLER
-	    setupDeviceContextForRootPort:m_protocol->port_offset + port
-			     deviceHandle:handle];
+	    setupDeviceContextForDeviceOnPort:m_protocol->port_offset + port
+			      ofHubWithHandle:NULL
+				 deviceHandle:handle];
 }
 
-- (void)requestReenumeration
+- (dk_usb_device_t)devHandle
 {
-	__atomic_store_n(&m_needsEnumeration, true, __ATOMIC_RELAXED);
-	[M_CONTROLLER requestReenumeration];
+	return NULL;
 }
 
 @end
