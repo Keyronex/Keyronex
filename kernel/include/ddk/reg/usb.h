@@ -17,6 +17,11 @@ typedef struct dk_usb_setup_packet {
 	leu16_t wLength;
 } dk_usb_setup_packet_t;
 
+typedef struct dk_usb_descriptor_header {
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+} dk_usb_descriptor_header_t;
+
 typedef struct dk_usb_device_descriptor {
 	uint8_t bLength;
 	uint8_t bDescriptorType;
@@ -33,6 +38,100 @@ typedef struct dk_usb_device_descriptor {
 	uint8_t iSerialNumber;
 	uint8_t bNumConfigurations;
 } dk_usb_device_descriptor_t;
+
+/* USB Request Type fields */
+#define USB_TYPE_MASK (0x03 << 5)     /* Mask for request type */
+#define USB_TYPE_STANDARD (0x00 << 5) /* Standard request */
+#define USB_TYPE_CLASS (0x01 << 5)    /* Class-specific request */
+#define USB_TYPE_VENDOR (0x02 << 5)   /* Vendor-specific request */
+#define USB_TYPE_RESERVED (0x03 << 5) /* Reserved */
+
+/* USB Request Recipient fields */
+#define USB_RECIP_MASK 0x1f	 /* Mask for recipient */
+#define USB_RECIP_DEVICE 0x00	 /* Device */
+#define USB_RECIP_INTERFACE 0x01 /* Interface */
+#define USB_RECIP_ENDPOINT 0x02	 /* Endpoint */
+#define USB_RECIP_OTHER 0x03	 /* Other */
+
+/* HID Class-Specific Requests */
+#define HID_GET_REPORT 0x01
+#define HID_GET_IDLE 0x02
+#define HID_GET_PROTOCOL 0x03
+#define HID_SET_REPORT 0x09
+#define HID_SET_IDLE 0x0A
+#define HID_SET_PROTOCOL 0x0B
+
+/* HID Protocol values */
+#define HID_PROTOCOL_BOOT 0x00
+#define HID_PROTOCOL_REPORT 0x01
+
+/* Endpoint transfer types */
+#define USB_ENDPOINT_XFERTYPE_MASK 0x03 /* Transfer type mask */
+#define USB_ENDPOINT_XFER_CONTROL 0x00	/* Control transfer */
+#define USB_ENDPOINT_XFER_ISOC 0x01	/* Isochronous transfer */
+#define USB_ENDPOINT_XFER_BULK 0x02	/* Bulk transfer */
+#define USB_ENDPOINT_XFER_INT 0x03	/* Interrupt transfer */
+
+/* Endpoint direction */
+#define USB_ENDPOINT_DIR_MASK 0x80 /* Direction mask */
+#define USB_ENDPOINT_DIR_OUT 0x00  /* OUT = host to device */
+#define USB_ENDPOINT_DIR_IN 0x80   /* IN = device to host */
+
+/* USB HID Class codes */
+#define USB_CLASS_HID 0x03
+#define USB_SUBCLASS_BOOT 0x01
+#define USB_PROTOCOL_KEYBOARD 0x01
+#define USB_PROTOCOL_MOUSE 0x02
+
+/* USB descriptor types */
+#define USB_DESC_TYPE_CONFIGURATION 0x02
+#define USB_DESC_TYPE_STRING 0x03
+#define USB_DESC_TYPE_INTERFACE 0x04
+#define USB_DESC_TYPE_ENDPOINT 0x05
+#define USB_DESC_TYPE_HID 0x21
+#define USB_DESC_TYPE_REPORT 0x22
+
+typedef struct dk_usb_configuration_descriptor {
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	leu16_t wTotalLength;
+	uint8_t bNumInterfaces;
+	uint8_t bConfigurationValue;
+	uint8_t iConfiguration;
+	uint8_t bmAttributes;
+	uint8_t bMaxPower;
+} __attribute__((packed)) dk_usb_configuration_descriptor_t;
+
+typedef struct dk_usb_interface_descriptor {
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	uint8_t bInterfaceNumber;
+	uint8_t bAlternateSetting;
+	uint8_t bNumEndpoints;
+	uint8_t bInterfaceClass;
+	uint8_t bInterfaceSubClass;
+	uint8_t bInterfaceProtocol;
+	uint8_t iInterface;
+} __attribute__((packed)) dk_usb_interface_descriptor_t;
+
+typedef struct dk_usb_endpoint_descriptor {
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	uint8_t bEndpointAddress;
+	uint8_t bmAttributes;
+	leu16_t wMaxPacketSize;
+	uint8_t bInterval;
+} __attribute__((packed)) dk_usb_endpoint_descriptor_t;
+
+typedef struct dk_usb_hid_descriptor {
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	leu16_t bcdHID;
+	uint8_t bCountryCode;
+	uint8_t bNumDescriptors;
+	uint8_t bDescriptorType0;
+	leu16_t wDescriptorLength0;
+} __attribute__((packed)) dk_usb_hid_descriptor_t;
 
 /* usb 2.0 spec 11.24.2.7.1 */
 typedef enum usb_wPortStatus {
