@@ -76,6 +76,7 @@ struct device {
 	uint8_t parent_hub_port;
 	uint8_t parent_hub_slot;
 	uint32_t route_string;
+	uint8_t tier;
 	uint8_t slot;
 	vm_page_t *context_page;
 	volatile struct xhci_input_ctx *input_ctx;
@@ -1215,14 +1216,17 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 
 	if (hub != NULL) {
 		struct device *hubDev = (struct device *)hub;
-		uint32_t parent_hub_route_string = hubDev->route_string;
+
+		dev->tier = hubDev->tier + 1;
+		kassert(dev->tier <= 5);
 
 		dev->parent_hub_slot = hubDev->slot;
 		dev->parent_hub_port = port;
-		dev->route_string = (parent_hub_route_string << 4) |
-		    (port & 0xF);
+		dev->route_string = hubDev->route_string |
+		    ((port & 0xF) << ((dev->tier - 1) << 2));
 		dev->root_port = hubDev->root_port;
 	} else {
+		dev->tier = 0;
 		dev->route_string = 0;
 		dev->parent_hub_slot = 0;
 		dev->parent_hub_port = 0;
@@ -1275,7 +1279,8 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	input_ctx->ctrl.add_flags = to_leu32(0x1); /* Slot context only */
 	input_ctx->ctrl.drop_flags = to_leu32(0);
 
-	slot_ctx->field1 = to_leu32(SLOT_CTX_00_SET_ROUTE_STRING(0) |
+	slot_ctx->field1 = to_leu32(
+	    SLOT_CTX_00_SET_ROUTE_STRING(dev->route_string) |
 	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(1));
 
 	slot_ctx->field2 = to_leu32(

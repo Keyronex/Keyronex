@@ -1,7 +1,7 @@
 #!/bin/sh
 
 usage() {
-	echo "Usage: $0 [-a <arch>] [-c <cores>] [-d] [-e] [-g] [-h] [-k] [-p] [-q <qemu_exe>] [-9]"
+	echo "Usage: $0 [-9] [-a <arch>] [-c <cores>] [-d] [-e] [-g] [-h] [-k] [-p] [-q <qemu_exe>] [-u]"
 	echo "  -9          : Enable virtio 9p"
 	echo "  -a <arch>   : Architecture to run (default: amd64)"
 	echo "  -c <cores>  : Number of CPU cores to use (default: 1)"
@@ -12,9 +12,10 @@ usage() {
 	echo "  -k          : Enable KVM"
 	echo "  -p          : Pause after start"
 	echo "  -q <qemu>   : Specify QEMU executable"
+	echo "  -u          : Enable USB controller"
 }
 
-while getopts "9a:c:deghkpq:" opt; do
+while getopts "9a:c:deghkpq:u" opt; do
 	case "$opt" in
 	9) virtio_9p=1 ;;
 	a) ARCH="$OPTARG" ;;
@@ -26,6 +27,7 @@ while getopts "9a:c:deghkpq:" opt; do
 	k) kvm=1 ;;
 	p) pause=1 ;;
 	q) QEMU_EXE="$OPTARG" ;;
+	u) usb=1 ;;
 	?) usage ; exit 0 ;;
 	esac
 done
@@ -83,6 +85,16 @@ else
 	qemu_args="${qemu_args} -net none"
 fi
 
+if [ "$kvm" = "1" ]; then
+	qemu_args="${qemu_args} -enable-kvm -cpu host"
+fi
+
+if [ "$usb" = "1" ]; then
+	qemu_args="${qemu_args} -device qemu-xhci -device usb-kbd,id=mykbd"
+#	qemu_args="${qemu_args} -device qemu-xhci -device usb-hub,bus=usb-bus.0,port=1 -device usb-kbd,bus=usb-bus.0,port=1.1"
+#	qemu_args="${qemu_args} -device qemu-xhci"
+fi
+
 ISO="build/${ARCH}/barebones.iso"
 
 echo "QEMU ARGS: ${qemu_args}"
@@ -95,7 +107,8 @@ case "$ARCH" in
 		;;
 
 	amd64) ${QEMU_EXE} -cdrom ${ISO} -no-reboot \
-	    ${qemu_args} -smp ${cores} ;;
+	    ${qemu_args} -smp ${cores} --trace "*xhci_xfer*" --trace "*xhci*" --trace "*usb*"
+	;;
 
 	m68k) ${QEMU_EXE} -M virt -m 128 \
 	    -kernel build/m68k/pkg-builds/m68k-virt-loader/lisp \

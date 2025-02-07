@@ -276,7 +276,7 @@ static void hubInterruptCallback(DKUSBController *controller,
 			      type:kDKEndpointTypeInterrupt
 			 direction:kDKEndpointDirectionIn
 		     maxPacketSize:maxPacketSize
-			  interval:13 /* (m_intrInEpDesc->bInterval - 1) */
+			  interval:12 /* (m_intrInEpDesc->bInterval - 1) */
 		    endpointHandle:&m_intrInEp];
 	if (r != 0)
 		kprintf("%s: setupEndpointForDevice failed\n", [self name]);
