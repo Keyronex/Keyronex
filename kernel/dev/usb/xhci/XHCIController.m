@@ -140,7 +140,6 @@ struct req {
 	kthread_t *m_controllerThread;
 
 	/* Device/hub tree state. */
-	// kmutex_t m_treeLock; not needed? we have a single thread
 	TAILQ_TYPE_HEAD(, DKUSBHub) m_allHubs;
 	kevent_t m_reenumerationEvent;
 }
@@ -513,44 +512,11 @@ dispatch_dpc(void *arg)
 	return (free >= needed);
 }
 
-- (void)completeCommandTRBOnEventRing:(struct ring *)eventRing
-			      atPAddr:(paddr_t)paddr
-			     withCode:(uint32_t)code
-			       slotID:(uint32_t)slotID
-{
-	ipl_t ipl = ke_spinlock_acquire(&eventRing->lock);
-	struct req *cmd;
-
-	kassert(eventRing->type == kRingTypeEvent);
-
-	TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
-		if (cmd->trb_paddr == paddr) {
-			/* completions should be in-order */
-			kassert(cmd->ring == m_cmdRing);
-			kassert(paddr == m_cmdRing->paddr +
-			    (m_cmdRing->dequeue_idx * sizeof(struct xhci_trb)));
-			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
-			m_cmdRing->dequeue_idx++;
-
-			ke_spinlock_release(&eventRing->lock, ipl);
-
-			cmd->result.code = code;
-			cmd->result.slot_id = slotID;
-			cmd->callback(self, cmd, cmd->context);
-
-			ke_dpc_enqueue(&m_cmdRing->dpc);
-			return;
-		}
-	}
-
-	kfatal("XHCI: TRB completion for unknown command\n");
-}
-
 - (int)requestDevice:(dk_usb_device_t)handle
-	       packet:(const void *)packet
-	       length:(size_t)length
-		  out:(void *)dataOut
-	    outLength:(size_t)outLength
+	      packet:(const void *)packet
+	      length:(size_t)length
+		 out:(void *)dataOut
+	   outLength:(size_t)outLength
 {
 	struct device *port = (struct device *)handle;
 	struct ring *ep0_ring = port->ep0_ring;
@@ -566,6 +532,62 @@ dispatch_dpc(void *arg)
 	[self synchronousRequest:req toRing:ep0_ring];
 
 	return req->result.code == 1 ? 0 : -1;
+}
+
+- (void)completeTRBOnEventRing:(struct ring *)eventRing
+		       atPAddr:(paddr_t)eventTrbPaddr
+		      withCode:(uint32_t)code
+			slotID:(uint32_t)slotID
+{
+	struct ring *origRing;
+	ipl_t ipl = ke_spinlock_acquire(&eventRing->lock);
+	struct req *cmd = NULL;
+
+	TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
+		if (cmd->trb_paddr == eventTrbPaddr)
+			break;
+	}
+
+	if (cmd == NULL) {
+		ke_spinlock_release(&eventRing->lock, ipl);
+		kfatal("XHCI: Transfer event for unknown"
+		       "command (TRB paddr: 0x%zx)\n",
+		    eventTrbPaddr);
+	}
+
+	TAILQ_REMOVE(&eventRing->cmds, cmd, link);
+	ke_spinlock_release_nospl(&eventRing->lock);
+
+	origRing = cmd->ring;
+
+	ke_spinlock_acquire_nospl(&origRing->lock);
+	if (origRing->type == kRingTypeControl) {
+		origRing->dequeue_idx += 3;
+	} else {
+		kassert(origRing->type == kRingTypeBulk ||
+		    origRing->type == kRingTypeInterrupt ||
+		    origRing->type == kRingTypeCommand);
+		origRing->dequeue_idx += 1;
+	}
+
+	if (origRing->dequeue_idx >= origRing->size - 1) {
+		volatile struct xhci_trb *linkTRB;
+
+		origRing->dequeue_idx %= (origRing->size - 1);
+
+		linkTRB = &origRing->trbs[origRing->size - 1];
+		linkTRB->control = to_leu32((TRB_TYPE_LINK << 10) | (1 << 1) |
+		    (origRing->cycle_bit ^ 1));
+	}
+
+	ke_spinlock_release(&origRing->lock, ipl);
+
+	cmd->result.code = code;
+	cmd->result.slot_id = slotID;
+
+	cmd->callback(self, cmd, cmd->context);
+
+	ke_dpc_enqueue(&origRing->dpc);
 }
 
 - (void)deferredProcessing
@@ -587,56 +609,15 @@ dispatch_dpc(void *arg)
 		switch (trbType) {
 		case TRB_TYPE_EVENT_TRANSFER: {
 			uint32_t code = (from_leu32(trb->status) >> 24) & 0xFF;
-			paddr_t event_trb_paddr = from_leu64(trb->params);
-			struct ring *origRing;
-			ipl_t ipl = ke_spinlock_acquire(&eventRing->lock);
-			struct req *cmd = NULL;
+			uint32_t slotId = (from_leu32(trb->control) >> 24) &
+			    0xFF;
+			paddr_t paddr = from_leu64(trb->params);
 
-			TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
-				if (cmd->trb_paddr == event_trb_paddr)
-					break;
-			}
+			[self completeTRBOnEventRing:eventRing
+					     atPAddr:paddr
+					    withCode:code
+					      slotID:slotId];
 
-			if (cmd == NULL) {
-				ke_spinlock_release(&eventRing->lock, ipl);
-				kprintf("XHCI: Transfer event for unknown"
-					"command (TRB paddr: 0x%zx)\n",
-				    event_trb_paddr);
-				break;
-			}
-
-			TAILQ_REMOVE(&eventRing->cmds, cmd, link);
-			ke_spinlock_release_nospl(&eventRing->lock);
-
-			origRing = cmd->ring;
-
-			ke_spinlock_acquire_nospl(&origRing->lock);
-			if (origRing->type == kRingTypeControl) {
-				origRing->dequeue_idx += 3;
-			} else {
-				kassert(origRing->type == kRingTypeBulk ||
-				    origRing->type == kRingTypeInterrupt);
-				origRing->dequeue_idx += 1;
-			}
-
-			if (origRing->dequeue_idx >= origRing->size - 1) {
-				volatile struct xhci_trb *linkTRB;
-
-				origRing->dequeue_idx %= (origRing->size - 1);
-
-				linkTRB = &origRing->trbs[origRing->size - 1];
-				linkTRB->control = to_leu32((TRB_TYPE_LINK << 10) |
-				    (1 << 1) | (origRing->cycle_bit ^ 1));
-			}
-
-			ke_spinlock_release(&origRing->lock, ipl);
-
-			cmd->result.code = code;
-			cmd->result.slot_id = 0;
-
-			cmd->callback(self, cmd, cmd->context);
-
-			ke_dpc_enqueue(&origRing->dpc);
 			break;
 		}
 
@@ -662,10 +643,10 @@ dispatch_dpc(void *arg)
 			    0xFF;
 			paddr_t paddr = from_leu64(trb->params);
 
-			[self completeCommandTRBOnEventRing:eventRing
-						    atPAddr:paddr
-						   withCode:code
-						     slotID:slotId];
+			[self completeTRBOnEventRing:eventRing
+					     atPAddr:paddr
+					    withCode:code
+					      slotID:slotId];
 			break;
 		}
 
