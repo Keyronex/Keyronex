@@ -205,7 +205,7 @@ endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
 {
 	if ((self = [super init])) {
 		m_pciDevice = pciDevice;
-		m_name = strdup("xhciController");
+		m_name = strdup("xHCIController");
 	}
 
 	return self;

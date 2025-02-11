@@ -21,6 +21,8 @@
 
 - (void)start
 {
+	int r;
+
 	m_ports = kmem_alloc(sizeof(struct usb_port) * m_nPorts);
 	for (size_t i = 0; i < m_nPorts; i++) {
 		m_ports[i].status = kPortStateNotConnected;

@@ -6,10 +6,14 @@
 #include <ddk/DKAxis.h>
 #include <ddk/DKPlatformRoot.h>
 #include <kdk/kern.h>
+#include <limine.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
 
+#include "dev/SimpleFB.h"
 #include "dev/acpi/DKACPIPlatform.h"
+
+extern volatile struct limine_framebuffer_request fb_request;
 
 void DKLogAttach(DKDevice *child, DKDevice *parent);
 
@@ -26,6 +30,14 @@ DKACPIPlatform *gACPIPlatform;
 - (instancetype)init
 {
 	int r;
+	struct limine_framebuffer *fb = fb_request.response->framebuffers[0];
+	SimpleFB *bootFb;
+
+	bootFb = [[SimpleFB alloc] initWithAddress:V2P(fb->address)
+					     width:fb->width
+					    height:fb->height
+					     pitch:fb->pitch];
+	[bootFb start];
 
 	gACPIAxis = [DKAxis axisWithName:"DKACPI"];
 
@@ -46,6 +58,8 @@ DKACPIPlatform *gACPIPlatform;
 	DKLogAttach(self, nil);
 	gACPIPlatform = self;
 	gPlatformRoot = self;
+
+	[self attachChild:bootFb onAxis:gDeviceAxis];
 
 	return self;
 }

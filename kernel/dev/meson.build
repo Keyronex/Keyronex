@@ -1,4 +1,15 @@
-kernel_sources += files('pci/ecam.c', 'DKAxis.m', 'DKDevice.m', 'ddk.m', 'iop.c')
+kernel_sources += files('DKAxis.m', 'DKDevice.m', 'FBTerminal.m', 'SimpleFB.m',
+    'pci/ecam.c', 'ddk.m', 'iop.c')
+
+kernel_sources += [
+	bin2c_gen.process('key272x70.data'),
+	bin2c_gen.process('netascale102x82.data'),
+]
+
+kernel_sources += files(
+	'../../vendor/limine-terminal/backends/framebuffer.c',
+	'../../vendor/limine-terminal/term.c',
+)
 
 if (cpu != 'm68k')
 	kernel_sources += files('acpi/DKACPINode.m', 'acpi/DKACPIPlatform.m',
