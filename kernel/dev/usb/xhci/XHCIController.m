@@ -24,6 +24,8 @@
 #define XHCI_EVENT_RING_SIZE 256
 #define XHCI_CMD_RING_SIZE 256
 
+// #define TRACE_XHCI 1
+
 TAILQ_HEAD(req_tailq, req);
 
 struct ring {
@@ -383,6 +385,11 @@ enqueue_trb(struct ring *ring, uint64_t params, uint32_t status,
 	volatile struct xhci_trb *trb = &ring->trbs[ring->enqueue_idx];
 	paddr_t trb_paddr;
 
+#if 0
+	kprintf("enqueue TRB with paddr 0x%zx\n",
+	    ring->paddr + (ring->enqueue_idx * sizeof(struct xhci_trb)));
+#endif
+
 	memset((void *)trb, 0, sizeof(*trb));
 	trb->params = to_leu64(params);
 	trb->status = to_leu32(status);
@@ -529,7 +536,13 @@ dispatch_dpc(void *arg)
 	req->ring = ep0_ring;
 	req->callback = NULL;
 
+#if TRACE_XHCI >= 3
+	kprintf("synchronous request...");
+#endif
 	[self synchronousRequest:req toRing:ep0_ring];
+#if TRACE_XHCI >= 3
+	kprintf("...done\n");
+#endif
 
 	return req->result.code == 1 ? 0 : -1;
 }
@@ -550,9 +563,9 @@ dispatch_dpc(void *arg)
 
 	if (cmd == NULL) {
 		ke_spinlock_release(&eventRing->lock, ipl);
-		kfatal("XHCI: Transfer event for unknown"
-		       "command (TRB paddr: 0x%zx)\n",
-		    eventTrbPaddr);
+		kfatal("XHCI: Transfer event for unknown request "
+		       "(TRB paddr: 0x%zx; code %u; slot %u)\n",
+		    eventTrbPaddr, code, slotID);
 	}
 
 	TAILQ_REMOVE(&eventRing->cmds, cmd, link);
@@ -690,6 +703,10 @@ xhci_interrupt(md_intr_frame_t *frame, void *arg)
 	}
 
 	ir->IMAN = to_leu32(status);
+#endif
+
+#if TRACE_XHCI >= 3
+	kprintf("xhci_interrupt\n");
 #endif
 
 	ke_dpc_enqueue(&self->m_eventRing->dpc);
@@ -831,16 +848,30 @@ controller_thread(void *arg)
 	m_intrEntry.handler = xhci_interrupt;
 	m_intrEntry.arg = self;
 
-	r = [m_pciDevice setMSIx:true];
-	if (r != 0) {
-		kprintf("XHCI: failed to enable MSI-X\n");
-		return;
-	}
+	ipl_t ipl = spldpc();
 
-	r = [m_pciDevice allocateLeastLoadedMSIxInterruptForEntry:&m_intrEntry];
-	if (r != 0) {
-		kprintf("XHCI: failed to allocate MSI-X interrupt\n");
-		return;
+	r = [m_pciDevice setMSIx:true];
+	if (r == 0) {
+		r = [m_pciDevice
+		    allocateLeastLoadedMSIxInterruptForEntry:&m_intrEntry];
+		if (r != 0) {
+			kprintf("XHCI: failed to allocate MSI-X interrupt\n");
+			return;
+		}
+	} else {
+		r = [m_pciDevice availableMSIVectors];
+		if (r == 0) {
+			kprintf("XHCI: no available MSI vectors\n");
+			return;
+		}
+
+		r = [m_pciDevice
+		    allocateLeastLoadedMSIInterruptsForEntries:&m_intrEntry
+							 count:1];
+		if (r != 0) {
+			kprintf("XHCI: failed to allocate MSI interrupt\n");
+			return;
+		}
 	}
 
 	m_opRegs->CONFIG = to_leu32((uint32_t)m_maxSlots);
@@ -865,6 +896,8 @@ controller_thread(void *arg)
 		[self attachChild:hub onAxis:gDeviceAxis];
 		[hub start];
 	}
+
+	splx(ipl);
 
 	ps_create_kernel_thread(&m_controllerThread, "xhci controller thread",
 	    controller_thread, self);
@@ -1169,7 +1202,8 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	slot_ctx->field4 = to_leu32(0);
 
 	ep0_ctx->field1 = to_leu32(0);
-	ep0_ctx->field2 = to_leu32((3 << 1) | (4 << 3)); /* CErr 3, EPType ctrl */
+	/* CErr 3, EPType ctrl, max packet size 64 */
+	ep0_ctx->field2 = to_leu32((3 << 1) | (4 << 3) | (64 << 16));
 	ep0_ctx->dequeue_ptr = to_leu64(ep0_ring->paddr | ep0_ring->cycle_bit);
 	ep0_ctx->tx_info = to_leu32(8 << 16); /* average TRB Length = 8 */
 
@@ -1239,7 +1273,18 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 				       eventRing:m_eventRing];
 	dev->ep0_ring->port = dev;
 
+#if TRACE_XHCI
+	kprintf("XHCI: enable slot for device on port %zu, route string 0x%x, "
+		"root port %u\n",
+	    port, dev->route_string, dev->root_port);
+#endif
 	r = [self enableSlotForDevice:dev];
+#if TRACE_XHCI
+	kprintf(
+	    "XHCI: address device for device on port %zu, route string 0x%x, "
+	    "root port %u\n",
+	    port, dev->route_string, dev->root_port);
+#endif
 	r = [self addressDevice:dev];
 
 	*handle = (dk_usb_device_t)dev;
@@ -1276,6 +1321,11 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	cmd.trb.control = to_leu32((TRB_TYPE_CMD_CONFIG_EP << 10) |
 	    (dev->slot << 24));
 
+#if TRACE_XHCI
+	kprintf("XHCI: reconfigure slot as hub for device on port %u, "
+		"route string 0x%x, root port %u\n",
+	    dev->parent_hub_port, dev->route_string, dev->root_port);
+#endif
 	[self synchronousRequest:&cmd toRing:m_cmdRing];
 
 	if (cmd.result.code != 1)

@@ -53,6 +53,10 @@ typedef struct DKPCIBarInfo {
 	vaddr_t m_msixTable;
 	uint16_t m_msixCap;
 	uint16_t m_lastAllocatedMSIxVector; /* bump allocation for now */
+
+	/* MSI state */
+	uint16_t m_msiCap;
+	uint16_t m_msiCount;
 }
 
 + (void)registerMatchingClass:(Class<DKPCIDeviceMatching>)matchingClass;
@@ -83,6 +87,9 @@ typedef struct DKPCIBarInfo {
 - (int)setMSIx:(bool)enabled;
 - (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry;
 
+- (uint8_t)availableMSIVectors;
+- (int)allocateLeastLoadedMSIInterruptsForEntries:(struct intr_entry *)entries
+					    count:(uint8_t)count;
 
 @end
 

@@ -12,6 +12,8 @@
 #include <kdk/kmem.h>
 #include <kdk/libkern.h>
 
+// #define TRACE_USB_DEVICE 2
+
 @implementation DKUSBController
 
 - (int)requestDevice:(dk_usb_device_t)device
@@ -100,6 +102,13 @@
 	packet.wIndex = to_leu16(0);
 	packet.wLength = to_leu16(sizeof(*m_deviceDescriptor));
 
+	kevent_t ev;
+	ke_event_init(&ev, false);
+	ke_wait(&ev, "ev", 0, 0, NS_PER_S / 2);
+
+#if TRACE_USB_DEVICE >= 2
+	kprintf("%s: requesting device descriptor\n", [self name]);
+#endif
 	[self requestWithPacket:&packet
 			 length:sizeof(packet)
 			    out:m_deviceDescriptor
@@ -142,6 +151,9 @@
 	packet.wIndex = to_leu16(0);
 	packet.wLength = to_leu16(sizeof(*desc));
 
+#if TRACE_USB_DEVICE >= 2
+	kprintf("%s: requesting configuration descriptor\n", [self name]);
+#endif
 	[self requestWithPacket:&packet
 			 length:sizeof(packet)
 			    out:desc
@@ -170,6 +182,10 @@
 	m_configDescriptorLength = fullLength;
 	packet.wLength = to_leu16(fullLength);
 
+#if TRACE_USB_DEVICE >= 2
+	kprintf("%s: requesting full configuration descriptor (length %d)\n",
+	    [self name], fullLength);
+#endif
 	r = [self requestWithPacket:&packet
 			     length:sizeof(packet)
 				out:m_configDescriptor
@@ -215,7 +231,6 @@
 		     out:(void *)dataOut
 	       outLength:(size_t)outLength
 {
-
 	return [m_controller requestDevice:m_devHandle
 				    packet:packet
 				    length:length

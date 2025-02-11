@@ -89,6 +89,8 @@ intr_init(void)
 	}
 }
 
+void md_intr_frame_trace(md_intr_frame_t *frame);
+
 void
 handle_int(md_intr_frame_t *frame, uintptr_t num)
 {
@@ -106,6 +108,10 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		new_ipl = kIPL0;
 
 	if (splget() > new_ipl) {
+		kprintf("Following is an intr frame trace:\n");
+md_intr_frame_trace(frame);
+
+
 		kfatal("In handling interrupt %zu:\n"
 		    "IPL not less or equal (running at %d, interrupt priority %d, cr2 0x%lx)\n",
 		    num, splget(), ipl, cr2);
@@ -202,6 +208,38 @@ md_intr_alloc(const char *name, ipl_t prio, intr_handler_t handler, void *arg,
 		}
 	}
 
+	return -1;
+}
+
+int
+md_intr_alloc_contiguous(const char *name, ipl_t prio, intr_handler_t handler,
+    void *arg, bool shareable, uint16_t count, uint8_t *baseVector,
+    struct intr_entry *entries)
+{
+	uint8_t starting = MAX2(prio << 4, 32);
+	uint8_t limit = starting + 16;
+
+	for (uint8_t i = starting; i <= limit - count; i++) {
+		bool ok = true;
+		for (uint16_t j = 0; j < count; j++) {
+			struct intr_entry *slot = TAILQ_FIRST(
+			    &intr_entries[i + j]);
+			if (slot && (!slot->shareable || !shareable)) {
+				ok = false;
+				break;
+			}
+		}
+		if (ok) {
+			for (uint16_t j = 0; j < count; j++) {
+				struct intr_entry *entry = &entries[j];
+				md_intr_register(name, i + j, prio,
+				    entry->handler, entry->arg, shareable,
+				    entry);
+			}
+			*baseVector = i;
+			return 0;
+		}
+	}
 	return -1;
 }
 

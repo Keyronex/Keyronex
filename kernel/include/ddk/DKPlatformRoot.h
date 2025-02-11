@@ -16,6 +16,11 @@ struct intr_entry;
 				    msixAddress:(out uint32_t *)msixAddress
 				       msixData:(out uint32_t *)msixData;
 
+- (int)allocateLeastLoadedMSIInterruptForEntries:(struct intr_entry *)entries
+					   count:(size_t)count
+				     msiAddress:(out uint32_t *)msiAddress
+					msiData:(out uint32_t *)msiData;
+
 @end
 
 extern DKDevice<DKPlatformRoot> *gPlatformRoot;

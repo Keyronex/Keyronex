@@ -310,8 +310,8 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	r = vm_ps_map_physical_view(&kernel_procstate, &m_msixTable, PGSIZE,
 	    barInfo.base + tableBase, kVMRead | kVMWrite, kVMRead | kVMWrite,
 	    false);
-	if (r != 0)
-		return r;
+
+	return r;
 }
 
 - (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
@@ -346,6 +346,76 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	vectorControl &= ~0x1;
 	__sync_synchronize();
 	*(volatile uint32_t *)vectorControlOffset = vectorControl;
+
+	return 0;
+}
+
+#pragma region MSI
+
+- (uint8_t)availableMSIVectors
+{
+	uint16_t capOffset = [self findCapabilityByID:0x05];
+	uint16_t msiControl;
+	uint8_t mmc;
+
+	if (capOffset == 0)
+		return 0;
+
+	msiControl = [self configRead16:capOffset + 0x02];
+	mmc = (msiControl >> 1) & 0x7;
+
+	return (1 << mmc);
+}
+
+- (int)allocateLeastLoadedMSIInterruptsForEntries:(struct intr_entry *)entries
+					    count:(uint8_t)count
+{
+	uint16_t capOffset = [self findCapabilityByID:0x05];
+	uint16_t msiControl;
+	uint32_t msiAddress, msiData;
+	uint8_t mme;
+	bool is64;
+	int r;
+
+	if (capOffset == 0) {
+		kprintf("MSI capability not found\n");
+		return -1;
+	}
+
+	msiControl = [self configRead16:capOffset + 0x02];
+
+	if (count > [self availableMSIVectors])
+		kfatal("Requested MSI count %d exceeds available %d\n", count,
+		    [self availableMSIVectors]);
+
+	mme = 0;
+	while ((1 << mme) < count)
+		mme++;
+
+	msiControl &= ~((0x7 << 4) | 0x1);
+	msiControl |= (mme << 4) | 0x1;
+
+	m_msiCap = capOffset;
+	m_msiCount = count;
+
+	[self configWrite16:capOffset + 0x02 value:msiControl];
+
+	is64 = (msiControl & (1 << 7)) != 0;
+
+	r = [gPlatformRoot allocateLeastLoadedMSIInterruptForEntries:entries
+							       count:count
+							  msiAddress:&msiAddress
+							     msiData:&msiData];
+	if (r != 0)
+		return r;
+
+	[self configWrite32:capOffset + 0x04 value:msiAddress];
+	if (is64) {
+		[self configWrite32:capOffset + 0x08 value:0];
+		[self configWrite16:capOffset + 0x0c value:(uint16_t)msiData];
+	} else {
+		[self configWrite16:capOffset + 0x08 value:(uint16_t)msiData];
+	}
 
 	return 0;
 }

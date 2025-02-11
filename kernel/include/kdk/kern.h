@@ -703,12 +703,15 @@ void kputc(int ch, void *unused);
 #define kprintf(...) printf_wrapper(kputc, __VA_ARGS__)
 #define kvpprintf(...) vpprintf_wrapper(kputc, __VA_ARGS__)
 
+void md_current_trace(void);
+
 /*! @brief Kernel fatal - prints out on PAC and main console and halts. */
 #define kfatal(...) {						\
 	splraise(kIPLHigh);					\
 	kprintf("fatal error at %s:%d (%s):\n", __FILE__,	\
 	    __LINE__, __FUNCTION__); 				\
 	kprintf("  " __VA_ARGS__); 				\
+	md_current_trace();					\
 	hcf();							\
 }
 

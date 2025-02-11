@@ -22,10 +22,25 @@ DKDevice<DKPlatformRoot> *gPlatformRoot;
 	    false, &vector, entry);
 	if (r != 0)
 		return r;
-
 	*msixAddress = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
 	*msixData = (cpus[0]->cpucb.lapic_id << 24) | vector;
 
+	return 0;
+}
+
+- (int)allocateLeastLoadedMSIInterruptForEntries:(struct intr_entry *)entries
+					   count:(size_t)count
+				      msiAddress:(out uint32_t *)msiAddress
+					 msiData:(out uint32_t *)msiData
+{
+	uint8_t baseVector;
+	int r = md_intr_alloc_contiguous("MSI", kIPLDevice, entries->handler,
+	    entries->arg, false, count, &baseVector, entries);
+	if (r != 0)
+		return r;
+
+	*msiAddress = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
+	*msiData = (cpus[0]->cpucb.lapic_id << 24) | (baseVector);
 	return 0;
 }
 

@@ -44,18 +44,9 @@ DKACPIPlatform *gACPIPlatform;
 	r = uacpi_initialize(0);
 	kassert(r == UACPI_STATUS_OK);
 
-	r = uacpi_namespace_load();
-	kassert(r == UACPI_STATUS_OK);
-
-	r = uacpi_namespace_initialize();
-	kassert(r == UACPI_STATUS_OK);
-
-	r = uacpi_set_interrupt_model(UACPI_INTERRUPT_MODEL_IOAPIC);
-	kassert(r == UACPI_STATUS_OK);
-
-	self = [super initWithNamespaceNode:uacpi_namespace_root()];
 	[gACPIAxis addChild:self ofParent:nil];
 	DKLogAttach(self, nil);
+
 	gACPIPlatform = self;
 	gPlatformRoot = self;
 
@@ -66,10 +57,31 @@ DKACPIPlatform *gACPIPlatform;
 
 - (void)start
 {
+	int r;
+
+	r = uacpi_namespace_load();
+	kassert(r == UACPI_STATUS_OK);
+
+	r = uacpi_namespace_initialize();
+	kassert(r == UACPI_STATUS_OK);
+
+	r = uacpi_set_interrupt_model(UACPI_INTERRUPT_MODEL_IOAPIC);
+	kassert(r == UACPI_STATUS_OK);
+
+	self = [super initWithNamespaceNode:uacpi_namespace_root()];
+
 	[super start];
 	[DKDevice drainStartQueue];
 	[self startDevices];
 	[DKACPINode drainStartDevicesQueue];
+}
+
+- (int)allocateLeastLoadedMSIInterruptForEntries:(struct intr_entry *)entries
+					   count:(size_t)count
+				     msiAddress:(out uint32_t *)msiAddress
+					msiData:(out uint32_t *)msiData
+{
+	kfatal("Method must be overridden by platform-specific category.\n");
 }
 
 - (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry

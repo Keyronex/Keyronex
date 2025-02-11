@@ -154,7 +154,6 @@ ki_reschedule(void)
 	if (old_thread == cpu->idle_thread) {
 		/*! idle thread must never wait, try to exit, whatever */
 		kassert(old_thread->state == kThreadStateRunning);
-		old_thread->state = kThreadStateRunnable;
 	} else if (old_thread->state == kThreadStateRunning) {
 		/*! currently running - replace on runqueue */
 		old_thread->state = kThreadStateRunnable;

@@ -69,5 +69,7 @@ ddk_autoconf(void)
 	kprintf("ddk_autoconf: waiting for devices to settle...\n");
 	ke_wait(&timer, "wait for timer", 0,0,-1);
 
+#if 1
 	[gDeviceAxis printSubtreeOfDevice:gPlatformDevice];
+#endif
 }

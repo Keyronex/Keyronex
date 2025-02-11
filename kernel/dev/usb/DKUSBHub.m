@@ -42,15 +42,17 @@
 	[self getPortStatus:port status:&status];
 
 #if TRACE_USB_HUB
-	kprintf("%s: port %zu status=0x%04x, change=0x%04x\n", [self name],
-	    port, status.status, status.change);
+	if (status.status || status.change || TRACE_USB_HUB >= 2)
+		kprintf("%s: port %zu status=0x%04x, change=0x%04x\n",
+		    [self name], port, status.status, status.change);
 #endif
 
 	if (status.change & PORT_CHANGE_CONNECT_STATUS) {
 		[self clearPortFeature:port feature:C_PORT_CONNECTION];
 
 		if (m_ports[port].status == kPortStateEnabled) {
-			kfatal("Handle this case\n");
+			kprintf("warning: bad Handle this case\n");
+			m_ports[port].status = kPortStateNotConnected;
 		} else if (m_ports[port].status == kPortStateResetting) {
 			/* do nothing */
 		} else if (status.status & PORT_STATUS_CURRENT_CONNECT) {
@@ -69,7 +71,8 @@
 		[self clearPortFeature:port feature:C_PORT_ENABLE];
 
 		if (m_ports[port].status != kPortStateResetting) {
-			kfatal("Handle this case\n");
+			//kfatal("Handle this case\n");
+			m_ports[port].status = kPortStateResetting;
 		}
 
 		if (status.status & PORT_STATUS_ENABLE_DISABLE) {
