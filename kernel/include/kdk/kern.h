@@ -648,6 +648,7 @@ kwaitresult_t ke_wait(void *object, const char *reason, bool isuserwait,
 kwaitresult_t ke_wait_multi(size_t nobjects, void *objects[],
     const char *reason, bool isWaitall, bool isUserwait, bool isAlertable,
     nanosecs_t timeout, kwaitblock_t *waitblocks);
+void ke_sleep(nanosecs_t nanosecs);
 
 #define STRINGIFY(x) #x
 #define KE_WAIT(OBJ, USER, ALERTABLE, TIMEOUT)                               \

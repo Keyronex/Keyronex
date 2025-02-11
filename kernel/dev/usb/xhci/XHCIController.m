@@ -80,6 +80,7 @@ struct device {
 	uint32_t route_string;
 	uint8_t tier;
 	uint8_t slot;
+	int speed;
 	vm_page_t *context_page;
 	volatile struct xhci_input_ctx *input_ctx;
 	paddr_t input_ctx_phys;
@@ -562,7 +563,13 @@ dispatch_dpc(void *arg)
 	}
 
 	if (cmd == NULL) {
+		struct xhci_trb *trb;
+
 		ke_spinlock_release(&eventRing->lock, ipl);
+
+		trb = (struct xhci_trb *)P2V(eventTrbPaddr);
+		kprintf("TRB type appears to be %u\n",
+		    (from_leu32(trb->control) >> 10) & 0x3F);
 		kfatal("XHCI: Transfer event for unknown request "
 		       "(TRB paddr: 0x%zx; code %u; slot %u)\n",
 		    eventTrbPaddr, code, slotID);
@@ -736,7 +743,18 @@ xhci_interrupt(md_intr_frame_t *frame, void *arg)
 		if (capId == 0)
 			break;
 
-		if (capId == 2) {
+		if (capId == 1) {
+			volatile uint8_t *legacyCap =
+			    (volatile uint8_t *)(m_mmioBase + off);
+
+			kprintf("XHCI: Taking ownership from BIOS\n");
+			while (legacyCap[2] != 0) {
+				legacyCap[3] = 1;
+				ke_sleep(NS_PER_S / 4);
+			}
+
+			kprintf("XHCI: Ownership taken\n");
+		} else if (capId == 2) {
 			uint8_t major = (cap >> 24) & 0xFF;
 			uint8_t minor = (cap >> 16) & 0xFF;
 			uint32_t portInfo = from_leu32(capReg[2]);
@@ -933,7 +951,14 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	enum ring_type ring_type;
 	uint8_t epNum = endpoint_index(endpoint, dir);
 	volatile struct xhci_ep_ctx *epCtx;
+	volatile struct xhci_slot_ctx *slot_ctx = &dev->input_ctx->slot;
 	struct req cmd;
+
+	memcpy((void *)slot_ctx, (const void *)&dev->device_ctx->slot,
+	    sizeof(*slot_ctx));
+
+	slot_ctx->field1 = to_leu32(from_leu32(slot_ctx->field1) |
+	    SLOT_CTX_00_SET_CONTEXT_ENTRIES(31));
 
 	switch (type) {
 	case kDKEndpointTypeBulk:
@@ -963,14 +988,14 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 		ring_type += 4;
 
 	epCtx = &dev->input_ctx->ep[epNum - 1];
-
 	epCtx->field1 = to_leu32(interval << 16);
-	epCtx->field2 = to_leu32((3 << 1) | ((uint32_t)ring_type << 3));
+	epCtx->field2 = to_leu32((3 << 1) | ((uint32_t)ring_type << 3) |
+	    (maxPacket << 16));
 	epCtx->dequeue_ptr = to_leu64(ring->paddr | ring->cycle_bit);
 	epCtx->tx_info = to_leu32(maxPacket << 16);
 
-	uint32_t addFlag = 1 << epNum;
-	dev->input_ctx->ctrl.add_flags = to_leu32(1 | addFlag);
+	dev->input_ctx->ctrl.add_flags = to_leu32(1 | (1 << epNum));
+	dev->input_ctx->ctrl.drop_flags = to_leu32(0);
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.trb.params = to_leu64(dev->input_ctx_phys);
@@ -982,6 +1007,7 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	if (cmd.result.code != 1) {
 		kprintf("Configure Endpoint command failed (code %u)\n",
 		    cmd.result.code);
+		kfatal("stop here\n");
 		return -1;
 	}
 
@@ -1202,8 +1228,9 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	slot_ctx->field4 = to_leu32(0);
 
 	ep0_ctx->field1 = to_leu32(0);
-	/* CErr 3, EPType ctrl, max packet size 64 */
-	ep0_ctx->field2 = to_leu32((3 << 1) | (4 << 3) | (64 << 16));
+	/* CErr 3, EPType ctrl, max packet size */
+	ep0_ctx->field2 = to_leu32((3 << 1) | (4 << 3) |
+	    (ep0_ring->max_packet_size << 16));
 	ep0_ctx->dequeue_ptr = to_leu64(ep0_ring->paddr | ep0_ring->cycle_bit);
 	ep0_ctx->tx_info = to_leu32(8 << 16); /* average TRB Length = 8 */
 
@@ -1223,10 +1250,13 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 
 - (int)setupDeviceContextForDeviceOnPort:(size_t)port
 			 ofHubWithHandle:(dk_usb_device_t)hub
+				   speed:(int)speed
 			    deviceHandle:(out dk_usb_device_t *)handle
 {
 	struct device *dev;
 	int r;
+	size_t max_packet_size;
+
 	dev = kmem_alloc(sizeof(*dev));
 
 	if (hub != NULL) {
@@ -1254,6 +1284,29 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 		return -1;
 	}
 
+	dev->speed = speed;
+
+	switch (speed) {
+	case PORT_STATUS_LOW_SPEED:
+		max_packet_size = 8;
+		break;
+
+	case PORT_STATUS_FULL_SPEED:
+		max_packet_size = 8;
+		break;
+
+	case PORT_STATUS_HIGH_SPEED:
+		max_packet_size = 64;
+		break;
+
+	case PORT_STATUS_OTHER_SPEED:
+		max_packet_size = 512;
+		break;
+
+	default:
+		kfatal("Unhandled\n");
+	}
+
 	dev->input_ctx_phys = vm_page_paddr(dev->context_page);
 	dev->device_ctx_phys = dev->input_ctx_phys +
 	    ROUNDUP(sizeof(struct xhci_input_ctx), 64);
@@ -1269,7 +1322,7 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	dev->ep0_ring = [self createRingWithType:kRingTypeControl
 					    size:XHCI_RING_SIZE
 					 address:0
-				   maxPacketSize:8
+				   maxPacketSize:max_packet_size
 				       eventRing:m_eventRing];
 	dev->ep0_ring->port = dev;
 
@@ -1302,6 +1355,8 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 	struct req cmd;
 	uint32_t num_ports = 1;
 
+	kfatal("reconfigure device as hub...\n");
+
 	input_ctx->ctrl.add_flags = to_leu32(0x1); /* Slot context only */
 	input_ctx->ctrl.drop_flags = to_leu32(0);
 
@@ -1330,6 +1385,52 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 
 	if (cmd.result.code != 1)
 		kfatal("Configure endpoint failed\n");
+
+	return 0;
+}
+
+- (int)reconfigureDevice:(dk_usb_device_t)dev
+       withMaxPacketSize:(size_t)maxPacketSize
+{
+	struct device *devp = (struct device *)dev;
+	volatile struct xhci_input_ctx *input_ctx = devp->input_ctx;
+	volatile struct xhci_ep_ctx *ep0_ctx = &input_ctx->ep[0];
+	struct req cmd;
+
+	devp->ep0_ring->max_packet_size = maxPacketSize;
+
+	memcpy((void *)&input_ctx->slot,
+	(const void *)&devp->device_ctx->slot,
+	sizeof(input_ctx->slot));
+
+	ep0_ctx->field1 = to_leu32(0);
+	ep0_ctx->field2 = to_leu32((3 << 1) | (4 << 3) | (maxPacketSize << 16));
+	ep0_ctx->dequeue_ptr = to_leu64((devp->ep0_ring->paddr +
+	    (devp->ep0_ring->dequeue_idx * sizeof(struct xhci_trb))) |
+	    devp->ep0_ring->cycle_bit);
+	ep0_ctx->tx_info = to_leu32(8 << 16);
+
+	input_ctx->ctrl.add_flags = to_leu32(1 << 1 | 1);
+	input_ctx->ctrl.drop_flags = to_leu32(0);
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.trb.params = to_leu64(devp->input_ctx_phys);
+	cmd.trb.status = to_leu32(0);
+	cmd.trb.control = to_leu32(
+	    (TRB_TYPE_CMD_EVALUATE_CONTEXT << 10) | (devp->slot << 24));
+
+#if TRACE_XHCI
+	kprintf("XHCI: reconfigure EP0 for device on port %u, "
+	    "route string 0x%x, root port %u, with new max packet size %zu\n",
+	    devp->parent_hub_port, devp->route_string, devp->root_port,
+	    maxPacketSize);
+#endif
+	[self synchronousRequest:&cmd toRing:m_cmdRing];
+	if (cmd.result.code != 1) {
+		kfatal("Reconfigure EP0 with new max packet size "
+		    "failed with code %u\n", cmd.result.code);
+		return -1;
+	}
 
 	return 0;
 }
@@ -1377,11 +1478,13 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 }
 
 - (int)setupDeviceContextForPort:(size_t)port
+			   speed:(int)speed
 		    deviceHandle:(out dk_usb_device_t *)handle
 {
 	return [M_CONTROLLER
 	    setupDeviceContextForDeviceOnPort:m_protocol->port_offset + port
 			      ofHubWithHandle:NULL
+					speed:speed
 				 deviceHandle:handle];
 }
 

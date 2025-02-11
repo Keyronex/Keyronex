@@ -77,6 +77,16 @@
 
 		if (status.status & PORT_STATUS_ENABLE_DISABLE) {
 			DKUSBDevice *dev;
+			int speed;
+
+			if (status.status & PORT_STATUS_LOW_SPEED)
+				speed = PORT_STATUS_LOW_SPEED;
+			else if (status.status & PORT_STATUS_HIGH_SPEED)
+				speed = PORT_STATUS_HIGH_SPEED;
+			else if (status.status & PORT_STATUS_OTHER_SPEED)
+				speed = PORT_STATUS_OTHER_SPEED;
+			else
+				speed = PORT_STATUS_FULL_SPEED;
 
 #if TRACE_USB_HUB
 			kprintf("%s: port %zu reset and enabled\n", [self name],
@@ -87,7 +97,8 @@
 			dev = [[DKUSBDevice alloc]
 			    initWithController:m_controller
 					   hub:self
-					  port:port];
+					  port:port
+					 speed:speed];
 			[self attachChild:dev onAxis:gDeviceAxis];
 
 			[dev start];
@@ -129,6 +140,7 @@
 }
 
 - (int)setupDeviceContextForPort:(size_t)port
+			   speed:(int)speed
 		    deviceHandle:(out dk_usb_device_t *)handle
 {
 	kfatal("Subclass responsibility\n");
@@ -347,11 +359,13 @@ hubInterruptCallback(DKUSBController *controller, dk_usb_transfer_t transfer,
 }
 
 - (int)setupDeviceContextForPort:(size_t)port
+			   speed:(int)speed
 		    deviceHandle:(out dk_usb_device_t *)handle
 {
 	return
 	    [m_controller setupDeviceContextForDeviceOnPort:port + 1
 					    ofHubWithHandle:m_device.devHandle
+						      speed:speed
 					       deviceHandle:handle];
 }
 

@@ -78,12 +78,14 @@
 
 - (instancetype)initWithController:(DKUSBController *)controller
 			       hub:(DKUSBHub *)hub
-			      port:(size_t)port;
+			      port:(size_t)port
+			     speed:(int)speed
 {
 	if ((self = [super init])) {
 		m_controller = controller;
 		m_hub = hub;
 		m_port = port;
+		m_speed = speed;
 
 		kmem_asprintf(&m_name, "usbDevice%d", port);
 	}
@@ -94,23 +96,59 @@
 - (int)requestDeviceDescriptor
 {
 	dk_usb_setup_packet_t packet;
+	size_t maxPacket;
+	int r;
+
 	m_deviceDescriptor = kmem_alloc(sizeof(*m_deviceDescriptor));
 
 	packet.bmRequestType = 0x80;
 	packet.bRequest = 6;
 	packet.wValue = to_leu16(0x0100);
 	packet.wIndex = to_leu16(0);
-	packet.wLength = to_leu16(sizeof(*m_deviceDescriptor));
+	packet.wLength = to_leu16(8);
 
 	kevent_t ev;
 	ke_event_init(&ev, false);
 	ke_wait(&ev, "ev", 0, 0, NS_PER_S / 2);
 
 #if TRACE_USB_DEVICE >= 2
-	kprintf("%s: requesting device descriptor\n", [self name]);
+	kprintf("%s: requesting initial device descriptor\n", [self name]);
 #endif
 	[self requestWithPacket:&packet
-			 length:sizeof(packet)
+			 length:8
+			    out:m_deviceDescriptor
+		      outLength:8];
+
+	if (m_speed == PORT_STATUS_OTHER_SPEED) {
+		kassert(m_deviceDescriptor->bMaxPacketSize0 == 9);
+		maxPacket = 512;
+	} else {
+		switch (m_deviceDescriptor->bMaxPacketSize0) {
+		case 8:
+		case 16:
+		case 32:
+		case 64:
+			maxPacket = m_deviceDescriptor->bMaxPacketSize0;
+			break;
+
+		case 9:
+			kprintf("Unexpected packet size 9; speed is %d\n",
+			    m_speed);
+			maxPacket = 512;
+			break;
+
+		default:
+			kfatal("Unexpected packet size %u\n",
+			    m_deviceDescriptor->bMaxPacketSize0);
+		}
+	}
+	[m_controller reconfigureDevice:m_devHandle
+		      withMaxPacketSize:maxPacket];
+
+	packet.wLength = to_leu16(sizeof(*m_deviceDescriptor));
+
+	r = [self requestWithPacket:&packet
+			 length:8
 			    out:m_deviceDescriptor
 		      outLength:sizeof(*m_deviceDescriptor)];
 
@@ -134,6 +172,8 @@
 	kprintf("  bNumConfigurations: %u\n",
 	    m_deviceDescriptor->bNumConfigurations);
 #endif
+
+	return 0;
 }
 
 - (int)requestConfigurationDescriptor
@@ -191,6 +231,18 @@
 				out:m_configDescriptor
 			  outLength:fullLength];
 
+#if TRACE_USB_DEVICE
+	kprintf("%s: configuration descriptor\n", [self name]);
+	kprintf("  bLength: %u\n", desc->bLength);
+	kprintf("  bDescriptorType: %u\n", desc->bDescriptorType);
+	kprintf("  wTotalLength: %u\n", from_leu16(desc->wTotalLength));
+	kprintf("  bNumInterfaces: %u\n", desc->bNumInterfaces);
+	kprintf("  bConfigurationValue: %u\n", desc->bConfigurationValue);
+	kprintf("  iConfiguration: %u\n", desc->iConfiguration);
+	kprintf("  bmAttributes: 0x%02x\n", desc->bmAttributes);
+	kprintf("  bMaxPower: %u\n", desc->bMaxPower);
+#endif
+
 	return r;
 }
 
@@ -198,10 +250,16 @@
 {
 	const dk_usb_interface_descriptor_t *iface = NULL;
 
+	kprintf("%s: matching interface\n", [self name]);
+
 	while ((iface = [self nextDescriptorByType:USB_DESC_TYPE_INTERFACE
 					     after:iface])) {
-#if 0
-		kprintf("%s: interface %zu\n", [self name], offset);
+
+#if TRACE_USB_DEVICE
+		kprintf("%s: iface class 0x%02x:0x%02x\n", [self name],
+		    iface -> bInterfaceClass, iface -> bInterfaceSubClass);
+#if TRACE_USB_DEVICE >= 2
+		kprintf("%s: interface\n", [self name]);
 		kprintf("  bLength: %u\n", iface->bLength);
 		kprintf("  bDescriptorType: %u\n", iface->bDescriptorType);
 		kprintf("  bInterfaceNumber: %u\n", iface->bInterfaceNumber);
@@ -211,6 +269,7 @@
 		kprintf("  bInterfaceSubClass: %u\n", iface->bInterfaceSubClass);
 		kprintf("  bInterfaceProtocol: %u\n", iface->bInterfaceProtocol);
 		kprintf("  iInterface: %u\n", iface->iInterface);
+#endif
 #endif
 
 		if (iface->bInterfaceClass == USB_CLASS_HID &&
@@ -242,11 +301,21 @@
 {
 	int r;
 
-	r = [m_hub setupDeviceContextForPort:m_port deviceHandle:&m_devHandle];
+	r = [m_hub setupDeviceContextForPort:m_port
+				       speed:m_speed
+				deviceHandle:&m_devHandle];
 	if (r != 0)
 		kfatal("Failed to setup device context for port %zu\n", m_port);
 
 	[self requestDeviceDescriptor];
+
+#if TRACE_USB_DEVICE
+	kprintf("%s: dev vendor 0x%04x:0x%04x class 0x%02x:0x%02x\n",
+	    [self name], from_leu16(m_deviceDescriptor->idVendor),
+	    from_leu16(m_deviceDescriptor->idProduct),
+	    m_deviceDescriptor -> bDeviceClass,
+	    m_deviceDescriptor -> bDeviceSubClass);
+#endif
 	[self requestConfigurationDescriptor];
 ;
 	if (m_deviceDescriptor->bDeviceClass == 0x9) {
