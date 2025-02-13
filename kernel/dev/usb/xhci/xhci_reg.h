@@ -32,7 +32,7 @@ struct __attribute__((packed)) xhci_host_cap_regs {
 #define XHCI_PORTSC_OCA (1 << 3)  /* Over-current Active */
 #define XHCI_PORTSC_PR (1 << 4)	  /* Port Reset */
 #define XHCI_PORTSC_PP (1 << 9)	  /* Port Power */
-#define XHCI_PORTSC_SPEED(x) ((x >> 0x10) & 0xf)
+#define XHCI_PORTSC_SPEED(x) ((x >> 10) & 0xf)
 /* 7.2.2.1.1 Default USB Speed ID Mapping */
 #define XHCI_PORTSC_PS_FS 1
 #define XHCI_PORTSC_PS_LS 2

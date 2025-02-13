@@ -131,12 +131,6 @@
 			maxPacket = m_deviceDescriptor->bMaxPacketSize0;
 			break;
 
-		case 9:
-			kprintf("Unexpected packet size 9; speed is %d\n",
-			    m_speed);
-			maxPacket = 512;
-			break;
-
 		default:
 			kfatal("Unexpected packet size %u\n",
 			    m_deviceDescriptor->bMaxPacketSize0);

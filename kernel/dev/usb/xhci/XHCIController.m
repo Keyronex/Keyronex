@@ -1061,7 +1061,6 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 
 	switch (XHCI_PORTSC_SPEED(ps)) {
 	case 0:
-		/* super speed */
 		break;
 
 	case 1:

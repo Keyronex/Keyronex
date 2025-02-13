@@ -79,12 +79,12 @@
 			DKUSBDevice *dev;
 			int speed;
 
-			if (status.status & PORT_STATUS_LOW_SPEED)
+			if (status.status & PORT_STATUS_OTHER_SPEED)
+				speed = PORT_STATUS_OTHER_SPEED;
+			else if (status.status & PORT_STATUS_LOW_SPEED)
 				speed = PORT_STATUS_LOW_SPEED;
 			else if (status.status & PORT_STATUS_HIGH_SPEED)
 				speed = PORT_STATUS_HIGH_SPEED;
-			else if (status.status & PORT_STATUS_OTHER_SPEED)
-				speed = PORT_STATUS_OTHER_SPEED;
 			else
 				speed = PORT_STATUS_FULL_SPEED;
 
