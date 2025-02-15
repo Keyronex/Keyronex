@@ -15,6 +15,9 @@ enum { kPortCOM1 = 0x3f8 };
 void intr_init(void);
 /* misc.c */
 void setup_cpu_gdt(kcpu_t *cpu);
+/* tc_pvclock.c */
+void pvclock_init(void);
+void pvclock_cpu_init(void);
 
 extern kthread_t thread0;
 
@@ -48,6 +51,11 @@ void plat_first_init(void)
 	intr_init();
 }
 
+void plat_pre_smp_init(void)
+{
+	pvclock_init();
+}
+
 void plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
 {
 	write_cr3(kernel_process->vm->md.table);
@@ -78,6 +86,8 @@ void plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread, struct lim
 	for (int i = 0; i < 3; i++)
 		cpu->cpucb.lapic_tps += lapic_timer_calibrate() / 3;
 
+
+	pvclock_cpu_init();
 }
 
 void plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread, struct limine_smp_info *smpi)

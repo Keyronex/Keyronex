@@ -15,6 +15,7 @@
 void ddk_init(void);
 
 void plat_first_init(void);
+void plat_pre_smp_init(void);
 void plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi);
 void plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi);
@@ -236,6 +237,7 @@ _start(void)
 	ps_early_init(&thread0);
 	smp_allocate();
 	ddk_init();
+	plat_pre_smp_init();
 	smp_start();
 #if 0
 	ntcompat_init();

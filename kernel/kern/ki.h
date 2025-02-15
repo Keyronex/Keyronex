@@ -114,4 +114,7 @@ void ki_enter_user_mode(uintptr_t ip, uintptr_t sp);
 int ki_disable_interrupts(void);
 void ki_set_interrupts(int enabled);
 
+nanosecs_t ke_get_nanos();
+void ke_tc_set_get_nanos(nanosecs_t (*)(void));
+
 #endif /* KRX_NANOKERN_KI_H */

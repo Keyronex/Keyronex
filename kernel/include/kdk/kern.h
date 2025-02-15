@@ -733,6 +733,9 @@ void ke_set_tcb(uintptr_t tcb);
 ktrap_recovery_frame_t *ke_trap_recovery_begin(void);
 void ke_trap_recovery_end(void);
 
+/*! @brief Get global monotonic timestamp in nanoseconds. */
+nanosecs_t ke_get_nanos();
+
 extern kcpu_local_data_t bootstrap_cpu_local_data;
 extern kcpu_t **cpus;
 extern size_t ncpus;
