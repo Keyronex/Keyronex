@@ -25,8 +25,10 @@ void plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread,
 extern uintptr_t idle_mask;
 struct kcpu bootstrap_cpu;
 struct kthread thread0;
-kcpu_local_data_t bootstrap_cpu_local_data = { .cpu = &bootstrap_cpu,
-	.curthread = &thread0 };
+kcpu_local_data_t bootstrap_cpu_local_data = {
+	.cpu = &bootstrap_cpu,
+	.curthread = &thread0
+};
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
 static int cpus_up = 0;
 /*

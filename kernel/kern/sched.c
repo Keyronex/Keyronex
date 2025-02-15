@@ -53,7 +53,12 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 	cpu->timer_expiry_dpc.callback = timer_expiry_dpc;
 	cpu->local_data->cpu = cpu;
 	cpu->local_data->curthread = idle_thread;
-
+#if defined(__amd64__)
+	/* move me */
+	cpu->local_data->md.soft_ipl = 0;
+	cpu->local_data->md.hard_ipl = 0;
+	cpu->local_data->md.self = cpu->local_data;
+#endif
 	ki_rcu_per_cpu_init(&cpu->rcu_cpustate);
 }
 

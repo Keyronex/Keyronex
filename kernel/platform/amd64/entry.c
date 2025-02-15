@@ -49,6 +49,9 @@ void plat_first_init(void)
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&bootstrap_cpu_local_data);
 	serial_init();
 	intr_init();
+	bootstrap_cpu_local_data.md.self = &bootstrap_cpu_local_data;
+	bootstrap_cpu_local_data.md.hard_ipl = 0;
+	bootstrap_cpu_local_data.md.soft_ipl = 0;
 }
 
 void plat_pre_smp_init(void)

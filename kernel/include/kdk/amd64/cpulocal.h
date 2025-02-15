@@ -12,6 +12,10 @@
 
 struct md_kcpu_local_data {
 	struct kcpu_local_data *self;
+
+	/* used if LAZY_CR8 set in intr.c */
+	int soft_ipl;
+	int hard_ipl;
 };
 
 #define KCPU_LOCAL_OFFSET(FIELD) __builtin_offsetof(kcpu_local_data_t, FIELD)
@@ -51,6 +55,23 @@ struct md_kcpu_local_data {
 	default:							\
 		__builtin_trap(); 					\
 	} 								\
+})
+
+#define KCPU_LOCAL_XCHG(FIELD, NEW_VALUE) ({				\
+	__typeof(((kcpu_local_data_t *)0)->FIELD) old = (NEW_VALUE);	\
+	switch (sizeof(old)) {						\
+	case 1:								\
+	case 2:								\
+	case 4:								\
+	case 8:								\
+		asm volatile("xchg %0, %%gs:%c1"			\
+			 : "+r"(old)					\
+			 : "i"(KCPU_LOCAL_OFFSET(FIELD)));		\
+		break;							\
+	default:							\
+		__builtin_trap();					\
+	}								\
+	old;								\
 })
 
 #endif /* KRX_AMD64_CPULOCAL_H */
