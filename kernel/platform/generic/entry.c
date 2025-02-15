@@ -27,6 +27,7 @@ struct kcpu bootstrap_cpu;
 struct kthread thread0;
 kcpu_local_data_t bootstrap_cpu_local_data = {
 	.cpu = &bootstrap_cpu,
+	.cpu_num = 0,
 	.curthread = &thread0
 };
 kspinlock_t pac_console_lock = KSPINLOCK_INITIALISER;
@@ -151,6 +152,7 @@ smp_allocate(void)
 			cpu->local_data = kmem_alloc(sizeof(kcpu_local_data_t));
 			cpu->local_data->curthread = thread;
 			cpu->local_data->cpu = cpu;
+			cpu->local_data->cpu_num = i;
 			cpus[i] = cpu;
 			thread->last_cpu = cpu;
 		}
@@ -184,7 +186,7 @@ smp_start()
 	common_core_init(&bootstrap_cpu, &thread0, NULL);
 #endif
 
-	while (cpus_up != ncpus)
+	while (__atomic_load_n(&cpus_up, __ATOMIC_RELAXED) != ncpus)
 		;
 
 	kprintf("smp_start: all cores up\n");
@@ -238,6 +240,7 @@ _start(void)
 	obj_init();
 	ps_early_init(&thread0);
 	smp_allocate();
+	kmem_postsmp_init();
 	ddk_init();
 	plat_pre_smp_init();
 	smp_start();

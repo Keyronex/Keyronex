@@ -15,7 +15,7 @@
 #define fatal(...) kfatal(__VA_ARGS__)
 
 #define malloc kmem_malloc
-#define calloc kmem_calloc
+#define calloc kmem_mcalloc
 #define free kmem_mfree
 #define realloc kmem_mrealloc
 

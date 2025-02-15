@@ -388,6 +388,7 @@ typedef struct kprocess {
 
 typedef struct kcpu_local_data {
 	struct md_kcpu_local_data md;
+	size_t cpu_num;
 	kcpu_t *cpu;
 	kthread_t *curthread;
 } kcpu_local_data_t;

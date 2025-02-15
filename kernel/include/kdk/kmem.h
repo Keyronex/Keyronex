@@ -24,6 +24,7 @@ extern "C" {
 typedef struct kmem_cache kmem_cache_t;
 
 void kmem_init(void);
+void kmem_postsmp_init(void);
 
 kmem_cache_t *kmem_cache_create(const char *name, size_t size, size_t align,
     void (*ctor)(void *));
@@ -44,7 +45,7 @@ void *kmem_malloc(size_t size);
 void kmem_mfree(void *ptr);
 void kmem_mfree_sizeverify(void *ptr, size_t size);
 void *kmem_mrealloc(void *ptr, size_t size);
-void *kmem_calloc(size_t nmemb, size_t size);
+void *kmem_mcalloc(size_t nmemb, size_t size);
 
 int kmem_vasprintf(char **strp, const char *fmt, va_list ap);
 int kmem_asprintf(char **str, const char *fmt, ...);

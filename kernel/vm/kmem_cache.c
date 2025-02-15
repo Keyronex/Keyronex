@@ -17,6 +17,13 @@
 
 #include "vm/vmp.h"
 
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
+static void *kmem_slablayer_alloc(kmem_cache_t *cache, vmem_flag_t flags);
+static void kmem_slablayer_free(kmem_cache_t *cache, void *ptr);
+static void magazine_layer_init(kmem_cache_t *cp, size_t magsize);
+
 // #define KMEM_SANITY_CHECKING 1
 
 #define SMALL_SLAB_MAX 512
@@ -44,6 +51,28 @@ struct vm_slab_page {
 _Static_assert(sizeof(struct vm_slab_page) == sizeof(vm_page_t),
     "struct vm_slab_page size not equal to struct vm_page");
 
+struct kmem_magazine {
+	STAILQ_ENTRY(kmem_magazine) mag_link;
+	struct kmem_bufctl *mag_round[1];
+};
+
+struct kmem_cpu_cache {
+	struct kmem_magazine *cc_loaded;
+	struct kmem_magazine *cc_prev;
+	size_t cc_rounds;
+	size_t cc_prev_rounds;
+	size_t cc_magsize;
+};
+
+struct kmem_depot {
+	kspinlock_t kd_lock;
+	STAILQ_HEAD(, kmem_magazine) kd_full;
+	STAILQ_HEAD(, kmem_magazine) kd_empty;
+	size_t kd_full_count;
+	size_t kd_empty_count;
+	size_t kd_magsize;
+};
+
 struct kmem_cache {
 	char name[32];
 	kspinlock_t spinlock;
@@ -53,6 +82,11 @@ struct kmem_cache {
 	STAILQ_HEAD(, kmem_slab) slabs;
 	SLIST_HEAD(, kmem_bufctl) alloced;
 	TAILQ_ENTRY(kmem_cache) qlink;
+
+	struct kmem_cpu_cache *cache_cpu;
+	struct kmem_depot depot;
+	size_t cache_magsize;
+	bool use_magazines;
 };
 
 static TAILQ_HEAD(, kmem_cache) all_caches = TAILQ_HEAD_INITIALIZER(all_caches);
@@ -69,6 +103,7 @@ kmem_cache_init(kmem_cache_t *cache, const char *name, size_t size,
 	cache->size = size;
 	cache->align = align;
 	cache->ctor = ctor;
+	cache->use_magazines = false;
 
 	STAILQ_INIT(&cache->slabs);
 	SLIST_INIT(&cache->alloced);
@@ -110,6 +145,15 @@ kmem_init(void)
 	    __alignof(struct kmem_slab), NULL);
 	kmem_cache_init(&kmem_cache_cache, "kmem_cache", sizeof(kmem_cache_t),
 	    __alignof(kmem_cache_t), NULL);
+}
+
+void
+kmem_postsmp_init(void)
+{
+	for (size_t i = 0; i < 10; i++)
+		magazine_layer_init(&kmem_alloc_caches[i], 32);
+	for (size_t i = 0; i < 10; i++)
+		kmem_alloc_caches[i].use_magazines = true;
 }
 
 #define roundup2(A, B) ROUNDUP(A, B)
@@ -215,7 +259,6 @@ kmem_xrealloc(void *ptr, size_t old_size, size_t size,
 
 	memcpy(new, ptr, MIN2(old_size, size));
 
-	/* Free the old allocation */
 	kmem_free(ptr, old_size);
 
 	return new;
@@ -300,25 +343,24 @@ large_slab_new(kmem_cache_t *cache, vmem_flag_t flags)
 	return slab;
 }
 
-void *
-kmem_cache_alloc(kmem_cache_t *cache, vmem_flag_t flags)
+static void *
+kmem_slablayer_alloc(kmem_cache_t *cache, vmem_flag_t flags)
 {
-	ipl_t ipl;
 	struct kmem_slab *slab;
 	struct kmem_bufctl *bufctl;
 	void *ret;
 
-	ipl = ke_spinlock_acquire(&cache->spinlock);
+	ke_spinlock_acquire_nospl(&cache->spinlock);
 
 	slab = STAILQ_FIRST(&cache->slabs);
 	if (slab == NULL || slab->free_n == 0) {
-		if (cache->size > SMALL_SLAB_MAX)
+		if (unlikely(cache->size > SMALL_SLAB_MAX))
 			slab = large_slab_new(cache, flags);
 		else
 			slab = small_slab_new(cache, flags);
 
-		if (slab == NULL) {
-			ke_spinlock_release(&cache->spinlock, ipl);
+		if (unlikely(slab == NULL)) {
+			ke_spinlock_release_nospl(&cache->spinlock);
 			return NULL;
 		}
 
@@ -352,8 +394,6 @@ kmem_cache_alloc(kmem_cache_t *cache, vmem_flag_t flags)
 		STAILQ_INSERT_TAIL(&cache->slabs, slab, sqlink);
 	}
 
-	ke_spinlock_release(&cache->spinlock, ipl);
-
 	if (cache->size <= SMALL_SLAB_MAX)
 		ret = (void *)bufctl;
 	else {
@@ -361,30 +401,33 @@ kmem_cache_alloc(kmem_cache_t *cache, vmem_flag_t flags)
 		ret = bufctl->base;
 	}
 
+	ke_spinlock_release_nospl(&cache->spinlock);
+
 	return ret;
 }
 
-void
-kmem_cache_free(kmem_cache_t *cache, void *ptr)
+static void
+kmem_slablayer_free(kmem_cache_t *cache, void *ptr)
 {
-	ipl_t ipl;
 	struct kmem_slab *slab;
 	struct kmem_bufctl *bufctl = NULL;
 
-	if (cache->size <= SMALL_SLAB_MAX) {
+	if (likely(cache->size <= SMALL_SLAB_MAX)) {
 		vm_page_t *page;
 		bufctl = ptr;
+#if KMEM_SANITY_CHECKING
 		kassert(ptr >= (void *)HHDM_BASE && ptr < (void *)(HHDM_END));
+#endif
 		page = vm_hhdm_addr_to_page((vaddr_t)ptr);
 #if KMEM_SANITY_CHECKING
 		kassert(((struct vm_slab_page *)page)->slab.cache == cache);
 #endif
 		slab = &((struct vm_slab_page *)page)->slab;
-		ipl = ke_spinlock_acquire(&cache->spinlock);
+		ke_spinlock_acquire_nospl(&cache->spinlock);
 	} else {
 		struct kmem_bufctl *iter;
 
-		ipl = ke_spinlock_acquire(&cache->spinlock);
+		ke_spinlock_acquire_nospl(&cache->spinlock);
 
 		SLIST_FOREACH (iter, &cache->alloced, sllink) {
 			if (iter->base == ptr) {
@@ -411,11 +454,11 @@ kmem_cache_free(kmem_cache_t *cache, void *ptr)
 		STAILQ_INSERT_HEAD(&cache->slabs, slab, sqlink);
 	} else if (slab->alloced_n == 0) {
 #if 0
-		 kprintf("todo: free empty slab?\n");
+		kprintf("todo: free empty slab?\n");
 #endif
 	}
 
-	ke_spinlock_release(&cache->spinlock, ipl);
+	ke_spinlock_release_nospl(&cache->spinlock);
 }
 
 /* Malloc-style (bad) wrappers */
@@ -482,7 +525,7 @@ kmem_mrealloc(void *ptr, size_t size)
 }
 
 void *
-kmem_calloc(size_t nmemb, size_t size)
+kmem_mcalloc(size_t nmemb, size_t size)
 {
 	void *ptr = kmem_malloc(size * nmemb);
 
@@ -534,4 +577,199 @@ kmem_strfree(char *str)
 {
 	kmem_free(str, strlen(str) + 1);
 	return NULL;
+}
+
+static struct kmem_magazine *
+magazine_create(size_t magsize)
+{
+	size_t size = offsetof(struct kmem_magazine, mag_round[magsize]);
+	struct kmem_magazine *mag = kmem_xalloc(size, 0);
+	return mag;
+}
+
+static inline void
+swap_magazines(struct kmem_cpu_cache *ccp)
+{
+	struct kmem_magazine *tmp_mag = ccp->cc_loaded;
+	size_t tmp_rounds = ccp->cc_rounds;
+	ccp->cc_loaded = ccp->cc_prev;
+	ccp->cc_rounds = ccp->cc_prev_rounds;
+	ccp->cc_prev = tmp_mag;
+	ccp->cc_prev_rounds = tmp_rounds;
+}
+
+static void *
+magazine_depot_alloc(kmem_cache_t *cp, struct kmem_cpu_cache *ccp,
+    vmem_flag_t flags)
+{
+	struct kmem_magazine *full_mag;
+	void *obj = NULL;
+
+	ke_spinlock_acquire_nospl(&cp->depot.kd_lock);
+
+	full_mag = STAILQ_FIRST(&cp->depot.kd_full);
+	if (full_mag != NULL) {
+		STAILQ_REMOVE_HEAD(&cp->depot.kd_full, mag_link);
+		cp->depot.kd_full_count--;
+
+		STAILQ_INSERT_HEAD(&cp->depot.kd_empty, ccp->cc_prev, mag_link);
+		cp->depot.kd_empty_count++;
+
+		ccp->cc_prev = ccp->cc_loaded;
+		ccp->cc_prev_rounds = ccp->cc_rounds;
+		ccp->cc_loaded = full_mag;
+		ccp->cc_rounds = cp->depot.kd_magsize;
+		obj = ccp->cc_loaded->mag_round[--ccp->cc_rounds];
+	}
+
+	ke_spinlock_release_nospl(&cp->depot.kd_lock);
+
+	if (obj == NULL)
+		obj = kmem_slablayer_alloc(cp, flags);
+
+	return obj;
+}
+
+static void
+magazine_depot_free(kmem_cache_t *cp, struct kmem_cpu_cache *ccp, void *buf)
+{
+	struct kmem_magazine *empty_mag;
+	int freed = 0;
+
+	ke_spinlock_acquire_nospl(&cp->depot.kd_lock);
+
+	empty_mag = STAILQ_FIRST(&cp->depot.kd_empty);
+	if (empty_mag != NULL) {
+		STAILQ_REMOVE_HEAD(&cp->depot.kd_empty, mag_link);
+		cp->depot.kd_empty_count--;
+
+		STAILQ_INSERT_HEAD(&cp->depot.kd_full, ccp->cc_prev, mag_link);
+		cp->depot.kd_full_count++;
+
+		ccp->cc_prev = ccp->cc_loaded;
+		ccp->cc_prev_rounds = ccp->cc_rounds;
+		ccp->cc_loaded = empty_mag;
+		ccp->cc_rounds = 0;
+		ccp->cc_loaded->mag_round[ccp->cc_rounds++] = buf;
+		freed = 1;
+	} else if (cp->depot.kd_empty_count < cp->depot.kd_full_count) {
+		empty_mag = magazine_create(cp->cache_magsize);
+		if (empty_mag != NULL) {
+			STAILQ_INSERT_HEAD(&cp->depot.kd_full, ccp->cc_prev,
+			    mag_link);
+			cp->depot.kd_full_count++;
+
+			ccp->cc_prev = ccp->cc_loaded;
+			ccp->cc_prev_rounds = ccp->cc_rounds;
+			ccp->cc_loaded = empty_mag;
+			ccp->cc_rounds = 0;
+			ccp->cc_loaded->mag_round[ccp->cc_rounds++] = buf;
+			freed = 1;
+		}
+	}
+
+	ke_spinlock_release_nospl(&cp->depot.kd_lock);
+
+	if (!freed)
+		kmem_slablayer_free(cp, buf);
+
+}
+
+void *
+kmem_magazine_alloc(kmem_cache_t *cp, vmem_flag_t flags)
+{
+	struct kmem_cpu_cache *ccp;
+	void *obj;
+
+	ccp = &cp->cache_cpu[KCPU_LOCAL_LOAD(cpu_num)];
+
+	if (likely(ccp->cc_rounds > 0)) {
+		obj = ccp->cc_loaded->mag_round[--ccp->cc_rounds];
+		return obj;
+	}
+
+	if (likely(ccp->cc_prev_rounds > 0)) {
+		swap_magazines(ccp);
+		obj = ccp->cc_loaded->mag_round[--ccp->cc_rounds];
+		return obj;
+	}
+
+	obj = magazine_depot_alloc(cp, ccp, flags);
+
+	return obj;
+}
+
+void
+kmem_magazine_free(kmem_cache_t *cp, void *buf)
+{
+	struct kmem_cpu_cache *ccp;
+
+	ccp = &cp->cache_cpu[KCPU_LOCAL_LOAD(cpu_num)];
+
+	if (likely(ccp->cc_rounds < ccp->cc_magsize)) {
+		ccp->cc_loaded->mag_round[ccp->cc_rounds++] = buf;
+		return;
+	}
+
+	if (likely(ccp->cc_prev_rounds < ccp->cc_magsize)) {
+		swap_magazines(ccp);
+		ccp->cc_loaded->mag_round[ccp->cc_rounds++] = buf;
+		return;
+	}
+
+	magazine_depot_free(cp, ccp, buf);
+};
+
+static void
+magazine_layer_init(kmem_cache_t *cp, size_t magsize)
+{
+	ke_spinlock_init(&cp->depot.kd_lock);
+	STAILQ_INIT(&cp->depot.kd_full);
+	STAILQ_INIT(&cp->depot.kd_empty);
+	cp->depot.kd_full_count = 0;
+	cp->depot.kd_empty_count = 0;
+	cp->depot.kd_magsize = magsize;
+
+	cp->cache_cpu = kmem_xalloc(sizeof(struct kmem_cpu_cache) * ncpus, 0);
+	cp->cache_magsize = magsize;
+
+	for (int i = 0; i < ncpus; i++) {
+		struct kmem_cpu_cache *ccp = &cp->cache_cpu[i];
+		ccp->cc_loaded = magazine_create(magsize);
+		ccp->cc_prev = magazine_create(magsize);
+		ccp->cc_magsize = magsize;
+		ccp->cc_rounds = 0;
+		ccp->cc_prev_rounds = 0;
+	}
+}
+
+void *
+kmem_cache_alloc(kmem_cache_t *cache, vmem_flag_t flags)
+{
+	void *ret;
+	ipl_t ipl;
+
+	ipl = spldpc();
+
+	if (likely(cache->use_magazines))
+		ret = kmem_magazine_alloc(cache, flags);
+	else
+		ret = kmem_slablayer_alloc(cache, flags);
+
+	splx(ipl);
+
+	return ret;
+}
+
+void
+kmem_cache_free(kmem_cache_t *cache, void *ptr)
+{
+	ipl_t ipl = spldpc();
+
+	if (likely(cache->use_magazines))
+		kmem_magazine_free(cache, ptr);
+	else
+		kmem_slablayer_free(cache, ptr);
+
+	splx(ipl);
 }
