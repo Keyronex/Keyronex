@@ -187,19 +187,21 @@ uacpi_kernel_log(uacpi_log_level lvl, const uacpi_char *fmt, ...)
 void *
 uacpi_kernel_alloc(uacpi_size size)
 {
-	return kmem_malloc(size);
+	return kmem_alloc(size);
 }
 
 void *
 uacpi_kernel_calloc(uacpi_size count, uacpi_size size)
 {
-	return kmem_calloc(count, size);
+	return kmem_zalloc(count * size);
 }
 
 void
-uacpi_kernel_free(void *ptr)
+uacpi_kernel_free(void *ptr, uacpi_size size)
 {
-	return kmem_mfree(ptr);
+	if (ptr == NULL)
+		return;
+	return kmem_free(ptr, size);
 }
 
 void *

@@ -17,6 +17,9 @@ if (cpu != 'm68k')
 		'usb/DKUSBDevice.m', 'usb/DKUSBHub.m', 'usb/DKUSBKeyboard.m',
 		'usb/xhci/XHCIController.m')
 	kernel_sources += uacpi_sources
-	freestanding_c_args += [ '-DUACPI_FORMATTED_LOGGING=1' ]
+	freestanding_c_args += [
+		'-DUACPI_FORMATTED_LOGGING=1',
+		'-DUACPI_SIZED_FREES=1'
+	]
 	freestanding_include_dirs += uacpi_includes
 endif
