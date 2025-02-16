@@ -13,6 +13,7 @@
 #include <ddk/DKDevice.h>
 
 struct vring_used_elem;
+@class DKVirtIOTransport;
 
 #define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
 
@@ -48,6 +49,7 @@ typedef struct virtio_queue {
 } virtio_queue_t;
 
 @protocol DKVirtIODevice
+- (instancetype)initWithTransport:(DKVirtIOTransport *)transport;
 - (void)additionalDeferredProcessingForQueue:(virtio_queue_t *)queue;
 - (void)processUsedDescriptor:(volatile struct vring_used_elem *)e
 		      onQueue:(struct virtio_queue *)queue;
@@ -61,7 +63,7 @@ typedef struct virtio_queue {
 - (int)enableDevice;
 - (bool)exchangeFeaturesMandatory:(uint64_t)mandatory
 			 optional:(uint64_t *)optional;
-- (void)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index;
+- (int)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index;
 - (int)allocateDescNumOnQueue:(struct virtio_queue *)queue;
 - (void)freeDescNum:(uint16_t)num onQueue:(struct virtio_queue *)queue;
 - (void)submitDescNum:(uint16_t)descNum toQueue:(struct virtio_queue *)queue;

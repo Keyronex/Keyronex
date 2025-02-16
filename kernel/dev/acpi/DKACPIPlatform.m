@@ -8,8 +8,10 @@
 #include <kdk/kern.h>
 #include <limine.h>
 #include <uacpi/resources.h>
+#include <uacpi/acpi.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
+#include <uacpi/tables.h>
 
 #include "dev/SimpleFB.h"
 #include "dev/acpi/DKACPIPlatform.h"
@@ -27,6 +29,11 @@ DKACPIPlatform *gACPIPlatform;
 + (instancetype)root
 {
 	return gACPIPlatform;
+}
+
+- (void)iterateArchSpecificEarlyTables
+{
+	kfatal("Method must be overridden by platform-specific category.\n");
 }
 
 - (instancetype)init
@@ -53,6 +60,8 @@ DKACPIPlatform *gACPIPlatform;
 	gPlatformRoot = self;
 
 	[self attachChild:bootFb onAxis:gDeviceAxis];
+
+	[self iterateArchSpecificEarlyTables];
 
 	return self;
 }
@@ -204,3 +213,16 @@ DKACPIPlatform *gACPIPlatform;
 }
 
 @end
+
+void
+dk_acpi_madt_walk(struct acpi_madt *madt,
+    void (*callback)(struct acpi_entry_hdr *item, void *arg), void *arg)
+{
+	for (char *item = (char *)&madt->entries[0];
+	     item < ((char *)madt->entries +
+			(madt->hdr.length - sizeof(struct acpi_madt)));) {
+		struct acpi_entry_hdr *header = (struct acpi_entry_hdr *)item;
+		callback(header, arg);
+		item += header->length;
+	}
+}

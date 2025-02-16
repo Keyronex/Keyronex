@@ -7,6 +7,7 @@
  * @brief VirtIO transport for PCI.
  */
 
+#include <ddk/DKAxis.h>
 #include <ddk/DKPCIDevice.h>
 #include <ddk/DKVirtIOTransport.h>
 #include <ddk/reg/pci.h>
@@ -17,6 +18,7 @@
 #include <kdk/libkern.h>
 #include <kdk/vm.h>
 
+#include "dev/virtio/VirtIO9pPort.h"
 #include "vm/vmp.h"
 
 static bool intx_handler(md_intr_frame_t *, void *);
@@ -148,7 +150,7 @@ static void dpc_handler(void *);
 	return true;
 }
 
-- (void)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index
+- (int)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index
 {
 	vaddr_t addr;
 	vaddr_t offs;
@@ -196,6 +198,8 @@ static void dpc_handler(void *);
 	m_commonCfg->queue_enable = to_leu16(1);
 
 	__sync_synchronize();
+
+	return 0;
 }
 
 - (int)allocateDescNumOnQueue:(struct virtio_queue *)queue
@@ -328,6 +332,9 @@ static void dpc_handler(void *);
 	[self mapCapabilities];
 
 	[m_pciDevice setBusMastering:true];
+	[m_pciDevice setInterrupts:true];
+
+	m_delegate = nil;
 
 	switch ([m_pciDevice configRead16:kDeviceID]) {
 	case 0x1001:
@@ -340,10 +347,18 @@ static void dpc_handler(void *);
 		kprintf("VirtIO SCSI device (not implemented)\n");
 		break;
 
+	case 0x1009:
+	case 0x1040 + VIRTIO_DEVICE_ID_9P:
+		m_delegate = [[VirtIO9pPort alloc] initWithTransport:self];
+		break;
+
 	default:
 		kfatal("Unknown VirtIO device ID %x\n",
 		    [m_pciDevice configRead16:kDeviceID]);
 	}
+
+	[self attachChild:m_delegate onAxis:gDeviceAxis];
+	[m_delegate addToStartQueue];
 }
 
 - (instancetype)initWithPCIDevice:(DKPCIDevice *)pciDevice

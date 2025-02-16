@@ -1,5 +1,6 @@
 kernel_sources += files('DKAxis.m', 'DKDevice.m', 'FBTerminal.m', 'SimpleFB.m',
-    'pci/ecam.c', 'ddk.m', 'iop.c', 'virtio/DKVirtIOTransport.m',)
+	'pci/ecam.c', 'ddk.m', 'iop.c', 'virtio/DKVirtIOTransport.m',
+	'virtio/VirtIO9pPort.m',)
 
 kernel_sources += [
 	bin2c_gen.process('key272x70.data'),

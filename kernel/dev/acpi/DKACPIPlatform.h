@@ -16,11 +16,16 @@
 
 #include "dev/acpi/DKACPINode.h"
 
-@interface DKACPIPlatform : DKACPINode <DKPlatformRoot> {
-}
+struct acpi_madt;
+struct acpi_entry_hdr;
+
+@interface DKACPIPlatform : DKACPINode <DKPlatformRoot>
 
 + (instancetype)root;
 
 @end
+
+void dk_acpi_madt_walk(struct acpi_madt *madt,
+    void (*callback)(struct acpi_entry_hdr *item, void *arg), void *arg);
 
 #endif /* KRX_ACPI_DKACPIPLATFORM_H */

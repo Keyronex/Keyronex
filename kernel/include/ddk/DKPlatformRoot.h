@@ -7,6 +7,7 @@
 #define KRX_DDK_DKPLATFORMROOT_H
 
 #include <ddk/DKDevice.h>
+#include <ddk/DKInterrupt.h>
 
 struct intr_entry;
 
@@ -18,8 +19,10 @@ struct intr_entry;
 
 - (int)allocateLeastLoadedMSIInterruptForEntries:(struct intr_entry *)entries
 					   count:(size_t)count
-				     msiAddress:(out uint32_t *)msiAddress
-					msiData:(out uint32_t *)msiData;
+				      msiAddress:(out uint32_t *)msiAddress
+					 msiData:(out uint32_t *)msiData;
+
+- (DKPlatformInterruptController *)platformInterruptController;
 
 @end
 

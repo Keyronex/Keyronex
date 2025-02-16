@@ -28,7 +28,7 @@
 	kfatal("subclass responsibility\n");
 }
 
-- (void)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index
+- (int)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index
 {
 	kfatal("subclass responsibility\n");
 }

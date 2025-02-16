@@ -1,15 +1,22 @@
+/*
+ * Copyright (c) 2024-2025 NetaScale Object Solutions.
+ * Created on Sun May 12 2024.
+ */
+
 #ifndef KRX_VIRTIO_VIRTIO9PTRANSPORT_H
 #define KRX_VIRTIO_VIRTIO9PTRANSPORT_H
 
-#include "ddk/DKDevice.h"
-#include "ddk/DKVirtIOTransport.h"
-#include "dev/safe_endian.h"
+#include <ddk/DKDevice.h>
+#include <ddk/DKVirtIOTransport.h>
+#include <ddk/safe_endian.h>
 
-@interface VirtIO9pPort : DKDevice <DKVirtIODelegate> {
+@interface VirtIO9pPort : DKDevice <DKVirtIODevice> {
 @public
 	TAILQ_TYPE_ENTRY(VirtIO9pPort) m_tagListEntry;
 
 @protected
+	DKVirtIOTransport *m_transport;
+
 	char m_tagName[64];
 
 	struct virtio_queue m_reqQueue;

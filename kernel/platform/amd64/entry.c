@@ -1,12 +1,17 @@
+/*
+ * Copyright (c) 2025 NetaScale Object Solutions.
+ * Created on Wed Sep 6 2023.
+ */
+
+#include <kdk/amd64.h>
+#include <kdk/amd64/gdt.h>
+#include <kdk/amd64/portio.h>
+#include <kdk/amd64/regs.h>
+#include <kdk/executive.h>
+#include <kdk/kern.h>
 #include <limine.h>
 
-#include "kdk/amd64.h"
-#include "kdk/amd64/portio.h"
-#include "kdk/amd64/gdt.h"
-#include "kdk/amd64/regs.h"
-#include "kdk/kern.h"
 #include "platform/amd64/intr.h"
-#include "kdk/executive.h"
 #include "vm/vmp.h"
 
 enum { kPortCOM1 = 0x3f8 };

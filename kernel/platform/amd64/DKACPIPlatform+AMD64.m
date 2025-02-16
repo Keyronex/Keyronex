@@ -3,15 +3,25 @@
  * Created on Sun Aug 11 2024.
  */
 
+#include <ddk/DKAxis.h>
+#include <ddk/DKInterrupt.h>
 #include <kdk/amd64.h>
 #include <kdk/amd64/regs.h>
 #include <kdk/kern.h>
+#include <uacpi/acpi.h>
+#include <uacpi/tables.h>
 
+#include "IOAPIC.h"
 #include "dev/acpi/DKACPIPlatform.h"
 
 DKDevice<DKPlatformRoot> *gPlatformRoot;
 
 @implementation DKACPIPlatform (AMD64_)
+
+- (DKPlatformInterruptController *)platformInterruptController
+{
+	return (id)[IOApic class];
+}
 
 - (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
 				    msixAddress:(out uint32_t *)msixAddress
@@ -44,20 +54,22 @@ DKDevice<DKPlatformRoot> *gPlatformRoot;
 	return 0;
 }
 
-#if 0
 static void
 parse_ioapics(struct acpi_entry_hdr *item, void *arg)
 {
 	struct acpi_madt_ioapic *ioapic;
+	IOApic *dev;
 
 	if (item->type != 1)
 		return;
 
 	ioapic = (struct acpi_madt_ioapic *)item;
-	[[IOApic alloc] initWithProvider:arg
-				      id:ioapic->id
+
+	dev = [[IOApic alloc] initWithId:ioapic->id
 				 address:(paddr_t)ioapic->address
 				 gsiBase:ioapic->gsi_base];
+
+	[(id)arg attachChild:dev onAxis:gDeviceAxis];
 }
 
 static void
@@ -97,6 +109,5 @@ parse_isa_overrides(struct acpi_entry_hdr *item, void *arg)
 	dk_acpi_madt_walk((struct acpi_madt *)madt.virt_addr,
 	    parse_isa_overrides, self);
 }
-#endif
 
 @end
