@@ -42,15 +42,7 @@
 #ifndef _LINUX_VIRTIO_PCI_H
 #define _LINUX_VIRTIO_PCI_H
 
-#if 0
-#include <linux/types.h>
-#else
-#include <stdint.h>
-typedef uint8_t u8;
-typedef uint16_t le16;
-typedef uint32_t le32;
-typedef uint64_t le64;
-#endif
+#include <ddk/lintypes.h>
 
 #ifndef VIRTIO_PCI_NO_LEGACY
 

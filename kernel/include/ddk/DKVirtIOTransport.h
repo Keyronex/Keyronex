@@ -1,13 +1,22 @@
-#ifndef KRX_DDK_DKVirtIOMMIOTransport_H
-#define KRX_DDK_DKVirtIOMMIOTransport_H
+/*
+ * Copyright (c) 2024-2025 NetaScale Object Solutions.
+ * Created on Sat May 4 2024.
+ */
 
-#include "ddk/DKDevice.h"
-#include "kdk/endian.h"
-#include "kdk/vm.h"
+
+#ifndef KRX_DDK_DKVIRTIOTRANSPORT_H
+#define KRX_DDK_DKVIRTIOTRANSPORT_H
+
+#include <kdk/kern.h>
+#include <kdk/vm.h>
+
+#include <ddk/DKDevice.h>
 
 struct vring_used_elem;
 
-struct virtio_queue {
+#define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
+
+typedef struct virtio_queue {
 	/* queue number/index */
 	uint16_t index;
 	/* length of uqeue */
@@ -33,33 +42,26 @@ struct virtio_queue {
 	/* virtual address of device ring */
 	volatile struct vring_used *used;
 
-	/* for PCI - notification offset */
-	uint16_t notify_off;
-};
+	/* pci */
+	uint32_t notify_off;
+	uint16_t pci_msix_vec;
+} virtio_queue_t;
 
-#define QUEUE_DESC_AT(PQUEUE, IDX) ((PQUEUE)->desc[IDX])
-
-@protocol DKVirtIOTransport;
-
-@protocol DKVirtIODelegate
-+ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider;
-
-- (void)deferredProcessing;
+@protocol DKVirtIODevice
+- (void)additionalDeferredProcessingForQueue:(virtio_queue_t *)queue;
+- (void)processUsedDescriptor:(volatile struct vring_used_elem *)e
+		      onQueue:(struct virtio_queue *)queue;
 @end
 
-/*!
- * VirtIO MMIO device nub.
- */
-@protocol DKVirtIOTransport
+@interface DKVirtIOTransport: DKDevice
 
-@property (retain) DKDevice<DKVirtIODelegate> *delegate;
 @property (readonly) volatile void *deviceConfig;
 
-- (void)enqueueDPC;
 - (void)resetDevice;
-- (BOOL)exchangeFeatures:(uint64_t)required;
-- (int)setupQueue:(struct virtio_queue *)queue index:(uint16_t)index;
 - (int)enableDevice;
+- (bool)exchangeFeaturesMandatory:(uint64_t)mandatory
+			 optional:(uint64_t *)optional;
+- (void)setupQueue:(virtio_queue_t *)queue index:(uint16_t)index;
 - (int)allocateDescNumOnQueue:(struct virtio_queue *)queue;
 - (void)freeDescNum:(uint16_t)num onQueue:(struct virtio_queue *)queue;
 - (void)submitDescNum:(uint16_t)descNum toQueue:(struct virtio_queue *)queue;
@@ -67,4 +69,4 @@ struct virtio_queue {
 
 @end
 
-#endif /* KRX_DDK_DKVirtIOMMIOTransport_H */
+#endif /* KRX_DDK_DKVIRTIOTRANSPORT_H */
