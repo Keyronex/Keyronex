@@ -10,16 +10,25 @@
 #include "dev/pci/DKPCIBridge.h"
 
 @implementation DKPCIBridge
-@end
 
-@implementation DKPCIRootBridge
+@synthesize segment = m_segment;
+@synthesize bus = m_bus;
+@synthesize promNode = m_promNode;
 
-- (instancetype)initWithSegment:(uint16_t)segment bus:(uint8_t)bus
+- (DKPCIBridge *)parentBridge
+{
+	kfatal("Implement me\n");
+}
+
+- (instancetype)initWithSegment:(uint16_t)segment
+			    bus:(uint8_t)bus
+		       promNode:(DKDevice<DKPROMNode> *)promNode
 {
 	if ((self = [super init])) {
 		kmem_asprintf(&m_name, "pciBridge%u:%u", segment, bus);
 		m_segment = segment;
 		m_bus = bus;
+		m_promNode = promNode;
 	}
 	return self;
 }
@@ -58,6 +67,33 @@
 			[dev addToStartQueue];
 		}
 	}
+}
+
+@end
+
+@implementation DKPCI2PCIBridge
+
+@synthesize pciDevice = m_pciDevice;
+
+- (instancetype)initWithPCIDevice:(DKPCIDevice *)pciDevice
+			      bus:(uint8_t)bus
+			 promNode:(DKDevice<DKPROMNode> *)promNode;
+{
+	if ((self = [super initWithSegment:pciDevice.address.segment
+				       bus:bus
+				  promNode:promNode])) {
+		m_pciDevice = pciDevice;
+	}
+	return self;
+}
+
+@end
+
+@implementation DKPCIRootBridge
+
+- (DKPCIBridge *)parentBridge
+{
+	return nil;
 }
 
 @end

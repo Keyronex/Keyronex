@@ -59,6 +59,9 @@ typedef struct DKPCIBarInfo {
 	uint16_t m_msiCount;
 }
 
+@property (readonly) DKPCIAddress address;
+@property (readonly) DKPCIBridge *bridge;
+
 + (void)registerMatchingClass:(Class<DKPCIDeviceMatching>)matchingClass;
 
 - (instancetype)initWithBridge:(DKPCIBridge *)bridge

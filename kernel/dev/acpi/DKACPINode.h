@@ -11,10 +11,11 @@
 #define KRX_ACPI_DKACPINODE_H
 
 #include <ddk/DKDevice.h>
+#include <ddk/DKPROM.h>
 
 struct uacpi_namespace_node;
 
-@interface DKACPINode : DKDevice {
+@interface DKACPINode : DKDevice <DKPROMNode> {
 	struct uacpi_namespace_node *m_nsNode;
 }
 

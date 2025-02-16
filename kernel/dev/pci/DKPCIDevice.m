@@ -5,11 +5,13 @@
 
 #include <ddk/DKAxis.h>
 #include <ddk/DKPCIDevice.h>
+#include <ddk/DKPROM.h>
+#include <ddk/DKPlatformRoot.h>
 #include <ddk/reg/pci.h>
 #include <kdk/kmem.h>
+#include <kdk/vm.h>
 
-#include "ddk/DKPlatformRoot.h"
-#include "kdk/vm.h"
+#include "dev/pci/DKPCIBridge.h"
 #include "vm/vmp.h"
 
 #define UNPACK_ADDRESS(addr) \
@@ -24,6 +26,9 @@ static LIST_HEAD(, match_entry) match_list = LIST_HEAD_INITIALIZER(&match_list);
 static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 
 @implementation DKPCIDevice
+
+@synthesize address = m_address;
+@synthesize bridge = m_bridge;
 
 + (void)registerMatchingClass:(Class<DKPCIDeviceMatching>)matchingClass
 {
@@ -108,21 +113,14 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	case 1: {
 		uint8_t secondary_bus = pci_readb(UNPACK_ADDRESS(m_address),
 		    kSecondaryBus);
-
-#if 0
-		if ([[self provider] isKindOfClass:[DKPCI2PCIBridge class]])
-			kfatal("loop\n");
 		DKPCI2PCIBridge *bridge = [[DKPCI2PCIBridge alloc]
-		    initWithUpstreamAddress:m_addr
-					bus:secondary_bus
-				   promNode:[m_prom_node
-						subNodeForPCIAddress:m_addr]];
-		[bridge attachToProvider:self onAxis:kDKDeviceAxis];
+		    initWithPCIDevice:self
+				  bus:secondary_bus
+			     promNode:[m_bridge.promNode
+					  promSubNodeForBridgeAtPCIAddress:
+					      m_address]];
+		[self attachChild:bridge onAxis:gDeviceAxis];
 		[bridge addToStartQueue];
-#else
-		kprintf("PCI-to-PCI bridge at %d.%d.%d.%d; secondary bus %d\n",
-		    UNPACK_ADDRESS(m_address), secondary_bus);
-#endif
 		break;
 	}
 

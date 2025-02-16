@@ -116,13 +116,38 @@ iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32 depth)
 		if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND)
 			kfatal("failed to evaluate _BBN: %d\n", r);
 
-		bridge = [[DKPCIRootBridge alloc] initWithSegment:seg bus:bus];
+		bridge = [[DKPCIRootBridge alloc] initWithSegment:seg
+							      bus:bus
+							 promNode:self];
 		[[DKACPIPlatform root] attachChild:bridge onAxis:gDeviceAxis];
 		[bridge start];
 	}
 
 	for (DKACPINode *node in [gACPIAxis childrenOf:self])
 		[node addToStartDevicesQueue];
+}
+
+- (DKDevice<DKPROMNode> *)promSubNodeForBridgeAtPCIAddress:
+    (DKPCIAddress)pciAddr
+{
+	for (DKACPINode *subnode in [gACPIAxis childrenOf:self]) {
+		uacpi_status r;
+		uint64_t adr;
+
+		r = uacpi_eval_adr(subnode->m_nsNode, &adr);
+		if (r != UACPI_STATUS_OK)
+			continue;
+
+		if ((adr & 0xFFFF) == 0xFFFF) {
+			adr &= ~0xFFFF;
+			adr |= pciAddr.function;
+		}
+
+		if (adr == ((pciAddr.slot << 16) | pciAddr.function))
+			return subnode;
+	}
+
+	return nil;
 }
 
 @end
