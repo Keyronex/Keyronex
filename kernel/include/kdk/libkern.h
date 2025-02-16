@@ -47,6 +47,18 @@ size_t strlen(const char *str);
 char *strchr(const char *str, int c);
 char *strrchr(const char *str, int c);
 
+#define memcmp __builtin_memcmp
+#define memcpy __builtin_memcpy
+#define memmove __builtin_memmove
+#define memset __builtin_memset
+#define strcmp __builtin_strcmp
+#define strncmp __builtin_strncmp
+#define strcpy __builtin_strcpy
+#define strncpy __builtin_strncpy
+#define strlen __builtin_strlen
+#define strchr __builtin_strchr
+#define strrchr __builtin_strrchr
+
 char *strtok_r(char *s, const char *delim, char **last);
 
 /* vm/copyinout.c */
