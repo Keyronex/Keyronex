@@ -1,13 +1,15 @@
+#include "ddk/DKAxis.h"
 #include "ddk/DKDevice.h"
 #include "ddk/DKUtilities.h"
 #include "ddk/virtio_mmio.h"
 #include "ddk/virtioreg.h"
-#include "dev/virtio/VirtIOMMIOTransport.h"
 #include "dev/virtio/VirtIO9pPort.h"
+#include "dev/virtio/VirtIOGPU.h"
+#include "dev/virtio/VirtIOMMIOTransport.h"
 #include "kdk/endian.h"
+#include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
-#include "kdk/kern.h"
 #include "kdk/object.h"
 #include "kdk/vm.h"
 #include "vm/vmp.h"
@@ -91,8 +93,17 @@ device_name(uint32_t id)
 		m_delegate = [[VirtIO9pPort alloc] initWithTransport:self];
 		break;
 
+	case VIRTIO_DEVICE_ID_GPU:
+		m_delegate = [[VirtIOGPU alloc] initWithTransport:self];
+		break;
+
 	default:
 		kprintf("No driver for this device\n");
+	}
+
+	if (m_delegate != nil) {
+		[self attachChild:m_delegate onAxis:gDeviceAxis];
+		[m_delegate addToStartQueue];
 	}
 
 	return self;

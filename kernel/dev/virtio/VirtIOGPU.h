@@ -1,12 +1,14 @@
 #ifndef KRX_DEV_DKVIRTIOGPU_H
 #define KRX_DEV_DKVIRTIOGPU_H
 
-#include "ddk/DKDevice.h"
-#include "ddk/DKFramebuffer.h"
-#include "ddk/DKVirtIOTransport.h"
+#include <ddk/DKDevice.h>
+#include <ddk/DKFramebuffer.h>
+#include <ddk/DKVirtIOTransport.h>
 
-@interface VirtIOGPU : DKFramebuffer <DKVirtIODelegate> {
+@interface VirtIOGPU : DKFramebuffer <DKVirtIODevice> {
     @public
+	DKVirtIOTransport *m_transport;
+
 	TAILQ_HEAD(, virtio_gpu_req) in_flight_reqs;
 	struct virtio_queue m_commandQueue;
 	struct virtio_queue m_cursorQueue;
@@ -21,9 +23,7 @@
 	struct virtio_gpu_ctrl_hdr *m_FlushResponse;
 }
 
-+ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider;
-
-- (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider;
+- (instancetype)initWithTransport:(DKVirtIOTransport *)provider;
 
 @end
 

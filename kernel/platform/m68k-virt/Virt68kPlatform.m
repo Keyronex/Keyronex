@@ -2,6 +2,7 @@
 #include <ddk/DKPlatformRoot.h>
 
 #include "bootinfo.h"
+#include "ddk/DKAxis.h"
 #include "ddk/DKDevice.h"
 #include "ddk/virtio_mmio.h"
 #include "dev/virtio/VirtIOMMIOTransport.h"
@@ -9,6 +10,8 @@
 #include "kdk/kern.h"
 #include "kdk/kmem.h"
 #include "kdk/object.h"
+
+void DKLogAttach(DKDevice *child, DKDevice *parent);
 
 extern Class gPlatformSpecificRootClass;
 
@@ -32,6 +35,7 @@ extern Class gPlatformSpecificRootClass;
 - (instancetype)init
 {
 	self = [super init];
+
 	kmem_asprintf(&m_name, "virt68k-platform");
 #if 0
 	DKLogAttachExtra(self, "QEMU v%zu.%zu.%zu",
@@ -39,6 +43,8 @@ extern Class gPlatformSpecificRootClass;
 	    bootinfo.qemu_version >> 16 & 0xff,
 	    bootinfo.qemu_version >> 8 & 0xff);
 #endif
+
+	DKLogAttach(self, nil);
 
 	return self;
 }
@@ -48,8 +54,13 @@ extern Class gPlatformSpecificRootClass;
 	volatile uint8_t *virtio_base = (void *)0xff010000;
 
 	for (int i = 0; i < 128; i++) {
-		[DKVirtIOMMIOTransport probeWithMMIO:virtio_base + 0x200 * i
-					   interrupt:32 + i];
+		id dev = [DKVirtIOMMIOTransport
+		    probeWithMMIO:virtio_base + 0x200 * i
+			interrupt:32 + i];
+		if (dev != nil) {
+			[self attachChild:dev onAxis:gDeviceAxis];
+			[dev addToStartQueue];
+		}
 	}
 }
 
