@@ -7,6 +7,7 @@
 #include <ddk/DKInterrupt.h>
 #include <ddk/DKPlatformRoot.h>
 #include <kdk/kern.h>
+#include <kdk/kmem.h>
 #include <limine.h>
 #include <uacpi/acpi.h>
 #include <uacpi/resources.h>
@@ -17,6 +18,7 @@
 #include "dev/SimpleFB.h"
 #include "dev/acpi/DKACPIPlatform.h"
 #include "dev/pci/DKPCIBridge.h"
+#include "dev/pci/ecam.h"
 
 extern volatile struct limine_framebuffer_request fb_request;
 
@@ -37,12 +39,57 @@ DKACPIPlatform *gACPIPlatform;
 	kfatal("Method must be overridden by platform-specific category.\n");
 }
 
+- (void)setupEarlyTableAccess
+{
+	int r;
+	static char acpi_early_table_storage[4096];
+
+	r = uacpi_setup_early_table_access(&acpi_early_table_storage,
+	    sizeof(acpi_early_table_storage));
+	if (r != UACPI_STATUS_OK)
+		kfatal("Can't set up early table access\n");
+}
+
+- (void)enumerateMcfg
+{
+	struct uacpi_table mcfg_table;
+	struct acpi_mcfg *mcfg;
+	struct acpi_mcfg_allocation *alloc;
+
+	if (uacpi_table_find_by_signature(ACPI_MCFG_SIGNATURE, &mcfg_table) !=
+	    UACPI_STATUS_OK)
+		kfatal("No MCFG table found\n");
+
+	mcfg = (void *)mcfg_table.virt_addr;
+
+	/* Calculate number of entries based on table length */
+	ecam_spans_n = (mcfg->hdr.length - sizeof(struct acpi_mcfg)) /
+	    sizeof(struct acpi_mcfg_allocation);
+
+	ecam_spans = kmem_alloc(sizeof(struct ecam_span) * ecam_spans_n);
+
+	/* Iterate through each MCFG allocation entry */
+	for (size_t i = 0; i < ecam_spans_n; i++) {
+		alloc = &mcfg->entries[i];
+		ecam_spans[i].base = alloc->address;
+		ecam_spans[i].seg = alloc->segment;
+		ecam_spans[i].bus_start = alloc->start_bus;
+		ecam_spans[i].bus_end = alloc->end_bus;
+	}
+
+	uacpi_table_unref(&mcfg_table);
+}
+
 - (instancetype)init
 {
 	int r;
-	struct limine_framebuffer *fb = fb_request.response->framebuffers[0];
+	struct limine_framebuffer *fb;
 	SimpleFB *bootFb;
 
+	[self setupEarlyTableAccess];
+	[self enumerateMcfg];
+
+	fb =  fb_request.response->framebuffers[0];
 	bootFb = [[SimpleFB alloc] initWithAddress:V2P(fb->address)
 					     width:fb->width
 					    height:fb->height

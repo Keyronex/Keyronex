@@ -395,8 +395,10 @@ static void dpc_handler(void *);
 		    [m_pciDevice configRead16:kDeviceID]);
 	}
 
-	[self attachChild:m_delegate onAxis:gDeviceAxis];
-	[m_delegate addToStartQueue];
+	if (m_delegate != nil) {
+		[self attachChild:m_delegate onAxis:gDeviceAxis];
+		[m_delegate addToStartQueue];
+	}
 }
 
 - (instancetype)initWithPCIDevice:(DKPCIDevice *)pciDevice

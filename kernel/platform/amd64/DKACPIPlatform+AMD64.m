@@ -14,8 +14,6 @@
 #include "IOAPIC.h"
 #include "dev/acpi/DKACPIPlatform.h"
 
-DKDevice<DKPlatformRoot> *gPlatformRoot;
-
 @implementation DKACPIPlatform (AMD64_)
 
 - (DKPlatformInterruptController *)platformInterruptController

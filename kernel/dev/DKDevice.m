@@ -11,8 +11,11 @@
 #include <ddk/DKDevice.h>
 #include <kdk/kern.h>
 
+@protocol DKPlatformRoot;
+
 kspinlock_t gStartQueueLock;
 dk_device_queue_t gStartQueue = TAILQ_HEAD_INITIALIZER(gStartQueue);
+DKDevice<DKPlatformRoot> *gPlatformRoot;
 
 void
 DKLogAttach(DKDevice *child, DKDevice *parent)

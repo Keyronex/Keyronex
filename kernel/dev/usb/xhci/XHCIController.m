@@ -24,6 +24,12 @@
 #define XHCI_EVENT_RING_SIZE 256
 #define XHCI_CMD_RING_SIZE 256
 
+#ifdef __amd64__
+#define pause() asm volatile("pause");
+#else
+#define pause() asm volatile("" ::: "memory");
+#endif
+
 // #define TRACE_XHCI 1
 
 TAILQ_HEAD(req_tailq, req);
@@ -850,12 +856,12 @@ controller_thread(void *arg)
 		cmd &= ~XHCI_CMD_RUN;
 		m_opRegs->USBCMD = to_leu32(cmd);
 		while (!(from_leu32(m_opRegs->USBSTS) & XHCI_STS_HCH))
-			asm("pause");
+			pause();
 	}
 
 	m_opRegs->USBCMD = to_leu32(XHCI_CMD_HCRST);
 	while (from_leu32(m_opRegs->USBSTS) & XHCI_STS_CNR)
-		asm("pause");
+		pause();
 
 	r = [self setup];
 	if (r != 0) {
@@ -899,7 +905,7 @@ controller_thread(void *arg)
 	m_opRegs->USBCMD = to_leu32(cmd);
 
 	while (from_leu32(m_opRegs->USBSTS) & XHCI_STS_HCH)
-		asm("pause");
+		pause();
 
 	TAILQ_INIT(&m_allHubs);
 	ke_event_init(&m_reenumerationEvent, false);

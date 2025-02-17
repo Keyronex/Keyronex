@@ -1,15 +1,15 @@
-#if 0
 /*
  * Copyright (c) 2024 NetaScale Object Solutions.
  * Created on Sun Aug 11 2024.
  */
 
 #include "GICv2Distributor.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "dev/acpi/tables.h"
+#include "dev/acpi/DKACPIPlatform.h"
 #include "kdk/executive.h"
 #include "kdk/kern.h"
 #include "kdk/libkern.h"
+#include "kdk/vm.h"
+#include "uacpi/acpi.h"
 #include "uacpi/tables.h"
 #include "uacpi/uacpi.h"
 
@@ -83,7 +83,7 @@ static void
 gtdt_walk(void)
 {
 	uacpi_table table;
-	acpi_table_gtdt_t *gtdt;
+	struct acpi_gtdt *gtdt;
 	int r;
 
 	r = uacpi_table_find_by_signature("GTDT", &table);
@@ -93,7 +93,7 @@ gtdt_walk(void)
 	gtdt = (void *)table.virt_addr;
 
 	kprintf("GTDT: %p/ EL1 NS: GSIV %u, Flags 0x%x\n", gtdt,
-	    gtdt->nonsecure_el1_interrupt, gtdt->nonsecure_el1_flags);
+	    gtdt->el1_non_secure_gsiv, gtdt->el1_non_secure_gsiv);
 }
 
 - (void)iterateArchSpecificEarlyTables
@@ -112,5 +112,9 @@ gtdt_walk(void)
 	gtdt_walk();
 }
 
+- (DKPlatformInterruptController *)platformInterruptController
+{
+	return (id)[GICv2Distributor class];
+}
+
 @end
-#endif

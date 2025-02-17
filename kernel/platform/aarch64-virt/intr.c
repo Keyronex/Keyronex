@@ -135,7 +135,7 @@ handle_irq(md_intr_frame_t *frame)
 			    intr, splget(), ipl);
 		}
 
-		kassert(ipl == kIPLHigh);
+		kassert(ipl == kIPLDevice);
 
 		ipl = splraise(ipl);
 		ki_set_interrupts(true);

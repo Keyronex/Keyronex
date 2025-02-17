@@ -1,6 +1,6 @@
 keyronex = executable('keyronex',
 	'DKACPIPlatform+AArch64.m', 'entry.c', 'intr.c', 'gic2.c',
-	'GICv2Distributor.m', 'VirtAArch64Platform.m', '../generic/entry.c',
+	'GICv2Distributor.m', '../generic/entry.c',
 	kernel_sources,
 	c_args: [ freestanding_c_args, '-std=gnu2x' ],
 	objc_args: [ freestanding_c_args, '-std=gnu17'] ,
