@@ -10,8 +10,15 @@
 #include <ddk/DKInterrupt.h>
 
 struct intr_entry;
+@class DKPCIBridge;
 
 @protocol DKPlatformRoot
+
+- (void)routePCIPin:(uint8_t)pin
+	  forBridge:(DKPCIBridge *)bridge
+	       slot:(uint8_t)slot
+	   function:(uint8_t)fun
+	       into:(out dk_interrupt_source_t *)source;
 
 - (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
 				    msixAddress:(out uint32_t *)msixAddress

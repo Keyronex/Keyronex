@@ -4,14 +4,15 @@
  */
 
 #include <ddk/DKAxis.h>
+#include <ddk/DKInterrupt.h>
 #include <ddk/DKPlatformRoot.h>
 #include <kdk/kern.h>
 #include <limine.h>
-#include <uacpi/resources.h>
 #include <uacpi/acpi.h>
+#include <uacpi/resources.h>
+#include <uacpi/tables.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
-#include <uacpi/tables.h>
 
 #include "dev/SimpleFB.h"
 #include "dev/acpi/DKACPIPlatform.h"
@@ -88,11 +89,11 @@ DKACPIPlatform *gACPIPlatform;
 }
 
 /* ACPI node -> PCI root -> PCI device -> PCI Bridge -> PCI Device -> etc */
-+ (void)routePCIPin:(uint8_t)pin
+- (void)routePCIPin:(uint8_t)pin
 	  forBridge:(DKPCIBridge *)bridge
 	       slot:(uint8_t)slot
 	   function:(uint8_t)fun
-	       into:(out uint8_t *)gsi
+	       into:(out dk_interrupt_source_t *)source
 {
 	uacpi_pci_routing_table *prt = NULL;
 	int r = 0;
@@ -103,8 +104,10 @@ DKACPIPlatform *gACPIPlatform;
 		if (promNode) {
 			r = uacpi_get_pci_routing_table(promNode->m_nsNode,
 			    &prt);
-			if (r == UACPI_STATUS_OK)
+			if (r == UACPI_STATUS_OK) {
+				kprintf("prt is %p\n", prt);
 				break;
+			}
 		}
 
 		if (promNode == nil || r == UACPI_STATUS_NOT_FOUND) {
@@ -114,16 +117,18 @@ DKACPIPlatform *gACPIPlatform;
 
 			pci2pci = (DKPCI2PCIBridge *)bridge;
 
-			/* follow default routing */
+			/* follow default expansion bridge routing */
 			pin = ((pin - 1 + slot) % 4) + 1;
 			slot = pci2pci.pciDevice.address.slot;
 			fun = pci2pci.pciDevice.address.function;
 
 			bridge = bridge.parentBridge;
 			continue;
-		} else {
-			kfatal("unexpected\n");
 		}
+
+		/* routed by PRT */
+		kassert(r == UACPI_STATUS_OK);
+		break;
 	}
 
 	for (size_t i = 0; i < prt->num_entries; i++) {
@@ -139,7 +144,9 @@ DKACPIPlatform *gACPIPlatform;
 			continue;
 
 		/* default edge false, lopol true */
-		*gsi = entry->index;
+		source->id = entry->index;
+		source->edge = false;
+		source->low_polarity = true;
 
 		if (entry->source != NULL) {
 			uacpi_resources *resources;
@@ -155,16 +162,12 @@ DKACPIPlatform *gACPIPlatform;
 				uacpi_resource_irq *irq = &resource->irq;
 
 				kassert(irq->num_irqs >= 1);
-				*gsi = irq->irqs[0];
+				source->id = irq->irqs[0];
 
-#if 0
-					if (irq->triggering ==
-					    UACPI_TRIGGERING_EDGE)
-						source->edge = true;
-					if (irq->polarity ==
-					    UACPI_POLARITY_ACTIVE_HIGH)
-						source->low_polarity = false;
-#endif
+				if (irq->triggering == UACPI_TRIGGERING_EDGE)
+					source->edge = true;
+				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
+					source->low_polarity = false;
 
 				break;
 			}
@@ -173,16 +176,12 @@ DKACPIPlatform *gACPIPlatform;
 				    &resource->extended_irq;
 
 				kassert(irq->num_irqs >= 1);
-				*gsi = irq->irqs[0];
+				source->id = irq->irqs[0];
 
-#if 0
-					if (irq->triggering ==
-					    UACPI_TRIGGERING_EDGE)
-						source->edge = true;
-					if (irq->polarity ==
-					    UACPI_POLARITY_ACTIVE_HIGH)
-						source->low_polarity = false;
-#endif
+				if (irq->triggering == UACPI_TRIGGERING_EDGE)
+					source->edge = true;
+				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
+					source->low_polarity = false;
 
 				break;
 			}

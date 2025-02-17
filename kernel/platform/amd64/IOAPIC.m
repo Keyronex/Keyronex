@@ -3,15 +3,15 @@
  * Created on Sat Sep 16 2023.
  */
 
+#include <ddk/DKInterrupt.h>
 #include <kdk/executive.h>
 #include <kdk/kmem.h>
 #include <kdk/object.h>
+#include <kdk/vm.h>
 #include <uacpi/acpi.h>
 
 #include "IOAPIC.h"
-#include "ddk/DKInterrupt.h"
 #include "dev/acpi/DKACPIPlatform.h"
-#include "kdk/vm.h"
 
 enum {
 	kDeliveryModeFixed = 0x0,

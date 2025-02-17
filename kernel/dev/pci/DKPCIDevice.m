@@ -4,6 +4,7 @@
  */
 
 #include <ddk/DKAxis.h>
+#include <ddk/DKInterrupt.h>
 #include <ddk/DKPCIDevice.h>
 #include <ddk/DKPROM.h>
 #include <ddk/DKPlatformRoot.h>
@@ -46,6 +47,7 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 		kmem_asprintf(&m_name, "pciDev%u:%u", address->slot,
 		    address->function);
 		m_address = *address;
+		m_bridge = bridge;
 	}
 
 	return self;
@@ -86,22 +88,11 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 	uint8_t headerType = pci_readb(UNPACK_ADDRESS(m_address), kHeaderType);
 	uint8_t pin = pci_readb(UNPACK_ADDRESS(m_address), kInterruptPin);
 
-#if 0
-	kprintf("PCI device at %d.%d.%d.%d; pin %d; has ACPI node %p\n",
-	    m_addr.seg, m_addr.bus, m_addr.slot, m_addr.fun, pin, m_prom_node);
-#endif
-
 	(void)pin;
 
 	switch (headerType & 0x7f) {
 	case 0: {
 #if 0
-		uint8_t gsi;
-		[DKACPIPlatformRoot routePCIPin:pin
-				      forBridge:(DKPCIBridge *)[self provider]
-					   slot:m_addr.slot
-				       function:m_addr.fun
-					   into:&gsi];
 		kprintf("Regular device at %d.%d.%d.%d; "
 			"pin (%d) routes to GSI %d\n",
 		    m_addr.seg, m_addr.bus, m_addr.slot, m_addr.fun, pin, gsi);
@@ -182,7 +173,20 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 
 - (void)setInterrupts:(bool)enabled
 {
-	[self setCommandFlag:0x400 enabled:enabled];
+	[self setCommandFlag:0x400 enabled:!enabled];
+}
+
+- (dk_interrupt_source_t)interruptSource
+{
+	dk_interrupt_source_t source;
+
+	[gPlatformRoot routePCIPin:[self configRead8:kInterruptPin]
+			 forBridge:m_bridge
+			      slot:m_address.slot
+			  function:m_address.function
+			      into:&source];
+
+	return source;
 }
 
 - (DKPCIBarInfo)barInfo:(uint8_t)bar

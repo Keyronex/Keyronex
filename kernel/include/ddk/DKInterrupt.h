@@ -24,7 +24,7 @@ typedef struct dk_interrupt_source {
 
 @interface DKPlatformInterruptController : DKDevice
 
-+ (int)handleSource:(dk_interrupt_source_t *)source
+- (int)handleSource:(dk_interrupt_source_t *)source
 	withHandler:(intr_handler_t)handler
 	   argument:(void *)arg
 	 atPriority:(ipl_t)prio

@@ -10,6 +10,8 @@
 #include <ddk/DKVirtIOTransport.h>
 #include <ddk/safe_endian.h>
 
+struct vnode;
+
 @interface VirtIO9pPort : DKDevice <DKVirtIODevice> {
 @public
 	TAILQ_TYPE_ENTRY(VirtIO9pPort) m_tagListEntry;
@@ -30,9 +32,11 @@
 	TAILQ_HEAD(, vio9p_req) free_reqs;
 	/*! Virtio requests currently running. */
 	TAILQ_HEAD(, vio9p_req) in_flight_reqs;
+
+	struct vnode *m_vnode;
 }
 
-+ (VirtIO9pPort *)forTag:(const char *)tag;
++ (struct vnode *)forTag:(const char *)tag;
 
 @end
 

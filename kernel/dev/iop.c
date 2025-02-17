@@ -64,6 +64,19 @@ iop_new_vnode_write(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
 	return iop;
 }
 
+iop_t *
+iop_new_9p(struct vnode *vnode, struct ninep_buf *in, struct ninep_buf *out,
+    vm_mdl_t *mdl)
+{
+	iop_t *iop = iop_new(vnode, kIOPType9p);
+	iop->stack[0].function = kIOPType9p;
+	iop->stack[0].vnode = vnode;
+	iop->stack[0].mdl = mdl;
+	iop->stack[0].ninep.ninep_in = in;
+	iop->stack[0].ninep.ninep_out = out;
+	return iop;
+}
+
 void
 iop_append_slave(iop_t *master, iop_t *slave)
 {
@@ -383,4 +396,16 @@ void
 iop_free(iop_t *iop)
 {
 	kmem_free(iop, sizeof(iop_t) + sizeof(iop_frame_t) * iop->stack_count);
+}
+
+void
+iop_frame_setup_9p(struct vnode *vnode, iop_frame_t *frame,
+    struct ninep_buf *in, struct ninep_buf *out, vm_mdl_t *mdl)
+{
+	frame->function = kIOPType9p;
+	frame->vnode = vnode;
+	frame->mdl = mdl;
+	frame->ninep.ninep_in = in;
+	frame->ninep.ninep_out = out;
+	frame->has_kbuf = false;
 }

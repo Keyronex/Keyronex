@@ -13,9 +13,14 @@
 #include <kdk/misc.h>
 #include <kdk/queue.h>
 #include <kdk/vm.h>
+#include <kdk/vmem.h>
 #include <stddef.h>
 
 #include "vm/vmp.h"
+
+// #define KMEM_SANITY_CHECKING 1
+
+#define SMALL_SLAB_MAX 512
 
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
@@ -23,10 +28,6 @@
 static void *kmem_slablayer_alloc(kmem_cache_t *cache, vmem_flag_t flags);
 static void kmem_slablayer_free(kmem_cache_t *cache, void *ptr);
 static void magazine_layer_init(kmem_cache_t *cp, size_t magsize);
-
-// #define KMEM_SANITY_CHECKING 1
-
-#define SMALL_SLAB_MAX 512
 
 struct kmem_bufctl {
 	SLIST_ENTRY(kmem_bufctl) sllink;
@@ -289,7 +290,10 @@ small_slab_new(kmem_cache_t *cache, vmem_flag_t flags)
 	struct kmem_slab *slab;
 	vaddr_t base;
 
-	vm_page_alloc(&page, 0, kPageUseKWired, 0);
+	if (flags & kVMemPFNDBHeld)
+		vmp_pages_alloc_locked(&page, 0, kPageUseKWired, 0);
+	else
+		vm_page_alloc(&page, 0, kPageUseKWired, 0);
 	if (page == NULL)
 		return NULL;
 
@@ -672,7 +676,6 @@ magazine_depot_free(kmem_cache_t *cp, struct kmem_cpu_cache *ccp, void *buf)
 
 	if (!freed)
 		kmem_slablayer_free(cp, buf);
-
 }
 
 void *

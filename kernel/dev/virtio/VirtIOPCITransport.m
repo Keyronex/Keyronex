@@ -9,12 +9,15 @@
 
 #include <ddk/DKAxis.h>
 #include <ddk/DKPCIDevice.h>
+#include <ddk/DKPlatformRoot.h>
+#include <ddk/DKUtilities.h>
 #include <ddk/DKVirtIOTransport.h>
 #include <ddk/reg/pci.h>
 #include <ddk/safe_endian.h>
 #include <ddk/virtio_pcireg.h>
 #include <ddk/virtioreg.h>
 #include <kdk/kern.h>
+#include <kdk/kmem.h>
 #include <kdk/libkern.h>
 #include <kdk/vm.h>
 
@@ -37,7 +40,7 @@ static void dpc_handler(void *);
 	struct intr_entry m_intxEntry;
 	kdpc_t m_dpc;
 
-	virtio_queue_t *m_queues;
+	virtio_queue_t **m_queues;
 	size_t m_queues_size;
 }
 
@@ -69,20 +72,23 @@ static void dpc_handler(void *);
 	__sync_synchronize();
 	m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER;
 	__sync_synchronize();
-	[m_pciDevice setMSIx:true];
 }
 
 - (int)enableDevice
 {
+	int r;
+	dk_interrupt_source_t source;
+
+	source = [m_pciDevice interruptSource];
+
 	m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
-#if 0
 
-	r = [[platformDevice platformInterruptController]
-	    handleSource:&m_pciInfo.intx_source
-	     withHandler:vitrio_handler
+	r = [[gPlatformRoot platformInterruptController]
+	    handleSource:&source
+	     withHandler:intx_handler
 		argument:self
-	      atPriority:kIPLHigh
+	      atPriority:kIPLDevice
 		   entry:&m_intxEntry];
 	if (r < 0) {
 		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
@@ -92,8 +98,8 @@ static void dpc_handler(void *);
 	m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
 
-	[DKPCIBus setInterruptsEnabled:YES forInfo:&m_pciInfo];
-#endif
+	[m_pciDevice setInterrupts:true];
+
 	return 0;
 }
 
@@ -199,6 +205,14 @@ static void dpc_handler(void *);
 
 	__sync_synchronize();
 
+	if (m_queues_size < index + 1) {
+		m_queues_size = index + 1;
+		m_queues = kmem_realloc(m_queues,
+		    m_queues_size * sizeof(*m_queues),
+		    (index + 1) * sizeof(*m_queues));
+		m_queues[index] = queue;
+	}
+
 	return 0;
 }
 
@@ -245,7 +259,31 @@ static void dpc_handler(void *);
 
 - (void)deferredProcessing
 {
-	/* process the virtqueues... */
+	kassert(splget() == kIPLDPC);
+
+	for (size_t n = 0; n < m_queues_size; n++) {
+		virtio_queue_t *queue = m_queues[n];
+		uint16_t i;
+
+		if (queue == NULL)
+			continue;
+
+		ke_spinlock_acquire_nospl(&queue->spinlock);
+
+		for (i = queue->last_seen_used;
+		     i != from_leu16(queue->used->idx) % queue->length;
+		     i = (i + 1) % queue->length) {
+			volatile struct vring_used_elem *e =
+			    &queue->used->ring[i % queue->length];
+			[m_delegate processUsedDescriptor:e onQueue:queue];
+		}
+
+		queue->last_seen_used = i;
+
+		[m_delegate additionalDeferredProcessingForQueue:queue];
+
+		ke_spinlock_release_nospl(&queue->spinlock);
+	}
 }
 
 - (void)mapCapabilities
@@ -366,6 +404,7 @@ static void dpc_handler(void *);
 	if ((self = [super init])) {
 		m_pciDevice = pciDevice;
 		m_name = "virtio-pci-transport";
+		ke_dpc_init(&m_dpc, dpc_handler, self);
 	}
 
 	return self;

@@ -182,11 +182,7 @@ mount_root(void)
 	kprintf("ex_mount_root: %s\n", how);
 
 	if (strncmp(how, "9p:", 3) == 0) {
-#if 0
 		ninep_vfsops.mount((namecache_handle_t) {}, how + 3);
-#else
-		kfatal("temporarily disabled\n");
-#endif
 	} else {
 		kfatal("Can't handle it\n");
 	}
@@ -220,8 +216,6 @@ ex_init(void *)
 
 	test_anon();
 #endif
-
-	for (;;) ;
 
 	mount_root();
 

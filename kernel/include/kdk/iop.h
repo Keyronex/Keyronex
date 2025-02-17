@@ -176,18 +176,16 @@ iop_t *iop_new_vnode_read(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
 iop_t *iop_new_vnode_write(struct vnode *vnode, vm_mdl_t *mdl, size_t size,
     io_off_t off);
 
-#if 0
 /*!
  * @brief Allocate & set up a 9p IOP.
  *
- * @param dev Device the IOP is to be sent to.
+ * @param vnpde Vnode the IOP is to be sent to.
  * @param buf_in 9p in-buffer.
  * @param buf_out 9p out-buffer.
  * @param mdl Optional MDL.
  */
-iop_t *iop_new_9p(DKDevice *dev, struct ninep_buf *in, struct ninep_buf *out,
+iop_t *iop_new_9p(struct vnode *vnode, struct ninep_buf *in, struct ninep_buf *out,
     vm_mdl_t *mdl);
-#endif
 
 /*! @brief Send and await completion of an IOP. */
 io_result_t iop_send_sync(iop_t *iop);
@@ -207,24 +205,19 @@ iop_stack_current(iop_t *iop)
 }
 
 /*!
- * @brief Return a pointer to the previous (lower) frame of an IOP.
+ * @brief Return a pointer to the next (higher) frame of an IOP.
  */
-static inline iop_frame_t *
-iop_stack_previous(iop_t *iop)
+static inline iop_frame_t *iop_stack_next(iop_t *iop)
 {
 	kassert(iop->stack_count > iop->stack_current + 1);
+	kassert(iop->stack_current >= -1);
 	return &iop->stack[iop->stack_current + 1];
 }
 
 /*!
- * @brief Initialise the next frame in an IOP to target a device.
- */
-iop_frame_t *iop_stack_initialise_next(struct vnode *vp);
-
-/*!
  * @brief Setup an IOP frame for a 9p request.
  */
-void iop_frame_setup_9p(iop_frame_t *frame, struct ninep_buf *in,
+void iop_frame_setup_9p(struct vnode *vnode, iop_frame_t *frame, struct ninep_buf *in,
     struct ninep_buf *out, vm_mdl_t *mdl);
 
 #endif /* KRX_KDK_DEV_H */

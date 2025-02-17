@@ -7,6 +7,7 @@
 #define KRX_DDK_DKPCIDEVICE_H
 
 #include <ddk/DKDevice.h>
+#include <ddk/DKInterrupt.h>
 #include <kdk/vmtypes.h>
 
 @class DKPCIBridge;
@@ -85,6 +86,8 @@ typedef struct DKPCIBarInfo {
 - (void)setMemorySpace:(bool)enabled;
 - (void)setBusMastering:(bool)enabled;
 - (void)setInterrupts:(bool)enabled;
+
+- (dk_interrupt_source_t)interruptSource;
 
 - (uint16_t)availableMSIxVectors;
 - (int)setMSIx:(bool)enabled;

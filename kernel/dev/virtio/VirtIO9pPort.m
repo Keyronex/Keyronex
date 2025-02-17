@@ -11,6 +11,7 @@
 #include <kdk/kmem.h>
 #include <kdk/object.h>
 #include <kdk/queue.h>
+#include <kdk/vfs.h>
 #include <string.h>
 
 #include "VirtIO9pPort.h"
@@ -37,15 +38,16 @@ struct vio9p_req {
 
 TAILQ_TYPE_HEAD(, VirtIO9pPort) tag_list = TAILQ_HEAD_INITIALIZER(tag_list);
 static int counter = 0;
+static struct vnode_ops ninep_vops;
 
 @implementation VirtIO9pPort
 
-+ (VirtIO9pPort *)forTag:(const char *)tag
++ (vnode_t *)forTag:(const char *)tag
 {
 	VirtIO9pPort *port;
 	TAILQ_FOREACH (port, &tag_list, m_tagListEntry) {
 		if(strcmp(port->m_tagName, tag) == 0)
-			return port;
+			return port->m_vnode;
 	}
 	return NULL;
 }
@@ -99,6 +101,8 @@ static int counter = 0;
 	TAILQ_INSERT_TAIL(&tag_list, self, m_tagListEntry);
 
 	DKDevLog(self, "Tag: %s\n", m_tagName);
+
+	m_vnode = vnode_new(NULL, VCHR, &ninep_vops, NULL, NULL, self);
 
 	return self;
 }
@@ -182,11 +186,12 @@ static int counter = 0;
 	[m_transport notifyQueue:&m_reqQueue];
 }
 
-- (void)deferredProcessing
+- (void)additionalDeferredProcessingForQueue:(virtio_queue_t *)queue
 {
-#if 0
-	ipl_t ipl = ke_spinlock_acquire(&m_reqQueue.spinlock);
-	processVirtQueue(&m_reqQueue, self);
+	kassert(queue == &m_reqQueue);
+	kassert(ke_spinlock_held(&m_reqQueue.spinlock));
+	kassert(splget() == kIPLDPC);
+
 	while (true) {
 		iop_t *iop;
 		iop_frame_t *frame;
@@ -200,7 +205,7 @@ static int counter = 0;
 		if (!iop)
 			break;
 
-		TAILQ_REMOVE(&pending_packets, iop, dev_queue_entry);
+		TAILQ_REMOVE(&pending_packets, iop, dev_qlink);
 
 		frame = iop_stack_current(iop);
 
@@ -215,9 +220,6 @@ static int counter = 0;
 		else
 			break;
 	}
-	ke_spinlock_release(&m_reqQueue.spinlock, ipl);
-#endif
-	kfatal("implement me\n");
 }
 
 - (void)processUsedDescriptor:(volatile struct vring_used_elem *)e
@@ -275,11 +277,30 @@ static int counter = 0;
 	kassert(frame->function == kIOPType9p);
 	ipl = ke_spinlock_acquire(&m_reqQueue.spinlock);
 	TAILQ_INSERT_TAIL(&pending_packets, iop, dev_qlink);
+	[self additionalDeferredProcessingForQueue:&m_reqQueue];
 	ke_spinlock_release(&m_reqQueue.spinlock, ipl);
-	//[m_transport enqueueDPC];
+
 
 	return kIOPRetPending;
 }
 
 
 @end
+
+static size_t
+iop_stack_depth(vnode_t *vp)
+{
+	return 1;
+}
+
+static iop_return_t
+iop_dispatch(vnode_t *vp, iop_t *iop)
+{
+	VirtIO9pPort *port = (VirtIO9pPort *)vp->fs_data;
+	return [port dispatchIOP:iop];
+}
+
+static struct vnode_ops ninep_vops = {
+	.iop_stack_depth = iop_stack_depth,
+	.iop_dispatch = iop_dispatch,
+};

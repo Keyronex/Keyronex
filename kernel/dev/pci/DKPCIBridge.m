@@ -17,7 +17,7 @@
 
 - (DKPCIBridge *)parentBridge
 {
-	kfatal("Implement me\n");
+	kfatal("Subclass responsibility\n");
 }
 
 - (instancetype)initWithSegment:(uint16_t)segment
@@ -74,6 +74,11 @@
 @implementation DKPCI2PCIBridge
 
 @synthesize pciDevice = m_pciDevice;
+
+- (DKPCIBridge *)parentBridge
+{
+	return m_pciDevice.bridge;
+}
 
 - (instancetype)initWithPCIDevice:(DKPCIDevice *)pciDevice
 			      bus:(uint8_t)bus
