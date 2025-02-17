@@ -87,7 +87,7 @@ struct __attribute__((packed)) xhci_host_op_regs {
 #define XHCI_IMAN_IE (1 << 1)
 
 /* 5.5.2 Interrupter Register Set */
-struct __attribute__((packed)) xhci_interrupt_regs {
+struct __attribute__((packed, aligned(8))) xhci_interrupt_regs {
 	leu32_t IMAN;
 	leu32_t IMOD;
 	leu32_t ERSTSZ;

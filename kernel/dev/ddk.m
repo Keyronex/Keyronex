@@ -12,6 +12,8 @@
 #include "vm/vmp.h"
 
 extern struct limine_rsdp_request rsdp_request;
+extern struct limine_dtb_request dtb_request;
+Class gPlatformSpecificRootClass;
 DKDevice *gPlatformDevice;
 
 int
@@ -48,11 +50,17 @@ ddk_init(void)
 	     func++)
 		(*func)();
 
+#if !defined(__m68k__)
 	if (rsdp_request.response != NULL) {
 		kprintf("ddk_init: probing ACPI platform\n");
 		gPlatformDevice = [[DKACPIPlatform alloc] init];
-	} else {
-		kfatal("ddk_init: no platform class usable\n");
+	} else
+#endif
+	if (dtb_request.response != NULL) {
+		kfatal("ddk_init: no support for openfirmware yet\n");
+	} else if (gPlatformSpecificRootClass != Nil) {
+		kprintf("ddk_init: probing platform-specific root\n");
+		gPlatformDevice = [[gPlatformSpecificRootClass alloc] init];
 	}
 }
 

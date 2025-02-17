@@ -66,6 +66,9 @@ volatile struct limine_module_request module_request __attribute__((
 volatile struct limine_rsdp_request rsdp_request
     __attribute__((aligned(8))) = { .id = LIMINE_RSDP_REQUEST, .revision = 0 };
 
+volatile struct limine_dtb_request dtb_request
+__attribute__((aligned(8))) = { .id = LIMINE_DTB_REQUEST, .revision = 0 };
+
 static volatile struct limine_smp_request smp_request
     __attribute__((aligned(8))) = { .id = LIMINE_SMP_REQUEST, .revision = 0 };
 

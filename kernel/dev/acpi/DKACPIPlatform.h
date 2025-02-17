@@ -12,7 +12,6 @@
 
 #include <ddk/DKDevice.h>
 #include <ddk/DKPlatformRoot.h>
-#include <uacpi/uacpi.h>
 
 #include "dev/acpi/DKACPINode.h"
 
