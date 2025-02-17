@@ -24,9 +24,6 @@
 #include "dev/virtio/VirtIO9pPort.h"
 #include "vm/vmp.h"
 
-static bool intx_handler(md_intr_frame_t *, void *);
-static void dpc_handler(void *);
-
 @interface VirtIOPCITransport : DKVirtIOTransport <DKPCIDeviceMatching> {
     @public
 	DKPCIDevice *m_pciDevice;
@@ -45,6 +42,9 @@ static void dpc_handler(void *);
 }
 
 @end
+
+static bool intx_handler(md_intr_frame_t *, void *);
+static void dpc_handler(void *);
 
 @implementation VirtIOPCITransport
 

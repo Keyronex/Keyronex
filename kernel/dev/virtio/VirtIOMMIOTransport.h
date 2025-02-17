@@ -1,18 +1,20 @@
 #ifndef KRX_DEV_DKVirtIOMMIOTransport_H
 #define KRX_DEV_DKVirtIOMMIOTransport_H
 
-#include "ddk/DKVirtIOTransport.h"
+#include <ddk/DKVirtIOTransport.h>
 
-@interface DKVirtIOMMIOTransport : DKDevice <DKVirtIOTransport> {
+@interface DKVirtIOMMIOTransport : DKVirtIOTransport {
     @public
 	volatile void *m_mmio;
 	int m_interrupt;
 	kdpc_t m_dpc;
-	DKDevice<DKVirtIODelegate> *m_delegate;
+	DKDevice<DKVirtIODevice> *m_delegate;
+
+	virtio_queue_t **m_queues;
+	size_t m_queues_size;
 }
 
-+ (BOOL)probeWithProvider:(DKDevice *)provider
-		     mmio:(volatile void *)mmio
++ (instancetype)probeWithMMIO:(volatile void *)mmio
 		interrupt:(int)interrupt;
 
 @end

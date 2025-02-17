@@ -1,12 +1,13 @@
+#include <ddk/DKInterrupt.h>
+#include <ddk/DKPlatformRoot.h>
+
 #include "bootinfo.h"
 #include "ddk/DKDevice.h"
 #include "ddk/virtio_mmio.h"
-#include <ddk/DKInterrupt.h>
-#include <ddk/DKPlatformRoot.h>
-//#include "dev/virtio/DKVirtIOMMIOTransport.h"
+#include "dev/virtio/VirtIOMMIOTransport.h"
 #include "kdk/endian.h"
-#include "kdk/kmem.h"
 #include "kdk/kern.h"
+#include "kdk/kmem.h"
 #include "kdk/object.h"
 
 extern Class gPlatformSpecificRootClass;
@@ -42,17 +43,14 @@ extern Class gPlatformSpecificRootClass;
 	return self;
 }
 
-- (void)secondStageInit
+- (void)start
 {
 	volatile uint8_t *virtio_base = (void *)0xff010000;
 
-#if 0
 	for (int i = 0; i < 128; i++) {
-		[DKVirtIOMMIOTransport probeWithProvider:self
-						    mmio:virtio_base + 0x200 * i
-					       interrupt:32 + i];
+		[DKVirtIOMMIOTransport probeWithMMIO:virtio_base + 0x200 * i
+					   interrupt:32 + i];
 	}
-#endif
 }
 
 - (DKPlatformInterruptController *)platformInterruptController
