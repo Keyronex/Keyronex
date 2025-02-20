@@ -139,8 +139,19 @@ printDeviceSubtree(DKDevice *dev, DKAxis *axis, char *prefix,
 
 @end
 
+void abort(void)
+{
+	kfatal("abort() called");
+}
+
 void *
 malloc(size_t size)
 {
 	return kmem_malloc(size);
+}
+
+void
+free(void *ptr)
+{
+	return kmem_mfree(ptr);
 }

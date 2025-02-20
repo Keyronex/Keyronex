@@ -1,6 +1,5 @@
 #include <stddef.h>
 
-#include "ObjFWRT.h"
 #include "ddk/DKDevice.h"
 #include "ddk/DKFramebuffer.h"
 #include "ddk/DKUtilities.h"
@@ -105,13 +104,11 @@ flush_timer_dpc_handler(void *arg)
 
 	memset(resp, 0x12, sizeof(*resp));
 
-	kprintf("SUbmit command\n");
 	[self submitCommand:hdr
 		     ofSize:sizeof(*hdr)
 	       withResponse:resp
 		     ofSize:sizeof(*resp)
 		    request:NULL];
-	kprintf("It returned!\n");
 
 	kassert(from_leu32(resp->hdr.type) == VIRTIO_GPU_RESP_OK_DISPLAY_INFO);
 	for (int i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; i++) {

@@ -7,5 +7,4 @@ keyronex = executable('keyronex',
 	link_args: [ '-nostdlib', '-static', '-lgcc',
 		'-Wl,-T' + meson.current_source_dir() + '/linker.ld'
 	],
-	dependencies: [ kobjcrt_dep ]
 )

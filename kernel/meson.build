@@ -85,6 +85,7 @@ if not headers_only
 		'../vendor/include',
 		'../vendor/include-private',
 		'../vendor/limine',
+		'../vendor',
 		'include',
 		'.'
 	)]
@@ -107,11 +108,36 @@ if not headers_only
 	uacpi_includes = uacpi.get_variable('includes')
 
 	subdir('lwip')
-	subdir('objfwrt')
+
+	objfwrt_sources = files(
+		'../vendor/objfwrt/lookup-asm/lookup-asm.S',
+		'../vendor/objfwrt/arc.m',
+		'../vendor/objfwrt/association.m',
+		'../vendor/objfwrt/autorelease.m',
+		'../vendor/objfwrt/category.m',
+		'../vendor/objfwrt/class.m',
+		'../vendor/objfwrt/dtable.m',
+		'../vendor/objfwrt/exception.m',
+		'../vendor/objfwrt/hashtable.m',
+		'../vendor/objfwrt/init.m',
+		'../vendor/objfwrt/instance.m',
+		'../vendor/objfwrt/ivar.m',
+		'../vendor/objfwrt/lookup.m',
+		'../vendor/objfwrt/method.m',
+		'../vendor/objfwrt/misc.m',
+		'../vendor/objfwrt/property.m',
+		'../vendor/objfwrt/protocol.m',
+		'../vendor/objfwrt/selector.m',
+		'../vendor/objfwrt/sparsearray.m',
+		'../vendor/objfwrt/static-instances.m',
+		'../vendor/objfwrt/synchronized.m',
+		'../vendor/objfwrt/tagged-pointer.m',
+		'../vendor/objfwrt/threading.m',
+	)
 
 	kernel_sources = [ files('libkern/libkern.c', 'libkern/murmurhash.c',
 		'libkern/OSArray.m', 'libkern/OSDictionary.m', 'libkern/OSMapTable.m',
-		'libkern/OSNumber.m', 'libkern/OSObject.m', 'libkern/OSString.m') ]
+		'libkern/OSNumber.m', 'libkern/OSObject.m', 'libkern/OSString.m'), objfwrt_sources ]
 
 	subdir('dev')
 	subdir('executive')

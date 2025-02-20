@@ -8,5 +8,4 @@ keyronex = executable('keyronex',
 		meson.source_root() / '../vendor/libgcc_rv64.a',
 		'-Wl,-T' + meson.current_source_dir() + '/linker.ld'
 	],
-	dependencies: [ kobjcrt_dep ]
 )

@@ -1,22 +1,25 @@
 /*
- * Copyright (c) 2008-2023 Jonathan Schleifer <js@nil.im>
+ * Copyright (c) 2008-2024 Jonathan Schleifer <js@nil.im>
  *
  * All rights reserved.
  *
- * This file is part of ObjFW. It may be distributed under the terms of the
- * Q Public License 1.0, which can be found in the file LICENSE.QPL included in
- * the packaging of this file.
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License version 3.0 only,
+ * as published by the Free Software Foundation.
  *
- * Alternatively, it may be distributed under the terms of the GNU General
- * Public License, either version 2 or 3, which can be found in the file
- * LICENSE.GPLv2 or LICENSE.GPLv3 respectively included in the packaging of this
- * file.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+ * version 3.0 for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3.0 along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
  */
 
-#include "config.h"
+#include <kdk/kmem.h>
 
-#include <stdio.h>
-#include <stdlib.h>
+#include "config.h"
 
 #import "ObjFWRT.h"
 #import "private.h"
@@ -29,7 +32,7 @@ static struct objc_dtable_level3 *emptyLevel3 = NULL;
 static void
 init(void)
 {
-	if ((emptyLevel2 = malloc(sizeof(*emptyLevel2))) == NULL)
+	if ((emptyLevel2 = kmem_alloc(sizeof(*emptyLevel2))) == NULL)
 		OBJC_ERROR("Not enough memory to allocate dispatch table!");
 
 #ifdef OF_SELUID24
@@ -61,7 +64,7 @@ objc_dtable_new(void)
 		init();
 #endif
 
-	if ((dTable = malloc(sizeof(*dTable))) == NULL)
+	if ((dTable = kmem_alloc(sizeof(*dTable))) == NULL)
 		OBJC_ERROR("Not enough memory to allocate dispatch table!");
 
 	for (uint_fast16_t i = 0; i < 256; i++)
@@ -125,7 +128,7 @@ objc_dtable_set(struct objc_dtable *dTable, uint32_t idx, IMP implementation)
 #endif
 
 	if (dTable->buckets[i] == emptyLevel2) {
-		struct objc_dtable_level2 *level2 = malloc(sizeof(*level2));
+		struct objc_dtable_level2 *level2 = kmem_alloc(sizeof(*level2));
 
 		if (level2 == NULL)
 			OBJC_ERROR("Not enough memory to insert into "
@@ -174,17 +177,17 @@ objc_dtable_free(struct objc_dtable *dTable)
 				free(dTable->buckets[i]->buckets[j]);
 #endif
 
-		free(dTable->buckets[i]);
+		kmem_free(dTable->buckets[i], sizeof(*dTable->buckets[i]));
 	}
 
-	free(dTable);
+	kmem_free(dTable, sizeof(*dTable));
 }
 
 void
 objc_dtable_cleanup(void)
 {
 	if (emptyLevel2 != NULL)
-		free(emptyLevel2);
+		kmem_free(emptyLevel2, sizeof(*emptyLevel2));
 #ifdef OF_SELUID24
 	if (emptyLevel3 != NULL)
 		free(emptyLevel3);

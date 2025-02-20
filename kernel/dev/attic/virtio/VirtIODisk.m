@@ -1,6 +1,5 @@
 #include <stdint.h>
 
-#include "ObjFWRT.h"
 #include "VirtIODisk.h"
 #include "ddk/virtio_blk.h"
 #include "ddk/virtioreg.h"

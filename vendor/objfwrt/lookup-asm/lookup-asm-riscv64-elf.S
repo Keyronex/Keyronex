@@ -19,11 +19,7 @@
 
 #include "config.h"
 
-#ifdef HAVE_CET_H
-# include <cet.h>
-#else
-# define _CET_ENDBR
-#endif
+#include "platform.h"
 
 .globl objc_msg_lookup
 .globl objc_msg_lookup_stret
@@ -33,74 +29,70 @@
 .section .text
 .macro GENERATE_LOOKUP name notFound
 \name:
-	_CET_ENDBR
+	beqz	a0, .LreturnNilMethod
 
-	testq	%rcx, %rcx
-	jz	.LreturnNilMethod
+	andi	t0, a0, 1
+	bnez	t0, .LtaggedPointer_\name
 
-	testb	$1, %cl
-	jnz	.LtaggedPointer_\name
-
-	movq	(%rcx), %r8
-	movq	56(%r8), %r8
+	ld	t0, (a0)
+	ld	t0, 64(t0)
 
 .Lmain_\name:
-	movq	%rcx, %r10
-	movq	%rdx, %r11
-
-	movq	(%rdx), %rax
-	movzbl	%ah, %ecx
-	movzbl	%al, %edx
 #ifdef OF_SELUID24
-	shrl	$16, %eax
-
-	movq	(%r8,%rax,8), %r8
+	lbu	t1, 2(a1)
+	slli	t1, t1, 3
 #endif
-	movq	(%r8,%rcx,8), %r8
-	movq	(%r8,%rdx,8), %rax
+	lbu	t2, 1(a1)
+	slli	t2, t2, 3
+	lbu	t3, (a1)
+	slli	t3, t3, 3
 
-	testq	%rax, %rax
-	jz	0f
+#ifdef OF_SELUID24
+	add	t0, t0, t1
+	ld	t0, (t0)
+#endif
+	add	t0, t0, t2
+	ld	t0, (t0)
+	add	t0, t0, t3
+	ld	t0, (t0)
 
+	beqz	t0, 0f
+
+	mv	a0, t0
 	ret
 
 0:
-	movq	%r10, %rcx
-	movq	%r11, %rdx
-	jmp	\notFound
+	tail	\notFound@plt
 
 .LtaggedPointer_\name:
-	xorq	objc_taggedPointerSecret(%rip), %rcx
-	andb	$0xE, %cl
-	movzbl	%cl, %r8d
+	la	t1, objc_taggedPointerSecret
+	ld	t1, (t1)
+	xor	t1, a0, t1
+	andi	t1, t1, 0xE
+	slli	t1, t1, 2
 
-	leaq	objc_taggedPointerClasses(%rip), %rax
-	movq	(%rax,%r8,4), %r8
-	movq	56(%r8), %r8
+	la	t0, objc_taggedPointerClasses
+	add	t0, t0, t1
+	ld	t0, (t0)
+	ld	t0, 64(t0)
 
-	jmp	.Lmain_\name
-.def \name
-.scl 2
-.type 32
-.endef
+	j	.Lmain_\name
+.type \name, @function
+.size \name, .-\name
 .endm
 
 .macro GENERATE_LOOKUP_SUPER name lookup
 \name:
-	_CET_ENDBR
+	mv	t0, a0
+	ld	a0, (a0)
+	beqz	a0, .LreturnNilMethod
 
-	movq	%rcx, %r8
-	movq	(%rcx), %rcx
-	testq	%rcx, %rcx
-	jz	.LreturnNilMethod
+	ld	t0, 8(t0)
+	ld	t0, 64(t0)
 
-	movq	8(%r8), %r8
-	movq	56(%r8), %r8
-	jmp	.Lmain_\lookup
-.def \name
-.scl 2
-.type 32
-.endef
+	j	.Lmain_\lookup
+.type \name, @function
+.size \name, .-\name
 .endm
 
 GENERATE_LOOKUP objc_msg_lookup objc_methodNotFound
@@ -109,11 +101,13 @@ GENERATE_LOOKUP_SUPER objc_msg_lookup_super objc_msg_lookup
 GENERATE_LOOKUP_SUPER objc_msg_lookup_super_stret objc_msg_lookup_stret
 
 .LreturnNilMethod:
-	leaq	.LnilMethod(%rip), %rax
+	lla	a0, .LnilMethod
 	ret
 
 .LnilMethod:
-	_CET_ENDBR
-
-	xorq	%rax, %rax
+	li	a0, 0
 	ret
+
+#if defined(OF_LINUX) || defined(OF_HAIKU) || defined(OF_HURD)
+.section .note.GNU-stack, "", @progbits
+#endif
