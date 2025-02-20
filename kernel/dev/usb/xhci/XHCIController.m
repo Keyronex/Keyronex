@@ -214,7 +214,7 @@ endpoint_index(uint8_t endpoint, dk_endpoint_direction_t dir)
 {
 	if ((self = [super init])) {
 		m_pciDevice = pciDevice;
-		m_name = strdup("xHCIController");
+		m_name = "xhci-controller";
 	}
 
 	return self;
@@ -1454,7 +1454,7 @@ synch_callback(DKUSBController *controller, struct req *cmd, void *context)
 
 		m_controller = controller;
 		m_protocol = protocol;
-		kmem_asprintf(&m_name, "xHCIRootHubUSB%u.%u", protocol->major,
+		kmem_asprintf(&m_name, "xhci-root-hub-usb%u.%u", protocol->major,
 		    protocol->minor);
 
 		[M_CONTROLLER addChildHub:self];

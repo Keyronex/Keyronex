@@ -25,7 +25,7 @@
 		       promNode:(DKDevice<DKPROMNode> *)promNode
 {
 	if ((self = [super init])) {
-		kmem_asprintf(&m_name, "pciBridge%u:%u", segment, bus);
+		kmem_asprintf(&m_name, "pci-bridge-%u:%u", segment, bus);
 		m_segment = segment;
 		m_bus = bus;
 		m_promNode = promNode;

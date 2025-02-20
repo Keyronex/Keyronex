@@ -87,7 +87,7 @@
 		m_port = port;
 		m_speed = speed;
 
-		kmem_asprintf(&m_name, "usbDevice%d", port);
+		kmem_asprintf(&m_name, "usb-dev-%d", port);
 	}
 
 	return self;

@@ -107,8 +107,6 @@ if not headers_only
 	uacpi_sources = uacpi.get_variable('sources')
 	uacpi_includes = uacpi.get_variable('includes')
 
-	subdir('lwip')
-
 	objfwrt_sources = files(
 		'../vendor/objfwrt/lookup-asm/lookup-asm.S',
 		'../vendor/objfwrt/arc.m',
@@ -135,9 +133,11 @@ if not headers_only
 		'../vendor/objfwrt/threading.m',
 	)
 
-	kernel_sources = [ files('libkern/libkern.c', 'libkern/murmurhash.c',
-		'libkern/OSArray.m', 'libkern/OSDictionary.m', 'libkern/OSMapTable.m',
-		'libkern/OSNumber.m', 'libkern/OSObject.m', 'libkern/OSString.m'), objfwrt_sources ]
+	kernel_sources = [
+		files('libkern/libkern.c', 'libkern/murmurhash.c', 'libkern/OSArray.m',
+		'libkern/OSDictionary.m', 'libkern/OSMapTable.m', 'libkern/OSNumber.m',
+		'libkern/OSObject.m', 'libkern/OSString.m'), objfwrt_sources
+	]
 
 	subdir('dev')
 	subdir('executive')
@@ -147,7 +147,6 @@ if not headers_only
 	subdir('vm')
 	subdir('net')
 	subdir('kern')
-	subdir('ntcompat')
 
 	if (arch == 'amd64')
 		subdir('platform/amd64')

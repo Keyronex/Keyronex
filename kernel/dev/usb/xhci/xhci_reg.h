@@ -69,7 +69,7 @@ struct __attribute__((packed)) xhci_port_regs {
 #define XHCI_STS_CNR (1 << 11)
 
 /* 5.4 Host Controller Operational Registers */
-struct __attribute__((packed)) xhci_host_op_regs {
+struct __attribute__((packed, aligned(4))) xhci_host_op_regs {
 	leu32_t USBCMD;
 	leu32_t USBSTS;
 	leu32_t PAGESIZE;
@@ -87,7 +87,7 @@ struct __attribute__((packed)) xhci_host_op_regs {
 #define XHCI_IMAN_IE (1 << 1)
 
 /* 5.5.2 Interrupter Register Set */
-struct __attribute__((packed, aligned(8))) xhci_interrupt_regs {
+struct __attribute__((packed, aligned(4))) xhci_interrupt_regs {
 	leu32_t IMAN;
 	leu32_t IMOD;
 	leu32_t ERSTSZ;
@@ -98,7 +98,7 @@ struct __attribute__((packed, aligned(8))) xhci_interrupt_regs {
 };
 
 /* 5.5 Host Controller Runtime Registers */
-struct __attribute__((packed)) xhci_host_rt_regs {
+struct __attribute__((packed, aligned(4))) xhci_host_rt_regs {
 	leu32_t MFINDEX;
 	uint8_t reserved[28];
 	struct xhci_interrupt_regs IR[0];

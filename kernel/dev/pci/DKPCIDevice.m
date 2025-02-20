@@ -44,7 +44,7 @@ static kmutex_t match_list_lock = KMUTEX_INITIALIZER(match_list_lock);
 		       address:(DKPCIAddress *)address
 {
 	if ((self = [super init])) {
-		kmem_asprintf(&m_name, "pciDev%u:%u", address->slot,
+		kmem_asprintf(&m_name, "pci-dev-%u:%u", address->slot,
 		    address->function);
 		m_address = *address;
 		m_bridge = bridge;

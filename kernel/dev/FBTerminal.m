@@ -120,7 +120,7 @@ fbterminal_printstats()
 
 	self = [super init];
 
-	kmem_asprintf(&m_name, "fbTerminal%d", counter++);
+	kmem_asprintf(&m_name, "fb-terminal-%d", counter++);
 
 	address = (void *)P2V(framebuffer.info.address);
 	term = fbterm_init(term_alloc, address, framebuffer.info.width,

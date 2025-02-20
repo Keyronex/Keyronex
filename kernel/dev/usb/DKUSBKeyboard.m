@@ -28,7 +28,7 @@ static void kbCallback(DKUSBController *controller, dk_usb_transfer_t,
 
 		m_usbDevice = device;
 		m_interfaceDescriptor = interfaceDescriptor;
-		m_name = strdup("usbKeyboard");
+		m_name = strdup("usb-keyboard");
 
 		ep = NULL;
 		while ((ep = [device nextDescriptorByType:USB_DESC_TYPE_ENDPOINT
