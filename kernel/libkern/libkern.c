@@ -7,6 +7,18 @@
 #include "kdk/libkern.h"
 #include "kdk/kmem.h"
 
+#undef memcmp
+#undef memcpy
+#undef memmove
+#undef memset
+#undef strcmp
+#undef strncmp
+#undef strcpy
+#undef strncpy
+#undef strlen
+#undef strchr
+#undef strrchr
+
 /* ctype.h */
 int
 isalpha(int c)

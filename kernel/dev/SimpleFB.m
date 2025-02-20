@@ -1,57 +1,41 @@
+/*
+ * Copyright (c) 2023-2025 NetaScale Object Solutions.
+ * Created on Thu Sep 14 2025.
+ */
 
-#include "dev/FBTerminal.h"
-#include "dev/SimpleFB.h"
-#include "kdk/kmem.h"
-#include "kdk/object.h"
+#include <dev/FBTerminal.h>
+#include <dev/SimpleFB.h>
+
+#include <ddk/DKAxis.h>
+#include <kdk/kmem.h>
 
 static int counter = 0;
 
-@interface SimpleFB (Private)
-- (instancetype)initWithProvider:(DKDevice *)provider
-			 address:(paddr_t)addr
-			   width:(int)width
-			  height:(int)height
-			   pitch:(int)pitch;
-@end
-
 @implementation SimpleFB
 
-+ (BOOL)probeWithProvider:(DKDevice *)provider
-		  address:(paddr_t)addr
-		    width:(int)width
-		   height:(int)height
-		    pitch:(int)pitch
-{
-	[[self alloc] initWithProvider:provider
-			       address:addr
-				 width:width
-				height:height
-				 pitch:pitch];
-	return YES;
-}
 
-- (instancetype)initWithProvider:(DKDevice *)provider
-			 address:(paddr_t)addr
+- (instancetype)initWithAddress:(paddr_t)addr
 			   width:(int)width
 			  height:(int)height
 			   pitch:(int)pitch
 {
-	self = [super initWithProvider:provider];
+	self = [super init];
 
-	kmem_asprintf(obj_name_ptr(self), "simplefb-%d", counter++);
+	kmem_asprintf(&m_name, "simplefb-%d", counter++);
 
 	m_info.address = addr;
 	m_info.height = height;
 	m_info.width = width;
 	m_info.pitch = pitch;
 
-	[self registerDevice];
-	DKLogAttach(self);
-
-
-	[FBTerminal probeWithFramebuffer:self];
-
 	return self;
+}
+
+- (void)start
+{
+	FBTerminal *terminal = [[FBTerminal alloc] initWithFramebuffer:self];
+	[self attachChild:terminal onAxis:gDeviceAxis];
+	[terminal start];
 }
 
 @end

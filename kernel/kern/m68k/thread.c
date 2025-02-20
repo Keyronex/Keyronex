@@ -112,3 +112,9 @@ ki_trap_recover(md_intr_frame_t *frame)
 {
 	kfatal("Implement me!\n");
 }
+
+void
+md_current_trace(void)
+{
+	for(;;) ;
+}

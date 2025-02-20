@@ -1,9 +1,17 @@
+/*
+ * Copyright (c) 2025 NetaScale Object Solutions.
+ * Created on Sat Sep 16 2023.
+ */
+
+#include <ddk/DKInterrupt.h>
+#include <kdk/executive.h>
+#include <kdk/kmem.h>
+#include <kdk/object.h>
+#include <kdk/vm.h>
+#include <uacpi/acpi.h>
 
 #include "IOAPIC.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "kdk/executive.h"
-#include "kdk/kmem.h"
-#include "kdk/object.h"
+#include "dev/acpi/DKACPIPlatform.h"
 
 enum {
 	kDeliveryModeFixed = 0x0,
@@ -67,21 +75,23 @@ ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol, bool edge)
 
 static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 
+@implementation DKPlatformInterruptController
+
+@end
+
 @implementation IOApic
 
-- initWithProvider:(DKDevice *)provider
-		id:(uint32_t)id
-	   address:(paddr_t)paddr
-	   gsiBase:(uint32_t)gsiBase
+- initWithId:(uint32_t)id address:(paddr_t)paddr gsiBase:(uint32_t)gsiBase
 {
 	int r;
 
-	self = [super initWithProvider:provider];
+	self = [super init];
 
 	r = vm_ps_map_physical_view(kernel_process->vm, &_vaddr, PGSIZE, paddr,
 	    kVMAll, kVMAll, false);
 	kassert(r == 0);
 
+	m_name = "ioapic";
 	_id = id;
 	_gsi_base = gsiBase;
 	_n_redirs = ((ioapic_read(_vaddr, kRegisterVersion) >> 16) & 0xff) + 1;
@@ -94,8 +104,6 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 	TAILQ_INSERT_TAIL(&ioapics, self, _ioapics_entries);
 
 	kmem_asprintf(obj_name_ptr(self), "ioapic-%d", id);
-	[self registerDevice];
-	DKLogAttach(self);
 
 	return self;
 }
@@ -139,11 +147,9 @@ static TAILQ_TYPE_HEAD(, IOApic) ioapics = TAILQ_HEAD_INITIALIZER(ioapics);
 	}
 
 	if (!found) {
-		DKLog("IOApic", "no I/O APIC found for GSI %d\n", gsi);
+		kprintf("no I/O APIC found for GSI %d\n", gsi);
 		return -1;
 	}
 
 	return 0;
 }
-
-@end

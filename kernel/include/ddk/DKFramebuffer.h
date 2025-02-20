@@ -1,8 +1,8 @@
 #ifndef KRX_DDK_DKFRAMEBUFFER_H
 #define KRX_DDK_DKFRAMEBUFFER_H
 
-#include "ddk/DKDevice.h"
-#include "kdk/vm.h"
+#include <ddk/DKDevice.h>
+#include <kdk/vm.h>
 
 struct dk_framebuffer_info {
 	/*! framebuffer address */

@@ -302,9 +302,12 @@ map_hhdm(void)
 			type = "unknown";
 		}
 
+/* uncomment to trace the memory map */
+#if 0
 		kprintf("Entry %zu: 0x%zx-0x%zx, type %s\n", i,
 		    (uintptr_t)entry->base,
 		    (uintptr_t)(entry->base + entry->length), type);
+#endif
 
 		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
 		    entry->type != LIMINE_MEMMAP_USABLE)

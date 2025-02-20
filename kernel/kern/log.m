@@ -12,9 +12,11 @@ struct kmsgbuf {
 void
 ki_replay_msgbuf(void)
 {
+#if 0
 	for (size_t i = kmsgbuf.read; i != kmsgbuf.write; i++) {
 		fbterminal_putc(system_terminal, kmsgbuf.buf[i % sizeof(kmsgbuf.buf)]);
 	}
+#endif
 }
 
 void kputc(int ch, void *unused)

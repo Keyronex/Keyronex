@@ -1,22 +1,25 @@
 /*
- * Copyright (c) 2008-2023 Jonathan Schleifer <js@nil.im>
+ * Copyright (c) 2008-2024 Jonathan Schleifer <js@nil.im>
  *
  * All rights reserved.
  *
- * This file is part of ObjFW. It may be distributed under the terms of the
- * Q Public License 1.0, which can be found in the file LICENSE.QPL included in
- * the packaging of this file.
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License version 3.0 only,
+ * as published by the Free Software Foundation.
  *
- * Alternatively, it may be distributed under the terms of the GNU General
- * Public License, either version 2 or 3, which can be found in the file
- * LICENSE.GPLv2 or LICENSE.GPLv3 respectively included in the packaging of this
- * file.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License
+ * version 3.0 for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * version 3.0 along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
  */
 
 #include "config.h"
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <kdk/kmem.h>
 
 #import "ObjFWRT.h"
 #import "private.h"
@@ -26,8 +29,8 @@ objc_sparsearray_new(uint8_t levels)
 {
 	struct objc_sparsearray *sparsearray;
 
-	if ((sparsearray = calloc(1, sizeof(*sparsearray))) == NULL ||
-	    (sparsearray->data = calloc(1, sizeof(*sparsearray->data))) == NULL)
+	if ((sparsearray = kmem_zalloc(sizeof(*sparsearray))) == NULL ||
+	    (sparsearray->data = kmem_zalloc(sizeof(*sparsearray->data))) == NULL)
 		OBJC_ERROR("Failed to allocate memory for sparse array!");
 
 	sparsearray->levels = levels;
@@ -62,8 +65,8 @@ objc_sparsearray_set(struct objc_sparsearray *sparsearray, uintptr_t idx,
 		    (idx >> ((sparsearray->levels - i - 1) * 8)) & 0xFF;
 
 		if (iter->next[j] == NULL)
-			if ((iter->next[j] = calloc(1,
-			    sizeof(struct objc_sparsearray_data))) == NULL)
+			if ((iter->next[j] =
+			    kmem_zalloc(sizeof(struct objc_sparsearray_data))) == NULL)
 				OBJC_ERROR("Failed to allocate memory for "
 				    "sparse array!");
 
@@ -82,12 +85,12 @@ freeSparsearrayData(struct objc_sparsearray_data *data, uint8_t depth)
 	for (uint_fast16_t i = 0; i < 256; i++)
 		freeSparsearrayData(data->next[i], depth - 1);
 
-	free(data);
+	kmem_free(data, sizeof(*data));
 }
 
 void
 objc_sparsearray_free(struct objc_sparsearray *sparsearray)
 {
 	freeSparsearrayData(sparsearray->data, sparsearray->levels);
-	free(sparsearray);
+	kmem_free(sparsearray, sizeof(*sparsearray));
 }

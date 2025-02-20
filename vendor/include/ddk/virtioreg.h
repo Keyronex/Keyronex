@@ -62,142 +62,144 @@
  */
 
 
-#ifndef KRX_DEV_VIRTIOREG_H
-#define KRX_DEV_VIRTIOREG_H
+ #ifndef KRX_DEV_VIRTIOREG_H
+ #define KRX_DEV_VIRTIOREG_H
 
-#include <stdint.h>
+ #include <stdint.h>
 
-#define __packed __attribute__((packed))
-#define __BIT(__n)	(1ULL << (__n))
+ #include <ddk/lintypes.h>
 
-/* Virtio product id (all subsystems) */
-#define VIRTIO_DEVICE_ID_NETWORK	 1
-#define VIRTIO_DEVICE_ID_BLOCK		 2
-#define VIRTIO_DEVICE_ID_CONSOLE	 3
-#define VIRTIO_DEVICE_ID_ENTROPY	 4
-#define VIRTIO_DEVICE_ID_BALLOON	 5
-#define VIRTIO_DEVICE_ID_IOMEM		 6
-#define VIRTIO_DEVICE_ID_RPMSG		 7
-#define VIRTIO_DEVICE_ID_SCSI		 8
-#define VIRTIO_DEVICE_ID_9P		 9
-#define VIRTIO_DEVICE_ID_GPU		16
+ #define __packed __attribute__((packed))
+ #define __BIT(__n)	(1ULL << (__n))
 
-/* common device/guest features */
-#define  VIRTIO_F_NOTIFY_ON_EMPTY		__BIT(24)
-#define  VIRTIO_F_RING_INDIRECT_DESC		__BIT(28)
-#define  VIRTIO_F_RING_EVENT_IDX		__BIT(29)
-#define  VIRTIO_F_BAD_FEATURE			__BIT(30)
-#define  VIRTIO_F_VERSION_1			__BIT(32)
+ /* Virtio product id (all subsystems) */
+ #define VIRTIO_DEVICE_ID_NETWORK	 1
+ #define VIRTIO_DEVICE_ID_BLOCK		 2
+ #define VIRTIO_DEVICE_ID_CONSOLE	 3
+ #define VIRTIO_DEVICE_ID_ENTROPY	 4
+ #define VIRTIO_DEVICE_ID_BALLOON	 5
+ #define VIRTIO_DEVICE_ID_IOMEM		 6
+ #define VIRTIO_DEVICE_ID_RPMSG		 7
+ #define VIRTIO_DEVICE_ID_SCSI		 8
+ #define VIRTIO_DEVICE_ID_9P		 9
+ #define VIRTIO_DEVICE_ID_GPU		16
 
-/* common device status flags */
-#define  VIRTIO_CONFIG_DEVICE_STATUS_RESET		  0
-#define  VIRTIO_CONFIG_DEVICE_STATUS_ACK		  1
-#define  VIRTIO_CONFIG_DEVICE_STATUS_DRIVER		  2
-#define  VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK		  4
-#define  VIRTIO_CONFIG_DEVICE_STATUS_FEATURES_OK	  8
-#define  VIRTIO_CONFIG_DEVICE_STATUS_DEVICE_NEEDS_RESET	 64
-#define  VIRTIO_CONFIG_DEVICE_STATUS_FAILED		128
+ /* common device/guest features */
+ #define  VIRTIO_F_NOTIFY_ON_EMPTY		__BIT(24)
+ #define  VIRTIO_F_RING_INDIRECT_DESC		__BIT(28)
+ #define  VIRTIO_F_RING_EVENT_IDX		__BIT(29)
+ #define  VIRTIO_F_BAD_FEATURE			__BIT(30)
+ #define  VIRTIO_F_VERSION_1			__BIT(32)
 
-/* common ISR status flags */
-#define  VIRTIO_CONFIG_ISR_QUEUE_INTERRUPT	1
-#define  VIRTIO_CONFIG_ISR_CONFIG_CHANGE	2
+ /* common device status flags */
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_RESET		  0
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_ACK		  1
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_DRIVER		  2
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK		  4
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_FEATURES_OK	  8
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_DEVICE_NEEDS_RESET	 64
+ #define  VIRTIO_CONFIG_DEVICE_STATUS_FAILED		128
 
-/* common device/guest features */
-#define VIRTIO_COMMON_FLAG_BITS			\
-        "\177\020"				\
-	"b\x20" "V1\0"				\
-	"b\x1e" "BAD_FEATURE\0"			\
-	"b\x1d" "EVENT_IDX\0"			\
-	"b\x1c" "INDIRECT_DESC\0"		\
-	"b\x18" "NOTIFY_ON_EMPTY\0"
+ /* common ISR status flags */
+ #define  VIRTIO_CONFIG_ISR_QUEUE_INTERRUPT	1
+ #define  VIRTIO_CONFIG_ISR_CONFIG_CHANGE	2
 
-
-/*
- * Virtqueue
- */
-
-/* marks a buffer as continuing via the next field. */
-#define VRING_DESC_F_NEXT       1
-
-/* marks a buffer as write-only (otherwise read-only). */
-#define VRING_DESC_F_WRITE      2
-
-/* the buffer contains a list of buffer descriptors. */
-#define VRING_DESC_F_INDIRECT	4
+ /* common device/guest features */
+ #define VIRTIO_COMMON_FLAG_BITS			\
+	 "\177\020"				\
+	 "b\x20" "V1\0"				\
+	 "b\x1e" "BAD_FEATURE\0"			\
+	 "b\x1d" "EVENT_IDX\0"			\
+	 "b\x1c" "INDIRECT_DESC\0"		\
+	 "b\x18" "NOTIFY_ON_EMPTY\0"
 
 
-/*
- * The Host uses this in used->flags to advise the Guest: don't kick me when
- * you add a buffer.  It's unreliable, so it's simply an optimization.  Guest
- * will still kick if it's out of buffers.
- */
-#define VRING_USED_F_NO_NOTIFY  1
+ /*
+  * Virtqueue
+  */
 
-/*
- * The Guest uses this in avail->flags to advise the Host: don't interrupt me
- * when you consume a buffer.  It's unreliable, so it's simply an
- * optimization.
- */
-#define VRING_AVAIL_F_NO_INTERRUPT      1
+ /* marks a buffer as continuing via the next field. */
+ #define VRING_DESC_F_NEXT       1
 
-/* Virtio ring descriptors: 16 bytes.
- * These can chain together via "next". */
-struct vring_desc {
-        /* Address (guest-physical). */
-        uint64_t addr;
-        /* Length. */
-        uint32_t len;
-        /* The flags as indicated above. */
-        uint16_t flags;
-        /* We chain unused descriptors via this, too */
-        uint16_t next;
-} __packed;
+ /* marks a buffer as write-only (otherwise read-only). */
+ #define VRING_DESC_F_WRITE      2
 
-struct vring_avail {
-        uint16_t flags;
-        uint16_t idx;
-        uint16_t ring[0];
-	/* trailed by uint16_t used_event when VIRTIO_F_RING_EVENT_IDX */
-} __packed;
+ /* the buffer contains a list of buffer descriptors. */
+ #define VRING_DESC_F_INDIRECT	4
 
-/* u32 is used here for ids for padding reasons. */
-struct vring_used_elem {
-        /* Index of start of used descriptor chain. */
-        uint32_t id;
-        /* Total length of the descriptor chain which was written to. */
-        uint32_t len;
-} __packed;
 
-struct vring_used {
-        uint16_t flags;
-        uint16_t idx;
-        struct vring_used_elem ring[0];
-	/* trailed by uint16_t avail_event when VIRTIO_F_RING_EVENT_IDX */
-} __packed;
+ /*
+  * The Host uses this in used->flags to advise the Guest: don't kick me when
+  * you add a buffer.  It's unreliable, so it's simply an optimization.  Guest
+  * will still kick if it's out of buffers.
+  */
+ #define VRING_USED_F_NO_NOTIFY  1
 
-/* The standard layout for the ring is a continuous chunk of memory which
- * looks like this.  We assume num is a power of 2.
- *
- * struct vring {
- *      // The actual descriptors (16 bytes each)
- *      struct vring_desc desc[num];
- *
- *      // A ring of available descriptor heads with free-running index.
- *      __u16 avail_flags;
- *      __u16 avail_idx;
- *      __u16 available[num];
- *
- *      // Padding to the next align boundary.
- *      char pad[];
- *
- *      // A ring of used descriptor heads with free-running index.
- *      __u16 used_flags;
- *      __u16 used_idx;
- *      struct vring_used_elem used[num];
- * };
- * Note: for virtio PCI, align is 4096.
- */
+ /*
+  * The Guest uses this in avail->flags to advise the Host: don't interrupt me
+  * when you consume a buffer.  It's unreliable, so it's simply an
+  * optimization.
+  */
+ #define VRING_AVAIL_F_NO_INTERRUPT      1
 
-#define VIRTIO_PAGE_SIZE	(4096)
+ /* Virtio ring descriptors: 16 bytes.
+  * These can chain together via "next". */
+ struct vring_desc {
+	 /* Address (guest-physical). */
+	 __virtio64 addr;
+	 /* Length. */
+	 __virtio32 len;
+	 /* The flags as indicated above. */
+	 __virtio16 flags;
+	 /* We chain unused descriptors via this, too */
+	 __virtio16 next;
+ } __packed;
 
-#endif /* KRX_DEV_VIRTIOREG_H */
+ struct vring_avail {
+	 __virtio16 flags;
+	 __virtio16 idx;
+	 __virtio16 ring[0];
+	 /* trailed by uint16_t used_event when VIRTIO_F_RING_EVENT_IDX */
+ } __packed;
+
+ /* u32 is used here for ids for padding reasons. */
+ struct vring_used_elem {
+	 /* Index of start of used descriptor chain. */
+	 uint32_t id;
+	 /* Total length of the descriptor chain which was written to. */
+	 uint32_t len;
+ } __packed;
+
+ struct vring_used {
+	 __virtio16 flags;
+	 __virtio16 idx;
+	 struct vring_used_elem ring[0];
+	 /* trailed by uint16_t avail_event when VIRTIO_F_RING_EVENT_IDX */
+ } __packed;
+
+ /* The standard layout for the ring is a continuous chunk of memory which
+  * looks like this.  We assume num is a power of 2.
+  *
+  * struct vring {
+  *      // The actual descriptors (16 bytes each)
+  *      struct vring_desc desc[num];
+  *
+  *      // A ring of available descriptor heads with free-running index.
+  *      __u16 avail_flags;
+  *      __u16 avail_idx;
+  *      __u16 available[num];
+  *
+  *      // Padding to the next align boundary.
+  *      char pad[];
+  *
+  *      // A ring of used descriptor heads with free-running index.
+  *      __u16 used_flags;
+  *      __u16 used_idx;
+  *      struct vring_used_elem used[num];
+  * };
+  * Note: for virtio PCI, align is 4096.
+  */
+
+ #define VIRTIO_PAGE_SIZE	(4096)
+
+ #endif /* KRX_DEV_VIRTIOREG_H */

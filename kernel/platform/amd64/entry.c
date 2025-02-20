@@ -1,12 +1,17 @@
+/*
+ * Copyright (c) 2025 NetaScale Object Solutions.
+ * Created on Wed Sep 6 2023.
+ */
+
+#include <kdk/amd64.h>
+#include <kdk/amd64/gdt.h>
+#include <kdk/amd64/portio.h>
+#include <kdk/amd64/regs.h>
+#include <kdk/executive.h>
+#include <kdk/kern.h>
 #include <limine.h>
 
-#include "kdk/amd64.h"
-#include "kdk/amd64/portio.h"
-#include "kdk/amd64/gdt.h"
-#include "kdk/amd64/regs.h"
-#include "kdk/kern.h"
 #include "platform/amd64/intr.h"
-#include "kdk/executive.h"
 #include "vm/vmp.h"
 
 enum { kPortCOM1 = 0x3f8 };
@@ -15,6 +20,9 @@ enum { kPortCOM1 = 0x3f8 };
 void intr_init(void);
 /* misc.c */
 void setup_cpu_gdt(kcpu_t *cpu);
+/* tc_pvclock.c */
+void pvclock_init(void);
+void pvclock_cpu_init(void);
 
 extern kthread_t thread0;
 
@@ -46,6 +54,14 @@ void plat_first_init(void)
 	wrmsr(kAMD64MSRGSBase, (uint64_t)&bootstrap_cpu_local_data);
 	serial_init();
 	intr_init();
+	bootstrap_cpu_local_data.md.self = &bootstrap_cpu_local_data;
+	bootstrap_cpu_local_data.md.hard_ipl = 0;
+	bootstrap_cpu_local_data.md.soft_ipl = 0;
+}
+
+void plat_pre_smp_init(void)
+{
+	pvclock_init();
 }
 
 void plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
@@ -78,6 +94,8 @@ void plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread, struct lim
 	for (int i = 0; i < 3; i++)
 		cpu->cpucb.lapic_tps += lapic_timer_calibrate() / 3;
 
+
+	pvclock_cpu_init();
 }
 
 void plat_common_core_late_init(kcpu_t *cpu, kthread_t *idle_thread, struct limine_smp_info *smpi)

@@ -274,3 +274,12 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 	else
 		return satisfier;
 }
+
+void
+ke_sleep(nanosecs_t nanosecs)
+{
+	ktimer_t timer;
+	ke_timer_init(&timer);
+	ke_timer_set(&timer, nanosecs);
+	ke_wait(&timer, "sleep", false, false, -1);
+}

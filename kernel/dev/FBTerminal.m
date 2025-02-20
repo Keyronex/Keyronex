@@ -1,9 +1,13 @@
+/*
+ * Copyright (c) 2023-2025 NetaScale Object Solutions.
+ * Created on Sat Jul 29 2023.
+ */
+
+#include <kdk/kmem.h>
+#include <kdk/object.h>
+
 #include "../limine-terminal/backends/framebuffer.h"
 #include "dev/FBTerminal.h"
-#include "kdk/kmem.h"
-#include "kdk/object.h"
-
-#define PROVIDER ((DKFramebuffer *)m_provider);
 
 extern char key272x70[76160];
 extern char netascale102x82[33456];
@@ -11,10 +15,7 @@ extern char netascale102x82[33456];
 FBTerminal *system_terminal = nil;
 static int counter = 0;
 
-@interface
-FBTerminal (Local)
-- (instancetype)initWithFramebuffer:(DKFramebuffer *)framebuffer;
-@end
+extern void ki_replay_msgbuf(void);
 
 static void *
 term_alloc(size_t size)
@@ -103,28 +104,25 @@ fbterminal_printstats()
 	})
 	STPRINT(0, 0, "ACT: %zu MOD: %zu STBY: %zu FREE: %zu        ",
 	    vmstat.nactive, vmstat.nmodified, vmstat.nstandby, vmstat.nfree);
-	STPRINT(0, 16, "Console: %s", obj_name(system_terminal));
+	STPRINT(0, 16, "Console: %s", system_terminal.name);
 }
 
+@implementation DKFramebuffer
+@synthesize info = m_info;
+@end
 
 @implementation FBTerminal
-
-+ (BOOL)probeWithFramebuffer:(DKFramebuffer *)framebuffer
-{
-	[[self alloc] initWithFramebuffer:framebuffer];
-	return YES;
-}
 
 - (instancetype)initWithFramebuffer:(DKFramebuffer *)framebuffer
 {
 	struct fbterm_context *gterm;
 	uint32_t *address;
 
-	self = [super initWithProvider:framebuffer];
+	self = [super init];
 
-	kmem_asprintf(obj_name_ptr(self), "fbterminal-%d", counter++);
+	kmem_asprintf(&m_name, "fb-terminal-%d", counter++);
 
-	address = (void*)P2V(framebuffer.info.address);
+	address = (void *)P2V(framebuffer.info.address);
 	term = fbterm_init(term_alloc, address, framebuffer.info.width,
 	    framebuffer.info.height, framebuffer.info.pitch, NULL, NULL, NULL,
 	    NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 1, 1, 8, 93, 36);
@@ -158,11 +156,8 @@ fbterminal_printstats()
 
 	system_terminal = self;
 
-	extern void ki_replay_msgbuf(void);
 	ki_replay_msgbuf();
 	fbterminal_printstats();
-
-	[self registerDevice];
 
 	return self;
 }

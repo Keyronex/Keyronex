@@ -1,13 +1,21 @@
+#include <ddk/DKInterrupt.h>
+#include <ddk/DKPlatformRoot.h>
+
 #include "bootinfo.h"
+#include "ddk/DKAxis.h"
 #include "ddk/DKDevice.h"
 #include "ddk/virtio_mmio.h"
-#include "dev/virtio/DKVirtIOMMIOTransport.h"
+#include "dev/virtio/VirtIOMMIOTransport.h"
 #include "kdk/endian.h"
-#include "kdk/kmem.h"
 #include "kdk/kern.h"
+#include "kdk/kmem.h"
 #include "kdk/object.h"
 
-@interface Virt68kPlatform : DKDevice <DKPlatformDevice>
+void DKLogAttach(DKDevice *child, DKDevice *parent);
+
+extern Class gPlatformSpecificRootClass;
+
+@interface Virt68kPlatform : DKDevice <DKPlatformRoot>
 
 @end
 
@@ -15,8 +23,7 @@
 
 + (void)load
 {
-	extern Class platformDeviceClass;
-	platformDeviceClass = self;
+	gPlatformSpecificRootClass = self;
 }
 
 + (BOOL)probe
@@ -28,9 +35,8 @@
 - (instancetype)init
 {
 	self = [super init];
-	kmem_asprintf(obj_name_ptr(self), "virt68k-platform");
-	platformDevice = self;
-	[self registerDevice];
+
+	kmem_asprintf(&m_name, "virt68k-platform");
 #if 0
 	DKLogAttachExtra(self, "QEMU v%zu.%zu.%zu",
 	    bootinfo.qemu_version >> 24 & 0xff,
@@ -38,21 +44,27 @@
 	    bootinfo.qemu_version >> 8 & 0xff);
 #endif
 
+	DKLogAttach(self, nil);
+
 	return self;
 }
 
-- (void)secondStageInit
+- (void)start
 {
 	volatile uint8_t *virtio_base = (void *)0xff010000;
 
 	for (int i = 0; i < 128; i++) {
-		[DKVirtIOMMIOTransport probeWithProvider:self
-						    mmio:virtio_base + 0x200 * i
-					       interrupt:32 + i];
+		id dev = [DKVirtIOMMIOTransport
+		    probeWithMMIO:virtio_base + 0x200 * i
+			interrupt:32 + i];
+		if (dev != nil) {
+			[self attachChild:dev onAxis:gDeviceAxis];
+			[dev addToStartQueue];
+		}
 	}
 }
 
-- (DKDevice<DKPlatformInterruptControl> *)platformInterruptController
+- (DKPlatformInterruptController *)platformInterruptController
 {
 	return nil;
 }

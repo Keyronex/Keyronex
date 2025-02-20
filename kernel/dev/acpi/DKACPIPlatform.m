@@ -1,90 +1,264 @@
+/*
+ * Copyright (c) 2024-2025 NetaScale Object Solutions.
+ * Created on Wed Apr 17 2024.
+ */
+
+#include <ddk/DKAxis.h>
+#include <ddk/DKInterrupt.h>
+#include <ddk/DKPlatformRoot.h>
+#include <kdk/kern.h>
+#include <kdk/kmem.h>
 #include <limine.h>
-#include <string.h>
+#include <uacpi/acpi.h>
+#include <uacpi/resources.h>
+#include <uacpi/tables.h>
+#include <uacpi/uacpi.h>
+#include <uacpi/utilities.h>
 
-#include "dev/pci/DKPCIBus.h"
-#include "dev/acpi/DKACPIPCIFirmwareInterface.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "dev/acpi/tables.h"
-#include "kdk/executive.h"
-#include "kdk/kern.h"
-#include "kdk/kmem.h"
-#include "kdk/libkern.h"
-#include "kdk/object.h"
-#include "kdk/vm.h"
-#include "uacpi/event.h"
-#include "uacpi/internal/namespace.h"
-#include "uacpi/kernel_api.h"
-#include "uacpi/namespace.h"
-#include "uacpi/status.h"
-#include "uacpi/tables.h"
-#include "uacpi/types.h"
-#include "uacpi/uacpi.h"
-#include "uacpi/utilities.h"
+#include "dev/SimpleFB.h"
+#include "dev/acpi/DKACPIPlatform.h"
+#include "dev/pci/DKPCIBridge.h"
+#include "dev/pci/ecam.h"
 
-#ifdef __amd64
-#include "dev/PS2Keyboard.h"
-#endif
+extern volatile struct limine_framebuffer_request fb_request;
 
-struct pcie_ecam {
-	paddr_t phys;
-	vaddr_t virt;
-	uint64_t seg;
-	uint8_t start_bus, end_bus;
-};
+void DKLogAttach(DKDevice *child, DKDevice *parent);
 
-static DKACPIPlatform *acpiplatform = NULL;
-struct pcie_ecam *ecam;
-
-extern vaddr_t rsdp_address;
-
-#define ACPI_PCI_ROOT_BUS_PNP_ID "PNP0A03"
-#define ACPI_PCIE_ROOT_BUS_PNP_ID "PNP0A08"
+DKAxis *gACPIAxis;
+DKACPIPlatform *gACPIPlatform;
 
 @implementation DKACPIPlatform
 
-- (void)makePCIBusFromNode:(uacpi_namespace_node *)node
++ (instancetype)root
 {
-	uint64_t seg = 0, bus = 0;
-	DKPCIBus *pcibus;
+	return gACPIPlatform;
+}
+
+- (void)iterateArchSpecificEarlyTables
+{
+	kfatal("Method must be overridden by platform-specific category.\n");
+}
+
+- (void)setupEarlyTableAccess
+{
+	int r;
+	static char acpi_early_table_storage[4096];
+
+	r = uacpi_setup_early_table_access(&acpi_early_table_storage,
+	    sizeof(acpi_early_table_storage));
+	if (r != UACPI_STATUS_OK)
+		kfatal("Can't set up early table access\n");
+}
+
+- (void)enumerateMcfg
+{
+	struct uacpi_table mcfg_table;
+	struct acpi_mcfg *mcfg;
+	struct acpi_mcfg_allocation *alloc;
+
+	if (uacpi_table_find_by_signature(ACPI_MCFG_SIGNATURE, &mcfg_table) !=
+	    UACPI_STATUS_OK)
+		kfatal("No MCFG table found\n");
+
+	mcfg = (void *)mcfg_table.virt_addr;
+
+	/* Calculate number of entries based on table length */
+	ecam_spans_n = (mcfg->hdr.length - sizeof(struct acpi_mcfg)) /
+	    sizeof(struct acpi_mcfg_allocation);
+
+	ecam_spans = kmem_alloc(sizeof(struct ecam_span) * ecam_spans_n);
+
+	/* Iterate through each MCFG allocation entry */
+	for (size_t i = 0; i < ecam_spans_n; i++) {
+		alloc = &mcfg->entries[i];
+		ecam_spans[i].base = alloc->address;
+		ecam_spans[i].seg = alloc->segment;
+		ecam_spans[i].bus_start = alloc->start_bus;
+		ecam_spans[i].bus_end = alloc->end_bus;
+	}
+
+	uacpi_table_unref(&mcfg_table);
+}
+
+- (instancetype)init
+{
+	int r;
+	struct limine_framebuffer *fb;
+	SimpleFB *bootFb;
+
+	[self setupEarlyTableAccess];
+	[self enumerateMcfg];
+
+	fb =  fb_request.response->framebuffers[0];
+	bootFb = [[SimpleFB alloc] initWithAddress:V2P(fb->address)
+					     width:fb->width
+					    height:fb->height
+					     pitch:fb->pitch];
+	[bootFb start];
+
+	gACPIAxis = [DKAxis axisWithName:"DKACPI"];
+
+	r = uacpi_initialize(0);
+	kassert(r == UACPI_STATUS_OK);
+
+	[gACPIAxis addChild:self ofParent:nil];
+	DKLogAttach(self, nil);
+
+	gACPIPlatform = self;
+	gPlatformRoot = self;
+
+	[self attachChild:bootFb onAxis:gDeviceAxis];
+
+	[self iterateArchSpecificEarlyTables];
+
+	return self;
+}
+
+- (void)start
+{
 	int r;
 
-	r = uacpi_eval_integer(node, "_SEG", NULL, &seg);
-	if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND) {
-		DKDevLog(self, "failed to evaluate _SEG: %d\n", r);
-		return;
-	}
+	r = uacpi_namespace_load();
+	kassert(r == UACPI_STATUS_OK);
 
-	r = uacpi_eval_integer(node, "_BBN", NULL, &bus);
-	if (r != UACPI_STATUS_OK && r != UACPI_STATUS_NOT_FOUND) {
-		DKDevLog(self, "failed to evaluate _BBN: %d\n", r);
-		return;
-	}
+	r = uacpi_namespace_initialize();
+	kassert(r == UACPI_STATUS_OK);
 
-	pcibus = [[DKACPIPCIFirmwareInterface alloc] initWithProvider:self
-							     acpiNode:node
-							      segment:seg
-								  bus:bus];
-	(void)pcibus;
+	r = uacpi_set_interrupt_model(UACPI_INTERRUPT_MODEL_IOAPIC);
+	kassert(r == UACPI_STATUS_OK);
+
+	self = [super initWithNamespaceNode:uacpi_namespace_root()];
+
+	[super start];
+	[DKDevice drainStartQueue];
+	[self startDevices];
+	[DKACPINode drainStartDevicesQueue];
 }
 
-static uacpi_iteration_decision
-iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32)
+/* ACPI node -> PCI root -> PCI device -> PCI Bridge -> PCI Device -> etc */
+- (void)routePCIPin:(uint8_t)pin
+	  forBridge:(DKPCIBridge *)bridge
+	       slot:(uint8_t)slot
+	   function:(uint8_t)fun
+	       into:(out dk_interrupt_source_t *)source
 {
-	const char *pci_list[] = { ACPI_PCI_ROOT_BUS_PNP_ID,
-		ACPI_PCIE_ROOT_BUS_PNP_ID, NULL };
-	DKACPIPlatform *self = user;
+	uacpi_pci_routing_table *prt = NULL;
+	int r = 0;
 
-	if (uacpi_device_matches_pnp_id(node, pci_list))
-		[self makePCIBusFromNode:node];
-#ifdef __amd64
-	else if (uacpi_device_matches_pnp_id(node,
-		     (const char *const[]) { "PNP0303", "PNP030B", "PNP0320",
-			 NULL }))
-		[PS2Keyboard probeWithProvider:self acpiNode:node];
-#endif
+	while (bridge != NULL) {
+		DKACPINode *promNode = (DKACPINode *)bridge.promNode;
 
-	return UACPI_ITERATION_DECISION_CONTINUE;
+		if (promNode) {
+			r = uacpi_get_pci_routing_table(promNode->m_nsNode,
+			    &prt);
+			if (r == UACPI_STATUS_OK) {
+				kprintf("prt is %p\n", prt);
+				break;
+			}
+		}
+
+		if (promNode == nil || r == UACPI_STATUS_NOT_FOUND) {
+			DKPCI2PCIBridge *pci2pci;
+
+			kassert([bridge isKindOfClass:[DKPCI2PCIBridge class]]);
+
+			pci2pci = (DKPCI2PCIBridge *)bridge;
+
+			/* follow default expansion bridge routing */
+			pin = ((pin - 1 + slot) % 4) + 1;
+			slot = pci2pci.pciDevice.address.slot;
+			fun = pci2pci.pciDevice.address.function;
+
+			bridge = bridge.parentBridge;
+			continue;
+		}
+
+		/* routed by PRT */
+		kassert(r == UACPI_STATUS_OK);
+		break;
+	}
+
+	for (size_t i = 0; i < prt->num_entries; i++) {
+		uacpi_pci_routing_table_entry *entry;
+		int entry_slot, entry_fun;
+
+		entry = &prt->entries[i];
+		entry_slot = (entry->address >> 16) & 0xffff;
+		entry_fun = entry->address & 0xffff;
+
+		if (entry->pin != pin - 1 || entry_slot != slot ||
+		    (entry_fun != 0xffff && entry_fun != fun))
+			continue;
+
+		/* default edge false, lopol true */
+		source->id = entry->index;
+		source->edge = false;
+		source->low_polarity = true;
+
+		if (entry->source != NULL) {
+			uacpi_resources *resources;
+			uacpi_resource *resource;
+			r = uacpi_get_current_resources(entry->source,
+			    &resources);
+			kassert(r == UACPI_STATUS_OK);
+
+			resource = &resources->entries[0];
+
+			switch (resource->type) {
+			case UACPI_RESOURCE_TYPE_IRQ: {
+				uacpi_resource_irq *irq = &resource->irq;
+
+				kassert(irq->num_irqs >= 1);
+				source->id = irq->irqs[0];
+
+				if (irq->triggering == UACPI_TRIGGERING_EDGE)
+					source->edge = true;
+				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
+					source->low_polarity = false;
+
+				break;
+			}
+			case UACPI_RESOURCE_TYPE_EXTENDED_IRQ: {
+				uacpi_resource_extended_irq *irq =
+				    &resource->extended_irq;
+
+				kassert(irq->num_irqs >= 1);
+				source->id = irq->irqs[0];
+
+				if (irq->triggering == UACPI_TRIGGERING_EDGE)
+					source->edge = true;
+				if (irq->polarity == UACPI_POLARITY_ACTIVE_HIGH)
+					source->low_polarity = false;
+
+				break;
+			}
+			default:
+				kfatal("unexpected\n");
+			}
+
+			uacpi_free_resources(resources);
+		}
+	}
+
+	uacpi_free_pci_routing_table(prt);
 }
+
+- (int)allocateLeastLoadedMSIInterruptForEntries:(struct intr_entry *)entries
+					   count:(size_t)count
+				     msiAddress:(out uint32_t *)msiAddress
+					msiData:(out uint32_t *)msiData
+{
+	kfatal("Method must be overridden by platform-specific category.\n");
+}
+
+- (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
+				    msixAddress:(out uint32_t *)msixAddress
+				       msixData:(out uint32_t *)msixData
+{
+	kfatal("Method must be overridden by platform-specific category.\n");
+}
+
+@end
 
 void
 dk_acpi_madt_walk(struct acpi_madt *madt,
@@ -98,91 +272,3 @@ dk_acpi_madt_walk(struct acpi_madt *madt,
 		item += header->length;
 	}
 }
-
-static void
-mcfg_walk(void)
-{
-	uacpi_table table;
-	struct acpi_mcfg *mcfg;
-	size_t nentries;
-	int r;
-
-	r = uacpi_table_find_by_signature("MCFG", &table);
-	if (r != 0) {
-		DKDevLog(acpiplatform, "No mcfg table found.\n");
-		return;
-	}
-
-	mcfg = (void *)table.virt_addr;
-	nentries = (mcfg->hdr.length - sizeof(struct acpi_mcfg)) /
-	    sizeof(struct acpi_mcfg_allocation);
-	kassert(nentries == 1); /* todo(low): handle multiple */
-	for (int i = 0; i < nentries; i++) {
-		struct acpi_mcfg_allocation *entry = &mcfg->entries[i];
-		DKDevLog(acpiplatform, "PCI-E eCAM base [%d:%d-%d]: 0x%lx\n",
-		    entry->segment, entry->start_bus, entry->end_bus,
-		    entry->address);
-		[DKPCIBus setECAMBase:entry->address];
-	}
-}
-
-- (instancetype)initWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
-{
-	int r;
-
-	self = [super initWithProvider:provider];
-	kmem_asprintf(obj_name_ptr(self), "acpi-platform");
-	acpiplatform = self;
-	[self registerDevice];
-	DKLogAttach(self);
-
-	r = uacpi_initialize(0);
-	kassert(r == UACPI_STATUS_OK);
-
-	mcfg_walk();
-
-	[self iterateArchSpecificEarlyTables];
-
-	return self;
-}
-
-- (void)secondStageInit
-{
-	uacpi_namespace_node *sb;
-	int r;
-
-	DKDevLog(self, "ACPI second-stage init\n");
-
-	r = uacpi_namespace_load();
-	kassert(r == UACPI_STATUS_OK);
-	r = uacpi_namespace_initialize();
-	kassert(r == UACPI_STATUS_OK);
-	r = uacpi_set_interrupt_model(UACPI_INTERRUPT_MODEL_IOAPIC);
-	kassert(r == UACPI_STATUS_OK);
-
-	sb = uacpi_namespace_get_predefined(UACPI_PREDEFINED_NAMESPACE_SB);
-	kassert(sb != NULL);
-
-
-	uacpi_namespace_for_each_child_simple(sb, iteration_callback, self);
-}
-
-- (void)iterateArchSpecificEarlyTables
-{
-	kfatal("Subclass responsibility\n");
-}
-
-+ (BOOL)probeWithProvider:(DKDevice *)provider rsdp:(rsdp_desc_t *)rsdp
-{
-	rsdp_address = rsdp;
-	[[self alloc] initWithProvider:provider rsdp:rsdp];
-
-	return YES;
-}
-
-+ (instancetype)instance
-{
-	return acpiplatform;
-}
-
-@end

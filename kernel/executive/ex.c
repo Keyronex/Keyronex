@@ -12,7 +12,6 @@
 #include "kdk/object.h"
 #include "kdk/vfs.h"
 #include "kdk/vm.h"
-#include "ntcompat/ntcompat.h"
 #include "object.h"
 #include "vm/vmp.h"
 

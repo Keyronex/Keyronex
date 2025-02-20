@@ -138,3 +138,9 @@ void md_raise_dpc_interrupt()
 {
 	send_ipi(curcpu()->cpucb.lapic_id, kIntVecDPC);
 }
+
+void
+lapic_pend(uint8_t vector)
+{
+	send_ipi(curcpu()->cpucb.lapic_id, vector);
+}

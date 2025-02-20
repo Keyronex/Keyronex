@@ -53,8 +53,21 @@ ki_cpu_init(kcpu_t *cpu, kthread_t *idle_thread)
 	cpu->timer_expiry_dpc.callback = timer_expiry_dpc;
 	cpu->local_data->cpu = cpu;
 	cpu->local_data->curthread = idle_thread;
-
+#if defined(__amd64__)
+	/* move me */
+	cpu->local_data->md.soft_ipl = 0;
+	cpu->local_data->md.hard_ipl = 0;
+	cpu->local_data->md.self = cpu->local_data;
+#endif
 	ki_rcu_per_cpu_init(&cpu->rcu_cpustate);
+}
+
+void
+ke_dpc_init(kdpc_t *dpc, void (*callback)(void *), void *arg)
+{
+	dpc->callback = callback;
+	dpc->arg = arg;
+	dpc->cpu = NULL;
 }
 
 void
@@ -146,7 +159,6 @@ ki_reschedule(void)
 	if (old_thread == cpu->idle_thread) {
 		/*! idle thread must never wait, try to exit, whatever */
 		kassert(old_thread->state == kThreadStateRunning);
-		old_thread->state = kThreadStateRunnable;
 	} else if (old_thread->state == kThreadStateRunning) {
 		/*! currently running - replace on runqueue */
 		old_thread->state = kThreadStateRunnable;
@@ -257,6 +269,7 @@ ki_thread_common_init(kthread_t *thread, kcpu_t *last_cpu, kprocess_t *proc,
 	thread->port = NULL;
 	thread->port_msg = NULL;
 	thread->in_trap_recoverable = false;
+	thread->tcb = 0;
 	ke_timer_init(&thread->wait_timer);
 	ipl = ke_spinlock_acquire(&proc->lock);
 	proc->thread_count++;

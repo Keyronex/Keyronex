@@ -4,14 +4,13 @@
  */
 
 #include "APLIC.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "dev/acpi/tables.h"
+#include "dev/acpi/DKACPIPlatform.h"
 #include "kdk/libkern.h"
 #include "uacpi/tables.h"
+#include "uacpi/acpi.h"
 #include "uacpi/uacpi.h"
 
-@implementation
-DKACPIPlatform (RISCV)
+@implementation DKACPIPlatform (RISCV)
 
 /*
  * [31:24] -> APLIC identifier.
@@ -72,6 +71,11 @@ parse_riscv(struct acpi_entry_hdr *item, void *arg)
 
 	dk_acpi_madt_walk((struct acpi_madt *)madt.virt_addr, parse_riscv,
 	    self);
+}
+
+- (DKPlatformInterruptController *)platformInterruptController
+{
+	return (id)[APLIC class];
 }
 
 @end

@@ -58,6 +58,11 @@ plat_first_init(void)
 }
 
 void
+plat_pre_smp_init(void)
+{
+}
+
+void
 plat_ap_early_init(kcpu_t *cpu, struct limine_smp_info *smpi)
 {
 }

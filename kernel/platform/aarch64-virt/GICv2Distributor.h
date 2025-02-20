@@ -1,7 +1,13 @@
-#ifndef KRX_AARCH64_GICV2DISTRIBUTOR_H
+/*
+ * Copyright (c) 2024 NetaScale Object Solutions.
+ * Created on Fri Jul 19 2024.
+ */
+
+ #ifndef KRX_AARCH64_GICV2DISTRIBUTOR_H
 #define KRX_AARCH64_GICV2DISTRIBUTOR_H
 
-#include "ddk/DKDevice.h"
+#include <ddk/DKDevice.h>
+#include <ddk/DKInterrupt.h>
 
 @interface GICv2Distributor: DKDevice
 

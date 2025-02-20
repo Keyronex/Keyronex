@@ -8,8 +8,10 @@ STATIC_LIB = ${OBJFWRT_STATIC_LIB}
 FRAMEWORK = ${OBJFWRT_FRAMEWORK}
 LIB_MAJOR = ${OBJFWRT_LIB_MAJOR}
 LIB_MINOR = ${OBJFWRT_LIB_MINOR}
+LIB_PATCH = ${OBJFWRT_LIB_PATCH}
 
 SRCS = arc.m			\
+       association.m		\
        autorelease.m		\
        category.m		\
        class.m			\
@@ -42,7 +44,7 @@ includesubdir = ObjFWRT
 OBJS_EXTRA = lookup-asm/lookup-asm.a
 LIB_OBJS_EXTRA = lookup-asm/lookup-asm.lib.a
 
-include ../../misc.mk
+include ../../buildsys.mk
 
 CPPFLAGS += -I. -I.. -I../..					\
 	    -DOBJC_COMPILING_RUNTIME				\

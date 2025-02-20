@@ -22,6 +22,11 @@ plat_first_init(void)
 }
 
 void
+plat_pre_smp_init(void)
+{
+}
+
+void
 plat_common_core_early_init(kcpu_t *cpu, kthread_t *idle_thread,
     struct limine_smp_info *smpi)
 {

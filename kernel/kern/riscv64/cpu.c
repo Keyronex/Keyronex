@@ -154,6 +154,13 @@ md_intr_frame_trace(md_intr_frame_t *frame)
 	kfatal("Unimplemented\n");
 }
 
+void md_current_trace(void)
+{
+	splraise(kIPLHigh);
+	kprintf("Thread %p; CPU %p:\n", curthread(), curcpu());
+	for (;;) ;
+}
+
 void
 md_switch(kthread_t *old_thread, kthread_t *new_thread)
 {

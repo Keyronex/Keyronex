@@ -9,7 +9,6 @@
 	struct ninepfs_state *m_state;
 }
 
-+ (BOOL)probeWithProvider: (VirtIO9pPort*) provider;
 @end
 
 #endif /* KRX_9P_9PFS_H */

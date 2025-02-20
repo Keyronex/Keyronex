@@ -13,7 +13,7 @@
 #define SMP 1
 #define ENDIAN KRX_LITTLE_ENDIAN
 #define BITS 64
-#define KERN_HZ 1000
+#define KERN_HZ 32
 #define KSTACK_SIZE 32768
 
 #define PGSIZE 0x1000
@@ -130,6 +130,9 @@ hcf(void)
 
 int md_intr_alloc(const char *name, ipl_t prio, intr_handler_t handler,
     void *arg, bool shareable, uint8_t *vector, struct intr_entry *entry);
+int md_intr_alloc_contiguous(const char *name, ipl_t prio,
+    intr_handler_t handler, void *arg, bool shareable, uint16_t count,
+    uint8_t *baseVector, struct intr_entry *entries);
 void md_intr_register(const char *name, uint8_t vec, ipl_t prio,
     intr_handler_t handler, void *arg, bool shareable,
     struct intr_entry *entry);

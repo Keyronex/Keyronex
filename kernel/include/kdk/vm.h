@@ -348,6 +348,7 @@ vm_page_direct_map_addr(vm_page_t *page)
 	return P2V(vm_page_paddr(page));
 }
 
-#define vm_pfn_to_page(PFN_) (vm_paddr_to_page(vmp_pfn_to_paddr(PFN_)))
+#define vm_pfn_to_page(PFN) (vm_paddr_to_page(vmp_pfn_to_paddr(PFN)))
+#define vm_hhdm_addr_to_page(ADDR) (vm_paddr_to_page(V2P(ADDR)))
 
 #endif /* KRX_KDK_VM_H */

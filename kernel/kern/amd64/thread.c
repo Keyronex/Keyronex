@@ -180,3 +180,33 @@ ki_trap_recover(md_intr_frame_t *frame)
 	frame->rsp = recovery->rsp + 8; /* effect a return */
 	frame->rip = recovery->rip;
 }
+
+void
+md_current_trace(void)
+{
+	struct frame {
+		struct frame *rbp;
+		uint64_t rip;
+	} *frame = (struct frame *)__builtin_frame_address(0);
+	const char *name = NULL;
+	size_t offs = 0;
+
+	kprintf("Begin stack trace:\n");
+
+	if (frame != NULL) {
+		// resolve_symbol(frame->rip, &name, &offs);
+		kprintf(" - %p %s+%lu\n", (void *)frame->rip,
+		    name ? name : "???", offs);
+	}
+
+	while (frame && (uint64_t)frame >= 0xffff80000000UL &&
+	    frame->rip != 0) {
+		frame = frame->rbp;
+		if (frame == NULL)
+			break;
+
+		// resolve_symbol(frame->rip, &name, &offs);
+		kprintf(" - %p %s+%lu\n", (void *)frame->rip,
+		    name ? name : "???", offs);
+	}
+}

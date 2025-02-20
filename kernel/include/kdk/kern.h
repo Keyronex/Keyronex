@@ -388,6 +388,7 @@ typedef struct kprocess {
 
 typedef struct kcpu_local_data {
 	struct md_kcpu_local_data md;
+	size_t cpu_num;
 	kcpu_t *cpu;
 	kthread_t *curthread;
 } kcpu_local_data_t;
@@ -525,6 +526,8 @@ ke_spinlock_release(kspinlock_t *lock, ipl_t oldipl)
 	splx(oldipl);
 }
 
+void ke_dpc_init(kdpc_t *dpc, void (*callback)(void *), void *arg);
+
 void ke_dpc_enqueue(kdpc_t *dpc);
 
 /*!
@@ -646,6 +649,7 @@ kwaitresult_t ke_wait(void *object, const char *reason, bool isuserwait,
 kwaitresult_t ke_wait_multi(size_t nobjects, void *objects[],
     const char *reason, bool isWaitall, bool isUserwait, bool isAlertable,
     nanosecs_t timeout, kwaitblock_t *waitblocks);
+void ke_sleep(nanosecs_t nanosecs);
 
 #define STRINGIFY(x) #x
 #define KE_WAIT(OBJ, USER, ALERTABLE, TIMEOUT)                               \
@@ -701,13 +705,16 @@ void kputc(int ch, void *unused);
 #define kprintf(...) printf_wrapper(kputc, __VA_ARGS__)
 #define kvpprintf(...) vpprintf_wrapper(kputc, __VA_ARGS__)
 
+void md_current_trace(void);
+
 /*! @brief Kernel fatal - prints out on PAC and main console and halts. */
-#define kfatal(...) {				\
-	splraise(kIPLHigh);			\
-	kprintf("at %s:%d (%s):\n", __FILE__,	\
-	    __LINE__, __FUNCTION__); 		\
-	kprintf(__VA_ARGS__); 		\
-	hcf();					\
+#define kfatal(...) {						\
+	splraise(kIPLHigh);					\
+	kprintf("fatal error at %s:%d (%s):\n", __FILE__,	\
+	    __LINE__, __FUNCTION__); 				\
+	kprintf("  " __VA_ARGS__); 				\
+	md_current_trace();					\
+	hcf();							\
 }
 
 /*! @brief Kernel assertion - prints out on PAC console. */
@@ -726,6 +733,9 @@ void ke_set_tcb(uintptr_t tcb);
 
 ktrap_recovery_frame_t *ke_trap_recovery_begin(void);
 void ke_trap_recovery_end(void);
+
+/*! @brief Get global monotonic timestamp in nanoseconds. */
+nanosecs_t ke_get_nanos();
 
 extern kcpu_local_data_t bootstrap_cpu_local_data;
 extern kcpu_t **cpus;

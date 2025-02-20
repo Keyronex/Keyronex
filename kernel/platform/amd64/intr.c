@@ -8,6 +8,8 @@
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
+#define LAZY_CR8 1
+
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 
 typedef struct {
@@ -25,6 +27,31 @@ static idt_entry_t idt[256] = { 0 };
 
 void ki_tlb_flush_handler(void);
 
+#if LAZY_CR8
+ipl_t
+splraise(ipl_t ipl)
+{
+	return KCPU_LOCAL_XCHG(md.soft_ipl, ipl);
+}
+void
+splx(ipl_t ipl)
+{
+	KCPU_LOCAL_STORE(md.soft_ipl, ipl);
+	if (KCPU_LOCAL_LOAD(md.hard_ipl) > ipl) {
+		KCPU_LOCAL_STORE(md.hard_ipl, ipl);
+		write_cr8(ipl);
+	}
+}
+ipl_t
+splget(void)
+{
+	return KCPU_LOCAL_LOAD(md.soft_ipl);
+}
+
+#define raw_splraise splraise
+#define raw_splx splx
+
+#else
 ipl_t
 splraise(ipl_t ipl)
 {
@@ -46,6 +73,11 @@ splget(void)
 {
 	return read_cr8();
 }
+
+#define raw_splraise write_cr8
+#define raw_splx write_cr8
+
+#endif
 
 static void
 idt_set(uint8_t index, vaddr_t isr, uint8_t type, uint8_t ist)
@@ -89,6 +121,8 @@ intr_init(void)
 	}
 }
 
+void md_intr_frame_trace(md_intr_frame_t *frame);
+
 void
 handle_int(md_intr_frame_t *frame, uintptr_t num)
 {
@@ -97,21 +131,34 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	struct intr_entry *entry;
 	uintptr_t cr2 = 0;
 
-	if (num == 14)
-		cr2 = read_cr2();
-
 	if (num != kIntVecSyscall)
 		new_ipl = num >> 4;
 	else
 		new_ipl = kIPL0;
 
+#if LAZY_CR8
+	if (ipl >= new_ipl && KCPU_LOCAL_LOAD(md.hard_ipl) < new_ipl) {
+		kassert(num != kIntVecSyscall);
+		write_cr8(ipl);
+		KCPU_LOCAL_STORE(md.hard_ipl, ipl);
+		lapic_eoi();
+		lapic_pend(num);
+		return;
+	}
+#endif
+
+	if (num == 14)
+		cr2 = read_cr2();
+
 	if (splget() > new_ipl) {
+		kprintf("Following is an intr frame trace:\n");
+		md_intr_frame_trace(frame);
 		kfatal("In handling interrupt %zu:\n"
-		    "IPL not less or equal (running at %d, interrupt priority %d, cr2 0x%lx)\n",
-		    num, splget(), ipl, cr2);
+		       "IPL not less or equal (running at %d, cr2 0x%zx)\n",
+		    num, ipl, cr2);
 	}
 
-	write_cr8(new_ipl);
+	raw_splraise(new_ipl);
 	asm("sti");
 
 	switch (num) {
@@ -142,9 +189,11 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 		break;
 
 	case kIntVecEnterDebugger: {
+#if 0 /* DK refactoring */
 		extern void kdb_enter(md_intr_frame_t *frame);
 		kdb_enter(frame);
 		break;
+#endif
 	}
 
 	default: {
@@ -166,7 +215,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 			    num, read_cr2(), splget(), new_ipl);
 		}
 
-		splraise(new_ipl);
+		raw_splraise(new_ipl);
 
 		TAILQ_FOREACH (entry, entries, queue_entry) {
 			bool r = entry->handler(frame, entry->arg);
@@ -179,7 +228,7 @@ handle_int(md_intr_frame_t *frame, uintptr_t num)
 	}
 
 	asm("cli");
-	write_cr8(ipl);
+	raw_splx(ipl);
 }
 
 int
@@ -200,6 +249,38 @@ md_intr_alloc(const char *name, ipl_t prio, intr_handler_t handler, void *arg,
 		}
 	}
 
+	return -1;
+}
+
+int
+md_intr_alloc_contiguous(const char *name, ipl_t prio, intr_handler_t handler,
+    void *arg, bool shareable, uint16_t count, uint8_t *baseVector,
+    struct intr_entry *entries)
+{
+	uint8_t starting = MAX2(prio << 4, 32);
+	uint8_t limit = starting + 16;
+
+	for (uint8_t i = starting; i <= limit - count; i++) {
+		bool ok = true;
+		for (uint16_t j = 0; j < count; j++) {
+			struct intr_entry *slot = TAILQ_FIRST(
+			    &intr_entries[i + j]);
+			if (slot && (!slot->shareable || !shareable)) {
+				ok = false;
+				break;
+			}
+		}
+		if (ok) {
+			for (uint16_t j = 0; j < count; j++) {
+				struct intr_entry *entry = &entries[j];
+				md_intr_register(name, i + j, prio,
+				    entry->handler, entry->arg, shareable,
+				    entry);
+			}
+			*baseVector = i;
+			return 0;
+		}
+	}
 	return -1;
 }
 

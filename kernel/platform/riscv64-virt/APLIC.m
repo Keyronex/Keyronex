@@ -9,13 +9,15 @@
  * At present only supports a single APLIC and only in direct mode
  */
 
+#include <kdk/executive.h>
+#include <kdk/kmem.h>
+#include <kdk/object.h>
+#include <kdk/riscv64.h>
+#include <kdk/vm.h>
+#include <uacpi/acpi.h>
+
 #include "APLIC.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "dev/acpi/tables.h"
-#include "kdk/executive.h"
-#include "kdk/kmem.h"
-#include "kdk/object.h"
-#include "kdk/riscv64.h"
+#include "dev/acpi/DKACPIPlatform.h"
 #include "kern/ki.h"
 
 struct __attribute__((packed)) aplic_mmio {
@@ -146,8 +148,8 @@ volatile struct aplic_mmio *mmio;
 	int r;
 	vaddr_t vaddr;
 
-	self = [super initWithProvider:provider];
-	kmem_asprintf(obj_name_ptr(self), "apic-%d", apic_entry->id);
+	self = [super init];
+	kmem_asprintf(&m_name, "apic-%d", apic_entry->id);
 
 	r = vm_ps_map_physical_view(kernel_process->vm, &vaddr,
 	    sizeof(struct aplic_mmio), apic_entry->address, kVMAll, kVMAll,
@@ -163,9 +165,6 @@ volatile struct aplic_mmio *mmio;
 	aplic = self;
 
 	write_u32(&m_mmio->domaincfg, 1UL << 8);
-
-	[self registerDevice];
-	DKLogAttach(self);
 
 	return self;
 }

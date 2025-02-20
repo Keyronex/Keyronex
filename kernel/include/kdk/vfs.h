@@ -4,7 +4,7 @@
 #include <sys/stat.h>
 
 #include <fcntl.h>
-#include <kdk/dev.h>
+#include <kdk/iop.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
@@ -106,8 +106,6 @@ typedef struct vfs {
 	namecache_t *root_ncp;
 	/*! namecache handle over which the mount was made, if not root */
 	namecache_handle_t nchcovered;
-	/*! the filesystem device */
-	DKDevice *device;
 	/*! operations vector */
 	struct vfs_ops *ops;
 
@@ -134,29 +132,35 @@ enum chpoll_mode {
 	kChpollRemove,
 };
 
+/*!
+ * VNode operations.
+ *
+ * - inactive: Called when the vnode is no longer in use.
+ *
+ * - chpoll: Returns events, if there are any pending. If a poll_entry is
+ *   passed, then it should link it onto its pollhead.
+ *
+ * - cached_read: Read cached bytes from a vnode into a user buffer.
+ */
 struct vnode_ops {
 	/*! Returns true if freed, false if not and should retry. */
 	bool (*inactive)(vnode_t *vn);
-
 	io_result_t (*cached_read)(vnode_t *vnode, vaddr_t user_addr,
 	    io_off_t off, size_t size);
 	io_result_t (*cached_write)(vnode_t *vnode, vaddr_t user_addr,
 	    io_off_t off, size_t size);
 	io_off_t (*readdir)(vnode_t *dvn, void *buf, size_t nbyte,
 	    size_t bytes_read, io_off_t seqno);
-
 	int (*seek)(vnode_t *vnode, io_off_t old, io_off_t *new);
 	int (*getattr)(vnode_t *vnode, vattr_t *attr);
 	int (*ioctl)(vnode_t *vnode, unsigned long cmd, void *data);
-
-	/*!
-	 * Returns events, if there are any pending. If a poll_entry is passed,
-	 * then it should link it onto its pollhead
-	 */
 	int (*chpoll)(vnode_t *vnode, struct poll_entry *poll,
 	    enum chpoll_mode mode);
-
 	int (*lookup)(vnode_t *dvn, vnode_t **out, const char *name);
+
+	size_t (*iop_stack_depth)(vnode_t *vp);
+	iop_return_t (*iop_dispatch)(vnode_t *vp, iop_t *iop);
+	iop_return_t (*iop_complete)(vnode_t *vp, iop_t *iop);
 };
 
 struct vfs_ops {

@@ -1,3 +1,4 @@
+#if 0
 #include "dev/DKNIC.h"
 #include "dev/safe_endian.h"
 #include "kdk/kmem.h"
@@ -457,3 +458,4 @@ kdb_enter(md_intr_frame_t *frame)
 		}
 	}
 }
+#endif

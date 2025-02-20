@@ -1,7 +1,14 @@
+/*
+ * Copyright (c) 2025 NetaScale Object Solutions.
+ * Created on Sat Sep 16 2023.
+ */
+
 #ifndef KRX_AMD64_IOAPIC_H
 #define KRX_AMD64_IOAPIC_H
 
-#include "ddk/DKDevice.h"
+#include <ddk/DKDevice.h>
+#include <ddk/DKInterrupt.h>
+#include <kdk/amd64.h>
 
 struct isa_intr_override {
 	uint8_t gsi;
@@ -9,7 +16,7 @@ struct isa_intr_override {
 	uint8_t edge;
 };
 
-@interface IOApic : DKDevice {
+@interface IOApic : DKPlatformInterruptController {
 	uint32_t _id;
 	vaddr_t _vaddr;
 	uint32_t _gsi_base;
@@ -25,9 +32,6 @@ struct isa_intr_override {
  * The I/O APIC handling that GSI is identified and routes the interrupt; the
  * handler is then installed into the IDT by the kernel.
  *
- * \p isEdgeTriggered whether the interrupt is edge-triggered. Edge-triggered
- * interrupts cannot share a vector.
- *
  * @returns 0 if handler installed successfully
  */
 + (int)handleSource:(dk_interrupt_source_t *)source
@@ -36,10 +40,7 @@ struct isa_intr_override {
 	 atPriority:(ipl_t)prio
 	      entry:(struct intr_entry *)entry;
 
-- initWithProvider:(DKDevice *)provider
-		id:(uint32_t)id
-	   address:(paddr_t)paddr
-	   gsiBase:(uint32_t)gsiBase;
+- initWithId:(uint32_t)id address:(paddr_t)paddr gsiBase:(uint32_t)gsiBase;
 
 @end
 

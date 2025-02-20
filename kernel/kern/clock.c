@@ -1,18 +1,13 @@
+/*
+ * Copyright (c) 2023-2025 NetaScale Object Solutions.
+ * Created on Mon Jul 24 2023.
+ */
+
 #include "kdk/kern.h"
 #include "kdk/queue.h"
 #include "ki.h"
 
 typedef int64_t time_t;
-
-nanosecs_t
-ke_get_local_nanos(kcpu_t *cpu)
-{
-#if PORT == virt68k
-	return cpu->nanos;
-#else
-	return __atomic_load_n(&cpu->nanos, __ATOMIC_SEQ_CST);
-#endif
-}
 
 void
 ki_timer_enqueue_locked(ktimer_t *callout)

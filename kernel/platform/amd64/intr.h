@@ -22,6 +22,7 @@ void lapic_eoi(void);
 void lapic_enable(uint8_t spurvec);
 uint32_t lapic_timer_calibrate(void);
 void lapic_timer_start(void);
+void lapic_pend(uint8_t vector);
 void idt_load(void);
 
 #endif /* KRX_AMD64_INTR_H */

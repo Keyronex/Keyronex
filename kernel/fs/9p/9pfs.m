@@ -23,10 +23,12 @@
 
 #include "9pfs.h"
 #include "ddk/DKDevice.h"
-#include "dev/9pSockTransport.h"
+// #include "dev/9pSockTransport.h"
+#include "ddk/DKUtilities.h"
 #include "dev/virtio/VirtIO9pPort.h"
 #include "fs/9p/9p_buf.h"
-#include "kdk/dev.h"
+// #include "kdk/dev.h"
+#include "kdk/iop.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
@@ -55,10 +57,10 @@ struct ninepfs_state {
 	RB_HEAD(ninep_node_rb, ninep_node) node_cache;
 	kmutex_t node_cache_lock;
 	struct ninep_node *root_node;
-	VirtIO9pPort *provider;
+	struct vnode *provider;
+	NinepFS * ninepfs;
 };
 
-#define PROVIDER ((VirtIO9pPort *)m_provider)
 #define VTO9(VNODE) ((struct ninep_node *)(VNODE)->fs_data)
 #define VTO9FS(VNODE) ((struct ninepfs_state *)(VNODE)->vfs->vfs_data)
 
@@ -591,15 +593,16 @@ ninep_inactive(vnode_t *vn)
 	ninep_buf_addu32(buf_in, frame->rw.bytes);
 	ninep_buf_close(buf_in);
 
-	next_frame = iop_stack_initialise_next(iop);
-	iop_frame_setup_9p(next_frame, buf_in, buf_out, frame->mdl);
+	next_frame = iop_stack_next(iop);
+	iop_frame_setup_9p(m_state->provider, next_frame, buf_in, buf_out,
+	    frame->mdl);
 
 	return kIOPRetContinue;
 }
 
 - (iop_return_t)completeIOP:(iop_t *)iop
 {
-	iop_frame_t *frame = iop_stack_previous(iop);
+	iop_frame_t *frame = iop_stack_next(iop);
 
 	kassert(frame->function == kIOPType9p);
 
@@ -613,6 +616,9 @@ ninep_inactive(vnode_t *vn)
 
 		ninep_buf_free(frame->ninep.ninep_in);
 		ninep_buf_free(frame->ninep.ninep_out);
+
+		iop->result->result = 0;
+		iop->result->count = count;
 
 		return kIOPRetCompleted;
 	}
@@ -642,7 +648,7 @@ ninep_inactive(vnode_t *vn)
 	ninep_buf_addstr(buf_in, k9pVersion2000L);
 	ninep_buf_close(buf_in);
 
-	iop = iop_new_9p(PROVIDER, buf_in, buf_out, NULL);
+	iop = iop_new_9p(m_state->provider, buf_in, buf_out, NULL);
 	iop_send_sync(iop);
 
 	switch (buf_out->data->kind) {
@@ -692,7 +698,7 @@ ninep_inactive(vnode_t *vn)
 	ninep_buf_addu32(buf_in, 0);
 	ninep_buf_close(buf_in);
 
-	iop = iop_new_9p(PROVIDER, buf_in, buf_out, NULL);
+	iop = iop_new_9p(m_state->provider, buf_in, buf_out, NULL);
 	iop_send_sync(iop);
 	iop_free(iop);
 
@@ -725,22 +731,22 @@ ninep_inactive(vnode_t *vn)
 	return r;
 }
 
-- (instancetype)initWithProvider:(VirtIO9pPort *)provider vfs:(vfs_t *)vfs
+- (instancetype)initWithProvider:(vnode_t *)provider vfs:(vfs_t *)vfs
 {
 	int r;
 
-	self = [super initWithProvider:provider];
+	self = [super init];
 
-	kmem_asprintf(obj_name_ptr(self), "9pfs-%u", counter++);
+	kmem_asprintf(&m_name, "9pfs-%u", counter++);
 
 	m_state = kmem_alloc(sizeof(struct ninepfs_state));
+	m_state->ninepfs = self;
 	m_state->fid_counter = 1;
 	m_state->req_tag = 0;
-	m_state->provider = PROVIDER;
+	m_state->provider = provider;
 	RB_INIT(&m_state->node_cache);
 	ke_mutex_init(&m_state->node_cache_lock);
 	m_state->vfs = vfs;
-	vfs->device = self;
 	vfs->vfs_data = (uintptr_t)m_state;
 	vfs->file_refcnt = 0;
 	ke_spinlock_init(&vfs->vnode_list_lock);
@@ -754,15 +760,7 @@ ninep_inactive(vnode_t *vn)
 	if (r != 0)
 		kfatal("Failed to attach\n");
 
-	[self registerDevice];
-	DKLogAttach(self);
-
 	return self;
-}
-
-+ (BOOL)probeWithProvider:(VirtIO9pPort *)provider
-{
-	return [[self alloc] initWithProvider:provider] != nil;
 }
 
 - (vnode_t *)root
@@ -833,7 +831,7 @@ ninep_mount(namecache_handle_t over, const char *argstr)
 {
 	struct mount_args args;
 	vfs_t *vfs;
-	id port;
+	struct vnode *port;
 	NinepFS *fs;
 
 	parse_mount_args(argstr, mount_arg, &args);
@@ -848,6 +846,7 @@ ninep_mount(namecache_handle_t over, const char *argstr)
 		if (port == NULL)
 			kfatal("No 9p port for tag %s\n", args.server);
 	} else {
+#if 0
 		iop_t *iop = iop_new(keysock_dev);
 		struct sockaddr_storage sa;
 		struct sockaddr_in *sin = (void *)&sa;
@@ -872,6 +871,9 @@ ninep_mount(namecache_handle_t over, const char *argstr)
 		(void)r;
 
 		port = [[Socket9pPort alloc] initWithConnectedSocket:sock];
+#else
+		kfatal("add socket support\n");
+#endif
 	}
 
 	fs = [[NinepFS alloc] initWithProvider:port vfs:vfs];
@@ -903,6 +905,32 @@ genfs_ubc_write(vnode_t *vnode, vaddr_t user_addr, io_off_t off, size_t size)
 	return (io_result_t) { .result = 0, .count = r };
 }
 
+
+static iop_return_t
+iop_dispatch(vnode_t *, iop_t *iop)
+{
+	iop_frame_t *frame = iop_stack_current(iop);
+	NinepFS *fs = VTO9FS(frame->vnode)->ninepfs;
+
+
+	return [fs dispatchIOP:iop];
+}
+
+static iop_return_t
+iop_complete(vnode_t *, iop_t *iop)
+{
+	iop_frame_t *frame = iop_stack_current(iop);
+	NinepFS *fs = VTO9FS(frame->vnode)->ninepfs;
+
+	return [fs completeIOP:iop];
+}
+
+static size_t
+iop_stack_depth(vnode_t *vnode)
+{
+	return 2;
+}
+
 static struct vnode_ops ninep_vnops = {
 	.cached_read = genfs_ubc_read,
 	.cached_write = genfs_ubc_write,
@@ -910,6 +938,10 @@ static struct vnode_ops ninep_vnops = {
 	.getattr = ninep_getattr,
 	.lookup = ninep_lookup,
 	.inactive = ninep_inactive,
+
+	.iop_dispatch = iop_dispatch,
+	.iop_complete = iop_complete,
+	.iop_stack_depth = iop_stack_depth,
 };
 
 struct vfs_ops ninep_vfsops = {

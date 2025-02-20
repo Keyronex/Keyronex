@@ -1,15 +1,22 @@
+/*
+ * Copyright (c) 2024-2025 NetaScale Object Solutions.
+ * Created on Sun May 12 2024.
+ */
+
+#include <ddk/DKUtilities.h>
+#include <ddk/DKVirtIOTransport.h>
+#include <ddk/safe_endian.h>
+#include <ddk/virtioreg.h>
+#include <kdk/endian.h>
+#include <kdk/kmem.h>
+#include <kdk/object.h>
+#include <kdk/queue.h>
+#include <kdk/vfs.h>
 #include <string.h>
 
 #include "VirtIO9pPort.h"
-#include "ddk/virtioreg.h"
-#include "dev/safe_endian.h"
 #include "fs/9p/9p_buf.h"
 #include "fs/9p/9pfs.h"
-#include "kdk/dev.h"
-#include "kdk/endian.h"
-#include "kdk/kmem.h"
-#include "kdk/object.h"
-#include "kdk/queue.h"
 
 struct virtio_9p_config {
 	/* length of the tag name */
@@ -29,59 +36,50 @@ struct vio9p_req {
 	uint16_t first_desc_id;
 };
 
-#define PROVIDER ((DKDevice<DKVirtIOTransport> *)m_provider)
-
-void processVirtQueue(struct virtio_queue *queue, id delegate);
-
 TAILQ_TYPE_HEAD(, VirtIO9pPort) tag_list = TAILQ_HEAD_INITIALIZER(tag_list);
 static int counter = 0;
+static struct vnode_ops ninep_vops;
 
 @implementation VirtIO9pPort
 
-+ (VirtIO9pPort *)forTag:(const char *)tag
++ (vnode_t *)forTag:(const char *)tag
 {
 	VirtIO9pPort *port;
 	TAILQ_FOREACH (port, &tag_list, m_tagListEntry) {
 		if(strcmp(port->m_tagName, tag) == 0)
-			return port;
+			return port->m_vnode;
 	}
 	return NULL;
 }
 
-+ (BOOL)probeWithProvider:(DKDevice<DKVirtIOTransport> *)provider
-{
-	[[self alloc] initWithProvider:provider];
-	return YES;
-}
-
-- (instancetype)initWithProvider:(DKDevice<DKVirtIOTransport> *)provider
+- (instancetype)initWithTransport:(DKVirtIOTransport *)transport
 {
 	volatile struct virtio_9p_config *cfg;
 	size_t tag_len;
 	int r;
 
-	self = [super initWithProvider:provider];
+	self = [super init];
+	m_transport = transport;
 
-	cfg = provider.deviceConfig;
+	cfg = m_transport.deviceConfig;
 
-	kmem_asprintf(obj_name_ptr(self), "virtio-9p-%u", counter++);
+	kmem_asprintf(&m_name, "virtio-9p-port");
 	TAILQ_INIT(&in_flight_reqs);
 
-	provider.delegate = self;
-	[provider resetDevice];
+	[m_transport resetDevice];
 
-	if (![provider exchangeFeatures:VIRTIO_F_VERSION_1]) {
+	if (![m_transport exchangeFeaturesMandatory:VIRTIO_F_VERSION_1 optional:NULL]) {
 		DKDevLog(self, "Featuure exchange failed\n");
 		return nil;
 	}
 
-	r = [provider setupQueue:&m_reqQueue index:0];
+	r = [m_transport setupQueue:&m_reqQueue index:0];
 	if (r != 0) {
 		DKDevLog(self, "Failed to setup command queue: %d", r);
 		return nil;
 	}
 
-	r = [provider enableDevice];
+	r = [m_transport enableDevice];
 	if (r != 0) {
 		DKDevLog(self, "Failed to enable device: %d\n", r);
 		return nil;
@@ -102,9 +100,9 @@ static int counter = 0;
 	m_tagName[tag_len] = '\0';
 	TAILQ_INSERT_TAIL(&tag_list, self, m_tagListEntry);
 
-	[self registerDevice];
+	DKDevLog(self, "Tag: %s\n", m_tagName);
 
-	DKLogAttachExtra(self, "Tag: %s", m_tagName);
+	m_vnode = vnode_new(NULL, VCHR, &ninep_vops, NULL, NULL, self);
 
 	return self;
 }
@@ -127,56 +125,56 @@ static int counter = 0;
 		ndescs += mdl->nentries;
 
 	for (int i = 0; i < ndescs; i++)
-		descs[i] = [PROVIDER allocateDescNumOnQueue:&m_reqQueue];
+		descs[i] = [m_transport allocateDescNumOnQueue:&m_reqQueue];
 
 	req->ndescs = ndescs;
 	req->first_desc_id = descs[0];
 	req->iop = iop;
 
 	/* the in buffer */
-	m_reqQueue.desc[descs[0]].len = in_buf->data->size.value;
-	m_reqQueue.desc[descs[0]].addr = native_to_le64(V2P(in_buf->data));
-	m_reqQueue.desc[descs[0]].flags = native_to_le16(VRING_DESC_F_NEXT);
-	m_reqQueue.desc[descs[0]].next = native_to_le16(descs[1]);
+	m_reqQueue.desc[descs[0]].len = in_buf->data->size;
+	m_reqQueue.desc[descs[0]].addr = to_leu64(V2P(in_buf->data));
+	m_reqQueue.desc[descs[0]].flags = to_leu16(VRING_DESC_F_NEXT);
+	m_reqQueue.desc[descs[0]].next = to_leu16(descs[1]);
 	di++;
 
 	/* the in-mdl, if extant */
 	if (mdl && !mdl->write) {
 		for (size_t i = 0; i < mdl->nentries; i++) {
 			paddr_t paddr = vm_mdl_paddr(mdl, i * PGSIZE);
-			m_reqQueue.desc[descs[di]].addr = native_to_le64(paddr);
-			m_reqQueue.desc[descs[di]].len = native_to_le32(PGSIZE);
-			m_reqQueue.desc[descs[di]].flags = native_to_le16(
+			m_reqQueue.desc[descs[di]].addr = to_leu64(paddr);
+			m_reqQueue.desc[descs[di]].len = to_leu32(PGSIZE);
+			m_reqQueue.desc[descs[di]].flags = to_leu16(
 			    VRING_DESC_F_NEXT);
-			m_reqQueue.desc[descs[di]].next = native_to_le16(
+			m_reqQueue.desc[descs[di]].next = to_leu16(
 			    descs[di + 1]);
 			di++;
 		}
 	}
 
 	/* the out header */
-	m_reqQueue.desc[descs[di]].len = native_to_le32(out_buf->bufsize);
-	m_reqQueue.desc[descs[di]].addr = native_to_le64(V2P(out_buf->data));
-	m_reqQueue.desc[descs[di]].flags = native_to_le16(VRING_DESC_F_WRITE);
+	m_reqQueue.desc[descs[di]].len = to_leu32(out_buf->bufsize);
+	m_reqQueue.desc[descs[di]].addr = to_leu64(V2P(out_buf->data));
+	m_reqQueue.desc[descs[di]].flags = to_leu16(VRING_DESC_F_WRITE);
 
 	if (mdl && mdl->write) {
-		m_reqQueue.desc[descs[di]].flags |= native_to_le16(
-		    VRING_DESC_F_NEXT);
-		m_reqQueue.desc[descs[di]].next = native_to_le16(descs[di + 1]);
+		m_reqQueue.desc[descs[di]].flags.value |= to_leu16(
+		    VRING_DESC_F_NEXT).value;
+		m_reqQueue.desc[descs[di]].next = to_leu16(descs[di + 1]);
 		di++;
 
 		for (size_t i = 0; i < mdl->nentries; i++) {
 			paddr_t paddr = vm_mdl_paddr(mdl, i * PGSIZE);
-			m_reqQueue.desc[descs[di]].addr = native_to_le64(paddr);
-			m_reqQueue.desc[descs[di]].len = native_to_le32(PGSIZE);
+			m_reqQueue.desc[descs[di]].addr = to_leu64(paddr);
+			m_reqQueue.desc[descs[di]].len = to_leu32(PGSIZE);
 			if (i == mdl->nentries - 1) {
 				m_reqQueue.desc[descs[di]].flags =
-				    native_to_le16(VRING_DESC_F_WRITE);
+				    to_leu16(VRING_DESC_F_WRITE);
 				break;
 			}
-			m_reqQueue.desc[descs[di]].flags = native_to_le16(
+			m_reqQueue.desc[descs[di]].flags = to_leu16(
 			    VRING_DESC_F_WRITE | VRING_DESC_F_NEXT);
-			m_reqQueue.desc[descs[di]].next = native_to_le16(
+			m_reqQueue.desc[descs[di]].next = to_leu16(
 			    descs[di + 1]);
 			di++;
 		}
@@ -184,14 +182,16 @@ static int counter = 0;
 
 	TAILQ_INSERT_HEAD(&in_flight_reqs, req, queue_entry);
 
-	[PROVIDER submitDescNum:descs[0] toQueue:&m_reqQueue];
-	[PROVIDER notifyQueue:&m_reqQueue];
+	[m_transport submitDescNum:descs[0] toQueue:&m_reqQueue];
+	[m_transport notifyQueue:&m_reqQueue];
 }
 
-- (void)deferredProcessing
+- (void)additionalDeferredProcessingForQueue:(virtio_queue_t *)queue
 {
-	ipl_t ipl = ke_spinlock_acquire(&m_reqQueue.spinlock);
-	processVirtQueue(&m_reqQueue, self);
+	kassert(queue == &m_reqQueue);
+	kassert(ke_spinlock_held(&m_reqQueue.spinlock));
+	kassert(splget() == kIPLDPC);
+
 	while (true) {
 		iop_t *iop;
 		iop_frame_t *frame;
@@ -205,7 +205,7 @@ static int counter = 0;
 		if (!iop)
 			break;
 
-		TAILQ_REMOVE(&pending_packets, iop, dev_queue_entry);
+		TAILQ_REMOVE(&pending_packets, iop, dev_qlink);
 
 		frame = iop_stack_current(iop);
 
@@ -220,7 +220,6 @@ static int counter = 0;
 		else
 			break;
 	}
-	ke_spinlock_release(&m_reqQueue.spinlock, ipl);
 }
 
 - (void)processUsedDescriptor:(volatile struct vring_used_elem *)e
@@ -249,14 +248,14 @@ static int counter = 0;
 	while (true) {
 		volatile struct vring_desc *desc = &m_reqQueue.desc[descidx];
 
-		if (!(le16_to_native(desc->flags) & VRING_DESC_F_NEXT)) {
-			[PROVIDER freeDescNum:descidx onQueue:&m_reqQueue];
+		if (!(from_leu16(desc->flags) & VRING_DESC_F_NEXT)) {
+			[m_transport freeDescNum:descidx onQueue:&m_reqQueue];
 			ndescs++;
 			break;
 		} else {
 			uint16_t oldidx = descidx;
-			descidx = le16_to_native(desc->next);
-			[PROVIDER freeDescNum:oldidx onQueue:&m_reqQueue];
+			descidx = from_leu16(desc->next);
+			[m_transport freeDescNum:oldidx onQueue:&m_reqQueue];
 			ndescs++;
 		}
 	}
@@ -277,12 +276,31 @@ static int counter = 0;
 
 	kassert(frame->function == kIOPType9p);
 	ipl = ke_spinlock_acquire(&m_reqQueue.spinlock);
-	TAILQ_INSERT_TAIL(&pending_packets, iop, dev_queue_entry);
+	TAILQ_INSERT_TAIL(&pending_packets, iop, dev_qlink);
+	[self additionalDeferredProcessingForQueue:&m_reqQueue];
 	ke_spinlock_release(&m_reqQueue.spinlock, ipl);
-	[PROVIDER enqueueDPC];
+
 
 	return kIOPRetPending;
 }
 
 
 @end
+
+static size_t
+iop_stack_depth(vnode_t *vp)
+{
+	return 1;
+}
+
+static iop_return_t
+iop_dispatch(vnode_t *vp, iop_t *iop)
+{
+	VirtIO9pPort *port = (VirtIO9pPort *)vp->fs_data;
+	return [port dispatchIOP:iop];
+}
+
+static struct vnode_ops ninep_vops = {
+	.iop_stack_depth = iop_stack_depth,
+	.iop_dispatch = iop_dispatch,
+};

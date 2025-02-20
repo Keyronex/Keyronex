@@ -3,28 +3,71 @@
  * Created on Sun Aug 11 2024.
  */
 
+#include <ddk/DKAxis.h>
+#include <ddk/DKInterrupt.h>
+#include <kdk/amd64.h>
+#include <kdk/amd64/regs.h>
+#include <kdk/kern.h>
+#include <uacpi/acpi.h>
+#include <uacpi/tables.h>
+
 #include "IOAPIC.h"
-#include "dev/acpi/DKAACPIPlatform.h"
-#include "dev/acpi/tables.h"
-#include "kdk/libkern.h"
-#include "uacpi/tables.h"
-#include "uacpi/uacpi.h"
+#include "dev/acpi/DKACPIPlatform.h"
 
 @implementation DKACPIPlatform (AMD64_)
+
+- (DKPlatformInterruptController *)platformInterruptController
+{
+	return (id)[IOApic class];
+}
+
+- (int)allocateLeastLoadedMSIxInterruptForEntry:(struct intr_entry *)entry
+				    msixAddress:(out uint32_t *)msixAddress
+				       msixData:(out uint32_t *)msixData
+{
+	uint8_t vector;
+	int r = md_intr_alloc("MSI-X", kIPLDevice, entry->handler, entry->arg,
+	    false, &vector, entry);
+	if (r != 0)
+		return r;
+	*msixAddress = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
+	*msixData = (cpus[0]->cpucb.lapic_id << 24) | vector;
+
+	return 0;
+}
+
+- (int)allocateLeastLoadedMSIInterruptForEntries:(struct intr_entry *)entries
+					   count:(size_t)count
+				      msiAddress:(out uint32_t *)msiAddress
+					 msiData:(out uint32_t *)msiData
+{
+	uint8_t baseVector;
+	int r = md_intr_alloc_contiguous("MSI", kIPLDevice, entries->handler,
+	    entries->arg, false, count, &baseVector, entries);
+	if (r != 0)
+		return r;
+
+	*msiAddress = rdmsr(kAMD64MSRAPICBase) & 0xfffff000;
+	*msiData = (cpus[0]->cpucb.lapic_id << 24) | (baseVector);
+	return 0;
+}
 
 static void
 parse_ioapics(struct acpi_entry_hdr *item, void *arg)
 {
 	struct acpi_madt_ioapic *ioapic;
+	IOApic *dev;
 
 	if (item->type != 1)
 		return;
 
 	ioapic = (struct acpi_madt_ioapic *)item;
-	[[IOApic alloc] initWithProvider:arg
-				      id:ioapic->id
+
+	dev = [[IOApic alloc] initWithId:ioapic->id
 				 address:(paddr_t)ioapic->address
 				 gsiBase:ioapic->gsi_base];
+
+	[(id)arg attachChild:dev onAxis:gDeviceAxis];
 }
 
 static void

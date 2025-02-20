@@ -1,10 +1,11 @@
-#include "kdk/dev.h"
-#include "kdk/executive.h"
-#include "kdk/kmem.h"
-#include "kdk/libkern.h"
-#include "kdk/queue.h"
-#include "kdk/vm.h"
-#include "kdk/vmem.h"
+#include <kdk/executive.h>
+#include <kdk/iop.h>
+#include <kdk/kmem.h>
+#include <kdk/libkern.h>
+#include <kdk/queue.h>
+#include <kdk/vm.h>
+#include <kdk/vmem.h>
+
 #include "kern/ki.h"
 #include "ubc.h"
 #include "vmp.h"

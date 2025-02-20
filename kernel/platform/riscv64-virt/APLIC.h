@@ -6,7 +6,8 @@
 #ifndef KRX_RISCV64_APLIC_H
 #define KRX_RISCV64_APLIC_H
 
-#include "ddk/DKDevice.h"
+#include <ddk/DKDevice.h>
+#include <ddk/DKInterrupt.h>
 
 @class DKACPIPlatform;
 struct acpi_madt_aplic;

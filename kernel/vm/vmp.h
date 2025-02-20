@@ -20,6 +20,8 @@ struct eprocess;
 #error "Unknown port!"
 #endif
 
+#define HHDM_END (HHDM_BASE + HHDM_SIZE)
+
 struct vmp_pte_wire_state {
 	/*! the process */
 	vm_procstate_t *vmps;

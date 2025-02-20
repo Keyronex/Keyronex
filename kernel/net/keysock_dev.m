@@ -1,3 +1,5 @@
+#if 0 /* DK refactoring */
+
 #include "ddk/DKDevice.h"
 #include "kdk/dev.h"
 #include "kdk/kmem.h"
@@ -36,3 +38,5 @@ iop_return_t keysock_dispatch_iop(iop_t *iop);
 }
 
 @end
+
+#endif

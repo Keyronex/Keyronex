@@ -1,5 +1,5 @@
 keyronex = executable('keyronex',
-	'APLIC.m', 'DKACPIPlatform+RISCV.m', 'entry.c', 'intr.c','VirtRISCV64Platform.m',
+	'APLIC.m', 'DKACPIPlatform+RISCV.m', 'entry.c', 'intr.c',
 	'../generic/entry.c', kernel_sources,
 	c_args: [ freestanding_c_args, '-std=gnu2x' ],
 	objc_args: [ freestanding_c_args, '-std=gnu17'] ,
@@ -8,5 +8,4 @@ keyronex = executable('keyronex',
 		meson.source_root() / '../vendor/libgcc_rv64.a',
 		'-Wl,-T' + meson.current_source_dir() + '/linker.ld'
 	],
-	dependencies: [ kobjcrt_dep ]
 )

@@ -7,15 +7,16 @@
  * @brief Dirty page write-back daemon.
  */
 
-#include "kdk/dev.h"
-#include "kdk/executive.h"
-#include "kdk/kmem.h"
-#include "kdk/libkern.h"
-#include "kdk/misc.h"
-#include "kdk/vfs.h"
-#include "kdk/vm.h"
-#include "vm/vmp_dynamics.h"
+#include <kdk/executive.h>
+#include <kdk/iop.h>
+#include <kdk/kmem.h>
+#include <kdk/libkern.h>
+#include <kdk/misc.h>
+#include <kdk/vfs.h>
+#include <kdk/vm.h>
+
 #include "vmp.h"
+#include "vmp_dynamics.h"
 
 struct pagefile {
 	vnode_t *vnode;
@@ -88,7 +89,6 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 	case kPageUseAnonShared:
 	case kPageUseAnonFork:
 		anon = true;
-		frame->dev = pagefile.vnode->vfs->device;
 		frame->vnode = pagefile.vnode;
 		break;
 
@@ -96,7 +96,6 @@ prepare_cluster_write(vm_page_t *main_page, vm_mdl_t *mdl, iop_frame_t *frame)
 		vm_object_t *obj = main_page->owner;
 		vnode_t *vnode = obj->file.vnode;
 		anon = false;
-		frame->dev = vnode->vfs->device;
 		frame->vnode = vnode;
 		/* retain a reference on the vnode  */
 		VN_RETAIN(vnode, "(for writeback)");
@@ -211,8 +210,8 @@ vmp_writeback(void *)
 		vmp_release_pfn_lock(ipl);
 
 		for (int i = 0; i < nio_prepared; i++) {
-			int r = iop_send_sync(iops[i]);
-			kassert(r == 0);
+			io_result_t r = iop_send_sync(iops[i]);
+			kassert(r.result == 0);
 		}
 
 		ipl = vmp_acquire_pfn_lock();

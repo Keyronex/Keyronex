@@ -1,16 +1,15 @@
 #ifndef KRX_DEV_FBTERMINAL_H
 #define KRX_DEV_FBTERMINAL_H
 
-#include "ddk/DKDevice.h"
-#include "ddk/DKFramebuffer.h"
-#include "kdk/vm.h"
+#include <ddk/DKDevice.h>
+#include <ddk/DKFramebuffer.h>
 
 @interface FBTerminal : DKDevice {
-	@public
+    @public
 	struct term_context *term;
 }
 
-+ (BOOL)probeWithFramebuffer:(DKFramebuffer *)framebuffer;
+- (instancetype)initWithFramebuffer:(DKFramebuffer *)framebuffer;
 @end
 
 void fbterminal_putc(FBTerminal *term, int ch);
