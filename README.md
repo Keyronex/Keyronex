@@ -71,30 +71,33 @@ of Keyronex:
   - [ ] (incomplete) Global 2nd-chance page queues with balancing and writeback.
 
 - Executive Services
-  - [x] Profoundly asynchronous system of I/O Packet (IOP) message-based I/O.
   - [x] Futexes.
   - [x] Virtual Filesystem Switch.
   - [x] Namecache, including "NullFS" (bind mount) support.
   - [x] Object-oriented, handle-based userland interface.
   - [x] Executive Poll (EPoll), a readiness-notification API.
   - [ ] (not yet started) File write-behind
-  - [ ] (not yet started) IPC mechanism (will be L4 like or Mach like?)
+  - [ ] (not yet started) Native IPC mechanism
+
+- Driver Support Services:
+  - [x] Objective-C driver framework.
+  - [x] Profoundly asynchronous system of I/O Packet (IOP) message-based I/O.
+  - [ ] (incomplete) STREAMS framework for asynchronous character I/O.
 
 - Drivers & Filesystems
-  - [x] Objective-C framework.
-  - [x] ACPI-based device discovery for ACPI-supported ports.
-  - [x] VirtIO Disk, basic GPU, and 9p port.
+  - [x] ACPI-based device discovery.
+  - [x] VirtIO drivers: Disk, basic GPU, NIC, and 9p port.
+  - [x] xHCI driver and beginnings of USB stack.
   - [x] Intel E1000 NIC driver.
   - [x] PS/2 keyboard.
   - [ ] (incomplete) Windows "StorPort" driver shim.
   - [ ] (incomplete) FAT, Ext2 filesystems..
   - [ ] (incomplete) 9p filesystem (both VirtIO and TCP transport).
+  - [ ] (not yet started) Open Firmware/Device Tree based discovery.
 
 - Miscellaneous Kernel:
-  - [ ] (incomplete) TCP/IP stack based on LwIP modified with fine-grained locks.
-  - [ ] (incomplete) IOP-based socket framework with async send, receive,
-  connect, etc.
   - [ ] (incomplete) Kernel debugging GDB port over UDP.
+  - [ ] (not yet started) STREAMS-based TCP/IP stack.
   - [ ] (not yet started) Extended Berkeley Packet Filter (e-BPF).
 
 - POSIX subsystem server:
@@ -105,7 +108,6 @@ Third-party components
 ----------------------
 
 Several third-party components are used. These are some of them:
-
 
  - **Limine**: The bootloader used for Keyronx on AArch64 and amd64.
  - **FreeBSD**: `queue.h` and `tree.h`, generic type-safe list/queue and tree
@@ -118,11 +120,8 @@ Several third-party components are used. These are some of them:
  - **nanoprintf**: Printf implementation; provides `kprintf` and family.
  - **uACPI**: The UltraOS ACPI Implementation from UltraOS. Used by the ACPI
    drivers.
- - **LwIP**: Lightweight TCP/IP stack. Adapted parts of the LwIP core provide
-   the basis of the TCP/IP stack, while original code implements the socket
-   layer.
  - Various headers (mostly BSDs, some Linux): BSD-licenced headers mainly for
- device register definitions.
+  device register definitions.
 
 Licence
 -------

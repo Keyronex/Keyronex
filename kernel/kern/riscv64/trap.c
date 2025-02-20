@@ -14,10 +14,10 @@
 void
 c_trap(md_intr_frame_t *frame)
 {
-
 	bool user = !(frame->sstatus & /* SPP */ (1 << 8));
 
 	switch (frame->scause & 0x7fffffff) {
+
 
 	case 8: {
 		ki_set_interrupts(1);

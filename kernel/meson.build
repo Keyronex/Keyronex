@@ -142,6 +142,7 @@ if not headers_only
 	subdir('dev')
 	subdir('executive')
 	subdir('fs')
+	subdir('ios')
 	subdir('kdb')
 	subdir('vfs')
 	subdir('vm')

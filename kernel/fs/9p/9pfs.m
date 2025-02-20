@@ -23,18 +23,14 @@
 
 #include "9pfs.h"
 #include "ddk/DKDevice.h"
-// #include "dev/9pSockTransport.h"
 #include "ddk/DKUtilities.h"
 #include "dev/virtio/VirtIO9pPort.h"
 #include "fs/9p/9p_buf.h"
-// #include "kdk/dev.h"
 #include "kdk/iop.h"
 #include "kdk/kmem.h"
 #include "kdk/libkern.h"
 #include "kdk/object.h"
 #include "kdk/vfs.h"
-#include "lwip/ip_addr.h"
-#include "net/keysock_dev.h"
 #include "vm/ubc.h"
 
 typedef uint32_t fid_t;
