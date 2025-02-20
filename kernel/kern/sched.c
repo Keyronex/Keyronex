@@ -73,42 +73,50 @@ ke_dpc_init(kdpc_t *dpc, void (*callback)(void *), void *arg)
 void
 ke_dpc_enqueue(kdpc_t *dpc)
 {
+	ipl_t ipl;
+	kcpu_t *cpu, *expected = NULL;
+
 	if (splget() < kIPLDPC) {
-		ipl_t ipl = spldpc();
+		ipl = spldpc();
 		dpc->callback(dpc->arg);
 		splx(ipl);
 		return;
 	}
 
-	ipl_t ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock, kIPLHigh);
-	kassert((uintptr_t)dpc >= 0x10000ull);
-	if (dpc->cpu == NULL) {
-		dpc->cpu = curcpu();
-		TAILQ_INSERT_TAIL(&curcpu()->dpc_queue, dpc, queue_entry);
+	ipl = splraise(kIPLHigh);
+	cpu = curcpu();
+	ke_spinlock_acquire_nospl(&cpu->dpc_lock);
+
+	if (__atomic_compare_exchange_n(&dpc->cpu, &expected, cpu, false,
+		__ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+		TAILQ_INSERT_TAIL(&cpu->dpc_queue, dpc, queue_entry);
 		md_raise_dpc_interrupt();
 	}
-	ke_spinlock_release(&curcpu()->dpc_lock, ipl);
+
+	ke_spinlock_release_nospl(&cpu->dpc_lock);
+	splx(ipl);
 }
 
 void
 ki_dispatch_dpcs(kcpu_t *cpu)
 {
 	kassert(splget() == kIPLDPC);
+
 	while (true) {
 		ipl_t ipl;
 		kdpc_t *dpc;
 
-		ipl = ke_spinlock_acquire_at(&curcpu()->dpc_lock, kIPLHigh);
-		dpc = TAILQ_FIRST(&curcpu()->dpc_queue);
+		ipl = ke_spinlock_acquire_at(&cpu->dpc_lock, kIPLHigh);
+		dpc = TAILQ_FIRST(&cpu->dpc_queue);
 		if (dpc != NULL) {
-			TAILQ_REMOVE(&curcpu()->dpc_queue, dpc, queue_entry);
+			TAILQ_REMOVE(&cpu->dpc_queue, dpc, queue_entry);
 			dpc->cpu = NULL;
 		} else {
-			ke_spinlock_release(&curcpu()->dpc_lock, ipl);
+			ke_spinlock_release(&cpu->dpc_lock, ipl);
 			break;
 		}
 
-		ke_spinlock_release(&curcpu()->dpc_lock, ipl);
+		ke_spinlock_release(&cpu->dpc_lock, ipl);
 		/* Now at IPL=dpc */
 
 		dpc->callback(dpc->arg);
