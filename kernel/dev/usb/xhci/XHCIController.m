@@ -7,6 +7,7 @@
 #include <ddk/DKPCIDevice.h>
 #include <ddk/DKUSBDevice.h>
 #include <ddk/DKUSBHub.h>
+#include <ddk/DKPlatformRoot.h>
 #include <ddk/reg/usb.h>
 #include <kdk/executive.h>
 #include <kdk/kern.h>
@@ -560,8 +561,10 @@ dispatch_dpc(void *arg)
 			slotID:(uint32_t)slotID
 {
 	struct ring *origRing;
-	ipl_t ipl = ke_spinlock_acquire(&eventRing->lock);
 	struct req *cmd = NULL;
+
+	kassert(splget() == kIPLDPC);
+	kassert(ke_spinlock_held(&eventRing->lock));
 
 	TAILQ_FOREACH (cmd, &eventRing->cmds, link) {
 		if (cmd->trb_paddr == eventTrbPaddr)
@@ -570,8 +573,6 @@ dispatch_dpc(void *arg)
 
 	if (cmd == NULL) {
 		struct xhci_trb *trb;
-
-		ke_spinlock_release(&eventRing->lock, ipl);
 
 		trb = (struct xhci_trb *)P2V(eventTrbPaddr);
 		kprintf("TRB type appears to be %u\n",
@@ -582,7 +583,6 @@ dispatch_dpc(void *arg)
 	}
 
 	TAILQ_REMOVE(&eventRing->cmds, cmd, link);
-	ke_spinlock_release_nospl(&eventRing->lock);
 
 	origRing = cmd->ring;
 
@@ -606,7 +606,7 @@ dispatch_dpc(void *arg)
 		    (origRing->cycle_bit ^ 1));
 	}
 
-	ke_spinlock_release(&origRing->lock, ipl);
+	ke_spinlock_release_nospl(&origRing->lock);
 
 	cmd->result.code = code;
 	cmd->result.slot_id = slotID;
@@ -620,6 +620,9 @@ dispatch_dpc(void *arg)
 {
 	volatile struct xhci_interrupt_regs *ir = &m_rtRegs->IR[0];
 	struct ring *eventRing = m_eventRing;
+
+	kassert(splget() == kIPLDPC);
+	ke_spinlock_acquire_nospl(&eventRing->lock);
 
 	for (;;) {
 		volatile struct xhci_trb *trb =
@@ -692,6 +695,8 @@ dispatch_dpc(void *arg)
 		ir->ERDP_lo = to_leu32((uint32_t)erdp | (1 << 3));
 		ir->ERDP_hi = to_leu32((uint32_t)(erdp >> 32));
 	}
+
+	ke_spinlock_release_nospl(&eventRing->lock);
 }
 
 static void
@@ -702,24 +707,34 @@ event_dpc(void *arg)
 }
 
 static bool
-xhci_interrupt(md_intr_frame_t *frame, void *arg)
+xhci_msi_interrupt(md_intr_frame_t *frame, void *arg)
 {
 	XHCIController *self = arg;
-#if 0 /* ? inapplicable with MSI-X */
+
+#if TRACE_XHCI >= 3
+	kprintf("xhci_msi_interrupt\n");
+#endif
+
+	ke_dpc_enqueue(&self->m_eventRing->dpc);
+
+	return true;
+}
+
+static bool
+xhci_intx_interrupt(md_intr_frame_t *frame, void *arg)
+{
+	XHCIController *self = arg;
 	volatile struct xhci_interrupt_regs *ir = &self->m_rtRegs->IR[0];
 	uint32_t status;
 
 	status = from_leu32(ir->IMAN);
-	if (!(status & XHCI_IMAN_IP)) {
-		kprintf("IMAN not set\n");
+	if (!(status & XHCI_IMAN_IP))
 		return false;
-	}
 
 	ir->IMAN = to_leu32(status);
-#endif
 
 #if TRACE_XHCI >= 3
-	kprintf("xhci_interrupt\n");
+	kprintf("xhci_interrupt (cpu %d)\n", curcpu()->num);
 #endif
 
 	ke_dpc_enqueue(&self->m_eventRing->dpc);
@@ -869,11 +884,9 @@ controller_thread(void *arg)
 		return;
 	}
 
-	m_intrEntry.handler = xhci_interrupt;
-	m_intrEntry.arg = self;
-
 	ipl_t ipl = spldpc();
 
+#if 0
 	r = [m_pciDevice setMSIx:true];
 	if (r == 0) {
 		r = [m_pciDevice
@@ -898,6 +911,25 @@ controller_thread(void *arg)
 		}
 	}
 
+	(void)xhci_intx_interrupt;
+#else
+	dk_interrupt_source_t intxSource = [m_pciDevice interruptSource];
+
+	r = [[gPlatformRoot platformInterruptController]
+	    handleSource:&intxSource
+	     withHandler:xhci_intx_interrupt
+		argument:self
+	      atPriority:kIPLDevice
+		   entry:&m_intrEntry];
+	if (r < 0) {
+		kprintf("XHCI: Failed to allocate interrupt handler: %d\n", r);
+		return;
+	}
+
+	[m_pciDevice setInterrupts:true];
+
+	(void)xhci_msi_interrupt;
+#endif
 	m_opRegs->CONFIG = to_leu32((uint32_t)m_maxSlots);
 
 	cmd = from_leu32(m_opRegs->USBCMD);

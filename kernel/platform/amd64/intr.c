@@ -8,7 +8,7 @@
 #include "kern/ki.h"
 #include "vm/vmp.h"
 
-#define LAZY_CR8 1
+// #define LAZY_CR8 1
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 

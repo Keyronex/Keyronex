@@ -44,13 +44,11 @@ struct kmem_slab {
 };
 
 struct vm_slab_page {
-	uint16_t vm_page_flags;
-	uintptr_t padding[3];
+	uintptr_t padding[4];
 	struct kmem_slab slab;
 };
 
-_Static_assert(sizeof(struct vm_slab_page) == sizeof(vm_page_t),
-    "struct vm_slab_page size not equal to struct vm_page");
+_Static_assert(sizeof(struct vm_slab_page) == sizeof(vm_page_t));
 
 struct kmem_magazine {
 	STAILQ_ENTRY(kmem_magazine) mag_link;

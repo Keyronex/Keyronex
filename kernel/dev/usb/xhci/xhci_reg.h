@@ -13,7 +13,7 @@
 
 
 /* 5.3 Host Controller Capability Registers */
-struct __attribute__((packed)) xhci_host_cap_regs {
+struct __attribute__((packed, aligned(4))) xhci_host_cap_regs {
 	uint8_t CAPLENGTH;
 	uint8_t reserved;
 	leu16_t HCIVERSION;
