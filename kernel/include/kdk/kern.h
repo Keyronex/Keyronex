@@ -83,12 +83,8 @@ typedef struct kwaitblock {
 	kwaitblockstatus_t block_status;
 	/*! status of the waiter - atomically accessed */
 	kinternalwaitstatus_t *waiter_status;
-	/*! object being waited on */
-	struct kdispatchheader *object;
 	/*! thread waiting */
 	struct kthread *thread;
-	/*! has it been acquired (yet)? */
-	bool acquired;
 } kwaitblock_t;
 
 typedef enum kdispatchobjecttype {

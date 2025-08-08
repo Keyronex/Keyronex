@@ -182,7 +182,6 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 			}
 		}
 
-		wb->object = obj;
 		wb->waiter_status = &thread->wait_status;
 		wb->thread = thread;
 		wb->block_status = kWaitBlockStatusActive;
@@ -197,6 +196,12 @@ ke_wait_multi(size_t nobjects, void *objects[], const char *reason,
 		for (int i = 0; i < limit; i++) {
 			kwaitblock_t *wb;
 			kdispatchheader_t *obj;
+
+			/*
+			 * xxx this looks like a problem
+			 * (if there is a timeout it looks like the timer is
+			 *  never cancelled, nor removed from the waitblocks!)
+			 */
 
 			wb = &waitblocks[i];
 			obj = objects[i];

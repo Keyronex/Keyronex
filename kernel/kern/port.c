@@ -126,7 +126,6 @@ ke_port_dequeue(kport_t *kport)
 	    kport->n_processing < kport->max_n_processing) {
 		msg = do_port_acquire(kport, NULL, thread);
 	} else {
-		wb->object = obj;
 		wb->waiter_status = &thread->wait_status;
 		wb->thread = thread;
 		wb->block_status = kWaitBlockStatusActive;
