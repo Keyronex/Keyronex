@@ -109,7 +109,7 @@ Third-party components
 
 Several third-party components are used. These are some of them:
 
- - **Limine**: The bootloader used for Keyronx on AArch64 and amd64.
+ - **Limine**: The bootloader used for Keyronex on AArch64 and amd64.
  - **FreeBSD**: `queue.h` and `tree.h`, generic type-safe list/queue and tree
   macros for C.
  - **NetBSD**:
