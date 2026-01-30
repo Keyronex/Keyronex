@@ -1,0 +1,12 @@
+diff -ruN xclock/configure.ac xclock-patched/configure.ac
+--- xclock/configure.ac	2019-07-14 19:35:08.000000000 +0100
++++ xclock-patched/configure.ac	2023-05-05 20:52:25.392907363 +0100
+@@ -41,7 +41,7 @@
+ 
+ AC_CHECK_FUNCS([strlcpy getpid nl_langinfo])
+ 
+-AM_ICONV
++#AM_ICONV
+ 
+ dnl Required dependencies
+ PKG_CHECK_MODULES(XCLOCK, [xaw7 xmu x11 xproto >= 7.0.17])

@@ -1,0 +1,13 @@
+[submodule "vendor/freestnd-c-hdrs"]
+	path = vendor/freestnd-c-hdrs
+	url = https://github.com/osdev0/freestnd-c-hdrs.git
+[submodule "vendor/libgcc-binaries"]
+	path = vendor/libgcc-binaries
+	url = https://github.com/osdev0/libgcc-binaries.git
+[submodule "vendor/mlibc"]
+	path = vendor/mlibc
+	url = git@github.com:Cloudarox/mlibc.git
+[submodule "vendor/limine"]
+	path = vendor/limine
+	url = https://github.com/limine-bootloader/limine.git
+	branch = v10.x-binary

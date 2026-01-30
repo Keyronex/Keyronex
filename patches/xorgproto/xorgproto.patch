@@ -1,0 +1,36 @@
+diff -ruN xorgproto-2022.1/include/X11/Xfuncs.h xorgproto/include/X11/Xfuncs.h
+--- xorgproto-2022.1/include/X11/Xfuncs.h	2022-04-21 01:48:08.000000000 +0100
++++ xorgproto/include/X11/Xfuncs.h	2025-12-31 20:17:48.098312976 +0000
+@@ -44,7 +44,7 @@
+ #    define bcmp(b1,b2,len) memcmp(b1, b2, len)
+ #   else
+ #    include <string.h>
+-#    if defined(__SCO__) || defined(__sun) || defined(__UNIXWARE__) || defined(__CYGWIN__) || defined(_AIX) || defined(__APPLE__)
++#    if defined(__SCO__) || defined(__sun) || defined(__UNIXWARE__) || defined(__CYGWIN__) || defined(_AIX) || defined(__APPLE__) || defined(__keyronex__)
+ #     include <strings.h>
+ #    endif
+ #    define _XFUNCS_H_INCLUDED_STRING_H
+diff -ruN xorgproto-2022.1/include/X11/Xos.h xorgproto/include/X11/Xos.h
+--- xorgproto-2022.1/include/X11/Xos.h	2022-04-21 01:48:08.000000000 +0100
++++ xorgproto/include/X11/Xos.h	2025-12-31 20:17:07.510596343 +0000
+@@ -60,7 +60,7 @@
+  */
+ 
+ # include <string.h>
+-# if defined(__SCO__) || defined(__UNIXWARE__) || defined(__sun) || defined(__CYGWIN__) || defined(_AIX) || defined(__APPLE__)
++# if defined(__SCO__) || defined(__UNIXWARE__) || defined(__sun) || defined(__CYGWIN__) || defined(_AIX) || defined(__APPLE__) || defined(__keyronex__)
+ #  include <strings.h>
+ # else
+ #  ifndef index
+diff -ruN xorgproto-2022.1/include/X11/Xos_r.h xorgproto/include/X11/Xos_r.h
+--- xorgproto-2022.1/include/X11/Xos_r.h	2022-04-21 01:48:08.000000000 +0100
++++ xorgproto/include/X11/Xos_r.h	2025-12-31 20:17:07.510596343 +0000
+@@ -318,7 +318,7 @@
+   (_Xos_processUnlock), \
+   (p).pwp )
+ 
+-#elif !defined(_POSIX_THREAD_SAFE_FUNCTIONS) && !defined(__APPLE__)
++#elif !defined(_POSIX_THREAD_SAFE_FUNCTIONS) && !defined(__APPLE__) && !defined(__keyronex__)
+ # define X_NEEDS_PWPARAMS
+ typedef struct {
+   struct passwd pws;

@@ -1,0 +1,4 @@
+option('headers_only', type : 'boolean', value : false)
+option('no_headers', type : 'boolean', value : false)
+option('arch', type: 'combo', choices: ['aarch64', 'amd64', 'm68k', 'riscv64'])
+option('libgcc_binaries', type: 'string', description: 'Path to libgcc binaries')

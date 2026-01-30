@@ -1,0 +1,438 @@
+declare_options:
+  - name: arch
+    default: x86_64
+  - name: arch-triple
+    default: x86_64-keyronex
+
+
+################################################################################
+#
+# Sources
+#
+################################################################################
+
+sources:
+
+  - name: 'kernel'
+
+  - name: 'lisp'
+    subdir: 'vendor'
+
+  - name: 'mlibc'
+    subdir: 'vendor'
+
+  - name: pkgconf
+    subdir: 'sources'
+    url: 'https://github.com/pkgconf/pkgconf/archive/refs/tags/pkgconf-1.8.0.tar.gz'
+    format: 'tar.gz'
+    extract_path: 'pkgconf-pkgconf-1.8.0'
+    version: '1.8.0'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+    regenerate:
+      - args: [ 'libtoolize', '-cfvi' ]
+      - args: ['autoreconf',  '-fvi']
+
+  - name: binutils
+    subdir: 'sources'
+    url: 'https://ftpmirror.gnu.org/gnu/binutils/binutils-2.45.1.tar.xz'
+    format: 'tar.xz'
+    extract_path: 'binutils-2.45.1'
+    version: '2.45.1'
+    patch-path-strip: 1
+
+  - name: gcc
+    subdir: 'sources'
+    url: 'https://ftpmirror.gnu.org/gnu/gcc/gcc-14.3.0/gcc-14.3.0.tar.xz'
+    format: 'tar.xz'
+    extract_path: 'gcc-14.3.0'
+    patch-path-strip: 1
+    version: '14.3.0'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+    regenerate:
+      - args: ['autoreconf',  '-fvi']
+      - args: ['autoconf']
+        workdir: '@THIS_SOURCE_DIR@/gcc'
+      - args: ['autoconf']
+        workdir: '@THIS_SOURCE_DIR@/libstdc++-v3'
+
+################################################################################
+#
+# Tools
+#
+################################################################################
+
+tools:
+
+  - name: 'crossfile'
+    source:
+      name: 'tools'
+    install:
+     - args:
+        - 'sh'
+        - '@THIS_SOURCE_DIR@/mkcrossfile.sh'
+        - '@OPTION:arch@'
+        - '@SYSROOT_DIR@'
+        - '@BUILD_ROOT@/crossfile.ini'
+
+#
+# autotools, libtool, etc
+#
+
+  - name: host-autoconf-2.69
+    source:
+      name: autoconf-2.69
+      subdir: 'sources'
+      url: 'https://ftpmirror.gnu.org/gnu/autoconf/autoconf-2.69.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'autoconf-2.69'
+      version: '2.69'
+    configure:
+      - args: ['@THIS_SOURCE_DIR@/configure', '--prefix=@PREFIX@']
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: host-autoconf-archive
+    architecture: noarch
+    exports_aclocal: true
+    source:
+      subdir: 'sources'
+      url: 'https://ftpmirror.gnu.org/gnu/autoconf-archive/autoconf-archive-2019.01.06.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'autoconf-archive-2019.01.06'
+      version: '2019.01.06'
+    install:
+      - args: ['mkdir', '-p', '@BUILD_ROOT@/tools/host-autoconf-archive/share/']
+      - args: ['cp', '-r', '@THIS_SOURCE_DIR@/m4', '@BUILD_ROOT@/tools/host-autoconf-archive/share/aclocal']
+
+  - name: host-automake-1.16
+    source:
+      name: automake-1.16
+      subdir: 'sources'
+      url: 'https://ftpmirror.gnu.org/gnu/automake/automake-1.16.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'automake-1.16'
+      version: '1.16'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+      regenerate:
+        - args: ['./bootstrap']
+    tools_required:
+      - host-autoconf-2.69
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: |
+          set -e
+          export PATH="`pwd`/bin:$PATH"
+          make bin/aclocal-1.16 bin/automake-1.16 -j@PARALLELISM@
+          make -j@PARALLELISM@
+    install:
+      - args: ['make', 'install-strip']
+      - args: ['ln', '-sf', '@PREFIX@/share/aclocal-1.16', '@PREFIX@/share/aclocal']
+
+  - name: host-libtool
+    exports_aclocal: true
+    source:
+      name: libtool
+      subdir: 'sources'
+      url: 'https://ftpmirror.gnu.org/gnu/libtool/libtool-2.4.7.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libtool-2.4.7'
+      patch-path-strip: 1
+      version: '2.4.7'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+      regenerate:
+        - args: ['./bootstrap', '--force']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: host-pkgconf
+    exports_aclocal: true
+    from_source: pkgconf
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+      - args: ['ln', '-sf', 'pkgconf', '@PREFIX@/bin/pkg-config']
+      - args: ['ln', '-sf', 'pkgconf', '@PREFIX@/bin/@OPTION:arch-triple@-pkg-config']
+
+#
+# cross compilers
+#
+
+  - name: host-binutils
+    from_source: binutils
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+        - '--target=@OPTION:arch-triple@'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--disable-werror'
+        - 'CFLAGS=-pipe'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: bootstrap-host-gcc
+    from_source: gcc
+    tools_required:
+      - tool: host-binutils
+        recursive: true
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+        - '--target=@OPTION:arch-triple@'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--enable-languages=c,c++,objc,lto'
+        - '--enable-initfini-array'
+        - '--without-headers'
+        - '--without-newlib'
+        - '--disable-shared'
+        - '--disable-hosted-libstdcxx'
+        # libstdc++ can detect that wchar_t is supported by @SYSROOT_DIR@ and
+        # try to enable code we don't want for wchar handling.  just remove it.
+        - '--disable-wchar_t'
+        - '--disable-libssp'
+        - '--disable-libsanitizer'
+        - '--disable-libquadmath'
+        - '--disable-gcov'
+        # -g blows up GCC's binary size.
+        - 'CFLAGS=-O1 -pipe'
+        - 'CXXFLAGS=-O1 -pipe'
+    stages:
+      - name: compiler
+        pkgs_required:
+         - mlibc-headers
+        compile:
+          # GCC complains if the include directory is non-existant.
+          - args: ['mkdir', '-p', '@SYSROOT_DIR@/usr/include']
+          - args: ['make', '-j@PARALLELISM@', 'all-gcc']
+        install:
+          - args: ['make', 'install-gcc']
+          # GCC does *not* look for target-prefixed LD/AS.
+          # Instead, it searches a list of prefix directories. Link AS/LD to make it happy.
+          - args: ['mkdir', '-p', '@PREFIX@/@OPTION:arch-triple@/bin']
+          - args: ['ln', '-sf', '../../../host-binutils/@OPTION:arch-triple@/bin/as',
+                               '@PREFIX@/@OPTION:arch-triple@/bin/as']
+          - args: ['ln', '-sf', '../../../host-binutils/@OPTION:arch-triple@/bin/ld',
+                               '@PREFIX@/@OPTION:arch-triple@/bin/ld']
+
+      - name: libgcc
+        tools_required:
+          - tool: bootstrap-host-gcc
+            stage_dependencies: [compiler]
+        compile:
+          - args: ['make', '-j@PARALLELISM@', 'all-target-libgcc']
+        install:
+          - args: ['make', 'install-target-libgcc']
+
+  - name: host-gcc
+    from_source: gcc
+    tools_required:
+      - tool: host-binutils
+        recursive: true
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+        - '--target=@OPTION:arch-triple@'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--enable-languages=c,c++,objc'
+        - '--disable-multilib'
+        - '--enable-initfini-array'
+        # -g blows up GCC's binary size.
+        - 'CFLAGS=-O2 -pipe'
+        - 'CXXFLAGS=-O2 -pipe'
+    stages:
+      - name: compiler
+        pkgs_required:
+          - mlibc-headers
+        compile:
+          - args: ['make', '-j@PARALLELISM@', 'all-gcc']
+        install:
+          - args: ['make', 'install-gcc']
+          # GCC does *not* look for target-prefixed LD/AS.
+          # Instead, it searches a list of prefix directories. Link AS/LD to make it happy.
+          - args: ['mkdir', '-p', '@PREFIX@/@OPTION:arch-triple@/bin']
+          - args: ['ln', '-sf', '../../../host-binutils/@OPTION:arch-triple@/bin/as',
+                               '@PREFIX@/@OPTION:arch-triple@/bin/as']
+          - args: ['ln', '-sf', '../../../host-binutils/@OPTION:arch-triple@/bin/ld',
+                               '@PREFIX@/@OPTION:arch-triple@/bin/ld']
+
+      - name: libgcc
+        tools_required:
+          - tool: host-gcc
+            stage_dependencies: [compiler]
+        pkgs_required:
+          - mlibc
+        compile:
+          - args: ['make', '-j@PARALLELISM@', 'all-target-libgcc']
+        install:
+          - args: ['make', 'install-strip-target-libgcc']
+
+      - name: libstdc++
+        tools_required:
+          - tool: host-gcc
+            stage_dependencies: [libgcc]
+        compile:
+          - args: ['make', '-j@PARALLELISM@', 'all-target-libstdc++-v3']
+        install:
+          - args: ['make', 'install-strip-target-libstdc++-v3']
+
+################################################################################
+#
+# Packages
+#
+################################################################################
+
+packages:
+
+  - name: mlibc-headers
+    from_source: 'mlibc'
+    implicit_package: true
+    tools_required:
+      - 'crossfile'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '-Dheaders_only=true'
+        - '-Dbuildtype=debug'
+        - '-Dlinux_kernel_headers=@SOURCE_ROOT@/kernel/common'
+        - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: mlibc
+    from_source: 'mlibc'
+    implicit_package: true
+    pkgs_required:
+      - 'mlibc-headers'
+      - 'kernel-headers'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'bootstrap-host-gcc'
+    configure:
+      - args: [ 'echo', '@THIS_SOURCE_DIR@']
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '-Dno_headers=true'
+        - '-Dbuildtype=debug'
+        - '-Dlinux_kernel_headers=@SOURCE_ROOT@/kernel/common'
+        - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: kernel-headers
+    metadata:
+      summary: Keyronex kernel headers
+    tools_required:
+      - 'crossfile'
+    implicit_package: true
+    from_source: 'kernel'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+        - '-Dheaders_only=true'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: kernel
+    metadata:
+      summary: Keyronex kernel
+    from_source: 'kernel'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'bootstrap-host-gcc'
+    pkgs_required:
+      - 'mlibc-headers'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '--optimization=0'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+        - '-Dlibgcc_binaries=../../../../vendor/libgcc-binaries'
+        - '-Dno_headers=true'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: m68k-virt-loader
+    labels: [ no_aarch64, no_amd64, no_riscv64 ]
+    metadata:
+      summary: Keyronex loader for QEMU virt m68k
+    from_source: 'lisp'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'bootstrap-host-gcc'
+    pkgs_required:
+      - 'mlibc-headers'
+      - 'kernel'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '--optimization=g'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'

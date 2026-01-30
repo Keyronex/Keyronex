@@ -1,0 +1,12 @@
+diff -ruN zlib-1.2.12/configure zlib/configure
+--- zlib-1.2.12/configure	2022-03-28 00:05:02.000000000 +0100
++++ zlib/configure	2025-12-31 20:58:05.455748947 +0000
+@@ -218,7 +218,7 @@
+     uname=`(uname -s || echo unknown) 2>/dev/null`
+   fi
+   case "$uname" in
+-  Linux* | linux* | GNU | GNU/* | solaris*)
++  Linux* | linux* | GNU | GNU/* | solaris* | keyronex*)
+         LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,${SRCDIR}zlib.map"} ;;
+   *BSD | *bsd* | DragonFly)
+         LDSHARED=${LDSHARED-"$cc -shared -Wl,-soname,libz.so.1,--version-script,${SRCDIR}zlib.map"}

@@ -1,0 +1,45 @@
+--- bash-5.2.15/lib/readline/terminal.c	2022-04-05 15:44:17.000000000 +0100
++++ bash/lib/readline/terminal.c	2025-12-31 19:02:39.679823017 +0000
+@@ -103,9 +103,9 @@
+ static int tcap_initialized;
+ 
+ #if !defined (__linux__) && !defined (NCURSES_VERSION)
+-#  if defined (__EMX__) || defined (NEED_EXTERN_PC)
++// #  if defined (__EMX__) || defined (NEED_EXTERN_PC) */
+ extern 
+-#  endif /* __EMX__ || NEED_EXTERN_PC */
++// #  endif /* __EMX__ || NEED_EXTERN_PC */
+ char PC, *BC, *UP;
+ #endif /* !__linux__ && !NCURSES_VERSION */
+ 
+--- bash-5.2.15/lib/termcap/termcap.c	2025-12-31 19:27:21.899774183 +0000
++++ bash/lib/termcap/termcap.c	2025-12-31 19:08:50.209821570 +0000
+@@ -105,6 +105,8 @@
+ 
+ #include "ltcap.h"
+ 
++#include <stdio.h>
++
+ #ifndef TERMCAP_FILE
+ #define TERMCAP_FILE "/etc/termcap"
+ #endif
+@@ -295,7 +297,7 @@
+ short ospeed;
+ /* If OSPEED is 0, we use this as the actual baud rate.  */
+ int tputs_baud_rate;
+-__private_extern__ char PC = '\0';
++extern char PC = '\0';
+ 
+ /* Actual baud rate if positive;
+    - baud rate / 100 if negative.  */
+--- bash-5.2.15/lib/termcap/tparam.c	2025-12-31 19:27:22.769775635 +0000
++++ bash/lib/termcap/tparam.c	2025-12-31 19:09:24.839817641 +0000
+@@ -54,6 +54,8 @@
+ 
+ #endif /* not HAVE_CONFIG_H */
+ 
++#include <unistd.h>
++
+ #include "ltcap.h"
+ 
+ #ifndef NULL

@@ -1,0 +1,11 @@
+.cache/
+.vscode/
+build/
+gdb-pt-dump/
+ovmf-aarch64/
+ovmf-riscv64/
+sources/
+
+*.xbstrap
+
+compile_commands.json

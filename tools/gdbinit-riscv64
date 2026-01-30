@@ -1,0 +1,2 @@
+file build/riscv64/pkg-builds/kernel/common/keyronex
+target remote localhost:1234

@@ -1,0 +1,65 @@
+diff -Naur Python-3.10.11-original/config.sub Python-3.10.11/config.sub
+--- Python-3.10.11-original/config.sub	2023-04-22 10:03:35.957767834 +0100
++++ Python-3.10.11/config.sub	2023-04-22 10:13:53.305731393 +0100
+@@ -1723,7 +1723,7 @@
+ 	     | hpux* | unos* | osf* | luna* | dgux* | auroraux* | solaris* \
+ 	     | sym* |  plan9* | psp* | sim* | xray* | os68k* | v88r* \
+ 	     | hiux* | abug | nacl* | netware* | windows* \
+-	     | os9* | macos* | osx* | ios* \
++	     | os9* | macos* | osx* | ios* | keyronex* \
+ 	     | mpw* | magic* | mmixware* | mon960* | lnews* \
+ 	     | amigaos* | amigados* | msdos* | newsos* | unicos* | aof* \
+ 	     | aos* | aros* | cloudabi* | sortix* | twizzler* \
+diff -Naur Python-3.10.11-original/configure.ac Python-3.10.11/configure.ac
+--- Python-3.10.11-original/configure.ac	2023-04-22 10:03:35.967768047 +0100
++++ Python-3.10.11/configure.ac	2023-04-22 10:06:31.821463749 +0100
+@@ -403,6 +403,9 @@
+ 	*-*-vxworks*)
+ 	    ac_sys_system=VxWorks
+ 	    ;;
++	*-*-keyronex*)
++	    ac_sys_system=Keyronex
++	    ;;
+ 	*)
+ 		# for now, limit cross builds to known configurations
+ 		MACHDEP="unknown"
+@@ -452,6 +455,9 @@
+ 	*-*-vxworks*)
+ 		_host_cpu=$host_cpu
+ 		;;
++	*-*-keyronex*)
++		_host_cpu=$host_cpu
++		;;
+ 	*)
+ 		# for now, limit cross builds to known configurations
+ 		MACHDEP="unknown"
+@@ -2756,6 +2762,9 @@
+ 	CYGWIN*)
+ 		LDSHARED="gcc -shared -Wl,--enable-auto-image-base"
+ 		LDCXXSHARED="g++ -shared -Wl,--enable-auto-image-base";;
++	Keyronex*)
++		LDSHARED='$(CC) -shared'
++		LDCXXSHARED='$(CXX) -shared';;
+ 	*)	LDSHARED="ld";;
+ 	esac
+ fi
+@@ -2792,7 +2801,9 @@
+ 		else CCSHARED="-Kpic -belf"
+ 		fi;;
+ 	VxWorks*)
+-		CCSHARED="-fpic -D__SO_PICABILINUX__  -ftls-model=global-dynamic"
++		CCSHARED="-fpic -D__SO_PICABILINUX__  -ftls-model=global-dynamic";;
++	Keyronex*)
++		CCSHARED="-fPIC";;
+ 	esac
+ fi
+ AC_MSG_RESULT($CCSHARED)
+@@ -2862,6 +2873,8 @@
+ 		LINKFORSHARED='-Wl,-E -N 2048K';;
+ 	VxWorks*)
+ 		LINKFORSHARED='-Wl,-export-dynamic';;
++	Keyronex*)
++		LINKFORSHARED='-Wl,-export-dynamic';;
+ 	esac
+ fi
+ AC_MSG_RESULT($LINKFORSHARED)

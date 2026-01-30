@@ -1,0 +1,173 @@
+diff -ruN xterm-390/Makefile.in xterm/Makefile.in
+--- xterm-390/Makefile.in	2023-12-10 19:32:38.000000000 +0000
++++ xterm/Makefile.in	2026-01-01 12:08:40.189528258 +0000
+@@ -68,7 +68,7 @@
+ CPPFLAGS	= -I. -I$(srcdir) -DHAVE_CONFIG_H @CPPFLAGS@ -DDEFCLASS=\"@APP_CLASS@\" $(PIXMAPDIR_DEF) $(EXTRA_CPPFLAGS)
+ CFLAGS		= @CFLAGS@ $(EXTRA_CFLAGS)
+ LDFLAGS		= @LDFLAGS@ @EXTRA_LDFLAGS@
+-LIBS		= @LIBS@
++LIBS		= @LIBS@ -lncursesw -ltinfow
+ 
+ prefix		= @prefix@
+ exec_prefix	= @exec_prefix@
+diff -ruN xterm-390/config.sub xterm/config.sub
+--- xterm-390/config.sub	2023-12-27 14:41:27.000000000 +0000
++++ xterm/config.sub	2026-01-01 12:09:32.796949916 +0000
+@@ -1737,7 +1737,7 @@
+ 	# Now accept the basic system types.
+ 	# The portable systems comes first.
+ 	# Each alternative MUST end in a * to match a version number.
+-	gnu* | android* | bsd* | mach* | minix* | genix* | ultrix* | irix* \
++	gnu* | keyronex* | android* | bsd* | mach* | minix* | genix* | ultrix* | irix* \
+ 	     | *vms* | esix* | aix* | cnk* | sunos | sunos[34]* \
+ 	     | hpux* | unos* | osf* | luna* | dgux* | auroraux* | solaris* \
+ 	     | sym* |  plan9* | psp* | sim* | xray* | os68k* | v88r* \
+diff -ruN xterm-390/main.c xterm/main.c
+--- xterm-390/main.c	2024-01-17 00:19:47.000000000 +0000
++++ xterm/main.c	2026-01-01 12:09:32.796949916 +0000
+@@ -89,9 +89,13 @@
+ 
+ #define RES_OFFSET(field)	XtOffsetOf(XTERM_RESOURCE, field)
+ 
++#define _GNU_SOURCE
++#include <stdlib.h>
++
+ #include <xterm.h>
+ #include <version.h>
+ #include <graphics.h>
++#include <termios.h>
+ 
+ /* xterm uses these X Toolkit resource names, which are exported in array */
+ #undef XtNborderWidth
+@@ -172,7 +176,7 @@
+ #define KANJI
+ #endif
+ 
+-#ifdef linux
++#if defined(linux) || defined(__keyronex__)
+ #define USE_SYSV_PGRP
+ #define USE_SYSV_SIGNALS
+ #define WTMP
+@@ -315,7 +319,7 @@
+ #ifndef NOFILE
+ #define NOFILE OPEN_MAX
+ #endif
+-#elif !(defined(VMS) || defined(WIN32) || defined(Lynx) || defined(__GNU__) || defined(__MVS__))
++#elif !(defined(VMS) || defined(WIN32) || defined(Lynx) || defined(__GNU__) || defined(__MVS__) || defined(__keyronex__))
+ #include <sys/param.h>		/* for NOFILE */
+ #endif
+ 
+@@ -716,11 +720,12 @@
+ #endif
+ 
+ #ifndef TAB3
+-#if defined(OXTABS)
+-#define TAB3 OXTABS
+-#elif defined(XTABS)
+-#define TAB3 XTABS
+-#endif
++#define TAB3 0014000
++//#if defined(OXTABS)
++//#define TAB3 OXTABS
++//#elif defined(XTABS)
++//#define TAB3 XTABS
++//#endif
+ #endif
+ 
+ #ifndef TABDLY
+@@ -3011,7 +3016,7 @@
+     }
+ #endif
+ #endif
+-#if defined(USE_ANY_SYSV_TERMIO) || defined(__MVS__) || defined(__minix)
++#if defined(USE_ANY_SYSV_TERMIO) || defined(__MVS__) || defined(__minix) || defined(__keyronex__)
+     if (0 > (mode = fcntl(screen->respond, F_GETFL, 0)))
+ 	SysError(ERROR_F_GETFL);
+ #ifdef O_NDELAY
+@@ -3753,7 +3758,7 @@
+     return findValidShell(x_strtrim(resource.valid_shells), pathname);
+ }
+ 
+-#if defined(HAVE_GETUSERSHELL) && defined(HAVE_ENDUSERSHELL)
++#if defined(HAVE_GETUSERSHELL) && defined(HAVE_ENDUSERSHELL) && 0
+ static Boolean
+ validShell(const char *pathname)
+ {
+@@ -4356,7 +4361,7 @@
+ 	    /*
+ 	     * now in child process
+ 	     */
+-#if defined(_POSIX_SOURCE) || defined(SVR4) || defined(__convex__) || defined(__SCO__) || defined(__QNX__)
++#if defined(_POSIX_SOURCE) || defined(SVR4) || defined(__convex__) || defined(__SCO__) || defined(__QNX__) || defined(__keyronex__)
+ 	    int pgrp = setsid();	/* variable may not be used... */
+ #else
+ 	    int pgrp = getpid();
+@@ -4496,7 +4501,7 @@
+ 			/* make /dev/tty work */
+ 			ioctl(ttyfd, TCSETCTTY, 0);
+ #endif
+-#if ((defined(__GLIBC__) && defined(__FreeBSD_kernel__)) || defined(__GNU__)) && defined(TIOCSCTTY)
++#if ((defined(__GLIBC__) && defined(__FreeBSD_kernel__)) || defined(__GNU__) || defined(__keyronex__)) && defined(TIOCSCTTY)
+ 			/* make /dev/tty work */
+ 			ioctl(ttyfd, TIOCSCTTY, 0);
+ #endif
+diff -ruN xterm-390/util.c xterm/util.c
+--- xterm-390/util.c	2024-02-17 00:42:32.000000000 +0000
++++ xterm/util.c	2026-01-01 12:08:40.189528258 +0000
+@@ -54,6 +54,7 @@
+ 
+ /* util.c */
+ 
++#define _GNU_SOURCE
+ #include <xterm.h>
+ 
+ #include <data.h>
+diff -ruN xterm-390/xterm.h xterm/xterm.h
+--- xterm-390/xterm.h	2023-12-23 01:39:45.000000000 +0000
++++ xterm/xterm.h	2026-01-01 12:09:32.796949916 +0000
+@@ -80,7 +80,7 @@
+ #define HAVE_PUTENV 1
+ #endif
+ 
+-#if defined(CSRG_BASED) || defined(__GNU__) || defined(__minix)
++#if defined(CSRG_BASED) || defined(__GNU__) || defined(__minix) || defined(__keyronex__)
+ #define USE_POSIX_TERMIOS 1
+ #endif
+ 
+@@ -176,7 +176,7 @@
+ #define USE_SYSV_UTMP
+ #endif
+ 
+-#if defined(__GNU__) || defined(__MVS__) || defined(__osf__)
++#if defined(__GNU__) || defined(__MVS__) || defined(__osf__) || defined(__keyronex__)
+ #define USE_TTY_GROUP
+ #endif
+ 
+diff -ruN xterm-390/xterm_io.h xterm/xterm_io.h
+--- xterm-390/xterm_io.h	2023-10-22 15:54:29.000000000 +0100
++++ xterm/xterm_io.h	2026-01-01 12:09:32.796949916 +0000
+@@ -92,13 +92,14 @@
+ #undef SYSV			/* pretend to be bsd (sgtty.h) */
+ #endif /* macII */
+ 
+-#ifdef __GNU__
++#if defined(__GNU__) || defined(__keyronex__)
+ #define USE_POSIX_TERMIOS
+ #define HAVE_POSIX_OPENPT 1
+ #define HAVE_PTSNAME 1
+ #define HAVE_GRANTPT_PTY_ISATTY 1
+ #endif
+ 
++
+ #if defined(__GLIBC__) && !(defined(linux) || defined(__GNU__))
+ #define USE_POSIX_TERMIOS	/* GNU/KFreeBSD and GNU/KNetBSD */
+ #endif
+@@ -212,7 +213,7 @@
+ #undef FIONCLEX
+ #endif /* macII */
+ 
+-#if defined(__QNX__) || defined(__GNU__) || defined(__MVS__) || defined(__osf__)
++#if defined(__QNX__) || defined(__GNU__) || defined(__MVS__) || defined(__osf__) || defined(__keyronex__)
+ #undef TIOCSLTC			/* <sgtty.h> conflicts with <termios.h> */
+ #undef TIOCSLTC
+ #endif

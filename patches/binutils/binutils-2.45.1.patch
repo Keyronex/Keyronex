@@ -1,0 +1,117 @@
+diff -ruN binutils-2.45.1/bfd/config.bfd binutils-2.45.1-patched/bfd/config.bfd
+--- binutils-2.45.1/bfd/config.bfd	2025-11-10 00:00:00.000000000 +0000
++++ binutils-2.45.1-patched/bfd/config.bfd	2025-12-25 22:24:19.069932421 +0000
+@@ -259,6 +259,11 @@
+     targ_selvecs="aarch64_elf64_le_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_be_vec arm_elf32_le_vec"
+     want64=true
+     ;;
++  aarch64-*-keyronex*)
++    targ_defvec=aarch64_elf64_le_vec
++    targ_selvecs="aarch64_elf32_le_vec"
++    want64=true
++    ;;
+   aarch64-*-freebsd*)
+     targ_defvec=aarch64_elf64_le_vec
+     targ_selvecs="aarch64_elf64_be_vec arm_elf32_le_vec arm_elf32_be_vec"
+@@ -735,6 +740,11 @@
+     targ_selvecs="i386_elf32_vec iamcu_elf32_vec x86_64_elf32_vec"
+     want64=true
+     ;;
++  x86_64-*-keyronex*)
++    targ_defvec=x86_64_elf64_vec
++    targ_selvecs=i386_elf32_vec
++    want64=true
++    ;;
+ #endif
+   i[3-7]86-*-lynxos*)
+     targ_defvec=i386_elf32_vec
+@@ -846,6 +856,9 @@
+   m68*-*-haiku*)
+     targ_defvec=m68k_elf32_vec
+     ;;
++  m68*-*-keyronex*)
++    targ_defvec=m68k_elf32_vec
++    ;;
+   m68hc11-*-* | m6811-*-*)
+     targ_defvec=m68hc11_elf32_vec
+     targ_selvecs="m68hc11_elf32_vec m68hc12_elf32_vec"
+diff -ruN binutils-2.45.1/config.sub binutils-2.45.1-patched/config.sub
+--- binutils-2.45.1/config.sub	2025-11-10 00:00:00.000000000 +0000
++++ binutils-2.45.1-patched/config.sub	2025-12-25 22:26:58.597839500 +0000
+@@ -2025,6 +2025,7 @@
+ 	| ironclad* \
+ 	| isc* \
+ 	| its* \
++	| keyronex* \
+ 	| l4re* \
+ 	| libertybsd* \
+ 	| lites* \
+diff -ruN binutils-2.45.1/gas/configure.tgt binutils-2.45.1-patched/gas/configure.tgt
+--- binutils-2.45.1/gas/configure.tgt	2025-11-10 00:00:00.000000000 +0000
++++ binutils-2.45.1-patched/gas/configure.tgt	2025-12-25 22:23:15.531930148 +0000
+@@ -139,6 +139,7 @@
+   aarch64*-*-nto*)			fmt=elf;;
+   aarch64*-*-openbsd*)			fmt=elf;;
+   aarch64*-*-pe* | aarch64*-*-mingw*)	fmt=coff em=pepaarch64 ;;
++  aarch64*-*-keyronex*)                 fmt=elf em=linux;;
+   alpha-*-*vms*)			fmt=evax ;;
+   alpha-*-osf*)				fmt=ecoff ;;
+   alpha-*-linux*ecoff*)			fmt=ecoff ;;
+@@ -243,6 +244,7 @@
+     esac ;;
+   i386-*-lynxos*)			fmt=elf em=lynx ;;
+   i386-*-redox*)			fmt=elf ;;
++  i386-*-keyronex*)			fmt=elf em=linux ;;
+   i386-*-solaris*)			fmt=elf em=solaris ;;
+   i386-*-freebsd* \
+   | i386-*-kfreebsd*-gnu)		fmt=elf em=freebsd ;;
+@@ -301,6 +303,8 @@
+   m68k-*-gnu*)				fmt=elf ;;
+   m68k-*-netbsd*)			fmt=elf em=nbsd ;;
+   m68k-*-haiku*)			fmt=elf em=haiku ;;
++  m68k-*-keyronex*)			fmt=elf em=linux ;;
++
+
+   s12z-*-*)				fmt=elf ;;
+
+@@ -373,6 +377,7 @@
+   pru-*-*)				fmt=elf ;;
+
+   riscv*-*-haiku*)			fmt=elf endian=little em=haiku ;;
++  riscv*-*-keyronex*)			fmt=elf endian=little em=linux ;;
+   riscv*-*-*)				fmt=elf ;;
+
+   rx-*-linux*)				fmt=elf em=linux ;;
+diff -ruN binutils-2.45.1/ld/configure.tgt binutils-2.45.1-patched/ld/configure.tgt
+--- binutils-2.45.1/ld/configure.tgt	2025-11-10 00:00:00.000000000 +0000
++++ binutils-2.45.1-patched/ld/configure.tgt	2025-12-25 22:23:15.531930148 +0000
+@@ -132,6 +132,10 @@
+ 			targ_extra_emuls="arm64pe"
+ 			targ_extra_ofiles="deffilep.o pep-dll-aarch64.o pe-dll.o pdb.o"
+ 			;;
++aarch64-*-keyronex*)
++			targ_emul=aarch64elf
++			targ_extra_emuls="aarch64elfb $targ_extra_emuls"
++			;;
+ alpha*-*-freebsd* | alpha*-*-kfreebsd*-gnu)
+ 			targ_emul=elf64alpha_fbsd
+ 			targ_extra_emuls="elf64alpha alpha"
+@@ -507,6 +511,8 @@
+ 			;;
+ m68*-*-haiku*)		targ_emul=m68kelf
+ 			;;
++m68*-*-keyronex*)		targ_emul=m68kelfnbsd
++			;;
+ m68*-*-*)		targ_emul=m68kelf
+ 			;;
+ mcore-*-pe)		targ_emul=mcorepe ;
+@@ -1019,6 +1025,9 @@
+ x86_64-*-redox*)	targ_emul=elf_x86_64
+ 			targ_extra_emuls=elf_i386
+ 			;;
++x86_64-*-keyronex*)	targ_emul=elf_x86_64
++			targ_extra_emuls=elf_i386
++			;;
+ x86_64-*-solaris2*)	targ_emul=elf_x86_64_sol2
+ 			targ_extra_emuls="elf_x86_64 elf_i386_sol2 elf_i386_ldso elf_i386 elf_iamcu"
+ 			targ_extra_libpath=$targ_extra_emuls

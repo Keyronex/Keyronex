@@ -1,0 +1,21 @@
+diff -ruN mesa-demos-9.0.0/meson.build mesa-demos/meson.build
+--- mesa-demos-9.0.0/meson.build	2023-03-22 12:13:43.000000000 +0000
++++ mesa-demos/meson.build	2025-12-31 20:38:11.963334304 +0000
+@@ -99,7 +99,7 @@
+ endif
+ 
+ dep_glx = dependency('glx', required: false, disabler : true)
+-if not dep_glx.found() and host_machine.system() == 'darwin'
++if not dep_glx.found() and host_machine.system() == 'darwin' or host_machine.system() == 'keyronex'
+   # xquartz doesn't have a glx.pc, but it does have the header. And all the
+   # symbols reside in libGL, so let's just use that.
+   if cc.check_header('GL/glx.h', dependencies: dep_x11)
+@@ -163,7 +163,7 @@
+   add_project_arguments('-DHAVE_SINCOS', language: 'c')
+ endif
+ 
+-if ['linux', 'cygwin', 'gnu', 'freebsd', 'gnu/kfreebsd', 'haiku', 'android'].contains(host_machine.system())
++if ['linux', 'cygwin', 'gnu', 'freebsd', 'gnu/kfreebsd', 'haiku', 'android', 'keyronex'].contains(host_machine.system())
+   add_project_arguments('-D_GNU_SOURCE', language: ['c', 'cpp'])
+ elif host_machine.system() == 'windows'
+   add_project_arguments(['-D_USE_MATH_DEFINES'], language: ['c', 'cpp'])

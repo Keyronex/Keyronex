@@ -1,0 +1,2 @@
+file build/m68k/pkg-builds/kernel/common/keyronex
+target remote localhost:1234
