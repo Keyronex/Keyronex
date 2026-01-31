@@ -69,6 +69,7 @@ sources:
 tools:
 
   - name: 'crossfile'
+    architecture: '@OPTION:arch@'
     source:
       name: 'tools'
     install:
@@ -84,6 +85,7 @@ tools:
 #
 
   - name: host-autoconf-2.69
+    architecture: '@OPTION:arch@'
     source:
       name: autoconf-2.69
       subdir: 'sources'
@@ -112,6 +114,7 @@ tools:
       - args: ['cp', '-r', '@THIS_SOURCE_DIR@/m4', '@BUILD_ROOT@/tools/host-autoconf-archive/share/aclocal']
 
   - name: host-automake-1.16
+    architecture: '@OPTION:arch@'
     source:
       name: automake-1.16
       subdir: 'sources'
@@ -141,6 +144,7 @@ tools:
       - args: ['ln', '-sf', '@PREFIX@/share/aclocal-1.16', '@PREFIX@/share/aclocal']
 
   - name: host-libtool
+    architecture: '@OPTION:arch@'
     exports_aclocal: true
     source:
       name: libtool
@@ -168,6 +172,7 @@ tools:
       - args: ['make', 'install']
 
   - name: host-pkgconf
+    architecture: '@OPTION:arch@'
     exports_aclocal: true
     from_source: pkgconf
     configure:
@@ -186,6 +191,7 @@ tools:
 #
 
   - name: host-binutils
+    architecture: '@OPTION:arch@'
     from_source: binutils
     configure:
       - args:
@@ -201,6 +207,7 @@ tools:
       - args: ['make', 'install']
 
   - name: bootstrap-host-gcc
+    architecture: '@OPTION:arch@'
     from_source: gcc
     tools_required:
       - tool: host-binutils
@@ -255,6 +262,7 @@ tools:
           - args: ['make', 'install-target-libgcc']
 
   - name: host-gcc
+    architecture: '@OPTION:arch@'
     from_source: gcc
     tools_required:
       - tool: host-binutils
@@ -317,7 +325,7 @@ packages:
 
   - name: mlibc-headers
     from_source: 'mlibc'
-    implicit_package: true
+    architecture: '@OPTION:arch@'
     tools_required:
       - 'crossfile'
     configure:
@@ -338,8 +346,8 @@ packages:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: mlibc
+    architecture: '@OPTION:arch@'
     from_source: 'mlibc'
-    implicit_package: true
     pkgs_required:
       - 'mlibc-headers'
       - 'kernel-headers'
@@ -366,11 +374,11 @@ packages:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: kernel-headers
+    architecture: '@OPTION:arch@'
     metadata:
       summary: Keyronex kernel headers
     tools_required:
       - 'crossfile'
-    implicit_package: true
     from_source: 'kernel'
     configure:
       - args:
@@ -386,6 +394,7 @@ packages:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: kernel
+    architecture: '@OPTION:arch@'
     metadata:
       summary: Keyronex kernel
     from_source: 'kernel'
@@ -412,6 +421,7 @@ packages:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: m68k-virt-loader
+    architecture: '@OPTION:arch@'
     labels: [ no_aarch64, no_amd64, no_riscv64 ]
     metadata:
       summary: Keyronex loader for QEMU virt m68k

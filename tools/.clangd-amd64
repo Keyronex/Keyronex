@@ -1,0 +1,9 @@
+If:
+  PathMatch: [kernel/.*, kernext/.*]
+CompileFlags:
+  CompilationDatabase: build/amd64/pkg-builds/kernel
+---
+If:
+  PathMatch: vendor/mlibc/.*
+CompileFlags:
+  CompilationDatabase: build/amd64/pkg-builds/mlibc

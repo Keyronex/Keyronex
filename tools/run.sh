@@ -17,7 +17,7 @@ case "$ARCH" in
 	    ;;
 
 	amd64) qemu-system-x86_64 -cdrom ${iso} -no-reboot \
-	    ${qemu_args} -smp ${cores}
+	    ${qemu_args} -smp ${cores} -serial stdio
 	    ;;
 
 	m68k) qemu-system-m68k -M virt -m 128 \

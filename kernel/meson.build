@@ -19,7 +19,6 @@ if not headers_only_option
     common_kernel_includes = []
 
     common_kernel_args = [
-        '-nostdinc',
         '-ffreestanding',
         '-fno-stack-protector',
         '-fno-stack-check',
@@ -68,11 +67,15 @@ if not headers_only_option
         common_kernel_link_args += [
             '-march=rv64imac_zicsr_zifencei',
         ]
+
     else
         error('Unsupported CPU family')
+
     endif
 
 endif # not headers_only_option
 
-subdir('common')
+kernel_sources = []
+
 subdir(cpu)
+subdir('common')

@@ -7,9 +7,13 @@
  * @brief Entry point to the operating system.
  */
 
+#include <kern/dlog.h>
+
 void
 _start(void)
 {
+	kdprintf("Keyronex\n");
+
 	for (;;)
 		;
 }

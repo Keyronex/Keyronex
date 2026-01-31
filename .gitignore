@@ -8,4 +8,5 @@ sources/
 
 *.xbstrap
 
+.clangd
 compile_commands.json

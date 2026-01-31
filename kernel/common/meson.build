@@ -1,4 +1,5 @@
-kernel_sources = [
+kernel_sources += [
+    'kern/dlog.c',
     'os/main.c',
 ]
 
