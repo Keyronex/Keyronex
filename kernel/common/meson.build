@@ -1,5 +1,6 @@
 kernel_sources += [
     'kern/dlog.c',
+    'kern/intr.c',
     'os/main.c',
 ]
 

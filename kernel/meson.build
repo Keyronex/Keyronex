@@ -16,8 +16,6 @@ if not headers_only_option
 
     limine = executable('limine', '../vendor/limine/limine.c', native: true)
 
-    common_kernel_includes = []
-
     common_kernel_args = [
         '-ffreestanding',
         '-fno-stack-protector',
@@ -75,6 +73,7 @@ if not headers_only_option
 
 endif # not headers_only_option
 
+common_kernel_includes = []
 kernel_sources = []
 
 subdir(cpu)

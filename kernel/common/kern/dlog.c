@@ -40,3 +40,21 @@ kdprintf(const char *fmt, ...)
 
 	return ret;
 }
+
+void
+kfatal_internal(const char *file, int line, const char *fmt, ...)
+{
+	va_list ap;
+
+#if 0
+	splhigh();
+#endif
+
+	kdprintf("Fatal: %s:%d: ", file, line);
+	va_start(ap, fmt);
+	kdvprintf(fmt, ap);
+	va_end(ap);
+
+	for (;;)
+		;
+}

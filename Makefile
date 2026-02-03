@@ -13,7 +13,7 @@ else ifeq ($(ARCH), m68k)
 else ifeq ($(ARCH), riscv64)
 	ARCH=riscv64
 	TARGET_TRIPLE=riscv64-keyronex
-else ifeq($(ARCH), aarch64)
+else ifeq ($(ARCH), aarch64)
 	ARCH=aarch64
 	TARGET_TRIPLE=aarch64-keyronex
 else
