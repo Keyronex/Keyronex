@@ -10,8 +10,8 @@
 #ifndef ECX_KERN_CPU_H
 #define ECX_KERN_CPU_H
 
-#include <kern/cpulocal.h>
-#include <kern/intr.h>
+#include <keyronex/cpulocal.h>
+#include <keyronex/intr.h>
 
 #include <stdatomic.h>
 #include <stdint.h>
