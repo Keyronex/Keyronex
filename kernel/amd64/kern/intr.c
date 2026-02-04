@@ -7,9 +7,9 @@
  * @brief AMD64 interrupt handling.
  */
 
-#include <kern/cpu.h>
-#include <kern/dlog.h>
-#include <kern/intr.h>
+#include <keyronex/cpu.h>
+#include <keyronex/dlog.h>
+#include <keyronex/intr.h>
 
 void kep_dispatch_softints(ipl_t newipl);
 

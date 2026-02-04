@@ -7,8 +7,9 @@
  * @brief Generic interrupt handling related logic.
  */
 
-#include <kern/cpu.h>
-#include <kern/intr.h>
+#include <keyronex/cpu.h>
+#include <keyronex/intr.h>
+
 #include <stdatomic.h>
 
 typedef void (*si_handler)(struct kcpu_data *);

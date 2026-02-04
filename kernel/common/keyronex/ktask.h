@@ -10,7 +10,14 @@
 #ifndef ECX_KERN_KTASK_H
 #define ECX_KERN_KTASK_H
 
+#include <keyronex/cpu.h>
+
 typedef struct kthread {
+	TAILQ_ENTRY(kthread) tqlink;
+
+	// uint8_t nice;
+	uint16_t prio;
+	kcpunum_t last_cpu_num;
 
 } kthread_t;
 

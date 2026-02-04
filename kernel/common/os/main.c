@@ -7,7 +7,7 @@
  * @brief Entry point to the operating system.
  */
 
-#include <kern/dlog.h>
+#include <keyronex/dlog.h>
 
 void
 _start(void)

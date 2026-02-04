@@ -7,7 +7,7 @@
  * @brief Kernel debug log.
  */
 
-#include <kern/dlog.h>
+#include <keyronex/dlog.h>
 
 #define NANOPRINTF_USE_FIELD_WIDTH_FORMAT_SPECIFIERS	1
 #define NANOPRINTF_USE_PRECISION_FORMAT_SPECIFIERS	1

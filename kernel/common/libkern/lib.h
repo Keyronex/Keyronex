@@ -1,0 +1,52 @@
+
+/*
+ * SPDX-License-Identifier: MPL-2.0
+ * Copyright (c) 2026 Cloudarox Solutions.
+ */
+/*!
+ * @file libkern/lib.h
+ * @brief C standard library functions for kernel.
+ */
+
+#ifndef ECX_LIBKERN_LIB_H
+#define ECX_LIBKERN_LIB_H
+
+#include <stddef.h>
+
+/* sys/param.h */
+#define MIN2(a, b) (((a) < (b)) ? (a) : (b))
+#define MIN3(a, b, c) MIN2((a), MIN2((b), (c)))
+
+/* ctype.h */
+int isalpha(int c);
+int isdigit(int c);
+int isspace(int c);
+int isupper(int c);
+int islower(int c);
+int isxdigit(int c);
+int tolower(int c);
+int toupper(int c);
+
+#define isalnum(c__) (isalpha(c__) || isdigit(c__))
+
+/* stdlib.h */
+int atoi(const char *s);
+
+/* string.h */
+int memcmp(const void *str1, const void *str2, size_t count);
+void *memcpy(void *restrict dstv, const void *restrict srcv, size_t len);
+void *memmove(void *dst, const void *src, size_t n);
+void *memset(void *b, int c, size_t len);
+
+int strcmp(const char *s1, const char *s2);
+int strncmp(const char *s1, const char *s2, size_t n);
+char *kmem_strdup(const char *src);
+char *strcpy(char *restrict dst, const char *restrict src);
+char *strncpy(char *restrict dst, const char *restrict src, size_t n);
+size_t strlen(const char *str);
+char *strchr(const char *str, int c);
+char *strrchr(const char *str, int c);
+
+char *strtok_r(char *s, const char *delim, char **last);
+
+#endif /* ECX_LIBKERN_LIB_H */
