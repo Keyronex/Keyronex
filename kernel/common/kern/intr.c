@@ -39,7 +39,6 @@ ke_raise_disp_int(void)
 	    pending_si_mask_for_ipl(IPL_DISP), memory_order_relaxed);
 }
 
-
 static void none_si_handler(struct kcpu_data *)
 {
 	/* epsilon */

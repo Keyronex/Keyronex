@@ -15,6 +15,15 @@
 typedef struct kthread {
 	TAILQ_ENTRY(kthread) tqlink;
 
+	kspinlock_t lock;
+	enum kthread_state {
+		TS_CREATED,
+		TS_READY,
+		TS_RUNNING,
+		TS_SLEEPING,
+		TS_TERMINATED
+	} state;
+	uint8_t sched_class;
 	// uint8_t nice;
 	uint16_t prio;
 	kcpunum_t last_cpu_num;

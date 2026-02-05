@@ -35,6 +35,7 @@ typedef struct kdpc {
 	void *arg1, *arg2;
 } kdpc_t;
 
+ipl_t ke_ipl(void);
 ipl_t splraise(ipl_t);
 void splx(ipl_t);
 /* ipl_t spldisp(void); */
@@ -47,6 +48,8 @@ void ke_arch_enable(bool);
 
 void ke_dpc_init(kdpc_t *, void (*)(void *, void *), void *arg1, void *arg2);
 void ke_dpc_schedule(kdpc_t *);
+
+void ke_raise_disp_int(void);
 
 #define SPINLOCK_INITIALISER { 0 }
 

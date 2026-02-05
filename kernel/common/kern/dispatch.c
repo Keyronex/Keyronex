@@ -11,12 +11,17 @@
 #include <keyronex/dlog.h>
 #include <keyronex/intr.h>
 #include <keyronex/ktask.h>
+#include <keyronex/xcall.h>
 
 #include <libkern/lib.h>
 #include <libkern/queue.h>
+
+#include <sched.h>
 #include <stdatomic.h>
 
 #define UINTPTR_BITS (sizeof(uintptr_t) * 8)
+
+#define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 
 #define RT_PRIO_N 32
 #define TS_PRIO_N 64
@@ -46,11 +51,92 @@ struct kcpu_dispatcher {
 	atomic_int_fast32_t timeslice;
 };
 
+struct ts_prio_info {
+	uint8_t quantum;
+	uint8_t quantum_expiry_prio;
+	uint8_t quantum_after_io;
+};
+
 static kspinlock_t rt_lock;
 static atomic_int_fast32_t rt_bitmap;
 static runq_t global_rt_rq[RT_PRIO_N];
 static katomic_cpumask_t idle_cpu_mask;
 static struct kcpu_dispatcher bsp_dispatcher;
+
+static struct ts_prio_info ts_prio_info[TS_PRIO_N] = {
+	/* q,	q_e_p,	q_a_i,	 */
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+	{ 12,	0,	55 },
+
+	{ 10,	0,	56 },
+	{ 10,	1,	56 },
+	{ 10,	2,	56 },
+	{ 10,	3,	56 },
+	{ 10,	4,	56 },
+	{ 10,	5,	56 },
+	{ 10,	6,	56 },
+	{ 10,	7,	56 },
+
+	{ 8,	8,	57 },
+	{ 8,	9,	57 },
+	{ 8,	10,	57 },
+	{ 8,	11,	57 },
+	{ 8,	12,	57 },
+	{ 8,	13,	57 },
+	{ 8,	14,	57 },
+	{ 8,	15,	57 },
+
+	{ 6,	16,	58 },
+	{ 6,	17,	58 },
+	{ 6,	18,	58 },
+	{ 6,	19,	58 },
+	{ 6,	20,	58 },
+	{ 6,	21,	58 },
+	{ 6,	22,	58 },
+	{ 6,	23,	58 },
+
+	{ 5,	24,	59 },
+	{ 5,	25,	59 },
+	{ 5,	26,	59 },
+	{ 5,	27,	59 },
+	{ 5,	28,	59 },
+	{ 5,	29,	59 },
+	{ 5,	30,	59 },
+	{ 5,	31,	59 },
+
+	{ 4,	32,	60 },
+	{ 4,	33,	60 },
+	{ 4,	34,	60 },
+	{ 4,	35,	60 },
+	{ 4,	36,	60 },
+	{ 4,	37,	60 },
+	{ 4,	38,	60 },
+	{ 4,	39,	60 },
+
+	{ 3,	40,	61 },
+	{ 3,	41,	61 },
+	{ 3,	42,	61 },
+	{ 3,	43,	61 },
+	{ 3,	44,	61 },
+	{ 3,	45,	61 },
+	{ 3,	46,	61 },
+	{ 3,	47,	61 },
+
+	{ 3,	48,	62 },
+	{ 3,	49,	62 },
+	{ 3,	50,	62 },
+	{ 3,	51,	62 },
+	{ 3,	52,	62 },
+	{ 3,	53,	62 },
+	{ 3,	54,	62 },
+	{ 2,	55,	63 },
+};
 
 static void
 atomic_cpumask_set(katomic_cpumask_t *set, kcpunum_t cpunum, memory_order order)
@@ -88,7 +174,7 @@ atomic_cpumask_first_set(katomic_cpumask_t *set, memory_order order)
 	for (size_t i = 0; i < width; i++) {
 		uintptr_t mask = atomic_load_explicit(&set->mask[i], order);
 		if (mask != 0) {
-			kcpunum_t cpu = i * UINTPTR_BITS + __builtin_ctz(mask);
+			kcpunum_t cpu = i * UINTPTR_BITS + __builtin_ctzl(mask);
 			return cpu < ke_ncpu ? cpu : KCPUNUM_NULL;
 		}
 	}
@@ -98,7 +184,9 @@ atomic_cpumask_first_set(katomic_cpumask_t *set, memory_order order)
 void
 disp_global_init(void)
 {
-	memset(&idle_cpu_mask, 0xff, sizeof(idle_cpu_mask));
+	for (size_t i = 0; i < elementsof(idle_cpu_mask.mask); i++)
+		atomic_store_explicit(&idle_cpu_mask.mask[i], UINTPTR_MAX,
+		    memory_order_relaxed);
 	for (size_t i = 0; i < RT_PRIO_N; i++)
 		TAILQ_INIT(&global_rt_rq[i]);
 }
@@ -111,12 +199,35 @@ disp_init(kcpunum_t cpunum)
 
 	ke_spinlock_init(&disp->lock);
 
-	for (i = 0; i < TS_PRIO_N; i++)
+	for (i = 0; i < PRIO_LIMIT; i++)
 		TAILQ_INIT(&disp->rq[i]);
 
+	memset(disp->bitmap, 0, sizeof(disp->bitmap));
 	disp->idle_thread = ke_cpu_data[cpunum]->curthread;
 	disp->cur_thread = disp->idle_thread;
 	atomic_store_explicit(&disp->timeslice, 5, memory_order_relaxed);
+}
+
+static bool
+should_preempt(struct kcpu_dispatcher *disp, kthread_t *thread)
+{
+	kthread_t *cur = disp->cur_thread;
+
+	if (cur == disp->idle_thread) {
+		return true;
+	} else if (thread->sched_class == SCHED_FIFO ||
+	    thread->sched_class == SCHED_RR) {
+		if (cur->sched_class == SCHED_OTHER)
+			return true;
+		else if (thread->prio > cur->prio)
+			return true;
+		else
+			return false;
+	} else if (thread->prio >= cur->prio) {
+		return true;
+	} else {
+		return false;
+	}
 }
 
 uint32_t
@@ -134,6 +245,64 @@ pick_cpu(kthread_t *thread)
 		else
 			return CPU_LOCAL_LOAD(cpu_num);
 	}
+}
+
+static void
+runq_insert(struct kcpu_dispatcher *dp, kthread_t *thread)
+{
+	if (thread->sched_class == SCHED_FIFO ||
+	    thread->sched_class == SCHED_RR) {
+		kassert(thread->prio >= PRIO_MIN_RT &&
+		    thread->prio < PRIO_LIMIT, "invalid real-time priority");
+
+		ke_spinlock_enter_nospl(&rt_lock);
+		TAILQ_INSERT_TAIL(&global_rt_rq[thread->prio - PRIO_MIN_RT],
+		    thread, tqlink);
+		rt_bitmap |= 1U << (thread->prio - PRIO_MIN_RT);
+		ke_spinlock_exit_nospl(&rt_lock);
+	} else {
+		TAILQ_INSERT_TAIL(&dp->rq[thread->prio], thread, tqlink);
+		dp->bitmap[thread->prio / 32] |= 1U << (thread->prio % 32);
+	}
+}
+
+static void do_reschedule(void*)
+{
+	CPU_LOCAL_STORE(redispatch_requested, true);
+	ke_raise_disp_int();
+}
+
+void
+ke_thread_resume(kthread_t *thread)
+{
+	struct kcpu_dispatcher *disp;
+	uint32_t cpunum;
+	ipl_t ipl;
+
+	kassert(thread->state == TS_SLEEPING || thread->state == TS_CREATED,
+	    "invalid thread state in ke_resume");
+
+	ipl = spldisp();
+
+	cpunum = pick_cpu(thread);
+	disp = ke_cpu_data[cpunum]->disp;
+
+	ke_spinlock_enter_nospl(&disp->lock);
+
+	thread->state = TS_READY;
+	runq_insert(disp, thread);
+
+	if (should_preempt(disp, thread)) {
+		ke_spinlock_exit_nospl(&disp->lock);
+		if (cpunum == CPU_LOCAL_LOAD(cpu_num))
+			do_reschedule(NULL);
+		else
+			xcall_unicast(do_reschedule, NULL, cpunum);
+	} else {
+		ke_spinlock_exit_nospl(&disp->lock);
+	}
+
+	splx(ipl);
 }
 
 static inline int
@@ -188,4 +357,77 @@ next_thread(struct kcpu_dispatcher *dp)
 	}
 
 	return dp->idle_thread;
+}
+
+void
+disp_hardclock(void)
+{
+	struct kcpu_dispatcher *disp = CPU_LOCAL_LOAD(disp);
+
+	if (atomic_fetch_sub_explicit(&disp->timeslice, 1,
+	    memory_order_relaxed) <= 1)
+		do_reschedule(NULL);
+}
+
+void
+ke_dispatch(void)
+{
+	kthread_t *old = CPU_LOCAL_LOAD(curthread), *next;
+	struct kcpu_dispatcher *disp = CPU_LOCAL_LOAD(disp);
+
+	kassert(ke_ipl() == IPL_DISP, "ke_dispatch called at invalid IPL");
+
+	kassert(ke_spinlock_held(&old->lock),
+	    "current thread lock not held in ke_dispatch");
+	CPU_LOCAL_STORE(redispatch_requested, false);
+
+	// rcu_quiet();
+
+	ke_spinlock_enter_nospl(&disp->lock);
+
+	if (old == disp->idle_thread) {
+		kassert(old->state == TS_RUNNING,
+		    "invalid idle thread state in ke_dispatch");
+		old->state = TS_READY;
+	} else if (old->state == TS_RUNNING) {
+		/* currently running - replace on runqueue */
+		old->state = TS_READY;
+		runq_insert(disp, old);
+	} else if (old->state == TS_SLEEPING) {
+		/* accouunt for sleep time? */
+	} else if (old->state == TS_TERMINATED) {
+		/* queue it on a done queue, to be invoked from DPC... */
+	}
+
+	next = next_thread(disp);
+	next->state = TS_RUNNING;
+	atomic_store_explicit(&disp->timeslice, 5, memory_order_relaxed);
+
+	if (next == old) {
+		ke_spinlock_exit_nospl(&old->lock);
+		ke_spinlock_exit_nospl(&disp->lock);
+		return;
+	}
+
+	next->last_cpu_num = CPU_LOCAL_LOAD(cpu_num);
+	disp->cur_thread = next;
+	CPU_LOCAL_STORE(curthread, next);
+	CPU_LOCAL_STORE(prevthread, old);
+
+	if (next == disp->idle_thread)
+		atomic_cpumask_set(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
+		    memory_order_relaxed);
+	else if (old == disp->idle_thread)
+		atomic_cpumask_clear(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
+		    memory_order_relaxed);
+
+	ke_spinlock_exit_nospl(&disp->lock);
+
+	// if (thread_vm_map(next) != thread_vm_map(old))
+	//	pmap_activate(thread_vm_map(next));
+
+	// arch_switch(old, next);
+
+	/* we are now potentially on another CPU, so reload prevthread */
+	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
 }

@@ -42,6 +42,7 @@ struct kcpu_data {
 	TAILQ_HEAD(, kdpc) dpc_queue;
 
 	struct kthread *curthread;
+	struct kthread *prevthread;
 	struct kcpu_dispatcher *disp;
 	bool redispatch_requested;
 };
