@@ -51,7 +51,7 @@ void ke_dpc_schedule(kdpc_t *);
 
 void ke_raise_disp_int(void);
 
-#define SPINLOCK_INITIALISER { 0 }
+#define KSPINLOCK_INITIALISER { 0 }
 
 static inline bool
 ke_spinlock_held(kspinlock_t *lock)

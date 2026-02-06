@@ -51,91 +51,18 @@ struct kcpu_dispatcher {
 	atomic_int_fast32_t timeslice;
 };
 
-struct ts_prio_info {
-	uint8_t quantum;
-	uint8_t quantum_expiry_prio;
-	uint8_t quantum_after_io;
-};
+extern struct ksched_class kep_ts_class, kep_rt_class;
 
-static kspinlock_t rt_lock;
+static kspinlock_t rt_lock = KSPINLOCK_INITIALISER;
 static atomic_int_fast32_t rt_bitmap;
 static runq_t global_rt_rq[RT_PRIO_N];
 static katomic_cpumask_t idle_cpu_mask;
 static struct kcpu_dispatcher bsp_dispatcher;
 
-static struct ts_prio_info ts_prio_info[TS_PRIO_N] = {
-	/* q,	q_e_p,	q_a_i,	 */
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-	{ 12,	0,	55 },
-
-	{ 10,	0,	56 },
-	{ 10,	1,	56 },
-	{ 10,	2,	56 },
-	{ 10,	3,	56 },
-	{ 10,	4,	56 },
-	{ 10,	5,	56 },
-	{ 10,	6,	56 },
-	{ 10,	7,	56 },
-
-	{ 8,	8,	57 },
-	{ 8,	9,	57 },
-	{ 8,	10,	57 },
-	{ 8,	11,	57 },
-	{ 8,	12,	57 },
-	{ 8,	13,	57 },
-	{ 8,	14,	57 },
-	{ 8,	15,	57 },
-
-	{ 6,	16,	58 },
-	{ 6,	17,	58 },
-	{ 6,	18,	58 },
-	{ 6,	19,	58 },
-	{ 6,	20,	58 },
-	{ 6,	21,	58 },
-	{ 6,	22,	58 },
-	{ 6,	23,	58 },
-
-	{ 5,	24,	59 },
-	{ 5,	25,	59 },
-	{ 5,	26,	59 },
-	{ 5,	27,	59 },
-	{ 5,	28,	59 },
-	{ 5,	29,	59 },
-	{ 5,	30,	59 },
-	{ 5,	31,	59 },
-
-	{ 4,	32,	60 },
-	{ 4,	33,	60 },
-	{ 4,	34,	60 },
-	{ 4,	35,	60 },
-	{ 4,	36,	60 },
-	{ 4,	37,	60 },
-	{ 4,	38,	60 },
-	{ 4,	39,	60 },
-
-	{ 3,	40,	61 },
-	{ 3,	41,	61 },
-	{ 3,	42,	61 },
-	{ 3,	43,	61 },
-	{ 3,	44,	61 },
-	{ 3,	45,	61 },
-	{ 3,	46,	61 },
-	{ 3,	47,	61 },
-
-	{ 3,	48,	62 },
-	{ 3,	49,	62 },
-	{ 3,	50,	62 },
-	{ 3,	51,	62 },
-	{ 3,	52,	62 },
-	{ 3,	53,	62 },
-	{ 3,	54,	62 },
-	{ 2,	55,	63 },
+static struct ksched_class *kep_sched_class[3] = {
+	[SCHED_RR] = &kep_rt_class,
+	[SCHED_FIFO] = &kep_rt_class,
+	[SCHED_OTHER] = &kep_ts_class,
 };
 
 static void
@@ -258,7 +185,9 @@ runq_insert(struct kcpu_dispatcher *dp, kthread_t *thread)
 		ke_spinlock_enter_nospl(&rt_lock);
 		TAILQ_INSERT_TAIL(&global_rt_rq[thread->prio - PRIO_MIN_RT],
 		    thread, tqlink);
-		rt_bitmap |= 1U << (thread->prio - PRIO_MIN_RT);
+		atomic_fetch_or_explicit(&rt_bitmap,
+		    1U << (thread->prio - PRIO_MIN_RT), memory_order_relaxed);
+
 		ke_spinlock_exit_nospl(&rt_lock);
 	} else {
 		TAILQ_INSERT_TAIL(&dp->rq[thread->prio], thread, tqlink);
@@ -272,27 +201,36 @@ static void do_reschedule(void*)
 	ke_raise_disp_int();
 }
 
+/*
+ * Resume a blocked thread.
+ *
+ * Callers must have exclusive custody of the thread (i.e. they are the only one
+ * who will try to call ke_thread_resume() on it.)
+ */
 void
-ke_thread_resume(kthread_t *thread)
+ke_thread_resume(kthread_t *t, bool io_completion)
 {
 	struct kcpu_dispatcher *disp;
 	uint32_t cpunum;
 	ipl_t ipl;
 
-	kassert(thread->state == TS_SLEEPING || thread->state == TS_CREATED,
+	kassert(t->state == TS_SLEEPING || t->state == TS_CREATED,
 	    "invalid thread state in ke_resume");
+
+	if (io_completion)
+		kep_sched_class[t->sched_class]->io_completed(t);
 
 	ipl = spldisp();
 
-	cpunum = pick_cpu(thread);
+	cpunum = pick_cpu(t);
 	disp = ke_cpu_data[cpunum]->disp;
 
 	ke_spinlock_enter_nospl(&disp->lock);
 
-	thread->state = TS_READY;
-	runq_insert(disp, thread);
+	t->state = TS_READY;
+	runq_insert(disp, t);
 
-	if (should_preempt(disp, thread)) {
+	if (should_preempt(disp, t)) {
 		ke_spinlock_exit_nospl(&disp->lock);
 		if (cpunum == CPU_LOCAL_LOAD(cpu_num))
 			do_reschedule(NULL);
@@ -338,7 +276,8 @@ next_thread(struct kcpu_dispatcher *dp)
 			kthread_t *t = TAILQ_FIRST(rq);
 			TAILQ_REMOVE(rq, t, tqlink);
 			if (TAILQ_EMPTY(rq))
-				rt_bitmap &= ~(1U << grt_idx);
+				atomic_fetch_and_explicit(&rt_bitmap,
+				    ~(1U << grt_idx), memory_order_relaxed);
 			ke_spinlock_exit_nospl(&rt_lock);
 			return t;
 		}
@@ -372,12 +311,12 @@ disp_hardclock(void)
 void
 ke_dispatch(void)
 {
-	kthread_t *old = CPU_LOCAL_LOAD(curthread), *next;
+	kthread_t *oldt = CPU_LOCAL_LOAD(curthread), *nextt;
 	struct kcpu_dispatcher *disp = CPU_LOCAL_LOAD(disp);
 
 	kassert(ke_ipl() == IPL_DISP, "ke_dispatch called at invalid IPL");
 
-	kassert(ke_spinlock_held(&old->lock),
+	kassert(ke_spinlock_held(&oldt->lock),
 	    "current thread lock not held in ke_dispatch");
 	CPU_LOCAL_STORE(redispatch_requested, false);
 
@@ -385,39 +324,45 @@ ke_dispatch(void)
 
 	ke_spinlock_enter_nospl(&disp->lock);
 
-	if (old == disp->idle_thread) {
-		kassert(old->state == TS_RUNNING,
+	if (oldt == disp->idle_thread) {
+		kassert(oldt->state == TS_RUNNING,
 		    "invalid idle thread state in ke_dispatch");
-		old->state = TS_READY;
-	} else if (old->state == TS_RUNNING) {
+	}
+
+	if (oldt->state == TS_RUNNING) {
 		/* currently running - replace on runqueue */
-		old->state = TS_READY;
-		runq_insert(disp, old);
-	} else if (old->state == TS_SLEEPING) {
-		/* accouunt for sleep time? */
-	} else if (old->state == TS_TERMINATED) {
+		oldt->state = TS_READY;
+		kep_sched_class[oldt->sched_class]->did_preempt_thread(oldt,
+		    atomic_load_explicit(&disp->timeslice,
+		    memory_order_relaxed) <= 0);
+		runq_insert(disp, oldt);
+	} else if (oldt->state == TS_SLEEPING) {
+		/* going to sleep. account for sleep time here? */
+	} else if (oldt->state == TS_TERMINATED) {
 		/* queue it on a done queue, to be invoked from DPC... */
 	}
 
-	next = next_thread(disp);
-	next->state = TS_RUNNING;
-	atomic_store_explicit(&disp->timeslice, 5, memory_order_relaxed);
+	nextt = next_thread(disp);
+	nextt->state = TS_RUNNING;
+	atomic_store_explicit(&disp->timeslice,
+	    kep_sched_class[nextt->sched_class]->quantum(nextt),
+	    memory_order_relaxed);
 
-	if (next == old) {
-		ke_spinlock_exit_nospl(&old->lock);
+	if (nextt == oldt) {
+		ke_spinlock_exit_nospl(&oldt->lock);
 		ke_spinlock_exit_nospl(&disp->lock);
 		return;
 	}
 
-	next->last_cpu_num = CPU_LOCAL_LOAD(cpu_num);
-	disp->cur_thread = next;
-	CPU_LOCAL_STORE(curthread, next);
-	CPU_LOCAL_STORE(prevthread, old);
+	nextt->last_cpu_num = CPU_LOCAL_LOAD(cpu_num);
+	disp->cur_thread = nextt;
+	CPU_LOCAL_STORE(curthread, nextt);
+	CPU_LOCAL_STORE(prevthread, oldt);
 
-	if (next == disp->idle_thread)
+	if (nextt == disp->idle_thread)
 		atomic_cpumask_set(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
 		    memory_order_relaxed);
-	else if (old == disp->idle_thread)
+	else if (oldt == disp->idle_thread)
 		atomic_cpumask_clear(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
 		    memory_order_relaxed);
 
