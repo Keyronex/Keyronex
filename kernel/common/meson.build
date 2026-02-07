@@ -1,6 +1,14 @@
 kernel_sources += [
+    'kern/callout.c',
+    'kern/disp_rt.c',
+    'kern/disp_ts.c',
+    'kern/dispatch.c',
     'kern/dlog.c',
+    'kern/init.c',
     'kern/intr.c',
+    'kern/kwait.c',
+    'kern/turnstil.c',
+    'libkern/lib.c',
     'os/main.c',
 ]
 

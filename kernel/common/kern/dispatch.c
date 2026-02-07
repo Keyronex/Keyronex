@@ -235,7 +235,7 @@ ke_thread_resume(kthread_t *t, bool io_completion)
 		if (cpunum == CPU_LOCAL_LOAD(cpu_num))
 			do_reschedule(NULL);
 		else
-			xcall_unicast(do_reschedule, NULL, cpunum);
+			ke_xcall_unicast(do_reschedule, NULL, cpunum);
 	} else {
 		ke_spinlock_exit_nospl(&disp->lock);
 	}

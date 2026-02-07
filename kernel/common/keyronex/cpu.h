@@ -12,44 +12,42 @@
 
 #include <keyronex/cpulocal.h>
 #include <keyronex/intr.h>
+#include <keyronex/kwait.h>
+
 #include <libkern/lib.h>
 
 #include <stdatomic.h>
 #include <stdint.h>
-
-#define MAX_CPUS 256
-#define CPUMASK_WIDTH (MAX_CPUS / (sizeof(uintptr_t) * 8))
-
-typedef uint32_t kcpunum_t;
-
-typedef struct kcpumask {
-	uintptr_t mask[CPUMASK_WIDTH];
-} kcpumask_t;
-
-typedef struct katomic_cpumask {
-	atomic_uintptr_t mask[CPUMASK_WIDTH];
-} katomic_cpumask_t;
 
 struct kcpu_data {
 	struct karch_cpu_data arch;
 	struct kcpu_data *self;
 	kcpunum_t cpu_num;
 
-	_Atomic(uint32_t) pending_soft_ints;
+	/* interrupt management */
 	ipl_t ipl;
-
+	_Atomic(uint32_t) pending_soft_ints;
 	kspinlock_t dpc_lock;
 	TAILQ_HEAD(, kdpc) dpc_queue;
+	struct kcpu_callout callout;
 
+	/* xcall handling */
+	void (*func)(void *);
+	void *arg;
+	atomic_uint xcalls_completed;
+	katomic_cpumask_t xcalls_pending;
+
+	/* dispatcher */
 	struct kthread *curthread;
 	struct kthread *prevthread;
 	struct kcpu_dispatcher *disp;
 	bool redispatch_requested;
 };
 
-#define KCPUNUM_NULL ((kcpunum_t)-1)
+#define ke_curcpu() CPU_LOCAL_GET()
+#define ke_curthread() CPU_LOCAL_LOAD(curthread)
 
-#define ke_current_cpu() CPU_LOCAL_GET()
+kabstime_t ke_time();
 
 extern struct kcpu_data ke_bsp_cpu_data;
 extern struct kcpu_data **ke_cpu_data;

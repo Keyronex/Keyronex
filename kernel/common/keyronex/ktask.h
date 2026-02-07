@@ -10,6 +10,8 @@
 #ifndef ECX_KERN_KTASK_H
 #define ECX_KERN_KTASK_H
 
+#include <libkern/queue.h>
+
 #include <keyronex/cpu.h>
 
 #define RT_PRIO_N 32
@@ -37,6 +39,13 @@ struct ksched_class {
 	uint16_t (*quantum)(struct kthread *);
 };
 
+typedef struct kturnstile kturnstile_t;
+
+/*
+ * A kernel thread.
+ *
+ * l: kthread::lock
+ */
 typedef struct kthread {
 	TAILQ_ENTRY(kthread) tqlink;
 
@@ -48,14 +57,24 @@ typedef struct kthread {
 		TS_SLEEPING,
 		TS_TERMINATED
 	} state;
-	kcpunum_t last_cpu_num;
-	uint8_t sched_class;
-	// uint8_t nice;
-	uint16_t prio;
+	kcpunum_t	last_cpu_num;	/* CPU running on/last ran on */
+	uint8_t		sched_class;	/* scheduling class (SCHED_*) */
+	uint8_t		nice;		/* nice value (currently unused) */
+	uint16_t	prio;		/* prio determined by scheduler */
+	uint16_t 	inherited_prio;	/* prio inherited from turnstile */
+	uint16_t	effective_prio;	/* max of prio and inherited_prio */
+	SLIST_HEAD(, kturnstile) pi_head; /* l: turnstiles donating priority */
+
+	kwait_internal_status_t	wait_status;	/* wait status */
+	struct kwaitblock	integral_waitblocks[4]; /* default waitblocks */
+	const char 		*wait_reason;	/* reason for waiting */
 } kthread_t;
 
 typedef struct ktask {
 
 } ktask_t;
+
+void ke_dispatch(void);
+void ke_thread_resume(kthread_t *t, bool io_completion);
 
 #endif /* ECX_KERN_KTASK_H */

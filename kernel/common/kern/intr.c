@@ -34,9 +34,47 @@ pending_si_mask_for_ipl(ipl_t ipl)
 void
 ke_raise_disp_int(void)
 {
-	struct kcpu_data *cpu = ke_current_cpu();
+	struct kcpu_data *cpu = ke_curcpu();
 	atomic_fetch_or_explicit(&cpu->pending_soft_ints,
 	    pending_si_mask_for_ipl(IPL_DISP), memory_order_relaxed);
+}
+
+void
+ke_dpc_init(kdpc_t *dpc, void (*handler)(void *, void *), void *arg1,
+    void *arg2)
+{
+	atomic_store_explicit(&dpc->cpu, NULL, memory_order_relaxed);
+	dpc->handler = handler;
+	dpc->arg1 = arg1;
+	dpc->arg2 = arg2;
+}
+
+void
+ke_dpc_schedule(kdpc_t *si)
+{
+	ipl_t ipl = ke_ipl();
+
+	if (ipl < IPL_DISP) {
+		spldisp();
+		si->handler(si->arg1, si->arg2);
+		splx(ipl);
+	} else {
+		struct kcpu_data *data = CPU_LOCAL_GET();
+
+		splhigh();
+		ke_spinlock_enter_nospl(&data->dpc_lock);
+
+		if (!atomic_compare_exchange_strong_explicit(&si->cpu,
+		    &(struct kcpu_data *) { NULL }, data,
+		    memory_order_release, memory_order_relaxed)) {
+			ke_spinlock_exit(&data->dpc_lock, ipl);
+			return;
+		}
+
+		TAILQ_INSERT_TAIL(&data->dpc_queue, si, qlink);
+		ke_raise_disp_int();
+		ke_spinlock_exit(&data->dpc_lock, ipl);
+	}
 }
 
 static void none_si_handler(struct kcpu_data *)
@@ -93,7 +131,7 @@ void
 kep_dispatch_softints(ipl_t newipl)
 {
 	bool intx = ke_arch_disable();
-	struct kcpu_data *cpu = ke_current_cpu();
+	struct kcpu_data *cpu = ke_curcpu();
 
 	for (;;) {
 		uint32_t pending = atomic_load_explicit(&cpu->pending_soft_ints,
@@ -105,7 +143,7 @@ kep_dispatch_softints(ipl_t newipl)
 		si_handlers[pending](cpu);
 
 		/* Reload CPU, as dispatching may have changed it. */
-		cpu = ke_current_cpu();
+		cpu = ke_curcpu();
 	}
 
 	cpu->ipl = newipl;

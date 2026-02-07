@@ -36,6 +36,17 @@ ke_arch_enable(bool enable)
 }
 
 ipl_t
+ke_ipl(void)
+{
+	ipl_t ipl;
+	asm volatile("movl %%gs:%c1, %0"
+	    : "=r"(ipl)
+	    : "i"(offsetof(struct kcpu_data, ipl))
+	    : "memory");
+	return ipl;
+}
+
+ipl_t
 splraise(ipl_t newipl)
 {
 	bool intx = ke_arch_disable();
