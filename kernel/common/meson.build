@@ -8,6 +8,7 @@ kernel_sources += [
     'kern/intr.c',
     'kern/kwait.c',
     'kern/turnstil.c',
+    'kern/xcall.c',
     'libkern/lib.c',
     'os/main.c',
 ]

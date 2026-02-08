@@ -48,6 +48,9 @@ struct kcpu_data {
 #define ke_curthread() CPU_LOCAL_LOAD(curthread)
 
 kabstime_t ke_time();
+void kep_arch_ipi_unicast(kcpunum_t cpu_num);
+void kep_arch_ipi_broadcast(void);
+void ke_arch_pause(void);
 
 extern struct kcpu_data ke_bsp_cpu_data;
 extern struct kcpu_data **ke_cpu_data;
