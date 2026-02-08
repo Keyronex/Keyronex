@@ -8,9 +8,3 @@
  */
 
 #include <keyronex/cpu.h>
-
-kabstime_t
-ke_time(void)
-{
-	return 0;
-}
