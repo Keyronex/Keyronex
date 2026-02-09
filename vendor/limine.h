@@ -230,6 +230,11 @@ struct limine_framebuffer_request {
 #define LIMINE_PAGING_MODE_LOONGARCH_MIN LIMINE_PAGING_MODE_LOONGARCH_4LVL
 #define LIMINE_PAGING_MODE_LOONGARCH_DEFAULT LIMINE_PAGING_MODE_LOONGARCH_4LVL
 
+#define LIMINE_PAGING_MODE_M68K_4K 0
+#define LIMINE_PAGING_MODE_M68K_8K 1
+#define LIMINE_PAGING_MODE_M68K_MIN LIMINE_PAGING_MODE_M68K_4K
+#define LIMINE_PAGING_MODE_M68K_DEFAULT LIMINE_PAGING_MODE_M68K_4K
+
 struct limine_paging_mode_response {
     uint64_t revision;
     uint64_t mode;
@@ -318,6 +323,22 @@ struct limine_mp_info {
 struct limine_mp_response {
     uint64_t cpu_count;
     LIMINE_PTR(struct limine_mp_info **) cpus;
+};
+
+#elif defined (__m68k__)
+
+struct limine_mp_info {
+    uint32_t processir_id;
+    uint64_t id;
+    LIMINE_PTR(limine_goto_address) goto_address;
+};
+
+struct limine_mp_response {
+    uint64_t revision;
+    uint32_t flags;
+    uint64_t bsp_id;
+    uint64_t cpu_count;
+    LIMINE_PTR(struct limine_smp_info **) cpus;
 };
 
 #else

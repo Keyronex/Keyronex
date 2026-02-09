@@ -10,15 +10,26 @@
 #ifndef ECX_KEYRONEX_VM_H
 #define ECX_KEYRONEX_VM_H
 
+#include <keyronex/vm_arch.h>
+
 #include <stdint.h>
 
-typedef uintptr_t vaddr_t;
-typedef uintptr_t paddr_t;
+#define VM_MAX_AFFINITIES 64
+#define VM_MAX_DOMAINS 8
 
-/* todo move me */
-#define HHDM_BASE   0xffff800000000000
+typedef enum vm_page_use {
+	VM_PAGE_DELETED,
+	VM_PAGE_FREE,
+	VM_PAGE_DEV_BUFFER,
+	VM_PAGE_KWIRED,
+	VM_PAGE_TABLE,
+	VM_PAGE_PRIVATE,
+	VM_PAGE_ANON_SHARED,
+	VM_PAGE_ANON_FORKED,
+	VM_PAGE_FILE,
+	VM_PAGE_OBJ_TABLE,
+	VM_PAGE_USE_N,
+} vm_page_use_t;
 
-#define p2v(PA) ((vaddr_t)(PA) + HHDM_BASE)
-#define v2p(VA) ((paddr_t)(VA) - HHDMBASE)
 
 #endif /* ECX_KEYRONEX_VM_H */
