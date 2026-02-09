@@ -9,8 +9,12 @@ kernel_sources += [
     'kern/kwait.c',
     'kern/turnstil.c',
     'kern/xcall.c',
+
     'libkern/lib.c',
+
     'os/main.c',
+
+    'vm/init.c',
 ]
 
 if not headers_only_option

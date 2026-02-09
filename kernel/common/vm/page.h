@@ -41,7 +41,11 @@ struct vm_page {
 	uint16_t ref_count;
 	uint16_t spare_2;
 
+#if defined (__m68k__)
+	uintptr_t space[10];
+#else
 	uintptr_t space[7];
+#endif
 };
 
 struct vm_domain {

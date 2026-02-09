@@ -12,6 +12,13 @@
 
 #include <stdint.h>
 
+typedef enum vm_prot {
+	VM_READ = 0x1,
+	VM_WRITE = 0x2,
+	VM_EXEC = 0x4,
+	VM_USER = 0x8,
+} vm_prot_t;
+
 typedef struct vm_page vm_page_t;
 
 typedef uintptr_t vaddr_t;

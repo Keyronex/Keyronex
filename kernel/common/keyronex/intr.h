@@ -10,6 +10,8 @@
 #ifndef ECX_KERN_INTR_H
 #define ECX_KERN_INTR_H
 
+#include <keyronex/ipl_arch.h>
+
 #include <libkern/queue.h>
 
 #include <stdatomic.h>
@@ -17,12 +19,6 @@
 #include <stdint.h>
 
 struct kcpu_data;
-
-typedef enum ipl {
-	IPL_0,
-	IPL_DISP = 2,
-	IPL_HIGH = 15
-} ipl_t;
 
 typedef struct kspinlock {
 	uint32_t lock;

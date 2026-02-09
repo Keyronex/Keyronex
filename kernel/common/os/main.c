@@ -14,6 +14,9 @@
 /* kern/init.c */
 void ke_bsp_early_init(ktask_t *, kthread_t *);
 
+/* vm/init.c */
+void vm_phys_init(void);
+
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
@@ -36,6 +39,8 @@ _start(void)
 	ke_bsp_early_init(&proc0.ktask, &thread0.kthread);
 
 	kdprintf("Keyronex\n");
+
+	vm_phys_init();
 
 	for (;;) ;
 }
