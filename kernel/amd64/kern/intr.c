@@ -10,8 +10,28 @@
 #include <keyronex/cpu.h>
 #include <keyronex/dlog.h>
 #include <keyronex/intr.h>
+#include <keyronex/pcb.h>
+#include <keyronex/x86.h>
+
+#include "asm_intr.h"
+
+struct __attribute__((packed)) idt_entry {
+	uint16_t isr_low;
+	uint16_t selector;
+	uint8_t ist;
+	uint8_t type;
+	uint16_t isr_mid;
+	uint32_t isr_high;
+	uint32_t zero;
+};
+
+#define EXTERN_ISR(VAL) void *isr_##VAL(void);
+SPEC_IDT_ENTRIES(EXTERN_ISR)
+IDT_ENTRIES(EXTERN_ISR)
 
 void kep_dispatch_softints(ipl_t newipl);
+
+static struct idt_entry bsp_idt[256];
 
 bool
 ke_arch_disable(void)
@@ -103,4 +123,44 @@ splx(ipl_t ipl)
 	if ((pending_soft_ints() >> (uint64_t)ipl) != 0ULL) {
 		kep_dispatch_softints(ipl);
 	}
+}
+
+static void
+idt_set(struct idt_entry *idt, uint8_t index, void *isr, uint8_t type,
+    uint8_t ist)
+{
+	idt[index].isr_low = (uint64_t)isr & 0xFFFF;
+	idt[index].isr_mid = ((uint64_t)isr >> 16) & 0xFFFF;
+	idt[index].isr_high = (uint64_t)isr >> 32;
+	idt[index].selector = 0x28; /* sixth */
+	idt[index].type = type;
+	idt[index].ist = ist;
+	idt[index].zero = 0x0;
+}
+
+void
+kep_arch_set_vbase(bool bsp)
+{
+	struct {
+		uint16_t limit;
+		uintptr_t addr;
+	} __attribute__((packed)) idtr = {
+		.limit = sizeof(bsp_idt) - 1,
+		.addr = (uintptr_t)bsp_idt,
+	};
+
+	if (bsp) {
+#define IDT_SET(VAL) idt_set(bsp_idt, VAL, &isr_##VAL, 0x8e, 0);
+		SPEC_IDT_ENTRIES(IDT_SET);
+		IDT_ENTRIES(IDT_SET);
+		idt_set(bsp_idt, 0x80, &isr_128, 0xee, 0);
+	}
+
+	asm volatile("lidt %0" : : "m"(idtr));
+}
+
+void
+kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
+{
+	kfatal("interrupt %d\n", num);
 }

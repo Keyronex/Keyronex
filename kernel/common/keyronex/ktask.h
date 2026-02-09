@@ -47,7 +47,11 @@ typedef struct kturnstile kturnstile_t;
  * l: kthread::lock
  */
 typedef struct kthread {
-	TAILQ_ENTRY(kthread) tqlink;
+	LIST_ENTRY(kthread)	proc_link;
+	TAILQ_ENTRY(kthread)	tqlink;
+
+	struct ktask	*task;
+	struct ktask	*attached_task;
 
 	kspinlock_t lock;
 	enum kthread_state {
@@ -71,7 +75,8 @@ typedef struct kthread {
 } kthread_t;
 
 typedef struct ktask {
-
+	LIST_HEAD(, kthread) threads;
+	paddr_t		pmap;
 } ktask_t;
 
 void ke_dispatch(void);

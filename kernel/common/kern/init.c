@@ -8,7 +8,19 @@
  */
 
 #include <keyronex/cpu.h>
+#include <keyronex/ktask.h>
+
+void kep_arch_set_tp(void *);
+void kep_arch_set_vbase(void);
 
 struct kcpu_data ke_bsp_cpu_data;
 struct kcpu_data **ke_cpu_data;
 size_t ke_ncpu;
+
+void ke_bsp_early_init(ktask_t *task0, kthread_t *kthread0)
+{
+	kep_arch_set_vbase();
+	kep_arch_set_tp(&ke_bsp_cpu_data);
+	kthread0->task = task0;
+	kthread0->state = TS_RUNNING;
+}

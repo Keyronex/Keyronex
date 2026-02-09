@@ -24,7 +24,8 @@ struct kturnstile {
 };
 
 struct kturnstile_waiter {
-
+	TAILQ_ENTRY(kturnstile_waiter) qentry;
+	kevent_t event;
 };
 
 struct kturnstile_chain {

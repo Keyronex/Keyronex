@@ -46,6 +46,9 @@ typedef uint64_t kabstime_t;
 /*! Relative time in nanoseconds. */
 typedef uint64_t knanosecs_t;
 
+typedef uintptr_t paddr_t;
+typedef uintptr_t vaddr_t;
+
 #define KCPUNUM_NULL ((kcpunum_t)-1)
 
 #define ABSTIME_FOREVER ((kabstime_t)-1)
