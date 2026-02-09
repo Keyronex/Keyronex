@@ -21,9 +21,9 @@ insert(kcallout_t *co, struct kcpu_callout *cc)
 		if (existing->deadline > co->deadline) {
 			TAILQ_INSERT_BEFORE(existing, co, callout_qlink);
 			if (first) {
-				atomic_signal_fence(memory_order_release);
-				atomic_store_explicit(&cc->next_deadline,
-				    co->deadline, memory_order_relaxed);
+				int x = ke_arch_disable();
+				cc->next_deadline = co->deadline;
+				ke_arch_enable(x);
 			}
 			return;
 		}
@@ -32,9 +32,9 @@ insert(kcallout_t *co, struct kcpu_callout *cc)
 	/* no callouts or it's the longest till elapsing */
 	TAILQ_INSERT_TAIL(&cc->callouts, co, callout_qlink);
 	if (first) {
-		atomic_signal_fence(memory_order_release);
-		atomic_store_explicit(&cc->next_deadline, co->deadline,
-		    memory_order_relaxed);
+		int x = ke_arch_disable();
+		cc->next_deadline = co->deadline;
+		ke_arch_enable(x);
 	}
 }
 
@@ -133,14 +133,14 @@ ki_callout_expiry_dpc(void *arg1, void *arg2)
 		kcallout_t *co = TAILQ_FIRST(&cc->callouts);
 
 		if (co == NULL) {
-			atomic_signal_fence(memory_order_release);
-			atomic_store_explicit(&cc->next_deadline, ABSTIME_NEVER,
-			    memory_order_relaxed);
+			int x = ke_arch_disable();
+			cc->next_deadline = ABSTIME_NEVER;
+			ke_arch_enable(x);
 			break;
 		} else if (co->deadline > now) {
-			atomic_signal_fence(memory_order_release);
-			atomic_store_explicit(&cc->next_deadline, co->deadline,
-			    memory_order_relaxed);
+			int x = ke_arch_disable();
+			cc->next_deadline = co->deadline;
+			ke_arch_enable(x);
 			break;
 		}
 
@@ -170,8 +170,7 @@ callout_hardclock(void)
 	kabstime_t now = ke_time();
 	kabstime_t next;
 
-	atomic_signal_fence(memory_order_acquire);
-	next = atomic_load_explicit(&cc->next_deadline, memory_order_relaxed);
+	next = cc->next_deadline;
 	if (next != ABSTIME_NEVER && now > next)
 		ke_dpc_schedule(&cc->expiry_dpc);
 

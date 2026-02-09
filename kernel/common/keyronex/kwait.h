@@ -77,7 +77,7 @@ struct kcpu_callout {
 	kdpc_t expiry_dpc;
 	kspinlock_t lock;
 	TAILQ_HEAD(, kcallout) callouts;
-	_Atomic(kabstime_t) next_deadline;
+	kabstime_t next_deadline;
 };
 
 /* public interface */
