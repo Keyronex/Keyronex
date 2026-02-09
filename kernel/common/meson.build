@@ -15,6 +15,7 @@ kernel_sources += [
     'os/main.c',
 
     'vm/init.c',
+    'vm/phys.c',
 ]
 
 if not headers_only_option
