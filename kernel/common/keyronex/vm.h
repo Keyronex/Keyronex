@@ -33,4 +33,7 @@ typedef enum vm_page_use {
 
 typedef enum vm_cache_mode vm_cache_mode_t;
 
+size_t vm_npages_to_order(size_t npages);
+size_t vm_bytes_to_order(size_t bytes);
+
 #endif /* ECX_KEYRONEX_VM_H */

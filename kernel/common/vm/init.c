@@ -25,6 +25,11 @@ struct vm_phys_span {
 	bool is_ram;
 };
 
+/* phys.c */
+void vmp_region_add(paddr_t base, paddr_t limit);
+void vmp_page_unfree(vm_page_t *page, size_t order);
+void vmp_range_unfree(paddr_t base, paddr_t limit);
+
 extern char TEXT_SEGMENT_START[];
 extern char TEXT_SEGMENT_END[];
 extern char RODATA_SEGMENT_START[];
@@ -320,33 +325,144 @@ map_arch(void)
 static void
 map_arch(void)
 {
-	extern volatile char *gftty_regs;
 	for (paddr_t i = 0xff000000; i < 0xff020000; i += PGSIZE)
 		boot_map(i, i, PMAP_L0, VM_READ | VM_WRITE, kCacheModeUC);
-	gftty_regs = (void *)0xff008000;
 }
 #endif
+
+static void
+set_kpgtable(void)
+{
+#if defined(__amd64__)
+	asm volatile("mov %0, %%cr3" ::"r"(kpgtable) : "memory");
+#elif defined(__m68k__)
+	extern volatile char *gftty_regs;
+	asm volatile("movec %0, %%urp\n\t"
+		     "movec %0, %%srp"
+		     :
+		     : "r"(kpgtable)
+		     : "memory");
+	gftty_regs = (void *)0xff008000;
+#else
+	kfatal("port me");
+#endif
+}
+
+
+static void
+add_phys_segs(void)
+{
+	struct limine_memmap_entry **entries = memmap_req.response->entries;
+
+	for (size_t i = 0; i < memmap_req.response->entry_count; i++) {
+		struct limine_memmap_entry *entry = entries[i], *next;
+		paddr_t base, limit;
+
+		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+		    entry->type != LIMINE_MEMMAP_USABLE &&
+		    entry->type != LIMINE_MEMMAP_EXECUTABLE_AND_MODULES)
+			continue;
+
+		base = entry->base;
+		limit = entry->base + entry->length;
+
+		/* merge consecutive compatible regions */
+		for (size_t j = i + 1; j < memmap_req.response->entry_count;
+		     j++) {
+			next = entries[j];
+
+			if (next->type !=
+				LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+			    next->type != LIMINE_MEMMAP_USABLE &&
+			    next->type != LIMINE_MEMMAP_EXECUTABLE_AND_MODULES)
+				break;
+
+			if (limit == next->base) {
+				limit += next->length;
+				i++;
+			}
+		}
+
+		vmp_region_add(base, limit);
+	}
+}
+
+static void
+unfree_boot(void)
+{
+#if PMAP_L1_PAGES
+	for (paddr_t i = bump_start; i < bump_rpt_end; i += PGSIZE_L1) {
+		vm_page_t *page = VM_PAGE_FOR_PADDR(i);
+		vmp_page_unfree(page, vm_bytes_to_order(PGSIZE_L1));
+	}
+#else
+	for (paddr_t i = bump_start; i < bump_rpt_end; i += PGSIZE) {
+		vm_page_t *page = VM_PAGE_FOR_PADDR(i);
+		vmp_page_unfree(page, 0);
+	}
+#endif
+
+	for (paddr_t i = bump_rpt_end; i < roundup2(bump_small_base, PGSIZE);
+	    i += PGSIZE) {
+		vm_page_t *page = VM_PAGE_FOR_PADDR(i);
+		vmp_page_unfree(page, 0);
+	}
+}
+
+static void
+unfree_reserved(void)
+{
+	struct limine_memmap_entry **entries = memmap_req.response->entries;
+
+	for (size_t i = 0; i < memmap_req.response->entry_count; i++) {
+		struct limine_memmap_entry *entry = entries[i], *next;
+		paddr_t base, limit;
+
+		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+		    entry->type != LIMINE_MEMMAP_EXECUTABLE_AND_MODULES)
+			continue;
+
+		base = entry->base;
+		limit = entry->base + entry->length;
+
+		for (size_t j = i + 1; j < memmap_req.response->entry_count;
+		     j++) {
+			next = entries[j];
+
+			if (next->type !=
+				LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
+			    next->type != LIMINE_MEMMAP_EXECUTABLE_AND_MODULES)
+				break;
+
+			if (entry->base + entry->length == next->base) {
+				limit += next->length;
+				i++;
+			}
+		}
+
+		vmp_range_unfree(base, limit);
+	}
+}
+
 
 void
 vm_phys_init(void)
 {
 	for (size_t j = 0; j < FREELIST_ORDERS; j++) {
-		TAILQ_INIT(&vm_domain.free_q[j]);
-		TAILQ_INIT(&vm_domain.stby_q);
-		TAILQ_INIT(&vm_domain.dirty_q);
+		TAILQ_INIT(&vm_domains[0].free_q[j]);
+		TAILQ_INIT(&vm_domains[0].stby_q);
+		TAILQ_INIT(&vm_domains[0].dirty_q);
 	}
 
 	map_rpt();
 	map_hhdm();
 	map_ksegs();
-#if 0
-#if defined(__amd64__)
-	map_lapic();
-#endif
-	pmap_set_kpgtable(kpgtable);
+	map_arch();
+	set_kpgtable();
 	add_phys_segs();
 	unfree_boot();
 	unfree_reserved();
+#if 0
 	setup_permanent_tables();
 #endif
 

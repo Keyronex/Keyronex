@@ -22,6 +22,8 @@
 #define PMAP_L2_PAGES 0
 #define PMAP_L3_PAGES 0
 
+#define PFN_BITS 20
+
 #define LOWER_HALF 0x1000UL
 #define LOWER_HALF_SIZE (0x80000000UL - LOWER_HALF)
 

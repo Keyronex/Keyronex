@@ -19,6 +19,8 @@
 #if 1 /* 4-level paging */
 #define PMAP_LEVELS 4
 
+#define PFN_BITS 52
+
 #define PMAP_L1_PAGES 1
 #define PMAP_L2_PAGES 0 /* maybe */
 #define PMAP_L3_PAGES 0

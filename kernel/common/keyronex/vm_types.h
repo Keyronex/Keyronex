@@ -23,6 +23,7 @@ typedef struct vm_page vm_page_t;
 
 typedef uintptr_t vaddr_t;
 typedef uintptr_t paddr_t;
+typedef uintptr_t pfn_t;
 
 typedef uint8_t vm_domid_t;
 

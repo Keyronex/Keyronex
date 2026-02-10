@@ -25,7 +25,7 @@ typedef struct vm_domain vm_domain_t;
 /*
  * The page struct.
  * Locking:
- * - D: Domain queues lock.
+ * - D: Domain's queues lock.
  * - o: Owner lock (vm_rs or vm_object)
  */
 struct vm_page {
@@ -41,10 +41,83 @@ struct vm_page {
 	uint16_t ref_count;
 	uint16_t spare_2;
 
-#if defined (__m68k__)
-	uintptr_t space[10];
-#else
-	uintptr_t space[7];
+	/* Some use specific state (o) */
+	union {
+		struct proctable {
+			/*
+			 * These elements are all guarded by the owner's
+			 * stealing_lock.
+			 *
+			 * noswap_ptes: number of PTEs in table that forbid the
+			 * table from being swapped out, i.e. valid+trans. Swap
+			 * and fork PTEs don't count towards this.
+			 *
+			 * nonzero_ptes: number of PTEs of any nonzero kind.
+			 *
+			 * valid_pageable_leaf_ptes: number of valid, pageable,
+			 * leaf PTEs. This is only kept for tables containing
+			 * pageable leaf PTEs.
+			 *
+			 * level: page table level (0 = furthest from root)
+			 */
+			int16_t noswap_ptes; /* aka share_count */
+			int16_t nonzero_ptes;
+			int16_t valid_pageable_leaf_ptes;
+			int16_t spare_1;
+			uintptr_t
+				base: PFN_BITS,
+				level: 3,
+				is_root: 1;
+		} proctable;
+
+		struct objtable {
+			int16_t noswap_ptes; /* aka share_count */
+			int16_t nonzero_ptes;
+			uintptr_t
+				level: 3,
+				is_root: 1;
+		} objtable;
+
+		/* anon shared, file shared, forked anon */
+		struct shared {
+			uint32_t share_count;
+			uint32_t
+				dirty: 1,
+				spare_1: 31;
+			uint64_t
+				spare_2: 12,
+				offset: 52; /* offset in *pages* */
+		} shared;
+
+		struct anon_priv {
+		} anon_priv;
+	};
+
+	union {
+		/* Paging queue membership (D) or valid leaf tables link (o) */
+		TAILQ_ENTRY(vm_page) qlink;
+
+		/* Pagein wait head (o) */
+		struct pagein_wait *pagein_wait;
+	};
+
+	/* PTE that maps this page (o)*/
+	union pte *pte;
+
+	/* Owner (D) */
+	union {
+		struct vm_rs *owner_rs;
+		struct vm_object *owner_obj;
+		struct vm_anon *owner_anon;
+	};
+
+	union {
+		/* Swap location (D?) */
+		uintptr_t swap_address;
+	};
+
+#if PFN_BITS == 20
+	uint32_t padding;
 #endif
 };
 
@@ -70,7 +143,7 @@ struct vm_domain {
 void vmp_page_dom_lock_enter(vm_page_t *page);
 void vmp_page_dom_lock_exit(vm_page_t *page);
 
-extern vm_domain_t vm_domain;
+extern vm_domain_t vm_domains[1];
 extern vm_page_t *vm_pages;
 
 #endif /* ECX_VM_PAGE_H */

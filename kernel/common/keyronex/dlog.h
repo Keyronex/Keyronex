@@ -24,5 +24,6 @@ int kvsnprintf(char *str, size_t size, const char *fmt, va_list ap);
 #define kunreachable() kfatal("Reached unreachable code")
 #define kassert(TEST, MSG) if (!(TEST)) \
 	kfatal("Assertion failed: %s", MSG)
+#define kassert_dbg(TEST, MSG) kassert(TEST, MSG)
 
 #endif /* ECX_KERN_DLOG_H */
