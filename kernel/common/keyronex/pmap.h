@@ -13,7 +13,7 @@
 #include <keyronex/pmap_arch.h>
 
 enum pmap_pte_kind {
-		kPTEKindZero = 0,
+	kPTEKindZero = 0,
 	kPTEKindSwap,
 	kPTEKindTrans,
 	kPTEKindBusy,

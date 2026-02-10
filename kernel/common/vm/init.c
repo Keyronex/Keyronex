@@ -44,7 +44,7 @@ static volatile struct limine_memmap_request memmap_req = {
 	.revision = 0
 };
 
-static paddr_t bump_start, bump_l1_base, bump_l1_end, bump_small_base;
+static paddr_t bump_start, bump_rpt_base, bump_rpt_end, bump_small_base;
 static paddr_t kpgtable;
 static struct vm_phys_span *phys_spans;
 
@@ -58,22 +58,20 @@ paddr_t
 boot_alloc(void)
 {
 	paddr_t ret = bump_small_base;
-	bump_small_base += PGTABLE_SIZE;
-	memset((void *)p2v(ret), 0, PGTABLE_SIZE);
+	bump_small_base += PGSIZE;
+	memset((void *)p2v(ret), 0, PGSIZE);
 	return ret;
 }
 
-#ifdef PGSIZE_L1
 paddr_t
-boot_alloc_l1(void)
+boot_alloc_rpt(size_t size)
 {
-	paddr_t ret = bump_l1_base;
-	bump_l1_base += PGSIZE_L1;
-	kassert(bump_l1_base <= bump_l1_end, "bump overrun");
-	memset((void *)p2v(ret), 0, PGSIZE_L1);
+	paddr_t ret = bump_rpt_base;
+	bump_rpt_base += size;
+	kassert(bump_rpt_base <= bump_rpt_end, "bump overrun");
+	memset((void *)p2v(ret), 0, size);
 	return ret;
 }
-#endif
 
 int
 boot_fetch_pte(pte_t **pte_out, vaddr_t vaddr, pmap_level_t at_level)
@@ -180,9 +178,9 @@ map_rpt(void)
 	}
 
 	bump_start = roundup2(largest->base, rpt_pgsize);
-	bump_l1_base = bump_start;
-	bump_l1_end = bump_l1_base + rpt_pgsize * rpt_pages;
-	bump_small_base = bump_l1_end;
+	bump_rpt_base = bump_start;
+	bump_rpt_end = bump_rpt_base + rpt_pgsize * rpt_pages;
+	bump_small_base = bump_rpt_end;
 
 	kpgtable = boot_alloc();
 
@@ -210,11 +208,7 @@ map_rpt(void)
 		     base += rpt_page_describes) {
 			uintptr_t area = RPT_BASE +
 			    (base / rpt_page_describes) * rpt_pgsize;
-#ifdef PGSIZE_L1
-			uintptr_t page = boot_alloc_l1();
-#else
-			uintptr_t page = boot_alloc();
-#endif
+			uintptr_t page = boot_alloc_rpt(rpt_pgsize);
 
 			boot_map(area, page, rpt_level, VM_READ | VM_WRITE,
 			    kCacheModeDefault);
@@ -305,6 +299,34 @@ map_ksegs(void)
 		    VM_READ | VM_WRITE, kCacheModeDefault);
 }
 
+#if defined(__amd64__)
+static void
+map_arch(void)
+{
+	uint32_t eax, edx;
+	uint64_t lapic_paddr;
+
+	__asm__ volatile("rdmsr"
+			 : "=a"(eax), "=d"(edx)
+			 : "c"(0x1B)); /* IA32_APIC_BASE MSR */
+
+	lapic_paddr = ((uint64_t)edx << 32) | eax;
+	lapic_paddr &= ~((1 << 12) - 1);
+
+	boot_map(HHDM_BASE + lapic_paddr, lapic_paddr, PMAP_L0, VM_READ | VM_WRITE,
+	    kCacheModeUC);
+}
+#elif defined (__m68k__)
+static void
+map_arch(void)
+{
+	extern volatile char *gftty_regs;
+	for (paddr_t i = 0xff000000; i < 0xff020000; i += PGSIZE)
+		boot_map(i, i, PMAP_L0, VM_READ | VM_WRITE, kCacheModeUC);
+	gftty_regs = (void *)0xff008000;
+}
+#endif
+
 void
 vm_phys_init(void)
 {
@@ -313,8 +335,8 @@ vm_phys_init(void)
 		TAILQ_INIT(&vm_domain.stby_q);
 		TAILQ_INIT(&vm_domain.dirty_q);
 	}
-	map_rpt();
 
+	map_rpt();
 	map_hhdm();
 	map_ksegs();
 #if 0

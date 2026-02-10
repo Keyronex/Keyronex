@@ -14,7 +14,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "keyronex/vm_types.h"
 
 typedef enum pmap_level {
 	PMAP_L0,

@@ -22,12 +22,12 @@
 #define PMAP_L2_PAGES 0
 #define PMAP_L3_PAGES 0
 
-#define LOWER_HALF 0x1000
-#define LOWER_HALF_SIZE (0x80000000 - LOWER_HALF)
+#define LOWER_HALF 0x1000UL
+#define LOWER_HALF_SIZE (0x80000000UL - LOWER_HALF)
 
-#define HIGHER_HALF 0x80000000
-#define HHDM_BASE 0x80000000
-#define HHDM_SIZE 0x40000000
+#define HIGHER_HALF 0x80000000UL
+#define HHDM_BASE 0x80000000UL
+#define HHDM_SIZE 0x40000000UL
 #define HHDM_END (HHDM_BASE + HHDM_SIZE)
 
 #define RPT_BASE 0xfc000000 /* -64 MiB */
@@ -52,10 +52,15 @@
 #define PGSIZE		0x1000
 #define PGSHIFT		12
 
-enum vm_cache_mode {
-	kCacheModeDefault = 0,
-	kCacheModeWC = 0,
-};
+/*
+ * cachemode: 1 = cached/copyback; 2 = uncached/serialised; 3 = uncached
+ */
+
+typedef enum vm_cache_mode {
+	kCacheModeDefault = 1,
+	kCacheModeWC = 1,
+	kCacheModeUC = 2,
+} vm_cache_mode_t;
 
 #define p2v(PA) ((vaddr_t)(PA) + HHDM_BASE)
 #define v2p(VA) ((paddr_t)(VA) - HHDMBASE)
