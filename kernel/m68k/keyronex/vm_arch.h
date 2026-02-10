@@ -65,6 +65,6 @@ typedef enum vm_cache_mode {
 } vm_cache_mode_t;
 
 #define p2v(PA) ((vaddr_t)(PA) + HHDM_BASE)
-#define v2p(VA) ((paddr_t)(VA) - HHDMBASE)
+#define v2p(VA) ((paddr_t)(VA) - HHDM_BASE)
 
 #endif /* ECX_KEYRONEX_VM_ARCH_H */

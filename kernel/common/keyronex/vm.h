@@ -31,6 +31,11 @@ typedef enum vm_page_use {
 	VM_PAGE_USE_N,
 } vm_page_use_t;
 
+typedef enum vm_alloc_flags {
+	VM_SLEEP,
+	VM_NOFAIL,
+} vm_alloc_flags_t;
+
 typedef enum vm_cache_mode vm_cache_mode_t;
 
 size_t vm_npages_to_order(size_t npages);
