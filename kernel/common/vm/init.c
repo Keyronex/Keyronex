@@ -10,6 +10,7 @@
 #include <keyronex/dlog.h>
 #include <keyronex/ktypes.h>
 #include <keyronex/limine.h>
+#include <keyronex/pmap.h>
 #include <keyronex/vm.h>
 
 #include <libkern/lib.h>
@@ -23,6 +24,13 @@ struct vm_phys_span {
 	size_t size;
 	bool is_ram;
 };
+
+extern char TEXT_SEGMENT_START[];
+extern char TEXT_SEGMENT_END[];
+extern char RODATA_SEGMENT_START[];
+extern char RODATA_SEGMENT_END[];
+extern char DATA_SEGMENT_START[];
+extern char KDATA_SEGMENT_END[];
 
 __attribute__((used, section(".requests")))
 static volatile struct limine_executable_address_request kernel_address_req = {
@@ -67,11 +75,52 @@ boot_alloc_l1(void)
 }
 #endif
 
+int
+boot_fetch_pte(pte_t **pte_out, vaddr_t vaddr, pmap_level_t at_level)
+{
+	size_t indexes[PMAP_MAX_LEVELS];
+	pte_t *table;
+
+	pmap_indexes(vaddr, indexes);
+
+	table = (pte_t *)p2v(kpgtable);
+
+	for (pmap_level_t level = PMAP_LEVELS - 1;; level--) {
+		pte_t *ppte = &table[indexes[level]];
+		pte_t pte;
+		enum pmap_pte_kind kind;
+
+		if (level == at_level) {
+			*pte_out = ppte;
+			return 0;
+		}
+
+		pte = pmap_load_pte(ppte);
+		kind = pmap_pte_characterise(pte);
+		if (kind == kPTEKindZero) {
+			paddr_t new_table = boot_alloc();
+			pte = pmap_pte_hwdir_create(ppte, new_table, level);
+		} else if (kind != kPTEKindHW) {
+			kfatal("unexpected PTE kind\n");
+		} else {
+			kassert(!pmap_pte_hw_is_large(pte, level),
+			    "boot_fetch_pte: encountered large");
+		}
+
+		table = (pte_t *)p2v(pmap_pte_hwdir_paddr(pte, level));
+	}
+	kfatal("unreached\n");
+}
+
 static void
-boot_map(uintptr_t vaddr, uintptr_t paddr, int level, vm_prot_t prot,
+boot_map(uintptr_t vaddr, uintptr_t paddr, pmap_level_t level, vm_prot_t prot,
     vm_cache_mode_t cache)
 {
-	kdprintf("map vaddr %p to paddr %p\n", vaddr, paddr);
+	pte_t *ppte, pte;
+	boot_fetch_pte(&ppte, vaddr, level);
+	pte = pmap_load_pte(ppte);
+	kassert(pmap_pte_characterise(pte) == kPTEKindZero, "boot_map: not zero");
+	pmap_pte_hwleaf_create(ppte, paddr >> PGSHIFT, level, prot, cache);
 }
 
 /*
@@ -88,16 +137,16 @@ map_rpt(void)
 
 	/* Page size for the resident page table. */
 #ifdef PGSIZE_L1
-	size_t rpt_pgsize = PGSIZE_L1;
-	size_t rpt_level = 1;
+	const size_t rpt_pgsize = PGSIZE_L1;
+	const pmap_level_t rpt_level = PMAP_L1;
 #else
-	size_t rpt_pgsize = PGSIZE;
-	size_t rpt_level = 1;
+	const size_t rpt_pgsize = PGSIZE;
+	const pmap_level_t rpt_level = PMAP_L0;
 #endif
 	/* How many vm_page_t's in a largepage worth of RPT? */
-	size_t rpt_page_elements_n = rpt_pgsize / sizeof(vm_page_t);
+	const size_t rpt_page_elements_n = rpt_pgsize / sizeof(vm_page_t);
 	/* How much memory is described by rpt_pgsize's worth of vm_page_t's? */
-	size_t rpt_page_describes = rpt_page_elements_n * PGSIZE;
+	const size_t rpt_page_describes = rpt_page_elements_n * PGSIZE;
 
 	for (size_t i = 0; i < memmap_req.response->entry_count; i++) {
 		struct limine_memmap_entry *entry = entries[i];
@@ -167,7 +216,7 @@ map_rpt(void)
 			uintptr_t page = boot_alloc();
 #endif
 
-			boot_map(area, page, 1, VM_READ | VM_WRITE,
+			boot_map(area, page, rpt_level, VM_READ | VM_WRITE,
 			    kCacheModeDefault);
 		}
 
@@ -175,6 +224,86 @@ map_rpt(void)
 	}
 }
 
+/*
+ * Map the Higher Half Direct Map (HHDM) with as large pages as possible.
+ */
+void
+map_hhdm()
+{
+	struct limine_memmap_entry **entries = memmap_req.response->entries;
+	struct limine_memmap_entry *prev = NULL;
+
+#if PMAP_L3_PAGES
+	size_t hhdm_level = PMAP_L3;
+	size_t hhdm_pgsize = PGSIZE_L3;
+#elif PMAP_L2_PAGES
+	size_t hhdm_level = PMAP_L2;
+	size_t hhdm_pgsize = PGSIZE_L2;
+#elif PMAP_L1_PAGES
+	size_t hhdm_level = PMAP_L1;
+	size_t hhdm_pgsize = PGSIZE_L1;
+#else
+	size_t hhdm_level = PMAP_L0;
+	size_t hhdm_pgsize = PGSIZE;
+#endif
+
+	for (size_t i = 0; i < memmap_req.response->entry_count; i++) {
+		struct limine_memmap_entry *entry = entries[i];
+		uint64_t rounded_down_start, rounded_up_end;
+
+		if (entry->type == LIMINE_MEMMAP_RESERVED ||
+		    entry->type == LIMINE_MEMMAP_BAD_MEMORY)
+			continue;
+
+		rounded_down_start = rounddown2(entry->base, hhdm_pgsize);
+		rounded_up_end = roundup2(entry->base + entry->length,
+		    hhdm_pgsize);
+
+		if (prev != NULL &&
+		    rounded_down_start <
+			roundup2(prev->base + prev->length, hhdm_pgsize))
+			rounded_down_start = roundup2(prev->base + prev->length,
+			    hhdm_pgsize);
+
+		for (uint64_t base = rounded_down_start; base < rounded_up_end;
+		    base += hhdm_pgsize) {
+			boot_map(HHDM_BASE + base, base, hhdm_level,
+			    VM_READ | VM_WRITE, kCacheModeDefault);
+		}
+
+		prev = entry;
+	}
+}
+
+/*
+ * Map the kernel segments.
+ */
+static void
+map_ksegs(void)
+{
+	uintptr_t start;
+	uintptr_t limit;
+	vaddr_t vbase = kernel_address_req.response->virtual_base;
+	paddr_t pbase = kernel_address_req.response->physical_base;
+
+	start = rounddown2((uintptr_t)TEXT_SEGMENT_START, PGSIZE);
+	limit = roundup2((uintptr_t)TEXT_SEGMENT_END, PGSIZE);
+	for (uintptr_t vaddr = start; vaddr != limit; vaddr += PGSIZE)
+		boot_map(vaddr, vaddr - vbase + pbase, PMAP_L0,
+		    VM_READ | VM_EXEC, kCacheModeDefault);
+
+	start = rounddown2((uintptr_t)RODATA_SEGMENT_START, PGSIZE);
+	limit = roundup2((uintptr_t)RODATA_SEGMENT_END, PGSIZE);
+	for (uintptr_t vaddr = start; vaddr != limit; vaddr += PGSIZE)
+		boot_map(vaddr, vaddr - vbase + pbase, PMAP_L0, VM_READ,
+		    kCacheModeDefault);
+
+	start = rounddown2((uintptr_t)DATA_SEGMENT_START, PGSIZE);
+	limit = roundup2((uintptr_t)KDATA_SEGMENT_END, PGSIZE);
+	for (uintptr_t vaddr = start; vaddr != limit; vaddr += PGSIZE)
+		boot_map(vaddr, vaddr - vbase + pbase, PMAP_L0,
+		    VM_READ | VM_WRITE, kCacheModeDefault);
+}
 
 void
 vm_phys_init(void)
@@ -185,9 +314,10 @@ vm_phys_init(void)
 		TAILQ_INIT(&vm_domain.dirty_q);
 	}
 	map_rpt();
-#if 0
+
 	map_hhdm();
 	map_ksegs();
+#if 0
 #if defined(__amd64__)
 	map_lapic();
 #endif
@@ -197,4 +327,6 @@ vm_phys_init(void)
 	unfree_reserved();
 	setup_permanent_tables();
 #endif
+
+	kdprintf("New pagetable is %p\n", kpgtable);
 }

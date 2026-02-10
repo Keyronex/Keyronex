@@ -73,7 +73,7 @@ pmap_indexes(vaddr_t vaddr, size_t indexes[PMAP_MAX_LEVELS])
 #define PGSIZE_L3 	0x8000000000
 
 /* PAT indexes */
-enum vm_cache_mode {
+typedef enum vm_cache_mode {
 	kCacheModeWB = 0,
 	kCacheModeDefault = kCacheModeWB,
 	kCacheModeWT = 1,
@@ -81,7 +81,7 @@ enum vm_cache_mode {
 	kCacheModeUC = 3,
 	kCacheModeWP = 4,
 	kCacheModeWC = 5,
-};
+} vm_cache_mode_t;
 
 #define p2v(PA) ((vaddr_t)(PA) + HHDM_BASE)
 #define v2p(VA) ((paddr_t)(VA) - HHDMBASE)
