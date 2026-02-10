@@ -34,6 +34,7 @@ typedef enum vm_page_use {
 typedef enum vm_alloc_flags {
 	VM_SLEEP,
 	VM_NOFAIL,
+	VM_EXACT,
 } vm_alloc_flags_t;
 
 typedef enum vm_cache_mode vm_cache_mode_t;
