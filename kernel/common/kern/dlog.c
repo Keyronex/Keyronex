@@ -47,6 +47,19 @@ kvsnprintf(char *str, size_t size, const char *fmt, va_list ap)
 	return npf_vsnprintf(str, size, fmt, ap);
 }
 
+int
+ksnprintf(char *str, size_t size, const char *fmt, ...)
+{
+	va_list ap;
+	int ret;
+
+	va_start(ap, fmt);
+	ret = kvsnprintf(str, size, fmt, ap);
+	va_end(ap);
+
+	return ret;
+}
+
 void
 kfatal_internal(const char *file, int line, const char *fmt, ...)
 {

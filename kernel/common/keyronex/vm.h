@@ -11,7 +11,9 @@
 #define ECX_KEYRONEX_VM_H
 
 #include <keyronex/vm_arch.h>
+#include <keyronex/vm_types.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define VM_MAX_AFFINITIES 64
@@ -41,5 +43,15 @@ typedef enum vm_cache_mode vm_cache_mode_t;
 
 size_t vm_npages_to_order(size_t npages);
 size_t vm_bytes_to_order(size_t bytes);
+
+void *vm_kwired_alloc(size_t npages, vm_alloc_flags_t);
+void vm_kwired_free(void *addr, size_t npages);
+
+vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,
+    vm_alloc_flags_t);
+void vm_page_delete(vm_page_t *page, bool unref);
+
+vaddr_t vm_page_hhdm_addr(vm_page_t *page);
+paddr_t vm_page_paddr(vm_page_t *page);
 
 #endif /* ECX_KEYRONEX_VM_H */

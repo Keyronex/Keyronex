@@ -15,6 +15,7 @@ kernel_sources += [
     'os/main.c',
 
     'vm/init.c',
+    'vm/kmem.c',
     'vm/phys.c',
     'vm/vmem.c',
 ]
