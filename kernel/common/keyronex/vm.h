@@ -46,6 +46,7 @@ size_t vm_bytes_to_order(size_t bytes);
 
 void *vm_kwired_alloc(size_t npages, vm_alloc_flags_t);
 void vm_kwired_free(void *addr, size_t npages);
+void vm_kwired_init(void);
 
 vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,
     vm_alloc_flags_t);

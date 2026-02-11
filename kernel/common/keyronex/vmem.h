@@ -40,6 +40,7 @@ int vmem_xfree(vmem_t *vmem, vmem_addr_t addr, vmem_size_t size,
 int vmem_xrealloc(vmem_t *vmem, vmem_addr_t addr, vmem_size_t oldsize,
     vmem_size_t newsize, vm_alloc_flags_t flags, vmem_addr_t *out);
 
+void vmem_global_init(void);
 void vmem_dump(const vmem_t *vmem);
 
 #endif /* ECX_KDK_VMEM_H */

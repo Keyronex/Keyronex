@@ -465,6 +465,4 @@ vm_phys_init(void)
 #if 0
 	setup_permanent_tables();
 #endif
-
-	kdprintf("New pagetable is %p\n", kpgtable);
 }
