@@ -19,10 +19,41 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+struct kthread;
+
+#define RT_PRIO_N 32
+#define TS_PRIO_N 64
+
+/*
+ * Global priority range:
+ * 0-63: timesharing
+ * 63-127: kernel
+ * 127-159: real-time
+ */
+#define PRIO_MIN_TS 0
+#define PRIO_MAX_TS 63
+#define PRIO_MIN_KERNEL 64
+#define PRIO_MAX_KERNEL 127
+#define PRIO_MIN_RT 128
+#define PRIO_MAX_RT 159
+#define PRIO_LIMIT 160
+
+typedef TAILQ_HEAD(kthread_tq, kthread) runq_t;
+
+struct kcpu_dispatcher {
+	kspinlock_t lock;
+	uint32_t bitmap[PRIO_LIMIT / 32];
+	runq_t rq[PRIO_LIMIT];
+	struct kthread *idle_thread;
+	struct kthread *cur_thread;
+	atomic_int_fast32_t timeslice;
+};
+
 struct kcpu_data {
 	struct karch_cpu_data arch;
 	struct kcpu_data *self;
 	kcpunum_t cpu_num;
+	uint32_t acpi_id;
 
 	/* interrupt management */
 	ipl_t ipl;
@@ -40,7 +71,7 @@ struct kcpu_data {
 	/* dispatcher */
 	struct kthread *curthread;
 	struct kthread *prevthread;
-	struct kcpu_dispatcher *disp;
+	struct kcpu_dispatcher disp;
 	bool redispatch_requested;
 };
 

@@ -13,6 +13,8 @@
 #include <stdint.h>
 
 struct karch_cpu_data {
+	uint32_t id;	/* not actually used*/
+#define arch_cpu_id id
 };
 
 #define CPU_LOCAL_OFFSET(FIELD) __builtin_offsetof(struct kcpu_data, FIELD)

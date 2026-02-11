@@ -13,12 +13,14 @@
 void kep_arch_set_tp(void *);
 void kep_arch_set_vbase(void);
 
+ktask_t *ke_task0;
 struct kcpu_data ke_bsp_cpu_data;
 struct kcpu_data **ke_cpu_data;
 size_t ke_ncpu;
 
 void ke_bsp_early_init(ktask_t *task0, kthread_t *kthread0)
 {
+	ke_task0 = task0;
 	kep_arch_set_vbase();
 	kep_arch_set_tp(&ke_bsp_cpu_data);
 	kthread0->task = task0;

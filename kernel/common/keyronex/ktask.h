@@ -14,6 +14,8 @@
 
 #include <keyronex/cpu.h>
 
+struct limine_mp_info;
+
 #define RT_PRIO_N 32
 #define TS_PRIO_N 64
 
@@ -50,8 +52,10 @@ typedef struct kthread {
 	LIST_ENTRY(kthread)	proc_link;
 	TAILQ_ENTRY(kthread)	tqlink;
 
-	struct ktask	*task;
-	struct ktask	*attached_task;
+	bool user;		/* is this a user thread? (FPU save/restore) */
+
+	struct ktask	*task;	/* task this thread belongs to */
+	struct ktask	*attached_task; /* task temporarily attached to */
 
 	kspinlock_t lock;
 	enum kthread_state {
@@ -81,5 +85,11 @@ typedef struct ktask {
 
 void ke_dispatch(void);
 void ke_thread_resume(kthread_t *t, bool io_completion);
+
+void ke_disp_global_init(void);
+void ke_disp_init(kcpunum_t cpunum);
+void ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data, struct limine_mp_info *info, kthread_t *idle);
+
+extern ktask_t *ke_task0;
 
 #endif /* ECX_KERN_KTASK_H */

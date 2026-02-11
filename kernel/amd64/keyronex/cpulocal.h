@@ -16,8 +16,10 @@ struct tss;
 
 struct karch_cpu_data {
 	uint32_t lapic_id;
+#define arch_cpu_id lapic_id
 	struct tss *tss;
 };
+
 
 #define CPU_LOCAL_OFFSET(FIELD) __builtin_offsetof(struct kcpu_data, FIELD)
 

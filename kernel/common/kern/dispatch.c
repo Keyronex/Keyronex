@@ -11,6 +11,7 @@
 #include <keyronex/dlog.h>
 #include <keyronex/intr.h>
 #include <keyronex/ktask.h>
+#include <keyronex/limine.h>
 #include <keyronex/xcall.h>
 
 #include <libkern/lib.h>
@@ -23,41 +24,12 @@
 
 #define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 
-#define RT_PRIO_N 32
-#define TS_PRIO_N 64
-
-/*
- * Global priority range:
- * 0-63: timesharing
- * 63-127: kernel
- * 127-159: real-time
- */
-#define PRIO_MIN_TS 0
-#define PRIO_MAX_TS 63
-#define PRIO_MIN_KERNEL 64
-#define PRIO_MAX_KERNEL 127
-#define PRIO_MIN_RT 128
-#define PRIO_MAX_RT 159
-#define PRIO_LIMIT 160
-
-typedef TAILQ_HEAD(kthread_tq, kthread) runq_t;
-
-struct kcpu_dispatcher {
-	kspinlock_t lock;
-	uint32_t bitmap[PRIO_LIMIT / 32];
-	runq_t rq[PRIO_LIMIT];
-	kthread_t *idle_thread;
-	kthread_t *cur_thread;
-	atomic_int_fast32_t timeslice;
-};
-
 extern struct ksched_class kep_ts_class, kep_rt_class;
 
 static kspinlock_t rt_lock = KSPINLOCK_INITIALISER;
 static atomic_int_fast32_t rt_bitmap;
 static runq_t global_rt_rq[RT_PRIO_N];
 static katomic_cpumask_t idle_cpu_mask;
-static struct kcpu_dispatcher bsp_dispatcher;
 
 static struct ksched_class *kep_sched_class[3] = {
 	[SCHED_RR] = &kep_rt_class,
@@ -109,7 +81,7 @@ atomic_cpumask_first_set(katomic_cpumask_t *set, memory_order order)
 }
 
 void
-disp_global_init(void)
+ke_disp_global_init(void)
 {
 	for (size_t i = 0; i < elementsof(idle_cpu_mask.mask); i++)
 		atomic_store_explicit(&idle_cpu_mask.mask[i], UINTPTR_MAX,
@@ -119,9 +91,9 @@ disp_global_init(void)
 }
 
 void
-disp_init(kcpunum_t cpunum)
+ke_disp_init(kcpunum_t cpunum)
 {
-	struct kcpu_dispatcher *disp = ke_cpu_data[cpunum]->disp;
+	struct kcpu_dispatcher *disp = &ke_cpu_data[cpunum]->disp;
 	size_t i;
 
 	ke_spinlock_init(&disp->lock);
@@ -223,7 +195,7 @@ ke_thread_resume(kthread_t *t, bool io_completion)
 	ipl = spldisp();
 
 	cpunum = pick_cpu(t);
-	disp = ke_cpu_data[cpunum]->disp;
+	disp = &ke_cpu_data[cpunum]->disp;
 
 	ke_spinlock_enter_nospl(&disp->lock);
 
@@ -301,7 +273,7 @@ next_thread(struct kcpu_dispatcher *dp)
 void
 disp_hardclock(void)
 {
-	struct kcpu_dispatcher *disp = CPU_LOCAL_LOAD(disp);
+	struct kcpu_dispatcher *disp = CPU_LOCAL_ADDROF(disp);
 
 	if (atomic_fetch_sub_explicit(&disp->timeslice, 1,
 	    memory_order_relaxed) <= 1)
@@ -312,7 +284,7 @@ void
 ke_dispatch(void)
 {
 	kthread_t *oldt = CPU_LOCAL_LOAD(curthread), *nextt;
-	struct kcpu_dispatcher *disp = CPU_LOCAL_LOAD(disp);
+	struct kcpu_dispatcher *disp = CPU_LOCAL_ADDROF(disp);
 
 	kassert(ke_ipl() == IPL_DISP, "ke_dispatch called at invalid IPL");
 
@@ -375,4 +347,63 @@ ke_dispatch(void)
 
 	/* we are now potentially on another CPU, so reload prevthread */
 	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
+}
+
+
+void
+ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
+{
+	ipl_t ipl;
+
+	ke_spinlock_init(&thread->lock);
+
+	thread->user = false;
+
+	thread->task = ke_task0;
+	// thread->vm_map = NULL;
+	// thread->kstack_base = NULL;
+
+	thread->state = TS_RUNNING;
+	thread->sched_class = SCHED_OTHER;
+	thread->prio = 0;
+	thread->last_cpu_num = cpunum;
+
+#if 0
+	ipl = ke_spinlock_enter(&proc0.threads_lock);
+	TAILQ_INSERT_TAIL(&proc0.threads, thread, threads_qlink);
+	proc0.threads_count++;
+	ke_spinlock_exit(&proc0.threads_lock, ipl);
+#endif
+
+#if 0 // defined (__amd64__) /* TODO: move this out */
+	memset(&thread->pcb, 0, sizeof(thread->pcb));
+	(*(uint16_t *)(thread->pcb.fpu + 0)) = 0x037f;
+	(*(uint32_t *)(thread->pcb.fpu + 24)) = 0x1f80;
+#endif
+}
+
+void ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data, struct limine_mp_info *info, kthread_t *idle)
+{
+	data->self = data;
+	data->cpu_num = cpunum;
+	data->acpi_id = info->processor_id;
+	data->arch.arch_cpu_id = info->arch_cpu_id;
+
+	ke_spinlock_init(&data->dpc_lock);
+	TAILQ_INIT(&data->dpc_queue);
+
+	/* todo(low): into callout.c please */
+	TAILQ_INIT(&data->callout.callouts);
+	data->callout.next_deadline = 0;
+	ke_spinlock_init(&data->callout.lock);
+	void ki_callout_expiry_dpc(void *, void *);
+	ke_dpc_init(&data->callout.expiry_dpc, ki_callout_expiry_dpc,
+	    &data->callout, NULL);
+
+	memset((void *)data->xcalls_pending.mask, 0,
+	    sizeof(data->xcalls_pending));
+
+	ke_idle_thread_init(cpunum, idle);
+	ke_disp_init(cpunum);
+	// arch_cpu_local_init(data);
 }

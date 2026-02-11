@@ -328,7 +328,7 @@ struct limine_mp_response {
 #elif defined (__m68k__)
 
 struct limine_mp_info {
-    uint32_t processir_id;
+    uint32_t processor_id;
     uint64_t id;
     LIMINE_PTR(limine_goto_address) goto_address;
 };
@@ -338,7 +338,7 @@ struct limine_mp_response {
     uint32_t flags;
     uint64_t bsp_id;
     uint64_t cpu_count;
-    LIMINE_PTR(struct limine_smp_info **) cpus;
+    LIMINE_PTR(struct limine_mp_info **) cpus;
 };
 
 #else
