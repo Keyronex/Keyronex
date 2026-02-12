@@ -187,6 +187,20 @@ pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 	return ret;
 }
 
+static inline pte_t
+pmap_pte_hwzero_create(pte_t *ppte,pmap_level_t level)
+{
+	size_t nptes = m68040_dir_nptes_group(level);
+	uintptr_t mask = (nptes * sizeof(pte_t)) - 1;
+	pte_t *start_ppte = (pte_t*)((uintptr_t)ppte & ~mask);
+
+	for (size_t i = 0; i < nptes; i++) {
+		union pte pte;
+		pte.value = 0;
+		pmap_store_pte(start_ppte + i, pte);
+	}
+}
+
 static inline paddr_t
 pmap_pte_hwdir_paddr(pte_t pte, int level)
 {

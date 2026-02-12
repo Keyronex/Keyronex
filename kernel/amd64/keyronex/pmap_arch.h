@@ -168,6 +168,13 @@ pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 	return pte;
 }
 
+static inline void
+pmap_pte_zerodir_create(pte_t *ppte, pmap_level_t level)
+{
+	union pte pte = { .hw = { .valid = 0 } };
+	pmap_store_pte(ppte, pte);
+}
+
 static inline paddr_t
 pmap_pte_hwdir_paddr(pte_t pte, pmap_level_t level)
 {

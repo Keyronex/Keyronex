@@ -18,6 +18,7 @@ kernel_sources += [
     'vm/kmem.c',
     'vm/kwired.c',
     'vm/phys.c',
+    'vm/pmap.c',
     'vm/vmem.c',
 ]
 

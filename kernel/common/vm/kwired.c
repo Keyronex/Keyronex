@@ -15,6 +15,7 @@
 
 #include "vm/map.h"
 
+struct vm_rs vm_kwired_rs;
 kspinlock_t kwired_lock = KSPINLOCK_INITIALISER;
 vmem_t kwired_arena;
 

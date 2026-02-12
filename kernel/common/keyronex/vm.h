@@ -19,6 +19,9 @@
 #define VM_MAX_AFFINITIES 64
 #define VM_MAX_DOMAINS 8
 
+typedef struct vm_map vm_map_t;
+typedef struct vm_object vm_object_t;
+
 typedef enum vm_page_use {
 	VM_PAGE_DELETED,
 	VM_PAGE_FREE,
