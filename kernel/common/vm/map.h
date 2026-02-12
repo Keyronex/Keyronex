@@ -58,5 +58,6 @@ struct vm_map {
 	struct vm_rs rs;
 };
 
+extern vm_map_t kernel_map;
 
 #endif /* ECX_VM_MAP_H */

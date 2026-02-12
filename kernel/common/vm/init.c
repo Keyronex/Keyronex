@@ -11,12 +11,14 @@
 #include <keyronex/ktypes.h>
 #include <keyronex/limine.h>
 #include <keyronex/pmap.h>
+#include <keyronex/proc.h>
 #include <keyronex/vm.h>
 
 #include <libkern/lib.h>
 
 #include <stdbool.h>
 
+#include "vm/map.h"
 #include "vm/page.h"
 
 struct vm_phys_span {
@@ -36,6 +38,8 @@ extern char RODATA_SEGMENT_START[];
 extern char RODATA_SEGMENT_END[];
 extern char DATA_SEGMENT_START[];
 extern char KDATA_SEGMENT_END[];
+
+extern struct vm_rs vm_kwired_rs;
 
 __attribute__((used, section(".requests")))
 static volatile struct limine_executable_address_request kernel_address_req = {
@@ -139,7 +143,7 @@ map_rpt(void)
 	size_t rpt_pages = 0;
 
 	/* Page size for the resident page table. */
-#ifdef PGSIZE_L1
+#if PMAP_L1_PAGES
 	const size_t rpt_pgsize = PGSIZE_L1;
 	const pmap_level_t rpt_level = PMAP_L1;
 #else
@@ -445,6 +449,67 @@ unfree_reserved(void)
 }
 
 
+static void
+setup_permanent_tables(void)
+{
+	vm_page_t *root_page = VM_PAGE_FOR_PADDR(kpgtable);
+
+	root_page->ref_count++;
+	root_page->use = VM_PAGE_TABLE;
+	root_page->proctable.nonzero_ptes = 5001;
+	root_page->proctable.noswap_ptes = 5001;
+	root_page->proctable.valid_pageable_leaf_ptes = 0;
+	root_page->proctable.level = PMAP_MAX_LEVELS - 1;
+	root_page->proctable.is_root = true;
+	root_page->owner_rs = &vm_kwired_rs;
+
+	vm_kwired_rs.map = &kernel_map;
+
+	for (vaddr_t vaddr = PIN_HEAP_BASE;
+	     vaddr < PIN_HEAP_BASE + PIN_HEAP_SIZE; vaddr += PMAP_ROOTLEVEL_SPAN) {
+		pte_t *pte;
+		vm_page_t *page;
+
+		boot_fetch_pte(&pte, vaddr, PMAP_MAX_LEVELS - 1);
+		kassert(pmap_pte_characterise(pmap_load_pte(pte)) == kPTEKindZero);
+
+		page = vm_page_alloc(VM_PAGE_TABLE, 0, VM_DOMID_LOCAL,
+		    VM_NOFAIL);
+		memset((void *)vm_page_hhdm_addr(page), 0, PGSIZE);
+
+		page->proctable.level = PMAP_MAX_LEVELS - 2;
+		page->proctable.nonzero_ptes = 1;
+		page->proctable.noswap_ptes = 1;
+		page->proctable.valid_pageable_leaf_ptes = 0;
+		page->proctable.is_root = false;
+		page->owner_rs = &vm_kwired_rs;
+		pmap_pte_hwdir_create(pte, VM_PAGE_PADDR(page), PMAP_MAX_LEVELS - 1);
+	}
+
+
+	for (vaddr_t vaddr = PAGE_HEAP_BASE;
+	     vaddr < MISC_MAP_BASE + MISC_MAP_SIZE; vaddr += PMAP_ROOTLEVEL_SPAN) {
+		pte_t *pte;
+		vm_page_t *page;
+
+		boot_fetch_pte(&pte, vaddr, PMAP_MAX_LEVELS - 1);
+		kassert(pmap_pte_characterise(pmap_load_pte(pte)) == kPTEKindZero);
+
+		page = vm_page_alloc(VM_PAGE_TABLE, 0, VM_DOMID_LOCAL,
+		    VM_NOFAIL);
+		memset((void *)vm_page_hhdm_addr(page), 0, PGSIZE);
+
+		page->proctable.level = PMAP_MAX_LEVELS - 2;
+		page->proctable.nonzero_ptes = 1;
+		page->proctable.noswap_ptes = 1;
+		page->proctable.valid_pageable_leaf_ptes = 0;
+		page->proctable.is_root = false;
+		page->owner_rs = &proc0.vm_map->rs;
+		pmap_pte_hwdir_create(pte, VM_PAGE_PADDR(page), PMAP_MAX_LEVELS - 1);
+	}
+}
+
+
 void
 vm_phys_init(void)
 {
@@ -462,7 +527,5 @@ vm_phys_init(void)
 	add_phys_segs();
 	unfree_boot();
 	unfree_reserved();
-#if 0
 	setup_permanent_tables();
-#endif
 }

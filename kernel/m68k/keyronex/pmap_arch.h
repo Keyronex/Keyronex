@@ -16,6 +16,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define PMAP_ROOTLEVEL_SPAN (32ul * 1024 * 1024 * 8) /* 32mib * 8 PTEs */
+
 /*
  * we assume 68040 using 4kib pages.
  *

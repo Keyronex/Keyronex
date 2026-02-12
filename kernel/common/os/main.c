@@ -86,6 +86,7 @@ smp_init(void)
 static void
 ap_init(struct limine_mp_info *smpi)
 {
+#if !defined(__m68k__)
 	ke_ap_early_init(smpi->extra_argument);
 	kfatal("ap_init\n");
 #if 0
@@ -99,6 +100,7 @@ ap_init(struct limine_mp_info *smpi)
 	arch_cpu_late_init();
 	arch_set_deadline(arch_time() + NS_PER_S / HZ);
 	hcf();
+#endif
 #endif
 }
 

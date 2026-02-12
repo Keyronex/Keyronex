@@ -15,6 +15,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define PMAP_ROOTLEVEL_SPAN (1ULL << 39) /* 512gib */
+
 typedef enum pmap_level {
 	PMAP_L0,
 	PMAP_L1,
