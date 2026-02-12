@@ -80,7 +80,13 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 			next_page->proctable.level = level - 1;
 			if (level - 1 == 0) {
 				/* fixme: not right for cases where there's
-				 * multiple PTEs created for same table */
+				 * multiple PTEs created for same table (m68k).
+				 * 12/02/26: actually it *is* right. our groups
+				 * of L0 tables in m68k always cover
+				 * PGSIZE/sizeof(pte_t) * PGSIZE bytes. so it
+				 * works. we will need to revisit this if we add
+				 * support for leaf PTEs in levels > 0 though.
+				 */
 				size_t entries = PGSIZE / sizeof(pte_t);
 				vaddr_t mask = ~((vaddr_t)(entries * PGSIZE) -
 				    1);
