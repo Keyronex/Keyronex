@@ -330,8 +330,8 @@ map_arch(void)
 }
 #endif
 
-static void
-set_kpgtable(void)
+void
+pmap_set_kpgtable(void)
 {
 #if defined(__amd64__)
 	asm volatile("mov %0, %%cr3" ::"r"(kpgtable) : "memory");
@@ -458,7 +458,7 @@ vm_phys_init(void)
 	map_hhdm();
 	map_ksegs();
 	map_arch();
-	set_kpgtable();
+	pmap_set_kpgtable();
 	add_phys_segs();
 	unfree_boot();
 	unfree_reserved();

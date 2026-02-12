@@ -187,8 +187,8 @@ pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 	return ret;
 }
 
-static inline pte_t
-pmap_pte_hwzero_create(pte_t *ppte,pmap_level_t level)
+static inline void
+pmap_pte_zerodir_create(pte_t *ppte,pmap_level_t level)
 {
 	size_t nptes = m68040_dir_nptes_group(level);
 	uintptr_t mask = (nptes * sizeof(pte_t)) - 1;

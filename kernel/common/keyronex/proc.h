@@ -18,6 +18,9 @@ typedef struct thread {
 
 typedef struct proc {
 	ktask_t ktask;
+	struct vm_map *vm_map;
 } proc_t;
+
+extern proc_t proc0;
 
 #endif /* ECX_KEYRONEX_PROC_H */

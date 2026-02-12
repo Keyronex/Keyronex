@@ -28,6 +28,7 @@
 
 /* kern/init.c */
 void ke_bsp_early_init(ktask_t *, kthread_t *);
+void ke_ap_early_init(kcpunum_t);
 
 /* vm/init.c */
 void vm_phys_init(void);
@@ -85,6 +86,7 @@ smp_init(void)
 static void
 ap_init(struct limine_mp_info *smpi)
 {
+	ke_ap_early_init(smpi->extra_argument);
 	kfatal("ap_init\n");
 #if 0
 	vm_phys_init_ap();
