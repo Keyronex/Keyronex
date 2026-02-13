@@ -10,6 +10,7 @@
 #include <keyronex/cpu.h>
 #include <keyronex/cpulocal.h>
 #include <keyronex/dlog.h>
+#include <keyronex/pcb.h>
 
 #define M68K_SR_IPL_MASK 0x0700u
 
@@ -108,6 +109,17 @@ splx(ipl_t ipl)
 		kep_dispatch_softints(ipl);
 }
 
+void
+kep_arch_set_vbase(void)
+{
+	static void *ivt[256];
+	extern void *asm_trap;
+	for (int i = 0; i < 256; i++)
+		ivt[i] = &asm_trap;
+	asm volatile("move.c %0, %%vbr" ::"r"(ivt));
+	asm volatile("andi %0, %%sr" ::"i"(~(7 << 8)) : "memory");
+}
+
 /*
  * principle:
  * - first instruction of ASM trap handler should clear IPL
@@ -115,3 +127,10 @@ splx(ipl_t ipl)
  *     IPL from that saved in trap frame.
  * - can lower IPL again at end
  */
+
+void
+c_trap(karch_trapframe_t *frame)
+{
+	splhigh();
+	kfatal("vector 0x%x\n", frame->vector_offset);
+}

@@ -21,6 +21,7 @@ if not headers_only_option
         '-fno-stack-protector',
         '-fno-stack-check',
         '-fno-strict-aliasing',
+        '-fno-omit-frame-pointer',
         '-DKRX_BUILDING_KERNEL',
         '-DUACPI_SIZED_FREES=1',
     ]
@@ -45,7 +46,6 @@ if not headers_only_option
         ]
 
     elif (target_machine.cpu_family() == 'm68k')
-        common_kernel_args
         common_kernel_args += [ '-mcpu=68040' ]
 
     elif (target_machine.cpu_family() == 'aarch64')

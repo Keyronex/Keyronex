@@ -22,12 +22,6 @@ ke_time(void)
 }
 
 void
-kep_arch_set_vbase(void)
-{
-	/* epsilon */
-}
-
-void
 kep_arch_set_tp(void *)
 {
 	/* epsilon */

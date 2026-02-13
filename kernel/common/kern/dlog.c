@@ -92,7 +92,8 @@ kfatal_internal(const char *file, int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	spldisp();
+	// spldisp();
+	splhigh();
 
 	ke_spinlock_enter_nospl(&dlog_lock);
 	kdprintf_unlocked("Fatal: %s:%d: ", file, line);
