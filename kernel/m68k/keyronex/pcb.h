@@ -40,9 +40,7 @@ typedef struct __attribute__((packed)) karch_trapframe {
 	uint32_t usp;
 	uint32_t d0, d1, d2, d3, d4, d5, d6, d7;
 	uint32_t a0, a1, a2, a3, a4, a5, a6;
-#if 0
-	uint32_t padding;
-#endif
+	uint16_t padding;
 
 	/* Pushed by the CPU */
 	uint16_t sr;
