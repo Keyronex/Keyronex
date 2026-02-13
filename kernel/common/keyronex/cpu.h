@@ -21,6 +21,8 @@
 
 struct kthread;
 
+#define KERN_HZ 64
+
 #define RT_PRIO_N 32
 #define TS_PRIO_N 64
 

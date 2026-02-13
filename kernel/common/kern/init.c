@@ -29,7 +29,7 @@ void ke_bsp_early_init(ktask_t *task0, kthread_t *kthread0)
 }
 
 void
-ke_ap_early_init(kcpunum_t cpunum)
+ke_ap_init(kcpunum_t cpunum)
 {
 	kep_arch_set_vbase(false);
 	kep_arch_set_tp(ke_cpu_data[cpunum]);

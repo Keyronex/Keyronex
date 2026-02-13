@@ -382,7 +382,9 @@ ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
 #endif
 }
 
-void ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data, struct limine_mp_info *info, kthread_t *idle)
+void
+ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data,
+    struct limine_mp_info *info, kthread_t *idle)
 {
 	data->self = data;
 	data->cpu_num = cpunum;
@@ -405,5 +407,4 @@ void ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data, struct limine_mp_info
 
 	ke_idle_thread_init(cpunum, idle);
 	ke_disp_init(cpunum);
-	// arch_cpu_local_init(data);
 }

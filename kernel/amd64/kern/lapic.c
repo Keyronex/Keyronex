@@ -8,6 +8,7 @@
  */
 
 #include <keyronex/cpu.h>
+#include <keyronex/dlog.h>
 #include <keyronex/x86.h>
 #include <keyronex/vm.h>
 
@@ -83,10 +84,14 @@ lapic_write(uint32_t reg, uint32_t val)
 	*addr = val;
 }
 
+
+	static kspinlock_t calib = KSPINLOCK_INITIALISER;
+
 void
 lapic_early_init(void)
 {
 	uint64_t tsc_start, tsc_end;
+	ipl_t ipl = ke_spinlock_enter(&calib);
 
 	pit_init_oneshot(25);
 	tsc_start = __builtin_ia32_rdtsc();
@@ -96,6 +101,7 @@ lapic_early_init(void)
 	timebase = ((tsc_end - tsc_start) * 25);
 
 	lapic_vbase = p2v(rdmsr(IA32_APIC_BASE_MSR) & 0xfffff000);
+	ke_spinlock_exit(&calib, ipl);
 }
 
 uint32_t
@@ -104,8 +110,6 @@ lapic_timer_calibrate(void)
 	const uint32_t initial = 0xffffffff;
 	const uint32_t hz = 50;
 	uint32_t apic_after;
-	static kspinlock_t calib = KSPINLOCK_INITIALISER;
-
 	ipl_t ipl = ke_spinlock_enter(&calib);
 
 	lapic_write(LAPIC_REG_TIMER_DIVIDER, 0x2); /* divide by 8*/
@@ -132,9 +136,32 @@ lapic_cpu_init(void)
 }
 
 void
-lapic_eoi()
+lapic_eoi(void)
 {
 	lapic_write(LAPIC_REG_EOI, 0x0);
+}
+
+void
+lapic_timer_start(void)
+{
+	lapic_write(LAPIC_REG_TIMER, kLAPICTimerPeriodic | 225);
+	lapic_write(LAPIC_REG_TIMER_INITIAL,
+	    CPU_LOCAL_LOAD(arch.lapic_tps) / KERN_HZ);
+}
+
+void
+ke_platform_start_dispatching(void)
+{
+	lapic_early_init();
+	lapic_cpu_init();
+	CPU_LOCAL_STORE(arch.lapic_tps, 0);
+	/* measure thrice & average it */
+	for (int i = 0; i < 3; i++)
+		CPU_LOCAL_STORE(arch.lapic_tps,
+		    CPU_LOCAL_LOAD(arch.lapic_tps) +
+			lapic_timer_calibrate() / 3);
+	lapic_timer_start();
+	asm("sti");
 }
 
 void

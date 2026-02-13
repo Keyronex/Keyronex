@@ -17,6 +17,7 @@ struct tss;
 struct karch_cpu_data {
 	uint32_t lapic_id;
 #define arch_cpu_id lapic_id
+	uint64_t lapic_tps;
 	struct tss *tss;
 };
 

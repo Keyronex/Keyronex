@@ -14,6 +14,7 @@
 #include <keyronex/proc.h>
 #include <keyronex/vm.h>
 #include <keyronex/vmem.h>
+#include "keyronex/ktask.h"
 
 #if defined(__amd64__)
 #define BSP_ARCH_ID bsp_lapic_id
@@ -28,7 +29,8 @@
 
 /* kern/init.c */
 void ke_bsp_early_init(ktask_t *, kthread_t *);
-void ke_ap_early_init(kcpunum_t);
+void ke_ap_init(kcpunum_t);
+void ke_platform_start_dispatching(void);
 
 /* vm/init.c */
 void vm_phys_init(void);
@@ -48,6 +50,23 @@ static volatile uint64_t end_marker[] = LIMINE_REQUESTS_END_MARKER;
 
 proc_t proc0;
 thread_t thread0;
+
+static thread_t init_thread;
+
+static void idle(void)
+{
+	for (;;) {
+#if defined (__amd64__)
+		__asm__ volatile("hlt");
+#elif defined (__riscv)
+		__asm__ volatile("wfi");
+#elif defined (__aarch64)
+		__asm__ volatile("wfe");
+#elif defined (__m68k__)
+		__asm__ volatile("stop #0x2000");
+#endif
+	}
+}
 
 static void
 smp_init(void)
@@ -83,26 +102,16 @@ smp_init(void)
 	}
 }
 
+#if !defined(__m68k__)
 static void
 ap_init(struct limine_mp_info *smpi)
 {
-#if !defined(__m68k__)
-	ke_ap_early_init(smpi->extra_argument);
-	kfatal("ap_init\n");
-#if 0
-	vm_phys_init_ap();
-	arch_set_cpu_local(cpu_locals[smpi->extra_argument]);
-	arch_set_vector_base(false);
-	__atomic_thread_fence(__ATOMIC_ACQUIRE);
-	arch_cpu_early_init();
-	spl0();
-	/* begin ticking */
-	arch_cpu_late_init();
-	arch_set_deadline(arch_time() + NS_PER_S / HZ);
-	hcf();
-#endif
-#endif
+	ke_ap_init(smpi->extra_argument);
+	ke_platform_start_dispatching();
+	splx(IPL_0);
+	idle();
 }
+#endif
 
 static void
 smp_start(void)
@@ -131,10 +140,13 @@ _start(void)
 	vmem_global_init();
 	vm_kwired_init();
 	smp_init();
+	ke_disp_global_init();
 
 	smp_start();
+	ke_platform_start_dispatching();
+	splx(IPL_0);
 
 	kdprintf("Initialisation complete...\n");
 
-	for (;;) ;
+	idle();
 }
