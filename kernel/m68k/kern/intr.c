@@ -11,6 +11,7 @@
 #include <keyronex/cpulocal.h>
 #include <keyronex/dlog.h>
 #include <keyronex/pcb.h>
+#include "goldfish.h"
 
 #define M68K_SR_IPL_MASK 0x0700u
 
@@ -105,7 +106,7 @@ splx(ipl_t ipl)
 
 	ke_arch_enable(tok);
 
-	if ((pending_soft_ints() >> (uint64_t)ipl) != 0ULL)
+	if ((pending_soft_ints() >> (uint32_t)ipl) != 0UL)
 		kep_dispatch_softints(ipl);
 }
 
@@ -121,16 +122,39 @@ kep_arch_set_vbase(void)
 }
 
 /*
- * principle:
- * - first instruction of ASM trap handler should clear IPL
- * - C trap handler will, based on autovector number, set IPL, deriving previous
- *     IPL from that saved in trap frame.
- * - can lower IPL again at end
+ * The principle: in asm_trap, we immediately do `ori.w #0x0700, %sr`, making
+ * hardware IPL 7.
+ *
+ * Then here in c_trap, we identify the IPL we should really be at by consulting
+ * the vector offset. We call ke_arch_enable() to reflect that IPL in %sr.
+ *
+ * Finally, we can call splx() to reinstate the old IPL.
  */
-
 void
 c_trap(karch_trapframe_t *frame)
 {
-	splhigh();
-	kfatal("vector 0x%x\n", frame->vector_offset);
+	ipl_t oldhwipl = IPL_M68K_0 + ((frame->sr & M68K_SR_IPL_MASK) >> 8);
+	ipl_t oldipl = MIN2(oldhwipl, CPU_LOCAL_LOAD(ipl));
+
+	switch (frame->vector_offset) {
+	case 0x64: /* level 1 autovector */
+	case 0x68:
+	case 0x6c:
+	case 0x70:
+	case 0x74:
+	case 0x78:
+	case 0x7c:
+		CPU_LOCAL_STORE(ipl,
+		    IPL_M68K_1 + (frame->vector_offset - 0x64) / 4);
+		ke_arch_enable(true);
+
+		gfpic_dispatch((frame->vector_offset - 0x64) / 4, frame);
+		break;
+
+	default:
+		CPU_LOCAL_STORE(ipl, IPL_HIGH);
+		kfatal("unhandled trap, vector 0x%x", frame->vector_offset);
+	}
+
+	splx(oldipl);
 }
