@@ -7,6 +7,7 @@ kernel_sources += [
     'kern/disp_ts.c',
     'kern/dispatch.c',
     'kern/dlog.c',
+    'kern/event.c',
     'kern/init.c',
     'kern/intr.c',
     'kern/kwait.c',

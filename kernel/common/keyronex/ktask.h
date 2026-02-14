@@ -17,6 +17,9 @@
 
 struct limine_mp_info;
 
+typedef struct ksyncops ksyncops_t;
+typedef struct kturnstile kturnstile_t;
+
 #define RT_PRIO_N 32
 #define TS_PRIO_N 64
 
@@ -42,7 +45,19 @@ struct ksched_class {
 	uint16_t (*quantum)(struct kthread *);
 };
 
-typedef struct kturnstile kturnstile_t;
+typedef struct kturnstile {
+	union {
+		SLIST_HEAD(, kturnstile) freelist;
+		SLIST_ENTRY(kturnstile) free_link;
+	};
+	LIST_ENTRY(kturnstile)	hash_link;
+	SLIST_ENTRY(kturnstile)	pi_link;
+	TAILQ_HEAD(, kturnstile_waiter) waiters[2];
+	uint32_t 	nwaiters[2];
+	void 		*obj;
+	uint16_t	prio;
+	struct kthread	*inheritor;
+} kturnstile_t;
 
 /*
  * A kernel thread.
@@ -79,6 +94,11 @@ typedef struct kthread {
 	kwait_internal_status_t	wait_status;	/* wait status */
 	struct kwaitblock	integral_waitblocks[4]; /* default waitblocks */
 	const char 		*wait_reason;	/* reason for waiting */
+	bool			wait_signallable; /* is wait interruptilble? */
+
+	kturnstile_t	*turnstile;	/* my turnstile */
+	void 		*waiting_on;	/* object waited on */
+	ksyncops_t	*sync_ops;	/* ops for object waited on */
 } kthread_t;
 
 typedef struct ktask {
@@ -89,7 +109,7 @@ typedef struct ktask {
 void ke_dispatch(void);
 void ke_thread_resume(kthread_t *, bool io_completion);
 
-void ke_thread_init(kthread_t *, ktask_t *, void *stack_base,
+void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
 
 void ke_disp_global_init(void);

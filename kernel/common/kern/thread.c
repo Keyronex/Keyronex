@@ -14,8 +14,9 @@
 #include <sched.h>
 
 void
-ke_thread_init(kthread_t *thread, ktask_t *task, void *stack_base,
-    struct karch_trapframe *forkframe, void (*func)(void *), void *arg)
+ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
+    void *stack_base, struct karch_trapframe *forkframe, void (*func)(void *),
+    void *arg)
 {
 	ke_spinlock_init(&thread->lock);
 
@@ -34,6 +35,12 @@ ke_thread_init(kthread_t *thread, ktask_t *task, void *stack_base,
 #if 0
 	atomic_store_explicit(&thread->runtime, 0, memory_order_relaxed);
 #endif
+
+	thread->wait_reason = NULL;
+
+	thread->turnstile = ts;
+	thread->waiting_on = NULL;
+	thread->sync_ops = NULL;
 
 	kep_arch_thread_init(thread, stack_base, forkframe, func, arg);
 

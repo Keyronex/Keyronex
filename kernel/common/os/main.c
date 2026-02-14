@@ -27,6 +27,8 @@
 #define ARCH_ID	    id
 #endif
 
+thread_t *proc_alloc_idle_thread(void);
+
 /* kern/init.c */
 void ke_bsp_early_init(ktask_t *, kthread_t *);
 void ke_ap_init(kcpunum_t);
@@ -89,7 +91,7 @@ smp_init(void)
 			idle = &thread0;
 		} else {
 			data = kmem_alloc(sizeof(struct kcpu_data));
-			idle = kmem_alloc(sizeof(thread_t));
+			idle = proc_alloc_idle_thread();
 		}
 
 		ke_cpu_data[i] = data;

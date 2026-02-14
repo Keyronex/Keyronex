@@ -55,7 +55,8 @@ ke_waitn(size_t obj_n, void **objs, const char *reason, bool signallable,
 	stat = &thread->wait_status;
 	waitblocks = thread->integral_waitblocks;
 
-	atomic_store_explicit(stat, SYNCH_PRE_WAIT, memory_order_relaxed);
+	thread->wait_signallable = signallable;
+	atomic_store_explicit(stat, SYNCH_PRE_WAIT, memory_order_release);
 
 	ipl = spldisp();
 
