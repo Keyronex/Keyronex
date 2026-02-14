@@ -10,6 +10,7 @@
 #include <keyronex/cpu.h>
 #include <keyronex/dlog.h>
 #include <keyronex/intr.h>
+#include <keyronex/ktask.h>
 #include <keyronex/pcb.h>
 #include <keyronex/x86.h>
 
@@ -29,7 +30,10 @@ struct __attribute__((packed)) idt_entry {
 SPEC_IDT_ENTRIES(EXTERN_ISR)
 IDT_ENTRIES(EXTERN_ISR)
 
+void ke_hardclock(void);
 void kep_dispatch_softints(ipl_t newipl);
+
+void lapic_eoi(void);
 
 static struct idt_entry bsp_idt[256];
 
@@ -162,11 +166,73 @@ kep_arch_set_vbase(bool bsp)
 void
 kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 {
-	kfatal("interrupt %d\n", num);
+	switch(num) {
+		case 225: {
+			ipl_t ipl = splhigh();
+			ke_hardclock();
+			lapic_eoi();
+			splx(ipl);
+			break;
+		}
+	}
+}
+
+void kep_amd64_asm_switch(struct karch_pcb *old, struct karch_pcb *new);
+void kep_amd64_asm_thread_trampoline(void);
+
+static inline void
+fxsave(uint8_t *state)
+{
+	asm volatile("fxsave %0" : "+m"(*state) : : "memory");
+}
+
+static inline void
+fxrstor(uint8_t *state)
+{
+	asm volatile("fxrstor %0" : : "m"(*state) : "memory");
 }
 
 void
-kep_arch_switch(struct kthread *old, struct kthread *new)
+kep_arch_switch(struct kthread *old, struct kthread *next)
 {
-	kfatal("kep_arch_switch\n");
+#if 0
+	wrmsr(AMD64_FSBASE_MSR, next->tcb);
+#endif
+#if 0
+	CPU_LOCAL_LOAD(arch.tss)->rsp0 = (uintptr_t)next->kstack_base +
+	    KSTACK_SIZE;
+#endif
+	if (old->user)
+		fxsave(old->pcb.fpu);
+	if (next->user)
+		fxrstor(next->pcb.fpu);
+	kep_amd64_asm_switch(&old->pcb, &next->pcb);
+}
+
+void
+kep_arch_thread_init(kthread_t *thread, void *stack_base,
+    struct karch_trapframe *forkframe, void (*func)(void *), void *arg)
+{
+	uint64_t *sp;
+
+	memset(&thread->pcb, 0x0, sizeof(thread->pcb));
+
+	if (forkframe == NULL) {
+		sp = thread->kstack_base + KSTACK_SIZE;
+	} else {
+		karch_trapframe_t *frame;
+
+		sp = thread->kstack_base + KSTACK_SIZE - sizeof(*forkframe);
+		memcpy(sp, forkframe, sizeof(*forkframe));
+
+		frame = (karch_trapframe_t *)sp;
+		frame->rax = 0; /* fork returns 0 in child */
+	}
+
+	thread->pcb.rdi = (uint64_t)func;
+	thread->pcb.rsi = (uint64_t)arg;
+
+	sp -= 2;
+	*sp = (uint64_t)kep_amd64_asm_thread_trampoline;;
+	thread->pcb.rsp = (uint64_t)(sp);
 }

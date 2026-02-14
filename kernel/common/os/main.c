@@ -125,6 +125,8 @@ smp_start(void)
 		__atomic_store_n(&info->goto_address, ap_init,
 		    __ATOMIC_RELEASE);
 	}
+
+	kdprintf("smp_start: brought up %d CPUs\n", ke_ncpu);
 #endif
 }
 
