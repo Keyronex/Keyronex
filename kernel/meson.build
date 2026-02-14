@@ -80,7 +80,7 @@ if not headers_only_option
 
 endif # not headers_only_option
 
-common_kernel_includes = []
+common_kernel_includes = [include_directories('../vendor')]
 kernel_sources = []
 
 subdir(cpu)

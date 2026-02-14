@@ -14,6 +14,13 @@ kernel_sources += [
     'kern/turnstil.c',
     'kern/xcall.c',
 
+    'libkern/objc/OSArray.m',
+    'libkern/objc/OSDictionary.m',
+    'libkern/objc/OSMapTable.m',
+    'libkern/objc/OSNumber.m',
+    'libkern/objc/OSObject.m',
+    'libkern/objc/OSString.m',
+    'libkern/murmurhash.c',
     'libkern/lib.c',
 
     'os/main.c',
