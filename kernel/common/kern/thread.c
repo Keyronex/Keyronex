@@ -17,6 +17,8 @@ void
 ke_thread_init(kthread_t *thread, ktask_t *task, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg)
 {
+	ke_spinlock_init(&thread->lock);
+
 	thread->kstack_base = stack_base;
 	thread->user = false;
 
@@ -32,6 +34,8 @@ ke_thread_init(kthread_t *thread, ktask_t *task, void *stack_base,
 #if 0
 	atomic_store_explicit(&thread->runtime, 0, memory_order_relaxed);
 #endif
+
+	kep_arch_thread_init(thread, stack_base, forkframe, func, arg);
 
 #if 0
 	ipl = spinlock_lock(&proc->threads_lock);

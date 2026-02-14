@@ -12,8 +12,15 @@
 
 #include <stdint.h>
 
-typedef struct __attribute__((packed)) karch_pcb {
+typedef struct m68k_context {
+	uint32_t d2, d3, d4, d5, d6, d7;
+	uint32_t a2, a3, a4, a5, a6;
+	uint32_t pc, sp;
+	uint16_t sr;
+} m68k_context_t;
 
+typedef struct __attribute__((packed)) karch_pcb {
+	m68k_context_t genregs;
 } karch_pcb_t;
 
 struct __attribute__((packed)) ssw_68040 {

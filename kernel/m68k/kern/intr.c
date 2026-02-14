@@ -164,5 +164,43 @@ c_trap(karch_trapframe_t *frame)
 void
 kep_arch_switch(struct kthread *old, struct kthread *new)
 {
-	kfatal("kep_arch_switch\n");
+	void kep_m68k_asm_switch(m68k_context_t *old, m68k_context_t *new);
+	kep_m68k_asm_switch(&old->pcb.genregs, &new->pcb.genregs);
+}
+
+void
+kep_m68k_thread_trampoline(void (*func)(void *), void *arg)
+{
+	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
+	splx(IPL_0);
+	func(arg);
+}
+
+void
+kep_arch_thread_init(kthread_t *thread, void *stack_base,
+    struct karch_trapframe *forkframe, void (*func)(void *), void *arg)
+{
+	uint32_t *sp;
+
+	void kep_m68k_asm_thread_trampoline(void (*)(void *), void *);
+
+	memset(&thread->pcb.genregs, 0x0, sizeof(thread->pcb.genregs));
+	thread->pcb.genregs.pc = (uintptr_t)kep_m68k_asm_thread_trampoline;
+
+	if (forkframe == NULL) {
+		sp = thread->kstack_base + KSTACK_SIZE - sizeof(uint32_t);
+	} else {
+		karch_trapframe_t *frame;
+
+		sp = thread->kstack_base + KSTACK_SIZE - sizeof(*forkframe);
+		memcpy(sp, forkframe, sizeof(*forkframe));
+
+		frame = (void *)sp;
+		frame->d0 = 0;
+	}
+
+	*sp-- = (uint32_t)arg;
+	*sp-- = (uint32_t)func;
+	thread->pcb.genregs.sp = (uint32_t)sp;
+	thread->pcb.genregs.sr = 0x2000;
 }

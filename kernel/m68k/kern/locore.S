@@ -34,7 +34,7 @@ asm_trap:
 	move.l %a0, -(%sp)
 	.cfi_adjust_cfa_offset 4
 
-	/* %sp seems to needs to be 4-byte aligned to not make varargs explode */
+	/* %sp seems to need to be 4-byte aligned to not make varargs explode */
 	move.l %sp, %d0
 	btst #1, %d0
 	bne	 .Lcall_misaligned
@@ -82,5 +82,41 @@ asm_trap:
 	rte
 	.cfi_endproc
 
+
+/*
+ * return address goes into %d0, old PCB in %a0, new PCB in %a1
+ * PCB+44 = return address
+ * PCB+48 = stack pointer
+ * PCB+52 = %sr
+ */
+.global kep_m68k_asm_switch
+kep_m68k_asm_switch: /* (void)(pcb_t *old, pcb_t *new) */
+	move.l %sp@+, %d0
+	move.l %sp@, %a0
+	move.l %sp@(4), %a1
+	movem.l  %d2-%d7/%a2-%a6, %a0@
+	move.l %d0, %a0@(44)
+	move.l %sp, %a0@(48)
+	move.w %sr, %a0@(52)
+	move.w %a0@(52), %sr
+	move.l %a1@(48), %sp
+	move.l %a1@(44), %sp@
+	movem.l %a1@, %d2-%d7/%a2-%a6
+	rts
+
+.extern kep_m68k_thread_trampoline
+
+.global kep_m68k_asm_thread_trampoline
+kep_m68k_asm_thread_trampoline: /* (void)(void(*)(void *), void *) */
+	jsr kep_m68k_thread_trampoline
+
+	/* restore as in asm_trap */
+
+	add	#4, %sp
+	move.l	%sp@+, %a0
+	move.l	%a0, %usp
+	movem.l	%sp@+, %d0-%d7/%a0-%a6
+	addq.l	#2, %sp
+	rte
 
 .section .note.GNU-stack,"",%progbits

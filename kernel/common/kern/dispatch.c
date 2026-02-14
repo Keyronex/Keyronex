@@ -299,9 +299,8 @@ ke_dispatch(void)
 	if (oldt == disp->idle_thread) {
 		kassert(oldt->state == TS_RUNNING,
 		    "invalid idle thread state in ke_dispatch");
-	}
-
-	if (oldt->state == TS_RUNNING) {
+		oldt->state = TS_READY;
+	} else if (oldt->state == TS_RUNNING) {
 		/* currently running - replace on runqueue */
 		oldt->state = TS_READY;
 		kep_sched_class[oldt->sched_class]->did_preempt_thread(oldt,
