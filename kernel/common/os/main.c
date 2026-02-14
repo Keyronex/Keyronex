@@ -51,7 +51,7 @@ static volatile uint64_t end_marker[] = LIMINE_REQUESTS_END_MARKER;
 proc_t proc0;
 thread_t thread0;
 
-static thread_t init_thread;
+static thread_t *init_thread;
 
 static void idle(void)
 {
@@ -128,6 +128,14 @@ smp_start(void)
 #endif
 }
 
+static void
+threaded_init(void *)
+{
+	kdprintf("Threaded init!\n");
+	for (;;)
+		;
+}
+
 void
 _start(void)
 {
@@ -139,12 +147,17 @@ _start(void)
 	kmem_init();
 	vmem_global_init();
 	vm_kwired_init();
+	vm_kmap_init();
+	proc_init();
 	smp_init();
 	ke_disp_global_init();
 
 	smp_start();
 	ke_platform_start_dispatching();
 	splx(IPL_0);
+
+	init_thread = proc_new_system_thread(threaded_init, NULL);
+	ke_thread_resume(&init_thread->kthread, false);
 
 	kdprintf("Initialisation complete...\n");
 

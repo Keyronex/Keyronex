@@ -8,3 +8,13 @@
  */
 
 #include <keyronex/cpu.h>
+
+void kep_callout_hardclock();
+void kep_disp_hardclock(void);
+
+void
+ke_hardclock(void)
+{
+	kep_disp_hardclock();
+	kep_callout_hardclock();
+}

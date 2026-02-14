@@ -9,10 +9,13 @@
 
 #include <keyronex/cpu.h>
 #include <keyronex/intr.h>
+#include <keyronex/ktask.h>
 
 #include <stdatomic.h>
 
 typedef void (*si_handler)(struct kcpu_data *);
+
+void ke_dispatch(void);
 
 static void none_si_handler(struct kcpu_data *);
 static void ast_level_si_handler(struct kcpu_data *);
@@ -121,7 +124,8 @@ disp_level_si_handler(struct kcpu_data *cpu)
 	ke_arch_enable(true);
 
 	if (cpu->redispatch_requested) {
-		/* call the dispatcher */
+		ke_spinlock_enter_nospl(&CPU_LOCAL_LOAD(curthread)->lock);
+		ke_dispatch();
 	}
 
 	(void)ke_arch_disable();

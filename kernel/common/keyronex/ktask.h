@@ -15,6 +15,7 @@
 #include <keyronex/cpu.h>
 
 struct limine_mp_info;
+struct karch_trapframe;
 
 #define RT_PRIO_N 32
 #define TS_PRIO_N 64
@@ -52,6 +53,7 @@ typedef struct kthread {
 	LIST_ENTRY(kthread)	proc_link;
 	TAILQ_ENTRY(kthread)	tqlink;
 
+	void *kstack_base;	/* kernel stack base */
 	bool user;		/* is this a user thread? (FPU save/restore) */
 
 	struct ktask	*task;	/* task this thread belongs to */
@@ -84,11 +86,17 @@ typedef struct ktask {
 } ktask_t;
 
 void ke_dispatch(void);
-void ke_thread_resume(kthread_t *t, bool io_completion);
+void ke_thread_resume(kthread_t *, bool io_completion);
+
+void ke_thread_init(kthread_t *, ktask_t *, void *stack_base,
+    struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
 
 void ke_disp_global_init(void);
 void ke_disp_init(kcpunum_t cpunum);
-void ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data, struct limine_mp_info *info, kthread_t *idle);
+void ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data,
+    struct limine_mp_info *info, kthread_t *idle);
+
+void kep_arch_switch(struct kthread *old, struct kthread *new);
 
 extern ktask_t *ke_task0;
 

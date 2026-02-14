@@ -11,6 +11,8 @@
 #include <keyronex/cpulocal.h>
 #include <keyronex/dlog.h>
 #include <keyronex/pcb.h>
+#include <keyronex/ktask.h>
+
 #include "goldfish.h"
 
 #define M68K_SR_IPL_MASK 0x0700u
@@ -157,4 +159,10 @@ c_trap(karch_trapframe_t *frame)
 	}
 
 	splx(oldipl);
+}
+
+void
+kep_arch_switch(struct kthread *old, struct kthread *new)
+{
+	kfatal("kep_arch_switch\n");
 }

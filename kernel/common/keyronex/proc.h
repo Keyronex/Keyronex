@@ -21,6 +21,10 @@ typedef struct proc {
 	struct vm_map *vm_map;
 } proc_t;
 
+thread_t *proc_new_system_thread(void (*func)(void*), void *arg);
+
+void proc_init(void);
+
 extern proc_t proc0;
 
 #endif /* ECX_KEYRONEX_PROC_H */

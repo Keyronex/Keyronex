@@ -16,6 +16,7 @@
 
 #include <libkern/lib.h>
 
+#include <stdatomic.h>
 #include <stdbool.h>
 
 #include "vm/map.h"
@@ -509,7 +510,26 @@ setup_permanent_tables(void)
 	}
 }
 
+void
+vm_kmap_init(void)
+{
+	atomic_store_explicit(&kernel_map.refcnt, 1, memory_order_relaxed);
 
+	RB_INIT(&kernel_map.entries);
+#if 0
+	mutex_init(&kernel_map.map_lock);
+#endif
+
+	kernel_map.rs.map = &kernel_map;
+	kernel_map.rs.private_pages_n = 0;
+	kernel_map.rs.valid_n = 0;
+	TAILQ_INIT(&kernel_map.rs.active_leaf_tables);
+
+	vmem_init(&kernel_map.vmem, "kernel-general-paged", MISC_MAP_BASE,
+	    MISC_MAP_SIZE, PGSIZE, NULL, NULL, NULL, 0, 0);
+	kernel_map.pgtable = kpgtable;
+	proc0.vm_map = &kernel_map;
+}
 void
 vm_phys_init(void)
 {

@@ -16,6 +16,8 @@
 
 #define VIRT_GF_RTC_IRQ_BASE PIC_IRQ(6, 1)
 
+void ke_hardclock(void);
+
 enum gfrtc_reg {
 	GFRTC_TIME_LOW = 0x00,
 	GFRTC_TIME_HIGH = 0x04,
@@ -66,9 +68,7 @@ gfrtc_handler(karch_trapframe_t *frame, void *arg)
 	gfrtc_write(GFRTC_CLEAR_ALARM, 1);
 	gfrtc_write(GFRTC_CLEAR_INTERRUPT, 1);
 	gfrtc_oneshot(NS_PER_S / KERN_HZ);
-#if 0
-	ki_cpu_hardclock(frame, NULL);
-#endif
+	ke_hardclock();
 	return true;
 }
 

@@ -271,7 +271,7 @@ next_thread(struct kcpu_dispatcher *dp)
 }
 
 void
-disp_hardclock(void)
+kep_disp_hardclock(void)
 {
 	struct kcpu_dispatcher *disp = CPU_LOCAL_ADDROF(disp);
 
@@ -343,7 +343,7 @@ ke_dispatch(void)
 	// if (thread_vm_map(next) != thread_vm_map(old))
 	//	pmap_activate(thread_vm_map(next));
 
-	// arch_switch(old, next);
+	kep_arch_switch(oldt, nextt);
 
 	/* we are now potentially on another CPU, so reload prevthread */
 	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
@@ -398,13 +398,14 @@ ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data,
 	TAILQ_INIT(&data->callout.callouts);
 	data->callout.next_deadline = 0;
 	ke_spinlock_init(&data->callout.lock);
-	void ki_callout_expiry_dpc(void *, void *);
-	ke_dpc_init(&data->callout.expiry_dpc, ki_callout_expiry_dpc,
+	void kep_callout_expiry_dpc(void *, void *);
+	ke_dpc_init(&data->callout.expiry_dpc, kep_callout_expiry_dpc,
 	    &data->callout, NULL);
 
 	memset((void *)data->xcalls_pending.mask, 0,
 	    sizeof(data->xcalls_pending));
 
+	data->curthread = idle;
 	ke_idle_thread_init(cpunum, idle);
 	ke_disp_init(cpunum);
 }

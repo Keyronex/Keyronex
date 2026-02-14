@@ -164,3 +164,9 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 {
 	kfatal("interrupt %d\n", num);
 }
+
+void
+kep_arch_switch(struct kthread *old, struct kthread *new)
+{
+	kfatal("kep_arch_switch\n");
+}

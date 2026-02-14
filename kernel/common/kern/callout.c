@@ -121,7 +121,7 @@ retry:
 }
 
 void
-ki_callout_expiry_dpc(void *arg1, void *arg2)
+kep_callout_expiry_dpc(void *arg1, void *arg2)
 {
 	struct kcpu_callout *cc = arg1;
 	struct kwaitblock_queue wake_queue = TAILQ_HEAD_INITIALIZER(wake_queue);
@@ -164,7 +164,7 @@ ki_callout_expiry_dpc(void *arg1, void *arg2)
 }
 
 void
-callout_hardclock(void)
+kep_callout_hardclock(void)
 {
 	struct kcpu_callout *cc = CPU_LOCAL_ADDROF(callout);
 	kabstime_t now = ke_time();
