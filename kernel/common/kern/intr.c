@@ -111,7 +111,7 @@ disp_level_si_handler(struct kcpu_data *cpu)
 		}
 
 		TAILQ_REMOVE(&cpu->dpc_queue, dpc, qlink);
-		atomic_store_explicit(&dpc->cpu, cpu, memory_order_release);
+		atomic_store_explicit(&dpc->cpu, NULL, memory_order_release);
 
 		ke_spinlock_exit_nospl(&cpu->dpc_lock);
 		ke_arch_enable(true);

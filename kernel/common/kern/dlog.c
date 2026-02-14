@@ -35,8 +35,8 @@ int
 kdvprintf(const char *fmt, va_list ap)
 {
 	int r;
-	ipl_t ipl;
-	ipl = ke_spinlock_enter(&dlog_lock);
+	ipl_t ipl = splhigh();
+	ke_spinlock_enter_nospl(&dlog_lock);
 	r = kdvprintf_unlocked(fmt, ap);
 	ke_spinlock_exit(&dlog_lock, ipl);
 	return r;

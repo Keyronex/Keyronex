@@ -15,12 +15,6 @@ ke_arch_pause(void)
 	asm volatile("nop");
 }
 
-kabstime_t
-ke_time(void)
-{
-	return 0;
-}
-
 void
 kep_arch_set_tp(void *)
 {

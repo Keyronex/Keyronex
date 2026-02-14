@@ -8,6 +8,7 @@
  */
 
 #include <keyronex/cpu.h>
+#include <keyronex/dlog.h>
 #include <keyronex/intr.h>
 #include <keyronex/kwait.h>
 
@@ -70,7 +71,7 @@ ke_callout_set(kcallout_t *co, kabstime_t deadline)
 
 	if (atomic_load_explicit(&co->cpu_num, memory_order_relaxed) !=
 	    KCPUNUM_NULL)
-		return -1;
+		kfatal("trying to set an already-set callout");
 
 	atomic_store_explicit(&co->cpu_num, CPU_LOCAL_LOAD(cpu_num),
 	    memory_order_relaxed);

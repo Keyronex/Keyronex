@@ -75,10 +75,14 @@ gfrtc_handler(karch_trapframe_t *frame, void *arg)
 void
 ke_platform_start_dispatching(void)
 {
-	kdprintf("GFRTC Time: %llu ns\n", gfrtc_get_time());
-
 	gfrtc_write(GFRTC_IRQ_ENABLED, 1);
 	gfpic_handle_irq(VIRT_GF_RTC_IRQ_BASE, gfrtc_handler, NULL);
 	gfpic_unmask_irq(VIRT_GF_RTC_IRQ_BASE);
 	gfrtc_oneshot(NS_PER_S / KERN_HZ);
+}
+
+kabstime_t
+ke_time(void)
+{
+	return gfrtc_get_time();
 }

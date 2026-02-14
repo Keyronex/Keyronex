@@ -10,11 +10,11 @@
 #include <keyronex/cpu.h>
 #include <keyronex/dlog.h>
 #include <keyronex/kmem.h>
+#include <keyronex/ktask.h>
 #include <keyronex/limine.h>
 #include <keyronex/proc.h>
 #include <keyronex/vm.h>
 #include <keyronex/vmem.h>
-#include "keyronex/ktask.h"
 
 #if defined(__amd64__)
 #define BSP_ARCH_ID bsp_lapic_id
@@ -134,6 +134,15 @@ static void
 threaded_init(void *)
 {
 	kdprintf("Threaded init!\n");
+
+	while (true) {
+		kcallout_t co;
+		ke_callout_init(&co);
+		ke_callout_set(&co, ke_time() + NS_PER_S);
+		kdprintf("Waiting for 1s\n");
+		ke_wait1(&co, "callout", false, ABSTIME_FOREVER);
+	}
+
 	for (;;)
 		;
 }
