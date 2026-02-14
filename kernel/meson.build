@@ -12,7 +12,7 @@ endif
 
 
 if not headers_only_option
-    add_languages('c')
+    add_languages('c', 'objc')
 
     limine = executable('limine', '../vendor/limine/limine.c', native: true)
 
@@ -24,6 +24,13 @@ if not headers_only_option
         '-fno-omit-frame-pointer',
         '-DKRX_BUILDING_KERNEL',
         '-DUACPI_SIZED_FREES=1',
+    ]
+
+    common_kernel_objc_args = [
+        '-std=gnu2x',
+        '-fconstant-string-class=OSConstantString',
+        '-DOF_OBJFW_RUNTIME=1',
+        '-DOF_COMPILING_OBJFW=1',
     ]
 
     common_kernel_link_args = [

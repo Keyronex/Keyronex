@@ -1,4 +1,6 @@
 kernel_sources += [
+    'devicekit/dk.m',
+
     'kern/callout.c',
     'kern/clock.c',
     'kern/disp_rt.c',
@@ -25,6 +27,32 @@ kernel_sources += [
     'vm/pmap.c',
     'vm/vmem.c',
 ]
+
+objfwrt_sources = files(
+    '../../vendor/objfwrt/arc.m',
+    '../../vendor/objfwrt/association.m',
+    '../../vendor/objfwrt/autorelease.m',
+    '../../vendor/objfwrt/category.m',
+    '../../vendor/objfwrt/class.m',
+    '../../vendor/objfwrt/dtable.m',
+    '../../vendor/objfwrt/exception.m',
+    '../../vendor/objfwrt/hashtable.m',
+    '../../vendor/objfwrt/init.m',
+    '../../vendor/objfwrt/instance.m',
+    '../../vendor/objfwrt/ivar.m',
+    '../../vendor/objfwrt/lookup.m',
+    '../../vendor/objfwrt/method.m',
+    '../../vendor/objfwrt/misc.m',
+    '../../vendor/objfwrt/property.m',
+    '../../vendor/objfwrt/protocol.m',
+    '../../vendor/objfwrt/selector.m',
+    '../../vendor/objfwrt/sparsearray.m',
+    '../../vendor/objfwrt/static-instances.m',
+    '../../vendor/objfwrt/synchronized.m',
+    '../../vendor/objfwrt/tagged-pointer.m',
+    '../../vendor/objfwrt/threading.m',
+    '../../vendor/objfwrt/lookup-asm/lookup-asm.S',
+)
 
 if not headers_only_option
     kernel_binary_args = [
@@ -58,8 +86,13 @@ if not headers_only_option
 
     keyronex = executable(
         'keyronex',
-        kernel_sources,
+        kernel_sources, objfwrt_sources,
         c_args: [common_kernel_args, kernel_binary_args],
+        objc_args: [
+            common_kernel_args,
+            common_kernel_objc_args,
+            kernel_binary_args
+        ],
         include_directories: [common_kernel_includes ],
         link_args: [
             '-static',

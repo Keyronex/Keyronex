@@ -17,6 +17,7 @@ void ke_md_early_putc(int c, void *);
 
 __attribute__((noreturn)) void kfatal_internal(const char *file, int line,
     const char *fmt, ...);
+int kdvprintf(const char *fmt, va_list ap);
 int kdprintf(const char *fmt, ...);
 int kvsnprintf(char *str, size_t size, const char *fmt, va_list ap);
 int ksnprintf(char *str, size_t size, const char *fmt, ...);
