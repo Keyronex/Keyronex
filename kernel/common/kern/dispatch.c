@@ -27,7 +27,7 @@
 extern struct ksched_class kep_ts_class, kep_rt_class;
 
 static kspinlock_t rt_lock = KSPINLOCK_INITIALISER;
-static atomic_int_fast32_t rt_bitmap;
+static atomic_uint_fast32_t rt_bitmap;
 static runq_t global_rt_rq[RT_PRIO_N];
 static katomic_cpumask_t idle_cpu_mask;
 

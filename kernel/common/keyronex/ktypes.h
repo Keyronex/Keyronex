@@ -10,13 +10,9 @@
 #ifndef ECX_KEYRONEX_KTYPES_H
 #define ECX_KEYRONEX_KTYPES_H
 
-#include <stdint.h>
+#include <keyronex/atomic.h>
 
-#if !defined(__OBJC__)
-#include <stdatomic.h>
-#else
-typedef uintptr_t atomic_uintptr_t;
-#endif
+#include <stdint.h>
 
 #define KSTACK_SIZE   32768
 #define MAX_CPUS 256

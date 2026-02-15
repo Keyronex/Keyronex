@@ -10,6 +10,7 @@
 #ifndef ECX_VM_MAP_H
 #define ECX_VM_MAP_H
 
+#include <keyronex/ktask.h>
 #include <keyronex/tree.h>
 #include <keyronex/vmem_impl.h>
 #include <keyronex/vm.h>
@@ -47,9 +48,7 @@ typedef struct vm_rs {
 struct vm_map {
 	atomic_uint refcnt;
 	vmem_t vmem;
-#if 0
-	rwlock_t map_lock;
-#endif
+	krwlock_t map_lock;
 	kspinlock_t creation_lock;
 	kspinlock_t stealing_lock;
 	struct vm_map_tree entries;

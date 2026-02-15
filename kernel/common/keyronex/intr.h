@@ -10,11 +10,11 @@
 #ifndef ECX_KERN_INTR_H
 #define ECX_KERN_INTR_H
 
+#include <keyronex/atomic.h>
 #include <keyronex/ipl_arch.h>
 
 #include <libkern/queue.h>
 
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 

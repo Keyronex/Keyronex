@@ -10,13 +10,13 @@
 #ifndef ECX_KERN_CPU_H
 #define ECX_KERN_CPU_H
 
+#include <keyronex/atomic.h>
 #include <keyronex/cpulocal.h>
 #include <keyronex/intr.h>
 #include <keyronex/kwait.h>
 
 #include <libkern/lib.h>
 
-#include <stdatomic.h>
 #include <stdint.h>
 
 struct kthread;
@@ -48,7 +48,7 @@ struct kcpu_dispatcher {
 	runq_t rq[PRIO_LIMIT];
 	struct kthread *idle_thread;
 	struct kthread *cur_thread;
-	atomic_int_fast32_t timeslice;
+	atomic_uint_fast32_t timeslice;
 };
 
 struct kcpu_data {

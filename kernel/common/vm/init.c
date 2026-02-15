@@ -516,9 +516,7 @@ vm_kmap_init(void)
 	atomic_store_explicit(&kernel_map.refcnt, 1, memory_order_relaxed);
 
 	RB_INIT(&kernel_map.entries);
-#if 0
-	mutex_init(&kernel_map.map_lock);
-#endif
+	ke_rwlock_init(&kernel_map.map_lock);
 
 	kernel_map.rs.map = &kernel_map;
 	kernel_map.rs.private_pages_n = 0;

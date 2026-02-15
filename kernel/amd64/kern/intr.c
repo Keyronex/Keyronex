@@ -174,6 +174,9 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 			splx(ipl);
 			break;
 		}
+
+		default:
+			kfatal("int %lu\n", num);
 	}
 }
 
