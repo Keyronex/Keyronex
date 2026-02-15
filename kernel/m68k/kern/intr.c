@@ -204,3 +204,8 @@ kep_arch_thread_init(kthread_t *thread, void *stack_base,
 	thread->pcb.genregs.sp = (uint32_t)sp;
 	thread->pcb.genregs.sr = 0x2000;
 }
+
+void
+ke_platform_early_init(void)
+{
+}

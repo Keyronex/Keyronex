@@ -192,7 +192,7 @@ _start(void)
 		kfatal("no acpi!");
 	}
 #else
-	kprintf("todo m68k init...\n");
+	kdprintf("todo m68k init...\n");
 #endif
 
 	smp_start();
