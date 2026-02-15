@@ -64,6 +64,34 @@ objfwrt_sources = files(
     '../../vendor/objfwrt/lookup-asm/lookup-asm.S',
 )
 
+uacpi_sources = files(
+    '../../vendor/uacpi/source/default_handlers.c',
+    '../../vendor/uacpi/source/event.c',
+    '../../vendor/uacpi/source/interpreter.c',
+    '../../vendor/uacpi/source/io.c',
+    '../../vendor/uacpi/source/mutex.c',
+    '../../vendor/uacpi/source/namespace.c',
+    '../../vendor/uacpi/source/notify.c',
+    '../../vendor/uacpi/source/opcodes.c',
+    '../../vendor/uacpi/source/opregion.c',
+    '../../vendor/uacpi/source/osi.c',
+    '../../vendor/uacpi/source/registers.c',
+    '../../vendor/uacpi/source/resources.c',
+    '../../vendor/uacpi/source/shareable.c',
+    '../../vendor/uacpi/source/sleep.c',
+    '../../vendor/uacpi/source/stdlib.c',
+    '../../vendor/uacpi/source/tables.c',
+    '../../vendor/uacpi/source/types.c',
+    '../../vendor/uacpi/source/uacpi.c',
+    '../../vendor/uacpi/source/utilities.c',
+)
+
+if target_machine.cpu_family() != 'm68k'
+    kernel_sources += uacpi_sources
+    common_kernel_includes += include_directories('../../vendor/uacpi/include')
+endif
+
+
 if not headers_only_option
     kernel_binary_args = [
         '-fno-pie',
