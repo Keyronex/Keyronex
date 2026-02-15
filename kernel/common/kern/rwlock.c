@@ -20,10 +20,6 @@
 #define RW_READERS(V)	((V) >> 2)
 #define RW_OWNER(V) ((V & RW_WLOCKED) ? (kthread_t*)(val & ~RW_FLAGMASK) : NULL)
 
-typedef struct krwlock {
-	uintptr_t val;
-} krwlock_t;
-
 void
 ke_rwlock_init(krwlock_t *rw)
 {
@@ -31,7 +27,7 @@ ke_rwlock_init(krwlock_t *rw)
 }
 
 void
-ke_rwlock_acquire_read(krwlock_t *rw)
+ke_rwlock_enter_read(krwlock_t *rw)
 {
 	kturnstile_t *ts;
 	uintptr_t val, new;
@@ -75,7 +71,7 @@ ke_rwlock_acquire_read(krwlock_t *rw)
 }
 
 void
-ke_rwlock_acquire_write(krwlock_t *rw)
+ke_rwlock_enter_write(krwlock_t *rw)
 {
 	kthread_t *self = ke_curthread();
 	kturnstile_t *ts;
@@ -120,7 +116,7 @@ ke_rwlock_acquire_write(krwlock_t *rw)
 }
 
 void
-ke_rwlock_release_read(krwlock_t *rw)
+ke_rwlock_exit_read(krwlock_t *rw)
 {
 	kturnstile_t *ts;
 	uintptr_t val, new;
@@ -166,7 +162,7 @@ ke_rwlock_release_read(krwlock_t *rw)
 }
 
 void
-ke_rwlock_release_write(krwlock_t *rw)
+ke_rwlock_exit_write(krwlock_t *rw)
 {
 	kthread_t *self = ke_curthread();
 	kturnstile_t *ts;
@@ -250,9 +246,8 @@ ke_rwlock_downgrade(krwlock_t *rw)
 	}
 }
 
-
 bool
-ke_rwlock_try_upgrade(krwlock_t *rw)
+ke_rwlock_tryupgrade(krwlock_t *rw)
 {
 	kthread_t *self = ke_curthread();
 	uintptr_t val, new;

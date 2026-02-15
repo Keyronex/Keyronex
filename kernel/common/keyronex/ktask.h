@@ -63,6 +63,14 @@ typedef struct kturnstile {
 	kpri_t		pri;
 } kturnstile_t;
 
+typedef struct krwlock {
+	uintptr_t val;
+} krwlock_t;
+
+typedef struct kmutex {
+	uintptr_t val;
+} kmutex_t;
+
 /*
  * A kernel thread.
  *
@@ -135,6 +143,14 @@ void ke_turnstile_block(kturnstile_t *, bool writer, void *obj,
 void ke_turnstile_wakeup(kturnstile_t *, bool writer, int count,
     kthread_t *newowner, ipl_t);
 void ke_turnstile_exit(void *obj, ipl_t);
+
+void ke_rwlock_init(krwlock_t *);
+void ke_rwlock_enter_read(krwlock_t *);
+void ke_rwlock_enter_write(krwlock_t *);
+void ke_rwlock_exit_read(krwlock_t *);
+void ke_rwlock_exit_write(krwlock_t *);
+void ke_rwlock_downgrade(krwlock_t *);
+bool ke_rwlock_tryupgrade(krwlock_t *);
 
 extern ktask_t *ke_task0;
 
