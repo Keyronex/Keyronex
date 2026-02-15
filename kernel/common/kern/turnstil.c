@@ -72,7 +72,7 @@ lend_priority(kthread_t *thread)
 }
 
 void
-ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, ksyncops_t *ops,
+ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 	ipl_t ipl)
 {
 	kthread_t *thread = ke_curthread();

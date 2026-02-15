@@ -17,7 +17,8 @@
 #define RW_FLAGMASK	0x3UL
 #define RW_1READER	0x4UL		/* one reader = 1 << 2 */
 
-#define RW_READERS(v)	((v) >> 2)
+#define RW_READERS(V)	((V) >> 2)
+#define RW_OWNER(V) ((V & RW_WLOCKED) ? (kthread_t*)(val & ~RW_FLAGMASK) : NULL)
 
 typedef struct krwlock {
 	uintptr_t val;
@@ -68,7 +69,7 @@ ke_rwlock_acquire_read(krwlock_t *rw)
 			}
 		}
 
-		ke_turnstile_block(ts, false, rw, NULL, ipl);
+		ke_turnstile_block(ts, false, rw, RW_OWNER(val), ipl);
 		return;
 	}
 }
@@ -113,7 +114,7 @@ ke_rwlock_acquire_write(krwlock_t *rw)
 			}
 		}
 
-		ke_turnstile_block(ts, true, rw, NULL, ipl);
+		ke_turnstile_block(ts, true, rw, RW_OWNER(val), ipl);
 		return;
 	}
 }

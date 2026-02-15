@@ -124,8 +124,8 @@ void kep_arch_thread_init(kthread_t *thread, void *stack_base,
 void kep_turnstile_init(void);
 ipl_t ke_turnstile_lookup(void *obj, kturnstile_t **out);
 kthread_t *ke_turnstile_waiter(kturnstile_t *, bool writer);
-void ke_turnstile_block(kturnstile_t *, bool writer, void *obj, ksyncops_t *,
-    ipl_t);
+void ke_turnstile_block(kturnstile_t *, bool writer, void *obj,
+    kthread_t *owner, ipl_t);
 void ke_turnstile_wakeup(kturnstile_t *, bool writer, int count,
     kthread_t *newowner, ipl_t);
 void ke_turnstile_exit(void *obj, ipl_t);
