@@ -8,6 +8,7 @@
  * implementation.
  */
 
+#include <keyronex/cpu.h>
 #include <keyronex/dlog.h>
 #include <keyronex/kmem.h>
 #include <keyronex/vm.h>
@@ -18,15 +19,11 @@
 
 #include <stddef.h>
 
-#include "keyronex/cpu.h"
 #include "vm/page.h"
 
 #define KMEM_SANITY_CHECKING 1
 
 #define SMALL_SLAB_MAX 512
-
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
 
 static void *kmem_slablayer_alloc(kmem_cache_t *cache, vm_alloc_flags_t flags);
 static void kmem_slablayer_free(kmem_cache_t *cache, void *ptr);

@@ -25,6 +25,9 @@ typedef uintptr_t atomic_uintptr_t;
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))
 
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
 #define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 #define containerof(ptr, type, member) ({                      \
         const typeof( ((type *)0)->member ) *__mptr = (ptr);   \
