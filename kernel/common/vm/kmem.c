@@ -136,9 +136,9 @@ kmem_init(void)
 {
 	for (size_t i = 0; i < 10; i++) {
 		char name[32];
-		ksnprintf(name, sizeof(name), "kmem_alloc_%zu", i);
-		kmem_cache_init(&kmem_alloc_caches[i], name, 8 << i, 8 << i,
-		    NULL);
+		size_t size = 8 << i;
+		ksnprintf(name, sizeof(name), "kmem_alloc_%zu", size);
+		kmem_cache_init(&kmem_alloc_caches[i], name, size, size, NULL);
 	}
 	kmem_cache_init(&kmem_bufctl_cache, "kmem_bufctl",
 	    sizeof(struct kmem_bufctl), __alignof(struct kmem_bufctl), NULL);

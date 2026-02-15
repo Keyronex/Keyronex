@@ -78,7 +78,7 @@ boot_alloc_rpt(size_t size)
 {
 	paddr_t ret = bump_rpt_base;
 	bump_rpt_base += size;
-	kassert(bump_rpt_base <= bump_rpt_end, "bump overrun");
+	kassert(ret < bump_rpt_end, "bump overrun");
 	memset((void *)p2v(ret), 0, size);
 	return ret;
 }

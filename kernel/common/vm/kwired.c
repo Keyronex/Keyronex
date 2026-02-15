@@ -87,7 +87,7 @@ vm_kwired_alloc(size_t npages, vm_alloc_flags_t flags)
 
 		memset((void *)vm_page_hhdm_addr(page), 0, PGSIZE);
 
-		pmap_pte_hwleaf_create(pte, VM_PAGE_PFN(page), PMAP_L1,
+		pmap_pte_hwleaf_create(pte, VM_PAGE_PFN(page), PMAP_L0,
 		    VM_READ | VM_WRITE, kCacheModeDefault);
 		state.pages[0]->proctable.nonzero_ptes++;
 		state.pages[0]->proctable.noswap_ptes++;

@@ -1,5 +1,5 @@
 If:
-  PathMatch: [kernel/.*, kernext/.*]
+  PathMatch: [kernel/.*, kernext/.*, vendor/uacpi/.*, vendor/objfwrt/.*]
 CompileFlags:
   CompilationDatabase: build/amd64/pkg-builds/kernel
 ---
