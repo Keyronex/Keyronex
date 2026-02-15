@@ -57,6 +57,14 @@ ke_turnstile_lookup(void *obj, kturnstile_t **out)
 	return ipl;
 }
 
+
+kthread_t *
+ke_turnstile_waiter(kturnstile_t *ts, bool writer)
+{
+	kassert(!TAILQ_EMPTY(&ts->waiters[writer]));
+	return TAILQ_FIRST(&ts->waiters[writer])->thread;
+}
+
 static void
 lend_priority(kthread_t *thread)
 {
@@ -167,5 +175,12 @@ ke_turnstile_wakeup(kturnstile_t *ts, bool writer, int count,
 		}
 	}
 
+	ke_spinlock_exit(&chain->lock, ipl);
+}
+
+void
+ke_turnstile_exit(void *obj, ipl_t ipl)
+{
+	struct kturnstile_chain *chain = &ts_chains[TC_HASH(obj)];
 	ke_spinlock_exit(&chain->lock, ipl);
 }
