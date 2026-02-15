@@ -87,7 +87,12 @@ uacpi_sources = files(
 )
 
 if target_machine.cpu_family() != 'm68k'
-    kernel_sources += uacpi_sources
+    kernel_sources += [ uacpi_sources ]
+    kernel_sources += files(
+        'devicekit/acpi/DKACPIPlatformRoot.m',
+        'devicekit/acpi/uacpi.c',
+        'devicekit/DKDevice.m',
+    )
     common_kernel_includes += include_directories('../../vendor/uacpi/include')
 endif
 

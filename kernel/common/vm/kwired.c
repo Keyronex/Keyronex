@@ -151,6 +151,6 @@ vm_kwired_free(void *ptr, size_t npages)
 	ke_spinlock_exit_nospl(&proc0.vm_map->creation_lock);
 	ke_spinlock_exit(&kwired_lock, ipl);
 #else
-	kfatal("Implement me\n");
+	/* do nothing for now... */
 #endif
 }

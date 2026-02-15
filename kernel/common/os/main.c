@@ -33,6 +33,7 @@ thread_t *proc_alloc_idle_thread(void);
 void ke_bsp_early_init(ktask_t *, kthread_t *);
 void ke_ap_init(kcpunum_t);
 void ke_platform_start_dispatching(void);
+void ke_platform_early_init(void);
 
 /* vm/init.c */
 void vm_phys_init(void);
@@ -45,7 +46,11 @@ static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(2);
 
 __attribute__((used, section(".requests")))
 static volatile struct limine_mp_request
-    smp_request = { .id = LIMINE_MP_REQUEST_ID, .revision = 0 };
+smp_request = { .id = LIMINE_MP_REQUEST_ID, .revision = 0 };
+
+__attribute__((used, section(".requests")))
+volatile struct limine_rsdp_request
+rsdp_request = { .id = LIMINE_RSDP_REQUEST_ID, .revision = 0 };
 
 __attribute__((used, section(".requests_end_marker")))
 static volatile uint64_t end_marker[] = LIMINE_REQUESTS_END_MARKER;
@@ -149,6 +154,19 @@ threaded_init(void *)
 		;
 }
 
+static void
+global_constructors_init(void)
+{
+	extern void (*init_array_start)(void);
+	extern void (*init_array_end)(void);
+
+	kdprintf("global_constructors_init: running\n");
+
+	for (void (**func)(void) = &init_array_start; func != &init_array_end;
+	     func++)
+		(*func)();
+}
+
 void
 _start(void)
 {
@@ -164,6 +182,18 @@ _start(void)
 	proc_init();
 	smp_init();
 	ke_disp_global_init();
+	ke_platform_early_init();
+	global_constructors_init();
+#if !defined(__m68k__)
+	if (rsdp_request.response != NULL) {
+		void dk_acpi_early_init();
+		dk_acpi_early_init();
+	} else {
+		kfatal("no acpi!");
+	}
+#else
+	kprintf("todo m68k init...\n");
+#endif
 
 	smp_start();
 	ke_platform_start_dispatching();

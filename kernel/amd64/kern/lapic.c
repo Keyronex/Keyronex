@@ -91,7 +91,6 @@ void
 lapic_early_init(void)
 {
 	uint64_t tsc_start, tsc_end;
-	ipl_t ipl = ke_spinlock_enter(&calib);
 
 	pit_init_oneshot(25);
 	tsc_start = __builtin_ia32_rdtsc();
@@ -101,7 +100,6 @@ lapic_early_init(void)
 	timebase = ((tsc_end - tsc_start) * 25);
 
 	lapic_vbase = p2v(rdmsr(IA32_APIC_BASE_MSR) & 0xfffff000);
-	ke_spinlock_exit(&calib, ipl);
 }
 
 uint32_t
@@ -150,9 +148,14 @@ lapic_timer_start(void)
 }
 
 void
-ke_platform_start_dispatching(void)
+ke_platform_early_init(void)
 {
 	lapic_early_init();
+}
+
+void
+ke_platform_start_dispatching(void)
+{
 	lapic_cpu_init();
 	CPU_LOCAL_STORE(arch.lapic_tps, 0);
 	/* measure thrice & average it */
