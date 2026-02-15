@@ -38,6 +38,8 @@ typedef struct kturnstile kturnstile_t;
 #define PRIO_MAX_RT 159
 #define PRIO_LIMIT 160
 
+typedef uint16_t kpri_t;
+
 struct ksched_class {
 	void (*did_preempt_thread)(struct kthread *, bool quantum_expired);
 	void (*io_completed)(struct kthread *);
@@ -55,8 +57,10 @@ typedef struct kturnstile {
 	TAILQ_HEAD(, kturnstile_waiter) waiters[2];
 	uint32_t 	nwaiters[2];
 	void 		*obj;
-	uint16_t	prio;
+
+	struct kthread	*owner;
 	struct kthread	*inheritor;
+	kpri_t		pri;
 } kturnstile_t;
 
 /*
@@ -98,7 +102,6 @@ typedef struct kthread {
 
 	kturnstile_t	*turnstile;	/* my turnstile */
 	void 		*waiting_on;	/* object waited on */
-	ksyncops_t	*sync_ops;	/* ops for object waited on */
 } kthread_t;
 
 typedef struct ktask {
@@ -111,6 +114,9 @@ void ke_thread_resume(kthread_t *, bool io_completion);
 
 void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
+
+kpri_t ke_thread_epri_locked(kthread_t *);
+void ke_thread_set_ipri_locked(kthread_t *, kpri_t);
 
 void ke_disp_global_init(void);
 void ke_disp_init(kcpunum_t cpunum);

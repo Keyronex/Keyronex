@@ -40,7 +40,6 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 
 	thread->turnstile = ts;
 	thread->waiting_on = NULL;
-	thread->sync_ops = NULL;
 
 	kep_arch_thread_init(thread, stack_base, forkframe, func, arg);
 

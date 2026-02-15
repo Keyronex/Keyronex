@@ -348,6 +348,17 @@ ke_dispatch(void)
 	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
 }
 
+kpri_t
+ke_thread_epri_locked(kthread_t *thread)
+{
+	return thread->effective_prio;
+}
+
+void
+ke_thread_set_ipri_locked(kthread_t *thread, kpri_t pri)
+{
+	/* todo */
+}
 
 void
 ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
@@ -366,6 +377,8 @@ ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
 	thread->sched_class = SCHED_OTHER;
 	thread->prio = 0;
 	thread->last_cpu_num = cpunum;
+
+	(void)ipl;
 
 #if 0
 	ipl = ke_spinlock_enter(&proc0.threads_lock);

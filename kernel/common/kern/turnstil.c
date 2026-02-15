@@ -65,10 +65,140 @@ ke_turnstile_waiter(kturnstile_t *ts, bool writer)
 	return TAILQ_FIRST(&ts->waiters[writer])->thread;
 }
 
-static void
-lend_priority(kthread_t *thread)
+static bool
+boost(kturnstile_t *ts, kthread_t *inheritor, kpri_t donate)
 {
-	/* todo */
+	kpri_t old_epri = ke_thread_epri_locked(inheritor);
+
+	/* inheritor and ts chain are locked by caller */
+
+	if (ts->inheritor == NULL) {
+		ts->inheritor = inheritor;
+		ts->pri = donate;
+		SLIST_INSERT_HEAD(&inheritor->pi_head, ts, pi_link);
+	} else {
+		kassert(ts->inheritor == inheritor);
+		if (donate > ts->pri)
+			ts->pri = donate;
+	}
+
+	if (donate > inheritor->inherited_prio)
+		ke_thread_set_ipri_locked(inheritor, donate);
+
+	return ke_thread_epri_locked(inheritor) > old_epri;
+}
+
+static void
+lend_priority(kthread_t *curthread, struct kturnstile_chain *root_chain)
+{
+	kpri_t donate;
+	struct kturnstile_chain *held_chain = NULL;
+	kthread_t *thread = curthread;
+
+restart:
+	/* Only want curthread->lock and root_chain->lock. */
+	if (held_chain != NULL) {
+		ke_spinlock_exit_nospl(&held_chain->lock);
+		held_chain = NULL;
+	}
+	if (thread != curthread) {
+		ke_spinlock_exit_nospl(&thread->lock);
+		ke_spinlock_enter_nospl(&curthread->lock);
+		thread = curthread;
+	}
+
+	donate = ke_thread_epri_locked(curthread);
+
+	for (;;) {
+		void *obj = thread->waiting_on;
+		struct kturnstile_chain *need;
+		kturnstile_t *ts;
+		kthread_t *owner;
+
+		if (obj == NULL)
+			break;
+
+		need = &ts_chains[TC_HASH(obj)];
+
+		if (need == root_chain) {
+			if (held_chain != NULL) {
+				ke_spinlock_exit_nospl(&held_chain->lock);
+				held_chain = NULL;
+			}
+		} else if (held_chain != need) {
+			if (held_chain != NULL) {
+				ke_spinlock_exit_nospl(&held_chain->lock);
+				held_chain = NULL;
+			}
+			if (!ke_spinlock_tryenter_nospl(&need->lock))
+				goto restart;
+			held_chain = need;
+		}
+
+		if (thread->waiting_on != obj)
+			goto restart;
+
+		ts = thread->turnstile;
+		owner = ts->owner;
+		if (owner == NULL)
+			break;
+
+		if (owner == curthread)
+			kfatal("deadlock detected: cycle in blocking chain");
+
+		/*
+		 * non-trylock should be fine since the thread->lock then
+		 * chain->lock case has to use tryenter on the chain.
+		 */
+		ke_spinlock_enter_nospl(&owner->lock);
+
+		if (!boost(ts, owner, donate)) {
+			/* owner already >= donate, no further PI to do. */
+			ke_spinlock_exit_nospl(&owner->lock);
+			break;
+		}
+
+		ke_spinlock_exit_nospl(&thread->lock);
+
+		if (held_chain != NULL) {
+			ke_spinlock_exit_nospl(&held_chain->lock);
+			held_chain = NULL;
+		}
+
+		thread = owner; /* owner->lock still held */
+	}
+
+	if (held_chain != NULL)
+		ke_spinlock_exit_nospl(&held_chain->lock);
+
+	if (thread != curthread) {
+		ke_spinlock_exit_nospl(&thread->lock);
+		ke_spinlock_enter_nospl(&curthread->lock);
+	}
+}
+
+static void
+revoke_priority(kturnstile_t *ts)
+{
+	kthread_t *inheritor = ts->inheritor;
+	kpri_t new_ipri;
+	kturnstile_t *it;
+
+	kassert(inheritor != NULL);
+	ke_spinlock_enter_nospl(&inheritor->lock);
+
+	SLIST_REMOVE(&inheritor->pi_head, ts, kturnstile, pi_link);
+
+	ts->inheritor = NULL;
+	ts->pri = 0;
+
+	new_ipri = 0;
+	SLIST_FOREACH(it, &inheritor->pi_head, pi_link)
+		if (it->pri > new_ipri)
+			new_ipri = it->pri;
+	ke_thread_set_ipri_locked(inheritor, new_ipri);
+
+	ke_spinlock_exit_nospl(&inheritor->lock);
 }
 
 void
@@ -88,8 +218,10 @@ ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 		}
 		ts->obj = obj;
 		ts->inheritor = NULL;
+		ts->owner = owner;
 		LIST_INSERT_HEAD(&chain->list, ts, hash_link);
 	} else {
+		kassert(ts->owner == owner);
 		SLIST_INSERT_HEAD(&ts->freelist, thread->turnstile, free_link);
 		thread->turnstile = ts;
 	}
@@ -100,19 +232,11 @@ ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 	ts->nwaiters[writer]++;
 
 	thread->waiting_on = obj;
-	thread->sync_ops = ops;
-
 	ke_spinlock_enter_nospl(&thread->lock);
-	lend_priority(thread);
+	lend_priority(thread, chain);
 	ke_spinlock_exit_nospl(&chain->lock);
 	ke_dispatch();
 	splx(ipl);
-}
-
-static void
-revoke_priority(kturnstile_t *ts)
-{
-	/* todo */
 }
 
 static void
@@ -143,9 +267,27 @@ wake_waiter(kturnstile_t *ts, bool writer, struct kturnstile_waiter *wb)
 	ts->nwaiters[writer]--;
 
 	thread->waiting_on = NULL;
-	thread->sync_ops = NULL;
 
 	ke_event_set_signalled(&wb->event, true);
+}
+
+/* todo: a heap instead maybe? */
+static kpri_t
+max_waiter_pri(kturnstile_t *ts)
+{
+	kpri_t max = 0;
+	for (size_t q = 0; q < 2; q++) {
+		struct kturnstile_waiter *wb;
+		TAILQ_FOREACH(wb, &ts->waiters[q], qentry) {
+			kpri_t epri;
+			ke_spinlock_enter_nospl(&wb->thread->lock);
+			epri = ke_thread_epri_locked(wb->thread);
+			ke_spinlock_exit_nospl(&wb->thread->lock);
+			if (epri > max)
+				max = epri;
+		}
+	}
+	return max;
 }
 
 void
@@ -167,12 +309,25 @@ ke_turnstile_wakeup(kturnstile_t *ts, bool writer, int count,
 			kfatal("no such waiter on turnstile");
 
 		wake_waiter(ts, writer, wb);
+
+		ts->owner = newowner;
+
+		if ((ts->nwaiters[0] + ts->nwaiters[1]) > 0) {
+			kpri_t donate = max_waiter_pri(ts);
+			if (donate > 0) {
+				ke_spinlock_enter_nospl(&newowner->lock);
+				boost(ts, newowner, donate);
+				ke_spinlock_exit_nospl(&newowner->lock);
+			}
+		}
 	} else {
 		while (count-- > 0) {
 			wb = TAILQ_FIRST(&ts->waiters[writer]);
 			kassert(wb != NULL);
 			wake_waiter(ts, writer, wb);
 		}
+
+		ts->owner = NULL;
 	}
 
 	ke_spinlock_exit(&chain->lock, ipl);

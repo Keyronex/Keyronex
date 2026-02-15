@@ -42,6 +42,8 @@ proc_alloc_idle_thread(void)
 		kfatal("couldn't allocate idle turnstile");
 
 	thread->kthread.turnstile = ts;
+
+	return thread;
 }
 
 thread_t *
