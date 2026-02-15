@@ -152,6 +152,11 @@ void ke_rwlock_exit_write(krwlock_t *);
 void ke_rwlock_downgrade(krwlock_t *);
 bool ke_rwlock_tryupgrade(krwlock_t *);
 
+void ke_mutex_init(kmutex_t *);
+void ke_mutex_enter(kmutex_t *);
+void ke_mutex_exit(kmutex_t *);
+bool ke_mutex_tryenter(kmutex_t *);
+
 extern ktask_t *ke_task0;
 
 #endif /* ECX_KERN_KTASK_H */

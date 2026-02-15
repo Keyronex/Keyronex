@@ -11,6 +11,8 @@ kernel_sources += [
     'kern/init.c',
     'kern/intr.c',
     'kern/kwait.c',
+    'kern/mutex.c',
+    'kern/rwlock.c',
     'kern/thread.c',
     'kern/turnstil.c',
     'kern/xcall.c',
