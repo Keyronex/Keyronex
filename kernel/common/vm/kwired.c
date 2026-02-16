@@ -154,3 +154,57 @@ vm_kwired_free(void *ptr, size_t npages)
 	/* do nothing for now... */
 #endif
 }
+
+int
+vm_k_map_phys(vmem_addr_t *p_vaddr, paddr_t pa, size_t size,
+    vm_cache_mode_t mode)
+{
+	ipl_t ipl;
+	struct pte_cursor state;
+	pte_t *pte = NULL;
+	vmem_addr_t addr;
+	size_t npages;
+	int r;
+
+	npages = roundup2(size, PGSIZE) >> PGSHIFT;
+
+	ipl = ke_spinlock_enter(&kwired_lock);
+	r = vmem_xalloc(&kwired_arena, npages << PGSHIFT, 0, 0, 0, 0, 0, 0,
+	    &addr);
+	if (r != 0) {
+		/* vmem_xalloc should deal with this for us */
+		// kassert_dbg(!(flags & VM_NOFAIL));
+		ke_spinlock_exit(&kwired_lock, ipl);
+		return r;
+	}
+
+	ke_spinlock_enter_nospl(&proc0.vm_map->creation_lock);
+	ke_spinlock_enter_nospl(&proc0.vm_map->stealing_lock);
+
+	for (size_t i = 0; i < npages; i++) {
+		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
+			if (pte != NULL)
+				pmap_unwire_pte(proc0.vm_map, &vm_kwired_rs, &state);
+
+			r = pmap_wire_pte(proc0.vm_map, &vm_kwired_rs, &state,
+			    addr + (i << PGSHIFT), true);
+			kassert(r == 0);
+
+			pte = state.pte;
+		}
+
+		pmap_pte_hwleaf_create(pte, (pa >> PGSHIFT) + i, PMAP_L0,
+		    VM_READ | VM_WRITE, mode);
+		state.pages[0]->proctable.nonzero_ptes++;
+		state.pages[0]->proctable.noswap_ptes++;
+	}
+	pmap_unwire_pte(proc0.vm_map, &vm_kwired_rs, &state);
+
+	ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
+	ke_spinlock_exit_nospl(&proc0.vm_map->creation_lock);
+	ke_spinlock_exit(&kwired_lock, ipl);
+
+	*p_vaddr = addr;
+
+	return 0;
+}

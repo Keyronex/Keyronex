@@ -51,6 +51,8 @@ void *vm_kwired_alloc(size_t npages, vm_alloc_flags_t);
 void vm_kwired_free(void *addr, size_t npages);
 void vm_kwired_init(void);
 
+int vm_k_map_phys(vaddr_t *p_vaddr, paddr_t pa, size_t size, vm_cache_mode_t);
+
 void vm_kmap_init(void);
 
 vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,

@@ -57,8 +57,8 @@ static volatile uint64_t end_marker[] = LIMINE_REQUESTS_END_MARKER;
 
 proc_t proc0;
 thread_t thread0;
-
 static thread_t *init_thread;
+int kern_initlevel = 0;
 
 static void idle(void)
 {
@@ -190,6 +190,7 @@ _start(void)
 	ke_disp_global_init();
 	ke_platform_early_init();
 	global_constructors_init();
+	kern_initlevel = 1;
 #if !defined(__m68k__)
 	if (rsdp_request.response != NULL) {
 		void dk_acpi_early_init();

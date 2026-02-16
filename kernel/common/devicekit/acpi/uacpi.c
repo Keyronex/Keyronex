@@ -23,6 +23,7 @@
 extern __attribute__((section(".requests")))
 volatile struct limine_rsdp_request rsdp_request;
 
+extern int kern_initlevel;
 
 uacpi_status
 uacpi_kernel_get_rsdp(uacpi_phys_addr *out_rdsp_address)
@@ -93,15 +94,19 @@ uacpi_kernel_io_unmap(uacpi_handle handle)
 	kfatal("Implement me\n");
 }
 
+/* fixme */
+static bool
+vm_paddr_is_ram(paddr_t)
+{
+	return true;
+}
+
 void *
 uacpi_kernel_map(uacpi_phys_addr pa, uacpi_size len)
 {
-	return (void*)p2v(pa);
-#if 0
-#if 1 /* !defined(__amd64__) */ /* not everything is in hhdm */
-	if (kern_initlevel < 1)
+	if (kern_initlevel < 1) {
 		return (void *)p2v(pa);
-	else {
+	} else {
 		paddr_t paddr = rounddown2(pa, PGSIZE);
 		size_t offset = pa & (PGSIZE - 1);
 		size_t vsize = roundup2(offset + len, PGSIZE);
@@ -119,14 +124,8 @@ uacpi_kernel_map(uacpi_phys_addr pa, uacpi_size len)
 #endif
 		);
 		kassert(r == 0);
-		//kprintf("uacpi_kernel_map: pa=%p len=%zu; result=%p\n", pa, len,
-		//    vaddr);
 		return (void *)vaddr + offset;
 	}
-#else
-	return (void *)p2v(pa);
-#endif
-#endif
 }
 
 void
