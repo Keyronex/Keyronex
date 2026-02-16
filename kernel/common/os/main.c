@@ -109,6 +109,8 @@ smp_init(void)
 	}
 }
 
+static atomic_uint up_cpus = 1;
+
 #if !defined(__m68k__)
 static void
 ap_init(struct limine_mp_info *smpi)
@@ -116,6 +118,7 @@ ap_init(struct limine_mp_info *smpi)
 	ke_ap_init(smpi->extra_argument);
 	ke_platform_start_dispatching();
 	splx(IPL_0);
+	atomic_fetch_add_explicit(&up_cpus, 1, memory_order_release);
 	idle();
 }
 #endif
@@ -132,6 +135,9 @@ smp_start(void)
 		__atomic_store_n(&info->goto_address, ap_init,
 		    __ATOMIC_RELEASE);
 	}
+
+	while (atomic_load_explicit(&up_cpus, memory_order_acquire) != ke_ncpu)
+		;
 
 	kdprintf("smp_start: brought up %d CPUs\n", ke_ncpu);
 #endif
