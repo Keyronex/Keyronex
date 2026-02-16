@@ -44,5 +44,6 @@ void *kmem_mcalloc(size_t nmemb, size_t size);
 
 int kmem_vasprintf(char **strp, const char *fmt, va_list ap);
 int kmem_asprintf(char **str, const char *fmt, ...);
+void kmem_strfree(char *str);
 
 #endif /* ECX_KEYRONEX_KMEM_H */

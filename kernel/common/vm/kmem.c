@@ -565,11 +565,10 @@ kmem_asprintf(char **str, const char *fmt, ...)
 	return size;
 }
 
-void *
+void
 kmem_strfree(char *str)
 {
 	kmem_free(str, strlen(str) + 1);
-	return NULL;
 }
 
 static struct kmem_magazine *
