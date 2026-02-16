@@ -1,4 +1,7 @@
 kernel_sources += [
+    'devicekit/DKAxis.m',
+    'devicekit/DKDevice.m',
+    'devicekit/DKPROMNode.m',
     'devicekit/dk.m',
 
     'kern/callout.c',
@@ -89,10 +92,9 @@ uacpi_sources = files(
 if target_machine.cpu_family() != 'm68k'
     kernel_sources += [ uacpi_sources ]
     kernel_sources += files(
+        'devicekit/acpi/DKACPINode.m',
         'devicekit/acpi/DKACPIPlatformRoot.m',
         'devicekit/acpi/uacpi.c',
-        'devicekit/DKAxis.m',
-        'devicekit/DKDevice.m',
     )
     common_kernel_includes += include_directories('../../vendor/uacpi/include')
 endif

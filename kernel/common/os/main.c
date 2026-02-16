@@ -38,6 +38,10 @@ void ke_platform_early_init(void);
 /* vm/init.c */
 void vm_phys_init(void);
 
+/* DKACPIPlatformRoot.m */
+void dk_acpi_presmp_init(void);
+void dk_acpi_threaded_init(void);
+
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
@@ -146,6 +150,13 @@ smp_start(void)
 static void
 threaded_init(void *)
 {
+#if !defined(__m68k__)
+	if (rsdp_request.response != NULL)
+		dk_acpi_threaded_init();
+	else
+	 	kunreachable();
+#endif
+
 	kdprintf("Threaded init!\n");
 
 	while (true) {
@@ -193,8 +204,8 @@ _start(void)
 	kern_initlevel = 1;
 #if !defined(__m68k__)
 	if (rsdp_request.response != NULL) {
-		void dk_acpi_early_init();
-		dk_acpi_early_init();
+		void dk_acpi_presmp_init();
+		dk_acpi_presmp_init();
 	} else {
 		kfatal("no acpi!");
 	}

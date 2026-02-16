@@ -10,9 +10,9 @@
 #ifndef ECX_ACPI_DKACPIPLATFORMROOT_H
 #define ECX_ACPI_DKACPIPLATFORMROOT_H
 
-#include <devicekit/DKDevice.h>
+#include <devicekit/acpi/DKACPINode.h>
 
-@interface DKACPIPlatform : DKDevice
+@interface DKACPIPlatform : DKACPINode
 
 @end
 

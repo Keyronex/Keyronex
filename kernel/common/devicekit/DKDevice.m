@@ -39,7 +39,6 @@ DKLogAttach(DKDevice *child, DKDevice *parent)
 
 @implementation DKDevice
 
-
 - (const char *)name
 {
 	return m_name;
