@@ -98,6 +98,9 @@ if target_machine.cpu_family() != 'm68k'
         'devicekit/pci/DKPCIBridge.m',
         'devicekit/pci/DKPCIDevice.m',
         'devicekit/pci/pci.c',
+        'devicekit/virtio/DKVirtIOTransport.m',
+        'devicekit/virtio/VirtIO9pPort.m',
+        'devicekit/virtio/VirtIOPCITransport.m',
     )
     common_kernel_includes += include_directories('../../vendor/uacpi/include')
 endif

@@ -354,7 +354,7 @@ static kmutex_t match_list_lock;
 	__sync_synchronize();
 	*(volatile uint32_t *)vectorControlOffset = vectorControl;
 
-	return 0;
+	return vector;
 }
 
 #pragma region MSI
