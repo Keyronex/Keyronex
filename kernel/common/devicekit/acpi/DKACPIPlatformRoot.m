@@ -31,6 +31,11 @@ DKACPIPlatform *gPlatformRoot;
 
 @implementation DKACPIPlatform
 
++ (instancetype)root
+{
+	return gPlatformRoot;
+}
+
 - (instancetype)init
 {
 	kassert(uacpi_initialize(0) == UACPI_STATUS_OK);

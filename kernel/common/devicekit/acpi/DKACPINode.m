@@ -7,18 +7,20 @@
  * @brief ACPI node implementation.
  */
 
+#include <keyronex/dlog.h>
 #include <keyronex/intr.h>
 #include <keyronex/kmem.h>
 
 #include <libkern/lib.h>
 
 #include <devicekit/acpi/DKACPINode.h>
+#include <devicekit/acpi/DKACPIPlatformRoot.h>
+#include <devicekit/pci/DKPCIBridge.h>
 #include <devicekit/DKAxis.h>
 
 #include <uacpi/namespace.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
-#include "keyronex/dlog.h"
 
 #define PCI_ROOT_PNP_ID "PNP0A03"
 #define PCI_EXPRESS_ROOT_PNP_ID "PNP0A08"
@@ -130,7 +132,6 @@ iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32 depth)
 		PCI_EXPRESS_ROOT_PNP_ID, UACPI_NULL };
 
 	if (uacpi_device_matches_pnp_id(m_nsNode, pci_root_ids)) {
-#if 0
 		DKPCIRootBridge *bridge;
 		uint64_t seg = 0, bus = 0;
 		int r;
@@ -148,7 +149,6 @@ iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32 depth)
 							 promNode:self];
 		[[DKACPIPlatform root] attachChild:bridge onAxis:gDeviceAxis];
 		[bridge start];
-#endif
 	}
 
 	for (DKACPINode *node in [gACPIAxis childrenOf:self])

@@ -14,6 +14,8 @@
 
 @interface DKACPIPlatform : DKACPINode
 
++ (instancetype)root;
+
 @end
 
 #endif /* ECX_ACPI_DKACPIPLATFORMROOT_H */

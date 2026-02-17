@@ -10,8 +10,8 @@
 #ifndef ECX_DEVICEKIT_DKPROMNODE_H
 #define ECX_DEVICEKIT_DKPROMNODE_H
 
+#include <devicekit/pci/DKPCIDevice.h>
 #include <devicekit/DKDevice.h>
-#include <devicekit/DKPCIDevice.h>
 
 @interface DKPROMNode : DKDevice
 

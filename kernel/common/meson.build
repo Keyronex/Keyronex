@@ -95,6 +95,9 @@ if target_machine.cpu_family() != 'm68k'
         'devicekit/acpi/DKACPINode.m',
         'devicekit/acpi/DKACPIPlatformRoot.m',
         'devicekit/acpi/uacpi.c',
+        'devicekit/pci/DKPCIBridge.m',
+        'devicekit/pci/DKPCIDevice.m',
+        'devicekit/pci/pci.c',
     )
     common_kernel_includes += include_directories('../../vendor/uacpi/include')
 endif
