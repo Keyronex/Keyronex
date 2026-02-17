@@ -12,6 +12,7 @@
 
 #include <keyronex/atomic.h>
 #include <keyronex/ipl_arch.h>
+#include <keyronex/ktypes.h>
 
 #include <libkern/queue.h>
 
@@ -30,6 +31,19 @@ typedef struct kdpc {
 	void (*handler)(void *, void *);
 	void *arg1, *arg2;
 } kdpc_t;
+
+typedef struct kirq_source {
+	uint32_t source;
+	bool low_polarity;
+	bool edge;
+} kirq_source_t;
+
+typedef struct kirq {
+	kirq_source_t source;
+	LIST_ENTRY(kirq) list_entry;
+	kcpunum_t cpu;
+	uint32_t vector;
+} kirq_t;
 
 ipl_t ke_ipl(void);
 ipl_t splraise(ipl_t);

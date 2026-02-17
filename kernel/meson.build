@@ -39,6 +39,8 @@ if not headers_only_option
     ]
 
     if (target_machine.cpu_family() == 'x86_64')
+        platforms = [ 'x86pc' ]
+
         common_kernel_args += [
             '-mno-80387',
             '-mno-mmx',
@@ -84,4 +86,7 @@ common_kernel_includes = [include_directories('../vendor')]
 kernel_sources = []
 
 subdir(cpu)
+foreach platform: platforms
+    subdir(platform)
+endforeach
 subdir('common')

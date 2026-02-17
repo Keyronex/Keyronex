@@ -199,6 +199,7 @@ _start(void)
 	proc_init();
 	smp_init();
 	ke_disp_global_init();
+	kmem_postsmp_init();
 	ke_platform_early_init();
 	global_constructors_init();
 	kern_initlevel = 1;

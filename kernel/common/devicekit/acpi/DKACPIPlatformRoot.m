@@ -7,15 +7,16 @@
  * @brief ACPI platform root device implementation.
  */
 
+#include <keyronex/dlog.h>
+
 #include <devicekit/DKAxis.h>
 #include <devicekit/acpi/DKACPINode.h>
 #include <devicekit/acpi/DKACPIPlatformRoot.h>
 
-#include <keyronex/dlog.h>
-
+#include <uacpi/acpi.h>
+#include <uacpi/tables.h>
 #include <uacpi/uacpi.h>
 #include <uacpi/utilities.h>
-
 
 @interface DKACPINode ()
 + (void)drainStartDevicesQueue;
@@ -49,12 +50,43 @@ DKACPIPlatform *gPlatformRoot;
 	return self;
 }
 
+- (void)handleMADTEntry:(struct acpi_entry_hdr *)item
+{
+	kfatal("subclass responsibility");
+}
+
+- (void)iterateMADT
+{
+	struct acpi_entry_hdr *entry;
+	struct acpi_madt *madt;
+	uint8_t *madt_lim;
+	uacpi_table madt_table;
+	int r;
+
+	r = uacpi_table_find_by_signature(ACPI_MADT_SIGNATURE, &madt_table);
+	if (r != UACPI_STATUS_OK)
+		kfatal("Failed to find MADT: %d\n", r);
+
+	madt = madt_table.ptr;
+	madt_lim = ((uint8_t *)madt) + madt->hdr.length;
+
+	for (uint8_t *elem = (uint8_t *)madt->entries; elem < madt_lim;
+	    elem += entry->length) {
+		entry = (struct acpi_entry_hdr *)elem;
+		[self handleMADTEntry:entry];
+	}
+
+	uacpi_table_unref(&madt_table);
+}
+
 - (void)start
 {
 	[super start];
 	[DKDevice drainStartQueue];
+	[self iterateMADT];
 	[self startDevices];
 	[DKACPINode drainStartDevicesQueue];
+	[DKDevice drainStartQueue];
 }
 
 @end
@@ -69,4 +101,5 @@ void
 dk_acpi_threaded_init(void)
 {
 	[gPlatformRoot start];
+	[gDeviceAxis printSubtreeOfDevice:gPlatformRoot];
 }
