@@ -168,8 +168,8 @@ DKAxis *gACPIAxis;
 - (int)handleSource:(struct kirq_source *)source
 	withHandler:(kirq_handler_t *)handler
 	   argument:(void *)arg
-	  irqObject:(kirq_t *)object
 	 atPriority:(ipl_t *)ipl
+	  irqObject:(out kirq_t *)object;
 {
 	kfatal("subclass responsibility");
 }

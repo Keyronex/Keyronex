@@ -15,6 +15,7 @@
 #include <devicekit/pci/DKPCIBridge.h>
 #include <devicekit/DKAxis.h>
 #include <devicekit/DKPROMNode.h>
+#include <devicekit/DKPlatformRoot.h>
 
 #define UNPACK_ADDRESS(addr) \
 	(addr).segment, (addr).bus, (addr).slot, (addr).function
@@ -177,18 +178,15 @@ static kmutex_t match_list_lock;
 	[self setCommandFlag:0x400 enabled:!enabled];
 }
 
-- (kirq_source_t)interruptSource
+- (kirq_source_t)intxIrqSource
 {
 	kirq_source_t source;
 
-#if 0
 	[gPlatformRoot routePCIPin:[self configRead8:kInterruptPin]
 			 forBridge:m_bridge
 			      slot:m_address.slot
 			  function:m_address.function
 			      into:&source];
-#endif
-	kfatal("implement me");
 
 	return source;
 }

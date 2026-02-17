@@ -38,14 +38,14 @@ typedef struct kirq_source {
 	bool edge;
 } kirq_source_t;
 
-typedef bool(*kirq_handler_t)(void*);
+typedef bool (kirq_handler_t)(void *);
 
 typedef struct kirq {
 	kirq_source_t source;
 	LIST_ENTRY(kirq) list_entry;
 	kcpunum_t cpu;
 	uint32_t vector;
-	kirq_handler_t handler;
+	kirq_handler_t *handler;
 	void *arg;
 } kirq_t;
 

@@ -39,11 +39,11 @@ struct isa_intr_override {
  *
  * @returns 0 if handler installed successfully
  */
-+ (int)handleSource:(struct kirq_source *)source
+- (int)handleSource:(struct kirq_source *)source
 	withHandler:(kirq_handler_t *)handler
 	   argument:(void *)arg
-	  irqObject:(kirq_t *)object
-	 atPriority:(ipl_t *)ipl;
+	 atPriority:(ipl_t *)ipl
+	  irqObject:(out kirq_t *)object;
 
 - initWithId:(uint32_t)id address:(paddr_t)paddr gsiBase:(uint32_t)gsiBase;
 

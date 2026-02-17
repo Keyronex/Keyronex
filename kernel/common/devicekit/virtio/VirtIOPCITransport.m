@@ -7,18 +7,18 @@
  * @brief VirtIO transport for PCI
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/krx_endian.h>
-#include <keyronex/intr.h>
-
+#include <devicekit/DKAxis.h>
+#include <devicekit/pci/DKPCIDevice.h>
 #include <devicekit/virtio/DKVirtIOTransport.h>
 #include <devicekit/virtio/virtio_pcireg.h>
 #include <devicekit/virtio/virtioreg.h>
-#include <devicekit/pci/DKPCIDevice.h>
-#include <devicekit/DKAxis.h>
-
+#include <keyronex/dlog.h>
+#include <keyronex/intr.h>
+#include <keyronex/kmem.h>
+#include <keyronex/krx_endian.h>
 #include <libkern/lib.h>
+
+#include "devicekit/DKPlatformRoot.h"
 
 @interface VirtIOPCITransport : DKVirtIOTransport <DKPCIDeviceMatching> {
     @public
@@ -29,9 +29,7 @@
 	volatile void *m_devCfg;
 	vaddr_t m_notify;
 	size_t m_notifyOffMultiplier;
-#if 0
-	struct intr_entry m_intxEntry;
-#endif
+	kirq_t m_intxIrq;
 	kdpc_t m_dpc;
 
 	virtio_queue_t **m_queues;
@@ -40,6 +38,7 @@
 
 @end
 
+static bool intx_handler(void *);
 static void dpc_handler(void *, void *);
 
 @implementation VirtIOPCITransport
@@ -74,26 +73,23 @@ static void dpc_handler(void *, void *);
 {
 	int r;
 	kirq_source_t source;
+	ipl_t ipl = IPL_HIGH;
 
-#if 0
-	source = [m_pciDevice interruptSource];
-#endif
+	source = [m_pciDevice intxIrqSource];
 
 	m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
 
-#if 0
-	r = [[gPlatformRoot platformInterruptController]
-	    handleSource:&source
-	     withHandler:intx_handler
-		argument:self
-	      atPriority:kIPLDevice
-		   entry:&m_intxEntry];
+	r = [gPlatformRoot handleSource:&source
+			    withHandler:intx_handler
+			       argument:self
+			     atPriority:&ipl
+			      irqObject:&m_intxIrq];
 	if (r < 0) {
-		DKDevLog(self, "Failed to allocate interrupt handler: %d\n", r);
+		kdprintf("virtio: failed to allocate interrupt handler: %d\n",
+		    r);
 		return r;
 	}
-#endif
 
 	m_commonCfg->device_status = VIRTIO_CONFIG_DEVICE_STATUS_DRIVER_OK;
 	__sync_synchronize();
@@ -109,13 +105,12 @@ static void dpc_handler(void *, void *);
 	uint64_t negotiatedOptional = 0;
 
 	for (int i = 0; i < 2; i++) {
-		uint32_t mandatoryFeaturesPart = mandatory >> (i * 32);
-		uint32_t optionalFeaturesPart = optional == NULL ?
+		uint32_t mandatoryPart = mandatory >> (i * 32);
+		uint32_t optionalPart = optional == NULL ?
 		    0 :
 		    (*optional >> (i * 32));
-		uint32_t requiredFeaturesPart = mandatoryFeaturesPart |
-		    optionalFeaturesPart;
-		uint32_t negotiatedFeaturesPart;
+		uint32_t selectPart = mandatoryPart | optionalPart;
+		uint32_t negotiatedPart;
 		uint32_t deviceFeatures;
 
 		m_commonCfg->device_feature_select = to_leu32(i);
@@ -123,22 +118,20 @@ static void dpc_handler(void *, void *);
 
 		deviceFeatures = from_leu32(m_commonCfg->device_feature);
 
-		if ((deviceFeatures & mandatoryFeaturesPart) !=
-		    mandatoryFeaturesPart) {
+		if ((deviceFeatures & mandatoryPart) != mandatoryPart) {
 			kdprintf("Unsupported mandatory features (dword %d): "
-				"%x VS %x\n",
-			    i, deviceFeatures, mandatoryFeaturesPart);
+				 "%x VS %x\n",
+			    i, deviceFeatures, mandatoryPart);
 			return false;
 		}
 
-		negotiatedFeaturesPart = deviceFeatures & requiredFeaturesPart;
-		negotiatedOptional |= ((uint64_t)negotiatedFeaturesPart
-		    << (i * 32));
+		negotiatedPart = deviceFeatures & selectPart;
+		negotiatedOptional |= ((uint64_t)negotiatedPart << (i * 32));
 
 		m_commonCfg->guest_feature_select = to_leu32(i);
 		__sync_synchronize();
 
-		m_commonCfg->guest_feature = to_leu32(negotiatedFeaturesPart);
+		m_commonCfg->guest_feature = to_leu32(negotiatedPart);
 		__sync_synchronize();
 	}
 

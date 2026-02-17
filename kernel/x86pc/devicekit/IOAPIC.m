@@ -103,11 +103,11 @@ ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol, bool edge)
 	return self;
 }
 
-- (int)handleSource:(struct kirq_source *)source
++ (int)handleSource:(struct kirq_source *)source
 	withHandler:(kirq_handler_t *)handler
 	   argument:(void *)arg
-	  irqObject:(kirq_t *)object
-	 atPriority:(ipl_t *)ipl;
+	 atPriority:(ipl_t *)ipl
+	  irqObject:(out kirq_t *)object;
 {
 	IOApic *ioapic;
 	uint8_t gsi = source->source;

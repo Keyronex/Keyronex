@@ -18,7 +18,7 @@
 
 @protocol DKPlatformRoot
 
-- (int)routePCIPin:(uint8_t)pin
+- (void)routePCIPin:(uint8_t)pin
 	 forBridge:(DKPCIBridge *)bridge
 	      slot:(uint8_t)slot
 	  function:(uint8_t)fun
@@ -27,8 +27,8 @@
 - (int)handleSource:(struct kirq_source *)source
 	withHandler:(kirq_handler_t *)handler
 	   argument:(void *)arg
-	  irqObject:(kirq_t *)object
-	 atPriority:(ipl_t *)ipl;
+	 atPriority:(ipl_t *)ipl
+	  irqObject:(out kirq_t *)object;
 
 @end
 
