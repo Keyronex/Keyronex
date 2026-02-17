@@ -30,7 +30,24 @@ if [ -z "${ARCH}" ]; then
     ARCH="amd64"
 fi
 
-if [ -z "${virtio_net}" ]; then
+v9p_root="build/${ARCH}/system-root"
+
+if [ "${ARCH}" = "m68k" ]; then
+	virtio_9p_arg="-device virtio-9p-device,fsdev=sysroot,mount_tag=sysroot"
+elif [ "${ARCH}" = "amd64" ]; then
+	virtio_9p_arg="-device pci-bridge,id=bridge0,chassis_nr=1 \
+	    -device virtio-9p-pci,id=pci9p,bus=bridge0,fsdev=sysroot,mount_tag=sysroot"
+else
+	virtio_9p_arg="-device virtio-9p-pci,fsdev=sysroot,mount_tag=sysroot"
+fi
+
+virtio_9p_arg="${virtio_9p_arg} -fsdev local,id=sysroot,security_model=none,path=${v9p_root}"
+
+if [ "$virtio_9p" = "1" ]; then
+	qemu_args="${qemu_args} ${virtio_9p_arg}"
+fi
+
+if [ -z "${cores}" ]; then
 	cores=4
 fi
 

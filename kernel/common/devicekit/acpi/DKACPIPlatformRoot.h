@@ -11,8 +11,9 @@
 #define ECX_ACPI_DKACPIPLATFORMROOT_H
 
 #include <devicekit/acpi/DKACPINode.h>
+#include <devicekit/DKPlatformRoot.h>
 
-@interface DKACPIPlatform : DKACPINode
+@interface DKACPIPlatform : DKACPINode <DKPlatformRoot>
 
 + (instancetype)root;
 

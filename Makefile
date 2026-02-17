@@ -76,7 +76,7 @@ build-core: ${BUILD_SETUP_TARGET}
 build-all: do-build iso
 
 run:
-	tools/run.sh -a $(ARCH)
+	tools/run.sh -a $(ARCH) -9
 
 debug:
 	$(GDB) -x tools/gdbinit-$(ARCH)

@@ -375,6 +375,11 @@ static void dpc_handler(void *, void *);
 	m_delegate = nil;
 
 	switch ([m_pciDevice configRead16:kDeviceID]) {
+	case 0x1000:
+	case 0x1040 + VIRTIO_DEVICE_ID_NETWORK:
+		kdprintf("Nic (not implemented)\n");
+		break;
+
 	case 0x1001:
 	case 0x1040 + VIRTIO_DEVICE_ID_BLOCK:
 		kdprintf("Block\n");

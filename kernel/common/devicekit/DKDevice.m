@@ -12,12 +12,11 @@
 
 #include <devicekit/DKAxis.h>
 #include <devicekit/DKDevice.h>
+#include <devicekit/DKPlatformRoot.h>
 
 kspinlock_t gStartQueueLock;
 dk_device_queue_t gStartQueue = TAILQ_HEAD_INITIALIZER(gStartQueue);
-#if 0
 DKDevice<DKPlatformRoot> *gPlatformRoot;
-#endif
 
 void
 DKLogAttach(DKDevice *child, DKDevice *parent)
