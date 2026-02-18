@@ -7,11 +7,11 @@
  * @brief m68k interrupt handling.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/cpulocal.h>
-#include <keyronex/dlog.h>
-#include <keyronex/pcb.h>
-#include <keyronex/ktask.h>
+#include <sys/k_cpu.h>
+#include <sys/cpulocal.h>
+#include <sys/k_log.h>
+#include <sys/pcb.h>
+#include <sys/k_thread.h>
 
 #include "goldfish.h"
 

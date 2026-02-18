@@ -7,8 +7,8 @@
  * @brief PCI bridge class implementations.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
 
 #include <devicekit/pci/DKPCIBridge.h>
 #include <devicekit/DKAxis.h>

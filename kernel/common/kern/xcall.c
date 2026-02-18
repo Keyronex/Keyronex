@@ -7,8 +7,8 @@
  * @brief Cross-processor call handling.
  */
 
-#include <keyronex/cpulocal.h>
-#include <keyronex/cpu.h>
+#include <sys/cpulocal.h>
+#include <sys/k_cpu.h>
 
 #define UINTPTR_BITS (sizeof(uintptr_t) * 8)
 

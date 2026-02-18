@@ -10,10 +10,10 @@
 #ifndef ECX_VM_MAP_H
 #define ECX_VM_MAP_H
 
-#include <keyronex/ktask.h>
-#include <keyronex/tree.h>
-#include <keyronex/vmem_impl.h>
-#include <keyronex/vm.h>
+#include <sys/k_thread.h>
+#include <sys/tree.h>
+#include <sys/vmem_impl.h>
+#include <sys/vm.h>
 
 #include "vm/page.h"
 

@@ -7,9 +7,9 @@
  * @brief PCI device.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/ktask.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+#include <sys/k_thread.h>
 
 #include <devicekit/pci/DKPCIDevice.h>
 #include <devicekit/pci/DKPCIBridge.h>

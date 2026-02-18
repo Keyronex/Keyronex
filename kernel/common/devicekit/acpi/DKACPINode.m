@@ -7,9 +7,9 @@
  * @brief ACPI node implementation.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
-#include <keyronex/kmem.h>
+#include <sys/k_log.h>
+#include <sys/k_intr.h>
+#include <sys/kmem.h>
 
 #include <libkern/lib.h>
 

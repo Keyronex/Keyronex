@@ -7,12 +7,12 @@
  * @brief Thread dispatcher.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
-#include <keyronex/ktask.h>
-#include <keyronex/limine.h>
-#include <keyronex/xcall.h>
+#include <sys/k_cpu.h>
+#include <sys/k_intr.h>
+#include <sys/k_log.h>
+#include <sys/k_thread.h>
+#include <sys/k_xcall.h>
+#include <sys/limine.h>
 
 #include <libkern/lib.h>
 #include <libkern/queue.h>

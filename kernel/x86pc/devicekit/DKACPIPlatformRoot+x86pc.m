@@ -7,7 +7,7 @@
  * @brief DKACPIPlatformRoot category for x86pc.
  */
 
-#include <keyronex/dlog.h>
+#include <sys/k_log.h>
 
 #include <devicekit/acpi/DKACPIPlatformRoot.h>
 #include <devicekit/DKAxis.h>

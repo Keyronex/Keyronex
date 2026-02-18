@@ -10,7 +10,7 @@
 #ifndef ECX_KDK_VMEM_H
 #define ECX_KDK_VMEM_H
 
-#include <keyronex/vm.h>
+#include <sys/vm.h>
 
 #include <stddef.h>
 #include <stdint.h>

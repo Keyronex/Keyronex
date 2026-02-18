@@ -35,7 +35,7 @@
 #include <stdint.h>
 
 #include <libkern/lib.h>
-#include <keyronex/kmem.h>
+#include <sys/kmem.h>
 
 #define malloc kmem_malloc
 #define free kmem_mfree

@@ -7,7 +7,7 @@
  * @brief Arch dependencies for m68k.
  */
 
-#include <keyronex/cpu.h>
+#include <sys/k_cpu.h>
 
 void
 ke_arch_pause(void)

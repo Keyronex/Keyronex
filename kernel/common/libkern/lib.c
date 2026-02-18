@@ -7,7 +7,7 @@
  * @brief Kernel waitable objects.
  */
 
-#include <keyronex/dlog.h>
+#include <sys/k_log.h>
 
 #include <libkern/lib.h>
 

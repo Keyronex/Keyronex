@@ -7,13 +7,13 @@
  * @brief Kernel wired memory allocator.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
-#include <keyronex/pmap.h>
-#include <keyronex/proc.h>
-#include <keyronex/vm.h>
-#include <keyronex/vmem.h>
-#include <keyronex/vmem_impl.h>
+#include <sys/k_log.h>
+#include <sys/k_intr.h>
+#include <sys/pmap.h>
+#include <sys/proc.h>
+#include <sys/vm.h>
+#include <sys/vmem.h>
+#include <sys/vmem_impl.h>
 
 #include <libkern/lib.h>
 

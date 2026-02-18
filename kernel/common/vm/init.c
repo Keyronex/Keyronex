@@ -7,12 +7,12 @@
  * @brief Virtual memory initialisation.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/ktypes.h>
-#include <keyronex/limine.h>
-#include <keyronex/pmap.h>
-#include <keyronex/proc.h>
-#include <keyronex/vm.h>
+#include <sys/k_log.h>
+#include <sys/k_types.h>
+#include <sys/limine.h>
+#include <sys/pmap.h>
+#include <sys/proc.h>
+#include <sys/vm.h>
 
 #include <libkern/lib.h>
 

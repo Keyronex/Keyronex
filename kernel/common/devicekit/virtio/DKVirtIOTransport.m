@@ -7,7 +7,7 @@
  * @brief VirtIO transport abstract class.
  */
 
-#include <keyronex/dlog.h>
+#include <sys/k_log.h>
 
 #include <devicekit/virtio/DKVirtIOTransport.h>
 

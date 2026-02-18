@@ -12,7 +12,7 @@
 #ifndef ECX_KEYRONEX_PMAP_H
 #define ECX_KEYRONEX_PMAP_H
 
-#include <keyronex/pmap_arch.h>
+#include <sys/pmap_arch.h>
 #include <vm/page.h>
 
 struct vm_map;

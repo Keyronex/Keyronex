@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Cloudarox Solutions.
  */
 /*!
- * @file kwait.h
+ * @file k_wait.h
  * @brief Kernel waitable objects.
  */
 
@@ -12,8 +12,8 @@
 
 #include <libkern/queue.h>
 
-#include <keyronex/intr.h>
-#include <keyronex/ktypes.h>
+#include <sys/k_intr.h>
+#include <sys/k_types.h>
 
 TAILQ_HEAD(kwaitblock_queue, kwaitblock);
 

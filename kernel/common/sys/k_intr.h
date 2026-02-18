@@ -10,9 +10,9 @@
 #ifndef ECX_KERN_INTR_H
 #define ECX_KERN_INTR_H
 
-#include <keyronex/atomic.h>
-#include <keyronex/ipl_arch.h>
-#include <keyronex/ktypes.h>
+#include <sys/krx_atomic.h>
+#include <sys/ipl_arch.h>
+#include <sys/k_types.h>
 
 #include <libkern/queue.h>
 

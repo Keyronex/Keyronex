@@ -7,8 +7,8 @@
  * @brief Physical mapping code.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/pmap.h>
+#include <sys/k_log.h>
+#include <sys/pmap.h>
 
 #include <libkern/lib.h>
 

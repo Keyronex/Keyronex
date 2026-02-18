@@ -17,7 +17,7 @@
  * <https://www.gnu.org/licenses/>.
  */
 
-#include <keyronex/kmem.h>
+#include <sys/kmem.h>
 
 #include "config.h"
 

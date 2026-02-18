@@ -67,17 +67,16 @@
  * @brief Implementation of the VMem resource allocator.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/vmem.h>
-#include <keyronex/vmem_impl.h>
+#include <sys/errno.h>
+#include <sys/k_log.h>
+#include <sys/k_types.h>
+#include <sys/kmem.h>
+#include <sys/vmem.h>
+#include <sys/vmem_impl.h>
 
 #include <libkern/lib.h>
 
-#include <sys/errno.h>
-
 #include <limits.h>
-#include "keyronex/ktypes.h"
 
 static const char *vmem_seg_type_str[] = {
 	[kVMemSegFree] = " free",

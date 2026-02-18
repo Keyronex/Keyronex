@@ -7,9 +7,9 @@
  * @brief Kernel waitable objects.
  */
 
-#include <keyronex/kwait.h>
-#include <keyronex/ktask.h>
-#include <keyronex/dlog.h>
+#include <sys/k_wait.h>
+#include <sys/k_thread.h>
+#include <sys/k_log.h>
 
 #include <sys/errno.h>
 

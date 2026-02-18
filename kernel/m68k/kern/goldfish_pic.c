@@ -7,7 +7,7 @@
  * @brief Goldfish interrupt controller.
  */
 
-#include <keyronex/dlog.h>
+#include <sys/k_log.h>
 
 #include <stdint.h>
 

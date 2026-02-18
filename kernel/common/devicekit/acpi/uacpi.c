@@ -7,12 +7,14 @@
  * @brief uACPI dependencies.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/cpu.h>
-#include <keyronex/kmem.h>
-#include <keyronex/ktask.h>
-#include <keyronex/limine.h>
-#include <keyronex/vm.h>
+#include <sys/k_log.h>
+#include <sys/k_cpu.h>
+#include <sys/kmem.h>
+#include <sys/k_thread.h>
+#include <sys/limine.h>
+#include <sys/vm.h>
+
+#include <libkern/lib.h>
 
 #include <uacpi/kernel_api.h>
 

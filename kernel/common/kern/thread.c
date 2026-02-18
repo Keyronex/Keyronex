@@ -7,9 +7,9 @@
  * @brief Kernel threads.
  */
 
-#include <keyronex/intr.h>
-#include <keyronex/ktask.h>
-#include <keyronex/kwait.h>
+#include <sys/k_intr.h>
+#include <sys/k_thread.h>
+#include <sys/k_wait.h>
 
 #include <sched.h>
 

@@ -7,8 +7,8 @@
  * @brief Kernel initialisation.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/ktask.h>
+#include <sys/k_cpu.h>
+#include <sys/k_thread.h>
 
 void kep_arch_set_tp(void *);
 void kep_arch_set_vbase(bool isbsp);

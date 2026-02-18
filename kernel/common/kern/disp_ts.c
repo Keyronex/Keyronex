@@ -7,9 +7,9 @@
  * @brief Timesharing thread scheduling class.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/ktask.h>
-#include <keyronex/dlog.h>
+#include <sys/k_cpu.h>
+#include <sys/k_thread.h>
+#include <sys/k_log.h>
 
 struct ts_prio_info {
 	uint8_t quantum;

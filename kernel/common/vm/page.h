@@ -10,9 +10,9 @@
 #ifndef ECX_VM_PAGE_H
 #define ECX_VM_PAGE_H
 
-#include <keyronex/intr.h>
-#include <keyronex/vm_types.h>
-#include <keyronex/vm.h>
+#include <sys/k_intr.h>
+#include <sys/vm_types.h>
+#include <sys/vm.h>
 
 #include <libkern/queue.h>
 

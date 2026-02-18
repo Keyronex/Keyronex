@@ -10,7 +10,7 @@
 #ifndef ECX_KEYRONEX_XCALL_H
 #define ECX_KEYRONEX_XCALL_H
 
-#include <keyronex/ktypes.h>
+#include <sys/k_types.h>
 
 void ke_xcall_broadcast(void (*func)(void *), void *arg);
 void ke_xcall_unicast(void (*func)(void *), void *arg, kcpunum_t cpu_num);

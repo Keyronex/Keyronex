@@ -12,10 +12,10 @@
 #include <devicekit/virtio/DKVirtIOTransport.h>
 #include <devicekit/virtio/virtio_pcireg.h>
 #include <devicekit/virtio/virtioreg.h>
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
-#include <keyronex/kmem.h>
-#include <keyronex/krx_endian.h>
+#include <sys/k_log.h>
+#include <sys/k_intr.h>
+#include <sys/kmem.h>
+#include <sys/krx_endian.h>
 #include <libkern/lib.h>
 
 #include "devicekit/DKPlatformRoot.h"

@@ -7,7 +7,7 @@
  * @brief Kernel clock.
  */
 
-#include <keyronex/cpu.h>
+#include <sys/k_cpu.h>
 
 void kep_callout_hardclock();
 void kep_disp_hardclock(void);

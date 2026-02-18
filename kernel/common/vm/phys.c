@@ -7,9 +7,9 @@
  * @brief Physical memory management.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/ktypes.h>
-#include <keyronex/pmap.h>
+#include <sys/k_log.h>
+#include <sys/k_types.h>
+#include <sys/pmap.h>
 
 #include <libkern/lib.h>
 

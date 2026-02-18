@@ -7,9 +7,9 @@
  * @brief Generic interrupt handling related logic.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/intr.h>
-#include <keyronex/ktask.h>
+#include <sys/k_cpu.h>
+#include <sys/k_intr.h>
+#include <sys/k_thread.h>
 
 #include <stdatomic.h>
 

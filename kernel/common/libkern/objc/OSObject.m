@@ -7,8 +7,8 @@
  * @brief Implements OSObject - the libkern base class.
  */
 
-#include <keyronex/kmem.h>
-#include <keyronex/ktypes.h>
+#include <sys/kmem.h>
+#include <sys/k_types.h>
 
 #include <libkern/objc/OSObject.h>
 #include <libkern/lib.h>

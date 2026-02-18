@@ -10,7 +10,7 @@
 #ifndef ECX_KEYRONEX_VMEM_IMPL_H
 #define ECX_KEYRONEX_VMEM_IMPL_H
 
-#include <keyronex/vmem.h>
+#include <sys/vmem.h>
 
 #include <libkern/queue.h>
 

@@ -10,7 +10,7 @@
 #ifndef ECX_KEYRONEX_PROC_H
 #define ECX_KEYRONEX_PROC_H
 
-#include <keyronex/ktask.h>
+#include <sys/k_thread.h>
 
 typedef struct thread {
 	kthread_t kthread;

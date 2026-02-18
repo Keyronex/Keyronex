@@ -7,7 +7,7 @@
  * @brief Libkern dictionary class implementation.
  */
 
-#include <keyronex/kmem.h>
+#include <sys/kmem.h>
 
 #include <libkern/objc/OSDictionary.h>
 #include <libkern/objc/OSMapTable.h>

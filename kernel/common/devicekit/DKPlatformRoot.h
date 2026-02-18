@@ -10,7 +10,7 @@
 #ifndef ECX_DEVICEKIT_DKPLATFORMROOT_H
 #define ECX_DEVICEKIT_DKPLATFORMROOT_H
 
-#include <keyronex/intr.h>
+#include <sys/k_intr.h>
 #include <stdint.h>
 
 @class DKDevice;

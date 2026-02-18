@@ -3,8 +3,8 @@
  * Created on Mon Jan 27 2025.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
 
 #include <libkern/objc/OSMapTable.h>
 

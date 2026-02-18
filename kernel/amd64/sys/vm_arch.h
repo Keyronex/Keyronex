@@ -10,7 +10,7 @@
 #ifndef ECX_KEYRONEX_VM_ARCH_H
 #define ECX_KEYRONEX_VM_ARCH_H
 
-#include <keyronex/vm_types.h>
+#include <sys/vm_types.h>
 
 #include <stddef.h>
 

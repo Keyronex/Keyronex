@@ -7,12 +7,14 @@
  * @brief AMD64 interrupt handling.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
-#include <keyronex/ktask.h>
-#include <keyronex/pcb.h>
-#include <keyronex/x86.h>
+#include <sys/k_cpu.h>
+#include <sys/k_log.h>
+#include <sys/k_intr.h>
+#include <sys/k_thread.h>
+#include <sys/pcb.h>
+#include <sys/x86.h>
+
+#include <libkern/lib.h>
 
 #include "asm_intr.h"
 

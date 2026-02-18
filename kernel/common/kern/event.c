@@ -7,7 +7,7 @@
  * @brief Event kernel waitable object.
  */
 
-#include <keyronex/kwait.h>
+#include <sys/k_wait.h>
 
 void
 ke_event_init(kevent_t *ev, bool signalled)

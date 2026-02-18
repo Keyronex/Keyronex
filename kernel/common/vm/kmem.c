@@ -8,11 +8,11 @@
  * implementation.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/vm.h>
-#include <keyronex/ktypes.h>
+#include <sys/k_cpu.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+#include <sys/vm.h>
+#include <sys/k_types.h>
 
 #include <libkern/lib.h>
 #include <libkern/queue.h>

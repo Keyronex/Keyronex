@@ -7,12 +7,12 @@
  * @brief AMD64 thread.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/cpulocal.h>
-#include <keyronex/intr.h>
-#include <keyronex/ktask.h>
-#include <keyronex/pcb.h>
-#include <keyronex/x86.h>
+#include <sys/k_cpu.h>
+#include <sys/cpulocal.h>
+#include <sys/k_intr.h>
+#include <sys/k_thread.h>
+#include <sys/pcb.h>
+#include <sys/x86.h>
 
 void
 kep_arch_set_tp(void *addr)

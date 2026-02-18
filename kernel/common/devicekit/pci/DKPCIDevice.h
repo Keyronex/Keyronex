@@ -10,7 +10,7 @@
 #ifndef ECX_DEVICEKIT_DKPCIDEVICE_H
 #define ECX_DEVICEKIT_DKPCIDEVICE_H
 
-#include <keyronex/intr.h>
+#include <sys/k_intr.h>
 
 #if defined (__OBJC__)
 #include <devicekit/DKDevice.h>

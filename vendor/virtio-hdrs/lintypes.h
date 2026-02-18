@@ -1,7 +1,7 @@
 #ifndef KRX_DDK_LINTYPES_H
 #define KRX_DDK_LINTYPES_H
 
-#include <keyronex/krx_endian.h>
+#include <sys/krx_endian.h>
 
 typedef uint8_t __u8;
 typedef uint16_t __u16;

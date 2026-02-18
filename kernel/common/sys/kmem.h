@@ -14,7 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include <keyronex/vm.h>
+#include <sys/vm.h>
 
 typedef struct kmem_cache kmem_cache_t;
 

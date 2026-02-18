@@ -3,14 +3,14 @@
  * Copyright (c) 2026 Cloudarox Solutions.
  */
 /*!
- * @file kwait.h
+ * @file k_wait.h
  * @brief Types used in the kernel.
  */
 
 #ifndef ECX_KEYRONEX_KTYPES_H
 #define ECX_KEYRONEX_KTYPES_H
 
-#include <keyronex/atomic.h>
+#include <sys/krx_atomic.h>
 
 #include <stdint.h>
 

@@ -12,8 +12,8 @@
 
 #include <libkern/queue.h>
 
-#include <keyronex/cpu.h>
-#include <keyronex/pcb.h>
+#include <sys/k_cpu.h>
+#include <sys/pcb.h>
 
 struct limine_mp_info;
 

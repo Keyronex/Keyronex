@@ -7,8 +7,8 @@
  * @brief DeviceKit entry.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
 
 void abort(void)
 {

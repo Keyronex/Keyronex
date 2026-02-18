@@ -10,10 +10,10 @@
  * - adaptive spinning
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/ktask.h>
-#include <keyronex/kwait.h>
-#include <keyronex/intr.h>
+#include <sys/k_log.h>
+#include <sys/k_thread.h>
+#include <sys/k_wait.h>
+#include <sys/k_intr.h>
 
 #define MTX_LOCKED	0x1UL
 #define MTX_WAITERS	0x2UL

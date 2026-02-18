@@ -10,8 +10,8 @@
 #ifndef ECX_DEVICEKIT_IOAPIC_H
 #define ECX_DEVICEKIT_IOAPIC_H
 
-#include <keyronex/intr.h>
-#include <keyronex/vm_types.h>
+#include <sys/k_intr.h>
+#include <sys/vm_types.h>
 
 #include <devicekit/DKDevice.h>
 

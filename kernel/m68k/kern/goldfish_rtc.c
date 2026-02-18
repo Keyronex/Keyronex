@@ -7,8 +7,8 @@
  * @brief Goldfish real-time clock
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
+#include <sys/k_cpu.h>
+#include <sys/k_log.h>
 
 #include <stdint.h>
 

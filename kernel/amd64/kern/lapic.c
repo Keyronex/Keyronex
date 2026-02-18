@@ -7,10 +7,10 @@
  * @brief Local APIC functionality.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
-#include <keyronex/x86.h>
-#include <keyronex/vm.h>
+#include <sys/k_cpu.h>
+#include <sys/k_log.h>
+#include <sys/x86.h>
+#include <sys/vm.h>
 
 #include <asm/io.h>
 

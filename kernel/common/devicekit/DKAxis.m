@@ -7,9 +7,9 @@
  * @brief DeviceKit axis class implementation.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/ktask.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+#include <sys/k_thread.h>
 
 #include <devicekit/DKAxis.h>
 

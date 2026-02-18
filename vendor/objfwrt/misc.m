@@ -19,7 +19,7 @@
 
 #include "config.h"
 
-#include <keyronex/dlog.h>
+#include <sys/k_log.h>
 
 #include <stdarg.h>
 

@@ -7,10 +7,10 @@
  * @brief Callouts - waitable or DPC-queuing timers.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
-#include <keyronex/kwait.h>
+#include <sys/k_cpu.h>
+#include <sys/k_log.h>
+#include <sys/k_intr.h>
+#include <sys/k_wait.h>
 
 static void
 insert(kcallout_t *co, struct kcpu_callout *cc)

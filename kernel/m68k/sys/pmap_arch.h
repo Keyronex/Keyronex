@@ -10,8 +10,8 @@
 #ifndef ECX_KEYRONEX_PMAP_ARCH_H
 #define ECX_KEYRONEX_PMAP_ARCH_H
 
-#include <keyronex/vm_arch.h>
-#include <keyronex/dlog.h>
+#include <sys/vm_arch.h>
+#include <sys/k_log.h>
 
 #include <stdbool.h>
 #include <stdint.h>

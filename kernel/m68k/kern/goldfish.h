@@ -10,8 +10,8 @@
 #ifndef ECX_KERN_GOLDFISH_H
 #define ECX_KERN_GOLDFISH_H
 
-#include <keyronex/intr.h>
-#include <keyronex/pcb.h>
+#include <sys/k_intr.h>
+#include <sys/pcb.h>
 
 #include <stdint.h>
 #include <stdbool.h>

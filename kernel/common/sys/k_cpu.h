@@ -10,12 +10,10 @@
 #ifndef ECX_KERN_CPU_H
 #define ECX_KERN_CPU_H
 
-#include <keyronex/atomic.h>
-#include <keyronex/cpulocal.h>
-#include <keyronex/intr.h>
-#include <keyronex/kwait.h>
-
-#include <libkern/lib.h>
+#include <sys/krx_atomic.h>
+#include <sys/cpulocal.h>
+#include <sys/k_intr.h>
+#include <sys/k_wait.h>
 
 #include <stdint.h>
 

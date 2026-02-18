@@ -7,8 +7,8 @@
  * @brief Device base class implementation.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/intr.h>
+#include <sys/k_log.h>
+#include <sys/k_intr.h>
 
 #include <devicekit/DKAxis.h>
 #include <devicekit/DKDevice.h>

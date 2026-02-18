@@ -10,8 +10,8 @@
 #ifndef ECX_VIRTIO_DKVIRTIOTRANSPORT_H
 #define ECX_VIRTIO_DKVIRTIOTRANSPORT_H
 
-#include <keyronex/intr.h>
-#include <keyronex/vm.h>
+#include <sys/k_intr.h>
+#include <sys/vm.h>
 
 #include <devicekit/DKDevice.h>
 

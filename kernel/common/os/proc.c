@@ -7,10 +7,10 @@
  * @brief Process & thread objects.
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/pcb.h>
-#include <keyronex/proc.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+#include <sys/pcb.h>
+#include <sys/proc.h>
 
 #include <stdalign.h>
 

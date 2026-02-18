@@ -7,14 +7,14 @@
  * @brief Entry point to the operating system.
  */
 
-#include <keyronex/cpu.h>
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/ktask.h>
-#include <keyronex/limine.h>
-#include <keyronex/proc.h>
-#include <keyronex/vm.h>
-#include <keyronex/vmem.h>
+#include <sys/k_cpu.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+#include <sys/k_thread.h>
+#include <sys/limine.h>
+#include <sys/proc.h>
+#include <sys/vm.h>
+#include <sys/vmem.h>
 
 #if defined(__amd64__)
 #define BSP_ARCH_ID bsp_lapic_id

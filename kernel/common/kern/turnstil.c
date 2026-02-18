@@ -7,10 +7,10 @@
  * @brief Turnstiles
  */
 
-#include <keyronex/dlog.h>
-#include <keyronex/ktask.h>
-#include <keyronex/kwait.h>
-#include <keyronex/intr.h>
+#include <sys/k_log.h>
+#include <sys/k_thread.h>
+#include <sys/k_wait.h>
+#include <sys/k_intr.h>
 
 #include <libkern/queue.h>
 

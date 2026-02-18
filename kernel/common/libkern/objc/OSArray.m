@@ -7,7 +7,7 @@
  * @brief Libkern array class implementation.
  */
 
-#include <keyronex/kmem.h>
+#include <sys/kmem.h>
 
 #include <libkern/objc/OSArray.h>
 #include <libkern/lib.h>

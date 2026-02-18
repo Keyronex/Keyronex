@@ -7,7 +7,7 @@
  * @brief ACPI platform root device implementation.
  */
 
-#include <keyronex/dlog.h>
+#include <sys/k_log.h>
 
 #include <devicekit/acpi/DKACPINode.h>
 #include <devicekit/acpi/DKACPIPlatformRoot.h>

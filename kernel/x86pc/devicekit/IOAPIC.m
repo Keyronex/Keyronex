@@ -7,12 +7,12 @@
  * @brief I/O APIC
  */
 
-#include <devicekit/IOAPIC.h>
-#include <keyronex/dlog.h>
-#include <keyronex/kmem.h>
-#include <keyronex/vm.h>
+#include <sys/k_intr.h>
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+#include <sys/vm.h>
 
-#include "keyronex/intr.h"
+#include <devicekit/IOAPIC.h>
 
 enum {
 	kDeliveryModeFixed = 0x0,
