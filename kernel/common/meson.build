@@ -1,4 +1,7 @@
 kernel_sources += [
+    'devicekit/virtio/DKVirtIOTransport.m',
+    'devicekit/virtio/VirtIOMMIOTransport.m',
+
     'devicekit/DKAxis.m',
     'devicekit/DKDevice.m',
     'devicekit/DKPROMNode.m',
@@ -100,7 +103,6 @@ if target_machine.cpu_family() != 'm68k'
         'devicekit/pci/DKPCIBridge.m',
         'devicekit/pci/DKPCIDevice.m',
         'devicekit/pci/pci.c',
-        'devicekit/virtio/DKVirtIOTransport.m',
         'devicekit/virtio/VirtIO9pPort.m',
         'devicekit/virtio/VirtIOPCITransport.m',
     )

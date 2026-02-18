@@ -7,11 +7,13 @@
  * @brief m68k interrupt handling.
  */
 
-#include <sys/k_cpu.h>
 #include <sys/cpulocal.h>
+#include <sys/k_cpu.h>
 #include <sys/k_log.h>
-#include <sys/pcb.h>
 #include <sys/k_thread.h>
+#include <sys/pcb.h>
+
+#include <libkern/lib.h>
 
 #include "goldfish.h"
 

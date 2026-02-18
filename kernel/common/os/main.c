@@ -42,6 +42,9 @@ void vm_phys_init(void);
 void dk_acpi_presmp_init(void);
 void dk_acpi_threaded_init(void);
 
+/* If port has it */
+void dk_platform_threaded_init(void);
+
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
@@ -113,9 +116,9 @@ smp_init(void)
 	}
 }
 
+#if !defined(__m68k__)
 static atomic_uint up_cpus = 1;
 
-#if !defined(__m68k__)
 static void
 ap_init(struct limine_mp_info *smpi)
 {
@@ -155,6 +158,8 @@ threaded_init(void *)
 		dk_acpi_threaded_init();
 	else
 	 	kunreachable();
+#else
+	dk_platform_threaded_init();
 #endif
 
 	kdprintf("Threaded init!\n");

@@ -55,6 +55,7 @@ if not headers_only_option
         ]
 
     elif (target_machine.cpu_family() == 'm68k')
+        platforms = [ 'virt68k' ]
         common_kernel_args += [ '-mcpu=68040' ]
 
     elif (target_machine.cpu_family() == 'aarch64')

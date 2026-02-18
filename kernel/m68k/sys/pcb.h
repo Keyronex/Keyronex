@@ -19,7 +19,7 @@ typedef struct m68k_context {
 	uint16_t sr;
 } m68k_context_t;
 
-typedef struct __attribute__((packed)) karch_pcb {
+typedef struct karch_pcb {
 	m68k_context_t genregs;
 } karch_pcb_t;
 

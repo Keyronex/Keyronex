@@ -185,7 +185,7 @@ memset(void *dstv, int c, size_t len)
 	word |= word << 8;
 	word |= word << 16;
 	if (NATURAL_SIZE == 8)
-		word |= word << 32;
+		word |= word << 32; /* ignore the warning from this */
 
 	while (len && ((natural_t)dst & NATURAL_MASK)) {
 		*dst++ = (unsigned char)c;
