@@ -20,7 +20,8 @@
 
 #define _Atomic(...) __VA_ARGS__
 
-typedef unsigned int  atomic_uint;
+typedef bool atomic_bool;
+typedef unsigned int atomic_uint;
 typedef uintptr_t atomic_uintptr_t;
 typedef uint_fast32_t atomic_uint_fast32_t;
 

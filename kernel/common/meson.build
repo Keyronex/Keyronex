@@ -4,6 +4,8 @@ kernel_sources += [
     'devicekit/DKPROMNode.m',
     'devicekit/dk.m',
 
+    'io/iop.c',
+
     'kern/callout.c',
     'kern/clock.c',
     'kern/disp_rt.c',
