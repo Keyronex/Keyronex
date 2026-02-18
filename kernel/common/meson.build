@@ -1,11 +1,15 @@
 kernel_sources += [
     'devicekit/virtio/DKVirtIOTransport.m',
+    'devicekit/virtio/VirtIO9pPort.m',
     'devicekit/virtio/VirtIOMMIOTransport.m',
 
     'devicekit/DKAxis.m',
     'devicekit/DKDevice.m',
     'devicekit/DKPROMNode.m',
     'devicekit/dk.m',
+
+    'fs/9p/9pbuf.c',
+    'fs/9p/9p_vnops.c',
 
     'io/iop.c',
 

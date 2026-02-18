@@ -31,7 +31,6 @@ if [ -z "${ARCH}" ]; then
 fi
 
 v9p_root="build/${ARCH}/system-root"
-
 if [ "${ARCH}" = "m68k" ]; then
 	virtio_9p_arg="-device virtio-9p-device,fsdev=sysroot,mount_tag=sysroot"
 elif [ "${ARCH}" = "amd64" ]; then
@@ -40,9 +39,7 @@ elif [ "${ARCH}" = "amd64" ]; then
 else
 	virtio_9p_arg="-device virtio-9p-pci,fsdev=sysroot,mount_tag=sysroot"
 fi
-
 virtio_9p_arg="${virtio_9p_arg} -fsdev local,id=sysroot,security_model=none,path=${v9p_root}"
-
 if [ "$virtio_9p" = "1" ]; then
 	qemu_args="${qemu_args} ${virtio_9p_arg}"
 fi
@@ -56,11 +53,16 @@ if [ "$kvm" = "1" ]; then
 fi
 
 virtio_net=1
+virtio_net_arg="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no"
+if [ "${ARCH}" = "m68k" ]; then
+	virtio_net_arg="${virtio_net_arg} -device virtio-net-device,netdev=net0"
+else
+	virtio_net_arg="${virtio_net_arg} -net nic,model=virtio,netdev=net0"
+fi
+virtio_net_arg="${virtio_net_arg} -object filter-dump,id=f1,netdev=net0,file=/tmp/net0.pcap"
 if [ "${virtio_net}" = "1" ]; then
-	qemu_args="${qemu_args} \
-	  -netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
-	  -net nic,model=virtio,netdev=net0 \
-	  -object filter-dump,id=f1,netdev=net0,file=/tmp/net0.pcap"
+	qemu_args="${qemu_args} ${virtio_net_arg}"
+
 fi
 
 iso="build/${ARCH}/barebones.iso"

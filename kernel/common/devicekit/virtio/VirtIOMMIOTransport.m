@@ -11,6 +11,7 @@
 #include <sys/kmem.h>
 #include <sys/krx_endian.h>
 
+#include <devicekit/virtio/VirtIO9pPort.h>
 #include <devicekit/virtio/VirtIOMMIOTransport.h>
 #include <devicekit/virtio/virtio_mmio.h>
 #include <devicekit/virtio/virtioreg.h>
@@ -87,6 +88,16 @@ device_name(uint32_t id)
 	device_id = MMIO_READ32(mmio, VIRTIO_MMIO_DEVICE_ID);
 
 	switch (device_id) {
+#if 0
+	case VIRTIO_DEVICE_ID_NETWORK:
+		m_delegate = [[VirtIONet alloc] initWithTransport:self];
+		break;
+#endif
+
+	case VIRTIO_DEVICE_ID_9P:
+		m_delegate = [[VirtIO9pPort alloc] initWithTransport:self];
+		break;
+
 	default:
 		kdprintf("No driver for this device (%s)\n", device_name(device_id));
 	}
@@ -128,12 +139,10 @@ device_name(uint32_t id)
 	uint64_t negotiatedOptional = 0;
 
 	for (int i = 0; i < 2; i++) {
-		uint32_t mandatoryFeaturesPart = mandatory >> (i * 32);
-		uint32_t optionalFeaturesPart = (optional == NULL ?
-			0 :
-			(*optional >> (i * 32)));
-		uint32_t requiredFeaturesPart = mandatoryFeaturesPart |
-		    optionalFeaturesPart;
+		uint32_t mandatoryPart = mandatory >> (i * 32);
+		uint32_t optPart = (optional == NULL ? 0 :
+						       (*optional >> (i * 32)));
+		uint32_t requiredPart = mandatoryPart | optPart;
 		uint32_t deviceFeaturesPart;
 		uint32_t negotiatedFeaturesPart;
 
@@ -142,18 +151,15 @@ device_name(uint32_t id)
 		deviceFeaturesPart = MMIO_READ32(m_mmio,
 		    VIRTIO_MMIO_DEVICE_FEATURES);
 
-		if ((deviceFeaturesPart & mandatoryFeaturesPart) !=
-		    mandatoryFeaturesPart) {
-			kdprintf(
-			    "Unsupported mandatory features in dword %d:"
-			    "\n\tDevice has 0x%x"
-			    "\n\tMandatory required 0x%x\n",
-			    i, deviceFeaturesPart, mandatoryFeaturesPart);
+		if ((deviceFeaturesPart & mandatoryPart) != mandatoryPart) {
+			kdprintf("Unsupported mandatory features in dword %d:"
+				 "\n\tDevice has 0x%x"
+				 "\n\tMandatory required 0x%x\n",
+			    i, deviceFeaturesPart, mandatoryPart);
 			return false;
 		}
 
-		negotiatedFeaturesPart = deviceFeaturesPart &
-		    requiredFeaturesPart;
+		negotiatedFeaturesPart = deviceFeaturesPart & requiredPart;
 		negotiatedOptional |= ((uint64_t)negotiatedFeaturesPart
 		    << (i * 32));
 
