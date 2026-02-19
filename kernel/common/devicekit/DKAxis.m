@@ -43,7 +43,7 @@ krwlock_t gAxisLock;
 {
 	OSArray *children, *parents;
 
-	ke_rwlock_enter_write(&gAxisLock);
+	ke_rwlock_enter_write(&gAxisLock, "lock axis");
 
 	if (parent != nil) {
 		children = [m_children objectForKey:parent];

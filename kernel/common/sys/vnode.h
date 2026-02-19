@@ -112,4 +112,22 @@ struct vnode_ops {
 	iop_return_t (*iop_complete)(vnode_t *vn, struct iop *);
 };
 
+#define VOP_OPEN(VN, FLAGS) (*(VN))->ops->open(VN, FLAGS);
+#define VOP_RENAME(SVN, SNAME, DVN, DNAME) \
+    (SVN)->ops->rename(SVN, SNAME, DVN, DNAME)
+#define VOP_CHPOLL(VN, POLL, MODE) (VN)->ops->chpoll(VN, (POLL), (MODE));
+#define VOP_READLINK(VN, BUF, LEN) (VN)->ops->readlink(VN, (BUF), (LEN));
+#define VOP_GETATTR(VN, VATTR) (VN)->ops->getattr(VN, (VATTR));
+#define VOP_IOCTL(VN, CMD, DATA) (VN)->ops->ioctl(VN, (CMD), (DATA));
+#define VOP_READ(VN, BUF, LEN, OFF, F) (VN)->ops->read(VN, BUF, LEN, OFF, F);
+#define VOP_READDIR(VN, BUF, LEN, OFF) (VN)->ops->readdir(VN, BUF, LEN, OFF);
+#define VOP_WRITE(VN, BUF, LEN, OFF, F) (VN)->ops->write(VN, BUF, LEN, OFF, F);
+#define VOP_SEEK(VN, OLD, NEW) (VN)->ops->seek(VN, (OLD), (NEW));
+#define VOP_LOCK_FOR_VC_IO(VN, WRITE) (VN)->ops->lock_for_vc_io(VN, (WRITE));
+#define VOP_UNLOCK_FROM_VC_IO(VN, WRITE) \
+    (VN)->ops->unlock_for_vc_io(VN, (WRITE));
+
+vnode_t *vn_retain(vnode_t *);
+void vn_release(vnode_t *);
+
 #endif /* ECX_SYS_VNODE_H */

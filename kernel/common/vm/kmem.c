@@ -565,6 +565,15 @@ kmem_asprintf(char **str, const char *fmt, ...)
 	return size;
 }
 
+char *
+kmem_strdup(const char *src)
+{
+	size_t size = strlen(src) + 1;
+	char *str = kmem_alloc(size);
+	memcpy(str, src, size);
+	return str;
+}
+
 void
 kmem_strfree(char *str)
 {

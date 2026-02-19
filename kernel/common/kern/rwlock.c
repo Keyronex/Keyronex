@@ -27,7 +27,7 @@ ke_rwlock_init(krwlock_t *rw)
 }
 
 void
-ke_rwlock_enter_read(krwlock_t *rw)
+ke_rwlock_enter_read(krwlock_t *rw, const char *reason)
 {
 	kturnstile_t *ts;
 	uintptr_t val, new;
@@ -71,7 +71,7 @@ ke_rwlock_enter_read(krwlock_t *rw)
 }
 
 void
-ke_rwlock_enter_write(krwlock_t *rw)
+ke_rwlock_enter_write(krwlock_t *rw, const char *reason)
 {
 	kthread_t *self = ke_curthread();
 	kturnstile_t *ts;

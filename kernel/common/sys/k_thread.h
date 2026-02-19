@@ -145,8 +145,8 @@ void ke_turnstile_wakeup(kturnstile_t *, bool writer, int count,
 void ke_turnstile_exit(void *obj, ipl_t);
 
 void ke_rwlock_init(krwlock_t *);
-void ke_rwlock_enter_read(krwlock_t *);
-void ke_rwlock_enter_write(krwlock_t *);
+void ke_rwlock_enter_read(krwlock_t *, const char *reason);
+void ke_rwlock_enter_write(krwlock_t *, const char *reason);
 void ke_rwlock_exit_read(krwlock_t *);
 void ke_rwlock_exit_write(krwlock_t *);
 void ke_rwlock_downgrade(krwlock_t *);
