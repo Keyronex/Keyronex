@@ -72,6 +72,8 @@ struct lookup_info {
 	bool did_create;	   /* whether a node was created */
 };
 
+
+void nc_makeroot(vfs_t *vfs, struct vnode *root_vn);
 int nc_link(namecache_handle_t dirnch, struct vnode *target_vn,
     const char *name);
 int nc_remove(namecache_handle_t dirnch, const char *name, bool isdir);
@@ -83,6 +85,8 @@ int vfs_lookup_init(struct lookup_info *info, namecache_handle_t start,
 int vfs_lookup(struct lookup_info *info);
 int vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
     const char *path, enum lookup_flags flags);
+
+void vfs_init(vfs_t *);
 
 extern namecache_handle_t root_nch;
 

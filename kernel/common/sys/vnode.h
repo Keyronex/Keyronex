@@ -127,6 +127,8 @@ struct vnode_ops {
 #define VOP_UNLOCK_FROM_VC_IO(VN, WRITE) \
     (VN)->ops->unlock_for_vc_io(VN, (WRITE));
 
+vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, uintptr_t fspriv2);
+
 vnode_t *vn_retain(vnode_t *);
 void vn_release(vnode_t *);
 
