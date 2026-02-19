@@ -15,7 +15,9 @@
 #include <devicekit/virtio/DKVirtIOTransport.h>
 #include <devicekit/virtio/VirtIO9pPort.h>
 #include <devicekit/virtio/virtioreg.h>
+
 #include <fs/9p/9pbuf.h>
+#include <fs/devfs/devfs.h>
 
 struct virtio_9p_config {
 	/* length of the tag name */
@@ -35,7 +37,8 @@ struct vio9p_req {
 	uint16_t first_desc_id;
 };
 
-static struct vnode_ops ninep_vops;
+static dev_class_t ninep_dev_class;
+static dev_ops_t ninep_dev_ops;
 
 @implementation VirtIO9pPort
 
@@ -80,9 +83,7 @@ static struct vnode_ops ninep_vops;
 
 	DKDevLog(self, "Tag: %s\n", m_tag);
 
-#if 0
-	vnode_t *vn = vn_alloc(NULL, VCHR, &ninep_vops, (uintptr_t)self, 0);
-#endif
+	devfs_create_node(&ninep_dev_class, "vio9p:%s", m_tag);
 }
 
 /* todo: this doesn't deal with sglists as it ought to */
@@ -272,13 +273,18 @@ static struct vnode_ops ninep_vops;
 @end
 
 static iop_return_t
-iop_dispatch(vnode_t *vp, iop_t *iop)
+iop_dispatch(void *devprivate, iop_t *iop)
 {
-	VirtIO9pPort *port = (VirtIO9pPort *)vp->fsprivate_1;
+	VirtIO9pPort *port = (VirtIO9pPort *)devprivate;
 	return [port dispatchIOP:iop];
 }
 
-static struct vnode_ops ninep_vops = {
+static dev_ops_t ninep_devops = {
 	.stack_depth = 1,
 	.iop_dispatch = iop_dispatch,
+};
+
+static dev_class_t ninep_dev_class = {
+	.kind = DEV_KIND_CHAR,
+	.charops = &ninep_devops,
 };

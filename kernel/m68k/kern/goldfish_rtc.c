@@ -63,7 +63,7 @@ gfrtc_oneshot(uint64_t ns)
 }
 
 bool
-gfrtc_handler(karch_trapframe_t *frame, void *arg)
+gfrtc_handler(void *arg)
 {
 	gfrtc_write(GFRTC_CLEAR_ALARM, 1);
 	gfrtc_write(GFRTC_CLEAR_INTERRUPT, 1);

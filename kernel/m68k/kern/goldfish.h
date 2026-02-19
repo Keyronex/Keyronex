@@ -20,8 +20,7 @@
 
 void gfpic_dispatch(unsigned int pic_num, karch_trapframe_t *frame);
 void gfpic_unmask_irq(unsigned int vector);
-void gfpic_handle_irq(unsigned int vector,
-    bool (*handler)(karch_trapframe_t *, void *), void *arg);
+void gfpic_handle_irq(unsigned int vector, bool (*handler)(void *), void *arg);
 
 void gfrtc_init(void);
 uint64_t gfrtc_get_time(void);

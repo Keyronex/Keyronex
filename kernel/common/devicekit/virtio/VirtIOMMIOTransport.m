@@ -11,13 +11,14 @@
 #include <sys/kmem.h>
 #include <sys/krx_endian.h>
 
+#include <devicekit/DKAxis.h>
 #include <devicekit/virtio/VirtIO9pPort.h>
 #include <devicekit/virtio/VirtIOMMIOTransport.h>
 #include <devicekit/virtio/virtio_mmio.h>
 #include <devicekit/virtio/virtioreg.h>
-#include <devicekit/DKAxis.h>
-
 #include <libkern/lib.h>
+
+#include "devicekit/DKPlatformRoot.h"
 
 #define MMIO_READ32(BASE, REG) \
 	from_leu32(*(volatile leu32_t *)(BASE + REG))
@@ -64,23 +65,14 @@ device_name(uint32_t id)
 
 @implementation DKVirtIOMMIOTransport
 
-+ (instancetype)probeWithMMIO:(volatile void *)mmio
-		interrupt:(int)interrupt
-{
-	if (MMIO_READ32(mmio, VIRTIO_MMIO_DEVICE_ID) != 0)
-		return [[self alloc] initWithMMIO:mmio
-				     interrupt:interrupt];
-	return nil;
-}
-
 - (instancetype)initWithMMIO:(volatile void *)mmio
-		       interrupt:(int)interrupt
+		   irqSource:(kirq_source_t *)irqSource
 {
 	uint32_t device_id;
 
 	self = [super init];
 	m_mmio = mmio;
-	m_interrupt = interrupt;
+	m_irqSource = *irqSource;
 	kmem_asprintf(&m_name, "virtio-mmio-%u", counter++);
 
 	ke_dpc_init(&m_dpc, dpc_handler, self, NULL);
@@ -108,6 +100,14 @@ device_name(uint32_t id)
 	}
 
 	return self;
+}
+
++ (instancetype)probeWithMMIO:(volatile void *)mmio
+		    irqSource:(kirq_source_t *)source
+{
+	if (MMIO_READ32(mmio, VIRTIO_MMIO_DEVICE_ID) != 0)
+		return [[self alloc] initWithMMIO:mmio irqSource:source];
+	return nil;
 }
 
 - (volatile void *)deviceConfig
@@ -262,13 +262,14 @@ device_name(uint32_t id)
 		return -1;
 	}
 
-	kfatal("enable irq");
-//#ifdef __m68k__
-	//gfpic_handle_irq(m_interrupt, int_handler, self);
-	//gfpic_unmask_irq(m_interrupt);
-//#else
-//	(void)int_handler;
-//#endif
+	m_ipl = IPL_HIGH;
+
+	[gPlatformRoot handleSource:&m_irqSource
+			withHandler:int_handler
+			   argument:self
+			 atPriority:&m_ipl
+			  irqObject:&m_irq];
+
 	return 0;
 }
 

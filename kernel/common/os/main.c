@@ -216,7 +216,7 @@ _start(void)
 		kfatal("no acpi!");
 	}
 #else
-	kdprintf("todo m68k init...\n");
+	/* todo: pre-acpi smp init for m68k if needed... */
 #endif
 
 	smp_start();

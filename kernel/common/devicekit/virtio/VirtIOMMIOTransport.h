@@ -15,7 +15,9 @@
 @interface DKVirtIOMMIOTransport : DKVirtIOTransport {
     @public
 	volatile void *m_mmio;
-	int m_interrupt;
+	ipl_t m_ipl;
+	kirq_source_t m_irqSource;
+	kirq_t m_irq;
 	kdpc_t m_dpc;
 	DKDevice<DKVirtIODevice> *m_delegate;
 
@@ -24,7 +26,7 @@
 }
 
 + (instancetype)probeWithMMIO:(volatile void *)mmio
-		interrupt:(int)interrupt;
+		irqSource:(kirq_source_t *)irqSource;
 
 @end
 

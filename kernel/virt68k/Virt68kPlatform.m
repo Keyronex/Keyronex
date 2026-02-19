@@ -10,6 +10,8 @@
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 
+#include <kern/goldfish.h>
+
 #include <devicekit/virtio/VirtIOMMIOTransport.h>
 #include <devicekit/DKAxis.h>
 #include <devicekit/DKDevice.h>
@@ -39,9 +41,10 @@ void DKLogAttach(DKDevice *child, DKDevice *parent);
 	volatile uint8_t *virtio_base = (void *)0xff010000;
 
 	for (int i = 0; i < 128; i++) {
+		kirq_source_t irq_source = {.source = 32 + i};
 		id dev = [DKVirtIOMMIOTransport
 		    probeWithMMIO:virtio_base + 0x200 * i
-			interrupt:32 + i];
+			irqSource:&irq_source];
 		if (dev != nil) {
 			[self attachChild:dev onAxis:gDeviceAxis];
 			[dev addToStartQueue];
@@ -64,7 +67,10 @@ void DKLogAttach(DKDevice *child, DKDevice *parent);
 	 atPriority:(ipl_t *)ipl
 	  irqObject:(out kirq_t *)object
 {
-	kfatal("Implement me\n");
+	*ipl = IPL_M68K_1 + source->source / 32;
+	gfpic_handle_irq(source->source, handler, arg);
+	gfpic_unmask_irq(source->source);
+	return 0;
 }
 
 @end

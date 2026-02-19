@@ -10,6 +10,7 @@ kernel_sources += [
 
     'fs/9p/9pbuf.c',
     'fs/9p/9p_vnops.c',
+    'fs/devfs/devfs.c',
 
     'io/iop.c',
 

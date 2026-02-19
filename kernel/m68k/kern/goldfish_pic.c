@@ -22,7 +22,7 @@ enum gfpic_reg {
 };
 
 struct gfpic {
-	bool (*handler[32])(karch_trapframe_t *, void *);
+	bool (*handler[32])(void *);
 	void *arg[32];
 };
 
@@ -78,7 +78,7 @@ gfpic_unmask_irq(unsigned int vector)
 
 void
 gfpic_handle_irq(unsigned int vector,
-    bool (*handler)(karch_trapframe_t *, void *), void *arg)
+    bool (*handler)(void *), void *arg)
 {
 	pics[GFPIC_PIC(vector)].handler[GFPIC_PICIRQ(vector)] = handler;
 	pics[GFPIC_PIC(vector)].arg[GFPIC_PICIRQ(vector)] = arg;
@@ -93,6 +93,6 @@ gfpic_dispatch(unsigned int pic_num, karch_trapframe_t *frame)
 			return;
 		irq = __builtin_ctz(pending);
 		kassert(pics[pic_num].handler[irq] != NULL);
-		pics[pic_num].handler[irq](frame, pics[pic_num].arg[irq]);
+		pics[pic_num].handler[irq](pics[pic_num].arg[irq]);
 	}
 }
