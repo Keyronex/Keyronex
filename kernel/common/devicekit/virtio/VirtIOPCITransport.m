@@ -7,18 +7,20 @@
  * @brief VirtIO transport for PCI
  */
 
-#include <devicekit/DKAxis.h>
-#include <devicekit/pci/DKPCIDevice.h>
-#include <devicekit/virtio/DKVirtIOTransport.h>
-#include <devicekit/virtio/virtio_pcireg.h>
-#include <devicekit/virtio/virtioreg.h>
-#include <sys/k_log.h>
 #include <sys/k_intr.h>
+#include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/krx_endian.h>
-#include <libkern/lib.h>
 
-#include "devicekit/DKPlatformRoot.h"
+#include <devicekit/pci/DKPCIDevice.h>
+#include <devicekit/virtio/DKVirtIOTransport.h>
+#include <devicekit/virtio/VirtIO9pPort.h>
+#include <devicekit/virtio/virtio_pcireg.h>
+#include <devicekit/virtio/virtioreg.h>
+#include <devicekit/DKAxis.h>
+#include <devicekit/DKPlatformRoot.h>
+
+#include <libkern/lib.h>
 
 @interface VirtIOPCITransport : DKVirtIOTransport <DKPCIDeviceMatching> {
     @public
@@ -385,8 +387,7 @@ static void dpc_handler(void *, void *);
 
 	case 0x1009:
 	case 0x1040 + VIRTIO_DEVICE_ID_9P:
-		//m_delegate = [[VirtIO9pPort alloc] initWithTransport:self];
-		kdprintf("9p (not implemented)\n");
+		m_delegate = [[VirtIO9pPort alloc] initWithTransport:self];
 		break;
 
 	default:

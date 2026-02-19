@@ -84,6 +84,8 @@ static dev_ops_t ninep_dev_ops;
 	DKDevLog(self, "Tag: %s\n", m_tag);
 
 	devfs_create_node(&ninep_dev_class, "vio9p:%s", m_tag);
+
+	return self;
 }
 
 /* todo: this doesn't deal with sglists as it ought to */
