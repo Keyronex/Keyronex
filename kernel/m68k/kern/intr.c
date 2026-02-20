@@ -12,6 +12,7 @@
 #include <sys/k_log.h>
 #include <sys/k_thread.h>
 #include <sys/pcb.h>
+#include <sys/vm.h>
 
 #include <libkern/lib.h>
 
@@ -19,6 +20,7 @@
 
 #define M68K_SR_IPL_MASK 0x0700u
 
+void vm_fault(vaddr_t va, vm_prot_t prot);
 void kep_dispatch_softints(ipl_t newipl);
 
 static inline uint16_t
@@ -141,6 +143,23 @@ c_trap(karch_trapframe_t *frame)
 	ipl_t oldipl = MIN2(oldhwipl, CPU_LOCAL_LOAD(ipl));
 
 	switch (frame->vector_offset) {
+	case 0x8: { /* access fault */
+		vm_prot_t prot = 0;
+
+		if (oldipl >= IPL_DISP)
+			kfatal("Page fault at or above dispatch level");
+
+		CPU_LOCAL_STORE(ipl, oldipl);
+		ke_arch_enable(true);
+
+		if (!frame->format_7.ssw.rw)
+			prot |= VM_WRITE;
+		if (frame->format_7.ea < HIGHER_HALF)
+			prot |= VM_USER;
+		vm_fault(frame->format_7.ea, prot);
+		break;
+	}
+
 	case 0x64: /* level 1 autovector */
 	case 0x68:
 	case 0x6c:

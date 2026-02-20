@@ -99,6 +99,7 @@ kfatal_internal(const char *file, int line, const char *fmt, ...)
 	kdprintf_unlocked("Fatal: %s:%d: ", file, line);
 	va_start(ap, fmt);
 	kdvprintf_unlocked(fmt, ap);
+	ke_md_early_putc('\n', 0);
 	va_end(ap);
 	ke_spinlock_exit_nospl(&dlog_lock);
 
