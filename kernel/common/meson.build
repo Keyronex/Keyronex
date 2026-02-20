@@ -42,11 +42,14 @@ kernel_sources += [
     'libkern/murmurhash.c',
     'libkern/lib.c',
 
+    'os/copyinout.c',
     'os/exec.c',
     'os/main.c',
     'os/proc.c',
 
     'vm/init.c',
+    'vm/fault.c',
+    'vm/fork.c',
     'vm/kmem.c',
     'vm/kwired.c',
     'vm/map.c',

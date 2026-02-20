@@ -39,7 +39,7 @@ typedef Elf64_Phdr Elf_Phdr;
 
 #define USER_STACK_SIZE PGSIZE * 32
 
-void arch_enter_usermode(uintptr_t ip, uintptr_t sp);
+void ke_md_enter_usermode(uintptr_t ip, uintptr_t sp);
 void pmap_activate(struct vm_map *map);
 
 static int
@@ -261,7 +261,7 @@ load_init(vnode_t *server_vnode, vnode_t *ld_vnode)
 	 * we want proc struct to keep an nch reference on what it opened anyway
 	 */
 
-	arch_enter_usermode(rtldpkg.entry, pkg.sp);
+	ke_md_enter_usermode(rtldpkg.entry, pkg.sp);
 
 	return r;
 }
@@ -340,7 +340,7 @@ sys_execve(proc_t *proc, const char *upath, char *const uarpg[],
 
 	strncpy(curproc()->comm, argp[0], sizeof(curproc()->comm) - 1);
 
-	arch_enter_usermode(rtldpkg.entry, pkg.sp);
+	ke_md_enter_usermode(rtldpkg.entry, pkg.sp);
 
 	kfatal("unreachable\n");
 

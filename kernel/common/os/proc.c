@@ -41,6 +41,7 @@ proc_alloc_idle_thread(void)
 	if (ts == NULL)
 		kfatal("couldn't allocate idle turnstile");
 
+	thread->vm_map = NULL;
 	thread->kthread.turnstile = ts;
 
 	return thread;
@@ -71,6 +72,8 @@ proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
 		return NULL;
 	}
 
+	thread->vm_map = NULL;
+
 	ke_thread_init(&thread->kthread, &proc->ktask, ts, stack,
 		fork_frame, func, arg);
 
@@ -81,4 +84,12 @@ thread_t *
 proc_new_system_thread(void (*func)(void *), void *arg)
 {
 	return proc_new_thread(&proc0, NULL, func, arg);
+}
+
+void
+thread_activate(thread_t *old, thread_t *new)
+{
+	void pmap_activate(vm_map_t *map);
+	if (thread_vm_map(old) != thread_vm_map(new))
+		pmap_activate(thread_vm_map(new));
 }

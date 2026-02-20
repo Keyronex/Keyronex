@@ -24,6 +24,9 @@
 
 #define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 
+/* layering violation... */
+void thread_activate(kthread_t *old, kthread_t *new);
+
 extern struct ksched_class kep_ts_class, kep_rt_class;
 
 static kspinlock_t rt_lock = KSPINLOCK_INITIALISER;
@@ -339,8 +342,7 @@ ke_dispatch(void)
 
 	ke_spinlock_exit_nospl(&disp->lock);
 
-	// if (thread_vm_map(next) != thread_vm_map(old))
-	//	pmap_activate(thread_vm_map(next));
+	thread_activate(oldt, nextt);
 
 	kep_arch_switch(oldt, nextt);
 

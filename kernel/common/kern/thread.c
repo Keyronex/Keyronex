@@ -22,6 +22,7 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 
 	thread->kstack_base = stack_base;
 	thread->user = false;
+	thread->task = task;
 
 #if 0
 	thread->tid = idalloc_alloc(&tid_allocator);
