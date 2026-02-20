@@ -28,7 +28,7 @@ ke_mutex_init(kmutex_t *mtx)
 }
 
 void
-ke_mutex_enter(kmutex_t *mtx)
+ke_mutex_enter(kmutex_t *mtx, const char *)
 {
 	kthread_t *self = ke_curthread();
 	kturnstile_t *ts;

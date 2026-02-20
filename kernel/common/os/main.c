@@ -151,6 +151,22 @@ smp_start(void)
 }
 
 static void
+mount_root(void)
+{
+	struct vnode;
+	void ninep_mount(struct vnode *provider);
+	struct vnode *devfs_lookup_early(const char *name);
+
+	struct vnode *vn = devfs_lookup_early("vio9p:sysroot");
+
+	if (vn == NULL)
+		kfatal("mount_root: no such device viop9p:sysroot");
+
+	ninep_mount(vn);
+
+}
+
+static void
 threaded_init(void *)
 {
 #if !defined(__m68k__)
@@ -161,6 +177,8 @@ threaded_init(void *)
 #else
 	dk_platform_threaded_init();
 #endif
+
+	mount_root();
 
 	kdprintf("Threaded init!\n");
 

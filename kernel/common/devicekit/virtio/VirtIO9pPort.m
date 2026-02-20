@@ -83,7 +83,7 @@ static dev_ops_t ninep_dev_ops;
 
 	DKDevLog(self, "Tag: %s\n", m_tag);
 
-	devfs_create_node(&ninep_dev_class, "vio9p:%s", m_tag);
+	devfs_create_node(&ninep_dev_class, self, "vio9p:%s", m_tag);
 
 	return self;
 }
@@ -281,12 +281,12 @@ iop_dispatch(void *devprivate, iop_t *iop)
 	return [port dispatchIOP:iop];
 }
 
-static dev_ops_t ninep_devops = {
+static dev_ops_t ninep_dev_ops = {
 	.stack_depth = 1,
 	.iop_dispatch = iop_dispatch,
 };
 
 static dev_class_t ninep_dev_class = {
 	.kind = DEV_KIND_CHAR,
-	.charops = &ninep_devops,
+	.charops = &ninep_dev_ops,
 };

@@ -33,6 +33,7 @@ typedef struct dev_class {
 
 typedef struct dev_node {
 	dev_class_t *class;
+	TAILQ_ENTRY(dev_node) hash_entry;
 	uint32_t open_count;
 	krwlock_t open_lock; /* guarding open/close */
 	union {
@@ -42,6 +43,7 @@ typedef struct dev_node {
 	char name[16];
 } dev_node_t;
 
-void devfs_create_node(dev_class_t *class, const char *fmt, ...);
+void devfs_create_node(dev_class_t *class, void *private, const char *fmt, ...);
+struct vnode *devfs_lookup_early(const char *name);
 
 #endif /* ECX_DEVFS_DEVFS_H */

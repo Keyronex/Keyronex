@@ -81,4 +81,5 @@ dk_platform_threaded_init(void)
 	gPlatformRoot = [[VirtM68KPlatform alloc] init];
 	[gPlatformRoot start];
 	[DKDevice drainStartQueue];
+	[gDeviceAxis printSubtreeOfDevice:gPlatformRoot];
 }

@@ -37,7 +37,7 @@ static kmutex_t match_list_lock;
 {
 	struct match_entry *entry = kmem_alloc(sizeof(*entry));
 	entry->matchingClass = matchingClass;
-	ke_mutex_enter(&match_list_lock);
+	ke_mutex_enter(&match_list_lock, "");
 	LIST_INSERT_HEAD(&match_list, entry, qlink);
 	ke_mutex_exit(&match_list_lock);
 }

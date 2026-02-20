@@ -123,7 +123,7 @@ nc_retain(namecache_t *nc)
 				queue_n = &standby_pos_n;
 			}
 
-			ke_mutex_enter(mutex);
+			ke_mutex_enter(mutex, "");
 
 			current = atomic_load_explicit(&nc->refcnt,
 			    memory_order_acquire);
@@ -194,7 +194,7 @@ nc_release(namecache_t *nc)
 				queue_n = &standby_pos_n;
 			}
 
-			ke_mutex_enter(mutex);
+			ke_mutex_enter(mutex, "");
 
 			/*
 			 * We CAS because the refcount drop has been deferred.

@@ -86,8 +86,7 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 
 	key.qid = qid;
 
-	ke_wait1(&fs->node_cache_lock, "9p node_for_qid", false,
-	    ABSTIME_FOREVER);
+	ke_mutex_enter(&fs->node_cache_lock, "9p node_for_qid");
 
 	found = RB_FIND(ninep_node_rb, &fs->node_cache, &key);
 	if (found != NULL) {

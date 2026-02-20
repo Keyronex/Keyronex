@@ -218,7 +218,7 @@ uacpi_kernel_acquire_mutex(uacpi_handle mutex, uacpi_u16 timeout)
 		return ke_mutex_tryenter(mutex) ? UACPI_STATUS_OK :
 						  UACPI_STATUS_TIMEOUT;
 	} else {
-		ke_mutex_enter(mutex);
+		ke_mutex_enter(mutex, "");
 		return UACPI_STATUS_OK;
 	}
 }

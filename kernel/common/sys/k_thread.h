@@ -153,7 +153,7 @@ void ke_rwlock_downgrade(krwlock_t *);
 bool ke_rwlock_tryupgrade(krwlock_t *);
 
 void ke_mutex_init(kmutex_t *);
-void ke_mutex_enter(kmutex_t *);
+void ke_mutex_enter(kmutex_t *, const char *reason);
 void ke_mutex_exit(kmutex_t *);
 bool ke_mutex_tryenter(kmutex_t *);
 
