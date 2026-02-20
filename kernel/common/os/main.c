@@ -15,6 +15,7 @@
 #include <sys/proc.h>
 #include <sys/vm.h>
 #include <sys/vmem.h>
+#include "sys/krx_vfs.h"
 
 #if defined(__amd64__)
 #define BSP_ARCH_ID bsp_lapic_id
@@ -166,7 +167,35 @@ mount_root(void)
 		kfatal("mount_root: no such device viop9p:sysroot");
 
 	ninep_mount(vn);
+}
 
+static void
+runinit(void *)
+{
+	int r;
+	namecache_handle_t ld, init;
+
+	r = vfs_lookup_simple(root_nch, &ld, "/usr/lib/ld.so", 0);
+	if (r != 0)
+		kfatal("Failed to look up RTLD\n");
+
+	r = vfs_lookup_simple(root_nch, &init, "/usr/sbin/init", 0);
+	if (r != 0)
+		kfatal("Failed to look up Init daemon\n");
+
+	int load_init(struct vnode *initvn, struct vnode *ldvn);
+	load_init(init.nc->vp, ld.nc->vp);
+
+	kfatal("runinit: Should never reach this point\n");
+}
+
+static void
+exec_init(void)
+{
+	proc_t *init_proc = proc_create(&proc0, false);
+	thread_t *init_thread = proc_new_thread(init_proc, NULL, runinit, NULL);
+	init_thread->kthread.user = true;
+	ke_thread_resume(&init_thread->kthread, false);
 }
 
 static void
@@ -181,8 +210,9 @@ threaded_init(void *)
 	dk_platform_threaded_init();
 #endif
 
-	mount_root();
 	viewcache_init();
+	mount_root();
+	exec_init();
 
 	kdprintf("Threaded init!\n");
 

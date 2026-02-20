@@ -11,6 +11,7 @@
 #define ECX_KEYRONEX_PROC_H
 
 #include <sys/k_thread.h>
+#include <sys/pcb.h>
 
 typedef struct thread {
 	kthread_t kthread;
@@ -23,6 +24,10 @@ typedef struct proc {
 	struct vm_map *vm_map;
 } proc_t;
 
+proc_t *proc_create(proc_t *parent, bool fork);
+
+thread_t *proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
+    void (*func)(void *), void *arg);
 thread_t *proc_new_system_thread(void (*func)(void*), void *arg);
 
 void proc_init(void);

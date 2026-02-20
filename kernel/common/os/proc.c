@@ -10,6 +10,7 @@
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/pcb.h>
+#include <libkern/lib.h>
 #include <sys/proc.h>
 
 #include <stdalign.h>
@@ -45,6 +46,54 @@ proc_alloc_idle_thread(void)
 	thread->kthread.turnstile = ts;
 
 	return thread;
+}
+
+
+proc_t *
+proc_create(proc_t *parent, bool fork)
+{
+	proc_t *proc;
+	ipl_t ipl;
+
+	proc = kmem_cache_alloc(proc_cache, VM_SLEEP);
+	if (proc == NULL)
+		return NULL;
+
+	strcpy(proc->comm, "unnamed");
+
+	proc->vm_map = vm_map_create();
+#if 0
+	proc->filedesc = filedesc_create(parent->filedesc);
+	proc->pidp = pid_alloc();
+	proc->pid = proc->pidp->pid;
+#endif
+
+	if (fork)
+		vm_fork(parent->vm_map, proc->vm_map);
+
+#if 0
+	spinlock_init(&proc->threads_lock);
+	proc->exiting = false;
+	proc->threads_count = 0;
+	TAILQ_INIT(&proc->threads);
+
+	proc->parent = parent;
+	TAILQ_INIT(&proc->children);
+	proc->exited = false;
+
+	proc->waiting_event = NULL;
+	proc->procdesc = NULL;
+
+	ipl = spinlock_lock(&proctree_lock);
+	proc->pgrp = NULL;
+	pgrp_add_member(parent->pgrp, proc);
+
+	TAILQ_INSERT_TAIL(&allproc, proc, allproc_qlink);
+	TAILQ_INSERT_TAIL(&parent->children, proc, sibling_qlink);
+	spinlock_unlock(&proctree_lock, ipl);
+#endif
+
+	return proc;
 }
 
 thread_t *

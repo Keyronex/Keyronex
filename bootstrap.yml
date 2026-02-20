@@ -446,3 +446,28 @@ packages:
       - args: ['ninja', 'install']
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
+
+
+  - name: init
+    metadata:
+      summary: Init daemon
+    source:
+      name: 'cmd/init'
+    tools_required:
+      - 'crossfile'
+      - 'host-binutils'
+      - 'host-gcc'
+    pkgs_required:
+      - 'mlibc'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file=@BUILD_ROOT@/crossfile.ini'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/usr'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'

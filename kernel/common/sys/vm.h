@@ -19,6 +19,8 @@
 #define VM_MAX_AFFINITIES 64
 #define VM_MAX_DOMAINS 8
 
+struct vnode;
+
 typedef struct vm_map vm_map_t;
 typedef struct vm_object vm_object_t;
 
@@ -73,6 +75,8 @@ int vm_map(vm_map_t *map, vm_object_t *object, vaddr_t *vaddrp, size_t size,
 int vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
     vm_prot_t prot, vm_cache_mode_t cache, bool exact);
 int vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end);
+
+vm_object_t *vm_obj_new_vnode(struct vnode *);
 
 vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,
     vm_alloc_flags_t);
