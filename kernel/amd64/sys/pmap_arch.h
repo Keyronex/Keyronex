@@ -145,6 +145,19 @@ pmap_pte_hwleaf_create(pte_t *ppte, uintptr_t pfn, pmap_level_t level,
 	return pte;
 }
 
+static inline paddr_t
+pmap_pte_hwleaf_paddr(pte_t pte, pmap_level_t level)
+{
+	return (level == PMAP_L0 ? pte.hw.pfn : pte.hw_large.pfn) << PGSHIFT;
+}
+
+static inline void
+pmap_pte_zeroleaf_create(pte_t *ppte, pmap_level_t level)
+{
+	union pte pte = { .hw = { .valid = 0 } };
+	pmap_store_pte(ppte, pte);
+}
+
 static inline pte_t
 pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 {

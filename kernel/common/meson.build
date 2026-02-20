@@ -12,6 +12,7 @@ kernel_sources += [
     'fs/9p/9p_vnops.c',
     'fs/devfs/devfs.c',
     'fs/namecache.c',
+    'fs/viewcache.c',
     'fs/vnode.c',
 
     'io/iop.c',
@@ -48,8 +49,11 @@ kernel_sources += [
     'vm/kmem.c',
     'vm/kwired.c',
     'vm/map.c',
+    'vm/obj.c',
     'vm/phys.c',
     'vm/pmap.c',
+    'vm/rs.c',
+    'vm/vc_support.c',
     'vm/vmem.c',
 ]
 

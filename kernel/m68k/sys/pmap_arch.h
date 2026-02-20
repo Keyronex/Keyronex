@@ -134,6 +134,34 @@ pmap_pte_hwleaf_create(pte_t *ppte, uintptr_t pfn, pmap_level_t level,
 	return pte;
 }
 
+static inline paddr_t
+pmap_pte_hwleaf_paddr(pte_t pte, pmap_level_t level)
+{
+	kassert(level == PMAP_L0);
+	return pte.hw_pml0_040.pfn << 12;
+}
+
+static inline bool
+pmap_pte_hwleaf_writeable(pte_t pte)
+{
+	return pte.hw_pml1_040.writeprotect == 0;
+}
+
+static inline void
+pmap_pte_hwleaf_clear_writeable(pte_t *ppte)
+{
+	pte_t pte = pmap_load_pte(ppte);
+	pte.hw_pml0_040.writeprotect = 1;
+	pmap_store_pte(ppte, pte);
+}
+
+
+static inline void
+pmap_pte_zeroleaf_create(pte_t *ppte, pmap_level_t)
+{
+	pmap_store_pte(ppte, (union pte){.value = 0});
+}
+
 static inline size_t
 m68040_dir_nptes_group(pmap_level_t level)
 {

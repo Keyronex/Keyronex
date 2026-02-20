@@ -140,8 +140,12 @@ struct vm_domain {
 /*! @brief get the vm_page that describes some HHDM address. */
 #define VM_PAGE_FOR_HHDM_ADDR(addr) (&vm_pages[v2p(addr) >> PGSHIFT])
 
-void vmp_page_dom_lock_enter(vm_page_t *page);
-void vmp_page_dom_lock_exit(vm_page_t *page);
+void vmp_page_dom_lock_enter(vm_page_t *);
+void vmp_page_dom_lock_exit(vm_page_t *);
+
+void vm_page_retain(vm_page_t *);
+void vm_page_release(vm_page_t *);
+void vm_page_dirty(vm_page_t *);
 
 extern vm_domain_t vm_domains[1];
 extern vm_page_t *vm_pages;

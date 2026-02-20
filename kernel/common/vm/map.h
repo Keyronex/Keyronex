@@ -13,9 +13,10 @@
 #include <sys/k_thread.h>
 #include <sys/tree.h>
 #include <sys/vmem_impl.h>
+#include <sys/pmap.h>
 #include <sys/vm.h>
 
-#include "vm/page.h"
+#include <vm/page.h>
 
 struct vm_map_entry {
 	RB_ENTRY(vm_map_entry) rb_link;
@@ -57,6 +58,51 @@ struct vm_map {
 	struct vm_rs rs;
 };
 
+
+typedef struct vm_object {
+	kspinlock_t creation_lock;
+	kspinlock_t stealing_lock;
+	enum {
+		VM_OBJ_VNODE,
+		VM_OBJ_ANON,
+	} kind;
+	union {
+		struct vnode *vnode;
+	};
+	pte_t direct[6];
+	pte_t indirect[4]; /* [0] = indirect, [1] = doubly indirect, etc */
+} vm_object_t;
+
+struct vm_anon {
+	pte_t pte;
+	uintptr_t refcount;
+};
+
+struct obj_pte_wire_state {
+	pte_t *pte;
+	vm_page_t *pages[4];
+	vaddr_t offset;
+};
+
+struct table_lock_state {
+	kspinlock_t *lock;
+	bool did_unlock;
+};
+
+int obj_wire_pte(vm_object_t *obj, struct obj_pte_wire_state *state,
+    vaddr_t offset, bool create, struct table_lock_state *table_lock_state);
+void obj_unwire_pte(vm_object_t *obj, struct obj_pte_wire_state *state);
+
+pte_t *obj_fetch_pte(vm_object_t *obj, vaddr_t offset);
+
+void obj_page_zeroed(vm_object_t *obj, vm_page_t *page);
+void obj_page_swapped(vm_object_t *obj, vm_page_t *page);
+void obj_table_pte_did_become_swap(vm_object_t *obj, vm_page_t *table_page);
+
+void pmap_tlb_flush_vaddr_globally(vaddr_t vaddr);
+void pmap_tlb_flush_all_globally(void);
+
+extern kspinlock_t anon_creation_lock, anon_stealing_lock;
 extern vm_map_t kernel_map;
 
 #endif /* ECX_VM_MAP_H */

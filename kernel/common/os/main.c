@@ -45,6 +45,9 @@ void dk_acpi_threaded_init(void);
 /* If port has it */
 void dk_platform_threaded_init(void);
 
+/* to be sorted */
+void viewcache_init(void);
+
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
@@ -179,6 +182,7 @@ threaded_init(void *)
 #endif
 
 	mount_root();
+	viewcache_init();
 
 	kdprintf("Threaded init!\n");
 

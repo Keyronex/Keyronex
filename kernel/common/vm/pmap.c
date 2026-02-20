@@ -7,16 +7,14 @@
  * @brief Physical mapping code.
  */
 
+#include <sys/k_intr.h>
 #include <sys/k_log.h>
+#include <sys/k_xcall.h>
 #include <sys/pmap.h>
 
 #include <libkern/lib.h>
-
-#include "vm/map.h"
-#include "vm/page.h"
-
-/* todo: rationalise this */
-void pmap_valid_ptes_zeroed(struct vm_rs *rs, vm_page_t *page, size_t n);
+#include <vm/map.h>
+#include <vm/page.h>
 
 int
 pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
@@ -197,6 +195,41 @@ pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs,
 	}
 }
 
+/*
+ * @brief Quickly fetch pointer to a PTE, if it can be reached.
+ */
+pte_t *
+pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr)
+{
+	size_t indexes[PMAP_MAX_LEVELS];
+	vm_page_t *table_page;
+	pte_t *table;
+
+	kassert(ke_spinlock_held(&map->stealing_lock));
+	kassert(ke_ipl() == IPL_DISP);
+
+	pmap_indexes(vaddr, indexes);
+
+	table = (pte_t *)p2v(map->pgtable);
+
+	for (size_t level = PMAP_LEVELS - 1;; level--) {
+		pte_t *ppte = &table[indexes[level]];
+		pte_t pte = pmap_load_pte(ppte);
+
+		if (level == 0) {
+			if (out_table_page != NULL)
+				*out_table_page = table_page;
+			return ppte;
+		}
+
+		if (pmap_pte_characterise(pte) != kPTEKindHW)
+			return NULL;
+
+		table = (pte_t *)p2v(pmap_pte_hwdir_paddr(pte, level));
+		table_page = VM_PAGE_FOR_PADDR(
+		    pmap_pte_hwdir_paddr(pte, level));
+	}
+}
 
 void
 pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
@@ -226,4 +259,54 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
 #endif
 		}
 	}
+}
+
+void
+pmap_tlb_flush_vaddr(void *arg)
+{
+#if defined(__amd64__)
+	vaddr_t vaddr = (vaddr_t)(uintptr_t)arg;
+	asm volatile("invlpg (%0)" ::"r"(vaddr) : "memory");
+#elif defined(__riscv)
+	vaddr_t vaddr = (vaddr_t)(uintptr_t)arg;
+	asm volatile("sfence.vma %0, x0" ::"r"(vaddr) : "memory");
+#elif defined(__m68k__)
+	vaddr_t vaddr = (vaddr_t)(uintptr_t)arg;
+	asm volatile("pflush (%0)" : : "a"(vaddr) : "memory");
+#else
+	kfatal("Port me!\n");
+#endif
+}
+
+void
+pmap_tlb_flush_all(void *)
+{
+#if defined(__amd64__)
+	unsigned long cr3;
+	asm volatile("mov %%cr3, %0\n\t"
+		     "mov %0, %%cr3\n\t"
+	    : "=r"(cr3)
+	    :
+	    : "memory");
+#elif defined(__riscv)
+	asm volatile("sfence.vma x0, x0" ::: "memory");
+#elif defined(__m68k__)
+	asm volatile("pflusha" : : : "memory");
+#else
+	kfatal("Port me!\n");
+#endif
+}
+
+void
+pmap_tlb_flush_vaddr_globally(vaddr_t vaddr)
+{
+	ke_xcall_broadcast(pmap_tlb_flush_vaddr, (void *)vaddr);
+	pmap_tlb_flush_vaddr((void *)vaddr);
+}
+
+void
+pmap_tlb_flush_all_globally(void)
+{
+	ke_xcall_broadcast(pmap_tlb_flush_all, NULL);
+	pmap_tlb_flush_all(NULL);
 }
