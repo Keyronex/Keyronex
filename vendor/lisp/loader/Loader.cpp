@@ -119,12 +119,12 @@ namespace Npl
         }
         NPL_LOG("Kernel dynamic segment at %p\r\n", dyn);
 
-        const sl::Elf_Sym* symTable;
-        const uint8_t* pltRelocs;
+        const sl::Elf_Sym* symTable = nullptr;
+        const uint8_t* pltRelocs =  nullptr;
         size_t pltRelocSize = 0;
         bool pltUsesRela = false;
-        const sl::Elf_Rela* relas;
-        const sl::Elf_Rel* rels;
+        const sl::Elf_Rela* relas = nullptr;
+        const sl::Elf_Rel* rels = nullptr;
         size_t relaCount = 0;
         size_t relCount = 0;
 
