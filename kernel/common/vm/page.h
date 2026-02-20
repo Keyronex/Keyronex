@@ -145,6 +145,7 @@ void vmp_page_dom_lock_exit(vm_page_t *);
 
 void vm_page_retain(vm_page_t *);
 void vm_page_release(vm_page_t *);
+void vm_page_release_and_dirty(vm_page_t *page, bool dirty);
 void vm_page_dirty(vm_page_t *);
 
 extern vm_domain_t vm_domains[1];

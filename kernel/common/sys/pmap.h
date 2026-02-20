@@ -54,6 +54,8 @@ void pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs,
     struct pte_cursor *state);
 pte_t *pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr);
 
+paddr_t pmap_allocate_pgtable(struct vm_map *map);
+
 void pmap_valid_ptes_zeroed(struct vm_rs *rs, vm_page_t *page, size_t n);
 
 #endif /* ECX_KEYRONEX_PMAP_H */

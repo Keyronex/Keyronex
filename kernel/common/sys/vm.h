@@ -44,6 +44,12 @@ typedef enum vm_alloc_flags {
 
 typedef enum vm_cache_mode vm_cache_mode_t;
 
+struct vm_voaddr {
+	uintptr_t object;
+	size_t offset;
+	bool private;
+};
+
 size_t vm_npages_to_order(size_t npages);
 size_t vm_bytes_to_order(size_t bytes);
 
