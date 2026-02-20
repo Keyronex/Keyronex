@@ -132,4 +132,7 @@ vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, 
 vnode_t *vn_retain(vnode_t *);
 void vn_release(vnode_t *);
 
+int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
+    void *buf);
+
 #endif /* ECX_SYS_VNODE_H */

@@ -88,6 +88,9 @@ int vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
 
 void vfs_init(vfs_t *);
 
+namecache_handle_t nchandle_retain(namecache_handle_t in);
+namecache_handle_t nchandle_release(namecache_handle_t in);
+
 extern namecache_handle_t root_nch;
 
 #endif /* ECX_SYS_KRX_VFS_H */

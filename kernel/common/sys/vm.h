@@ -55,6 +55,19 @@ int vm_k_map_phys(vaddr_t *p_vaddr, paddr_t pa, size_t size, vm_cache_mode_t);
 
 void vm_kmap_init(void);
 
+vm_map_t *vm_map_create(void);
+void vm_map_release(vm_map_t *map);
+int vm_fork(vm_map_t *parent, vm_map_t *child);
+
+int vm_allocate(vm_map_t *map, vm_prot_t prot, vaddr_t *vaddrp, size_t size,
+    bool exact);
+int vm_map(vm_map_t *map, vm_object_t *object, vaddr_t *vaddrp, size_t size,
+    uint64_t obj_offset, vm_prot_t initial_prot, vm_prot_t max_prot,
+    bool inherit_shared, bool copy, bool exact);
+int vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
+    vm_prot_t prot, vm_cache_mode_t cache, bool exact);
+int vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end);
+
 vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,
     vm_alloc_flags_t);
 void vm_page_delete(vm_page_t *page, bool unref);

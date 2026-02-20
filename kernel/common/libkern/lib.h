@@ -49,4 +49,11 @@ char *strrchr(const char *str, int c);
 
 char *strtok_r(char *s, const char *delim, char **last);
 
+/* os/copyinout.c */
+int memcpy_from_user(void *dst, const void *src, size_t len);
+int memcpy_to_user(void *dst, const void *src, size_t len);
+size_t strllen_user(const char *s, size_t strsz);
+int strlcpy_from_user(char *dst, const char *src, size_t dstsize);
+size_t strldup_user(char **dst, const char *src, size_t strsz);
+
 #endif /* ECX_LIBKERN_LIB_H */

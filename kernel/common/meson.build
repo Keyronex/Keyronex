@@ -42,6 +42,7 @@ kernel_sources += [
     'libkern/murmurhash.c',
     'libkern/lib.c',
 
+    'os/exec.c',
     'os/main.c',
     'os/proc.c',
 

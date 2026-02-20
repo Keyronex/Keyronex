@@ -85,7 +85,6 @@ typedef struct kthread {
 	bool 		user;		/* user thread? (do FPU save/restore) */
 
 	struct ktask	*task;	/* task this thread belongs to */
-	struct ktask	*attached_task; /* task temporarily attached to */
 
 	kspinlock_t lock;
 	enum kthread_state {
@@ -114,7 +113,6 @@ typedef struct kthread {
 
 typedef struct ktask {
 	LIST_HEAD(, kthread) threads;
-	paddr_t		pmap;
 } ktask_t;
 
 void ke_dispatch(void);
