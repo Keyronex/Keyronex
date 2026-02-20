@@ -145,6 +145,28 @@ pmap_pte_hwleaf_create(pte_t *ppte, uintptr_t pfn, pmap_level_t level,
 	return pte;
 }
 
+static inline bool
+pmap_pte_hwleaf_writeable(pte_t pte)
+{
+	return pte.hw.writeable;
+}
+
+static inline void
+pmap_pte_hwleaf_set_writeable(pte_t *ppte)
+{
+	union pte pte = pmap_load_pte(ppte);
+	pte.hw.writeable = 1;
+	pmap_store_pte(ppte, pte);
+}
+
+static inline void
+pmap_pte_hwleaf_clear_writeable(pte_t *ppte)
+{
+	union pte pte = pmap_load_pte(ppte);
+	pte.hw.writeable = 0;
+	pmap_store_pte(ppte, pte);
+}
+
 static inline paddr_t
 pmap_pte_hwleaf_paddr(pte_t pte, pmap_level_t level)
 {
