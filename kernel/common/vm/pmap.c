@@ -232,6 +232,53 @@ pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr)
 }
 
 void
+pmap_new_leaf_valid_ptes_created(vm_rs_t *rs, struct pte_cursor *cursor,
+    size_t n)
+{
+	cursor->pages[0]->proctable.nonzero_ptes += n;
+	cursor->pages[0]->proctable.noswap_ptes += n;
+
+	/*
+	 * this stuff isn't a pmap duty really - could be moved. and it's
+	 * asymmetrical because pmap_valid_ptes_zeroed doesn't deal with this.
+	 */
+	cursor->pages[0]->proctable.valid_pageable_leaf_ptes += n;
+	if (cursor->pages[0]->proctable.valid_pageable_leaf_ptes == n) {
+		/* first valid PTEs on this page */
+#if TRACE_LEAF_TABLE_TRACKING
+		kprintf("Adding leaf table page to active list\n");
+#endif
+		TAILQ_INSERT_TAIL(&rs->active_leaf_tables, cursor->pages[0],
+		    qlink);
+	}
+}
+
+void
+pmap_new_leaf_fork_ptes_created(vm_rs_t *rs, struct pte_cursor *cursor,
+    size_t n)
+{
+	cursor->pages[0]->proctable.nonzero_ptes += n;
+}
+
+void
+pmap_anon_ptes_converted_to_leaf_valid_pte(struct vm_rs *rs,
+    struct pte_cursor *cursor, size_t n)
+{
+	cursor->pages[0]->proctable.noswap_ptes += n;
+
+	cursor->pages[0]->proctable.valid_pageable_leaf_ptes += n;
+	if (cursor->pages[0]->proctable.valid_pageable_leaf_ptes == n) {
+		/* first valid PTEs on this page */
+#if TRACE_LEAF_TABLE_TRACKING
+		kprintf("Adding leaf table page to active list\n");
+#endif
+		TAILQ_INSERT_TAIL(&rs->active_leaf_tables, cursor->pages[0],
+		    qlink);
+	}
+}
+
+
+void
 pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
 {
 	kassert(page->use == VM_PAGE_TABLE, "");
@@ -242,7 +289,8 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
 		vm_page_t *dir_page;
 		kassert(!page->proctable.is_root, "freeing root pgtable");
 		dir_page = VM_PAGE_FOR_HHDM_ADDR((vaddr_t)page->pte);
-		pmap_pte_zerodir_create(page->pte, page->proctable.level + 1);
+		kassert(dir_page->proctable.level == page->proctable.level + 1);
+		pmap_pte_zerodir_create(page->pte, dir_page->proctable.level);
 		vm_page_delete(page, true);
 		pmap_valid_ptes_zeroed(rs, dir_page, 1);
 	} else {

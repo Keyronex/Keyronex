@@ -594,7 +594,7 @@ retry:
 		vm_page_t *table_page = VM_PAGE_FOR_HHDM_ADDR((vaddr_t)ppte);
 		pte_t pte = pmap_load_pte(ppte);
 		kassert(pmap_pte_characterise(pte) == kPTEKindTrans, "page use not transitional");
-		pmap_pte_create_soft(pte, kPTEKindSwap, page->swap_address,
+		pmap_pte_soft_create(pte, kPTEKindSwap, page->swap_address,
 		    false);
 		/*
 		 * TODO: Figure out if it's fine to drop the queues lock - I
@@ -611,7 +611,7 @@ retry:
 	case VM_PAGE_OBJ_TABLE: {
 		vm_page_t *table_page = VM_PAGE_FOR_HHDM_ADDR((vaddr_t)pte);
 		kassert(pmap_pte_characterise(pte) == kPTEKindTrans);
-		pmap_pte_create_soft(pte, kPTEKindSwap, page->swap_address,
+		pmap_pte_soft_create(pte, kPTEKindSwap, page->swap_address,
 		    false);
 		ke_spinlock_exit_nospl(&dom->queues_lock);
 		obj_table_pte_did_become_swap(owner.obj, table_page);
@@ -620,7 +620,7 @@ retry:
 
 	case VM_PAGE_ANON_SHARED: {
 		kassert(pmap_pte_characterise(pte) == kPTEKindHW);
-		pmap_pte_create_soft(page->pte, kPTEKindSwap,
+		pmap_pte_soft_create(page->pte, kPTEKindSwap,
 		    page->swap_address, false);
 		ke_spinlock_exit_nospl(&dom->queues_lock);
 		obj_page_swapped(owner.obj, page);

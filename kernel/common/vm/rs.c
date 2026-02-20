@@ -20,7 +20,7 @@ rs_evict_leaf_pte(vm_rs_t *rs, vaddr_t vaddr, vm_page_t *page, pte_t *ppte)
 	switch (page->use) {
 #if 0
 	case VM_PAGE_PRIVATE: {
-		pmap_pte_create_soft(pte, kPTEKindTrans, VM_PAGE_PFN(page),
+		pmap_pte_soft_create(pte, kPTEKindTrans, VM_PAGE_PFN(page),
 		    true);
 		pmap_tlb_flush_vaddr_globally(vaddr);
 		// dcache flush?

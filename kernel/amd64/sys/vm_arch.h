@@ -49,9 +49,11 @@
 #define FILE_MAP_BASE 0xffffd80000000000
 #define FILE_MAP_SIZE (1ULL << 42)
 
+#if 0
 /* Miscellaneous mapping area from -32 TiB to -28 TiB */
 #define MISC_MAP_BASE 0xffffe00000000000
 #define MISC_MAP_SIZE (1ULL << 42)
+#endif
 
 /* Kernel text and data from -2GiB to the end of the address space. */
 #define KERN_TEXT_BASE	0xffffffff80000000

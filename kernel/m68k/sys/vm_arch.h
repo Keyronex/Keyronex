@@ -38,14 +38,11 @@
 #define PIN_HEAP_BASE 0xc0000000
 #define PIN_HEAP_SIZE 0x10000000
 
-#define PAGE_HEAP_BASE 0xf0000000
-#define PAGE_HEAP_SIZE 0xc000000
+#define PAGE_HEAP_BASE 0xd0000000
+#define PAGE_HEAP_SIZE 0x10000000
 
-#define FILE_MAP_BASE 0xd0000000
+#define FILE_MAP_BASE 0xe0000000
 #define FILE_MAP_SIZE 0x10000000
-
-#define MISC_MAP_BASE 0xe0000000
-#define MISC_MAP_SIZE 0x10000000
 
 /* Kernel text and data from -32MiB to the end of the address space. */
 #define KERN_TEXT_BASE	0xfd000000

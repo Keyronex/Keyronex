@@ -50,6 +50,8 @@ typedef uint64_t kabstime_t;
 /*! Relative time in nanoseconds. */
 typedef uint64_t knanosecs_t;
 
+typedef uintptr_t pgoff_t;
+typedef uintptr_t pfn_t;
 typedef uintptr_t paddr_t;
 typedef uintptr_t vaddr_t;
 

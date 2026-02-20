@@ -146,6 +146,12 @@ pmap_pte_hwleaf_create(pte_t *ppte, uintptr_t pfn, pmap_level_t level,
 }
 
 static inline bool
+pmap_pte_hwleaf_executable(pte_t pte)
+{
+	return !pte.hw.nx;
+}
+
+static inline bool
 pmap_pte_hwleaf_writeable(pte_t pte)
 {
 	return pte.hw.writeable;
@@ -172,6 +178,20 @@ pmap_pte_hwleaf_paddr(pte_t pte, pmap_level_t level)
 {
 	return (level == PMAP_L0 ? pte.hw.pfn : pte.hw_large.pfn) << PGSHIFT;
 }
+
+static inline void
+pmap_pte_soft_create(pte_t *ppte, int kind, uintptr_t data, bool was_hw)
+{
+	union pte pte = {
+		.soft = {
+			.valid = 0,
+			.data = data,
+			.kind = kind,
+		},
+	};
+	pmap_store_pte(ppte, pte);
+}
+
 
 static inline void
 pmap_pte_zeroleaf_create(pte_t *ppte, pmap_level_t level)

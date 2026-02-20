@@ -29,7 +29,7 @@ struct exec_package {
 
 typedef char **strv_t;
 
-#if BITS == 32
+#if defined (__m68k__)
 typedef Elf32_Ehdr Elf_Ehdr;
 typedef Elf32_Phdr Elf_Phdr;
 #else

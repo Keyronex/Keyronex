@@ -489,7 +489,7 @@ setup_permanent_tables(void)
 
 
 	for (vaddr_t vaddr = PAGE_HEAP_BASE;
-	     vaddr < MISC_MAP_BASE + MISC_MAP_SIZE; vaddr += PMAP_ROOTLEVEL_SPAN) {
+	     vaddr < FILE_MAP_BASE + FILE_MAP_SIZE; vaddr += PMAP_ROOTLEVEL_SPAN) {
 		pte_t *pte;
 		vm_page_t *page;
 
@@ -523,8 +523,8 @@ vm_kmap_init(void)
 	kernel_map.rs.valid_n = 0;
 	TAILQ_INIT(&kernel_map.rs.active_leaf_tables);
 
-	vmem_init(&kernel_map.vmem, "kernel-general-paged", MISC_MAP_BASE,
-	    MISC_MAP_SIZE, PGSIZE, NULL, NULL, NULL, 0, 0);
+	vmem_init(&kernel_map.vmem, "kernel-general-paged", PAGE_HEAP_BASE,
+	    PAGE_HEAP_SIZE, PGSIZE, NULL, NULL, NULL, 0, 0);
 	kernel_map.pgtable = kpgtable;
 	proc0.vm_map = &kernel_map;
 }

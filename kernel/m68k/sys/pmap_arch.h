@@ -141,11 +141,27 @@ pmap_pte_hwleaf_paddr(pte_t pte, pmap_level_t level)
 	return pte.hw_pml0_040.pfn << 12;
 }
 
+
+static inline bool
+pmap_pte_hwleaf_executable(pte_t pte)
+{
+	return true;
+}
+
 static inline bool
 pmap_pte_hwleaf_writeable(pte_t pte)
 {
-	return pte.hw_pml1_040.writeprotect == 0;
+	return pte.hw_pml0_040.writeprotect == 0;
 }
+
+static inline void
+pmap_pte_hwleaf_set_writeable(pte_t *ppte)
+{
+	pte_t pte = pmap_load_pte(ppte);
+	pte.hw_pml0_040.writeprotect = 0;
+	pmap_store_pte(ppte, pte);
+}
+
 
 static inline void
 pmap_pte_hwleaf_clear_writeable(pte_t *ppte)
@@ -155,6 +171,18 @@ pmap_pte_hwleaf_clear_writeable(pte_t *ppte)
 	pmap_store_pte(ppte, pte);
 }
 
+static inline void
+pmap_pte_soft_create(pte_t *ppte, int kind, uintptr_t data, bool was_hw)
+{
+	union pte pte = {
+		.soft = {
+			.hw_type = 0,
+			.data = data,
+			.kind = kind,
+		},
+	};
+	pmap_store_pte(ppte, pte);
+}
 
 static inline void
 pmap_pte_zeroleaf_create(pte_t *ppte, pmap_level_t)
