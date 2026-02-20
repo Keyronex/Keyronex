@@ -17,6 +17,11 @@
 
 #define PMAP_ROOTLEVEL_SPAN (1ULL << 39) /* 512gib */
 
+#define PMAP_L3_SKIP 512
+#define PMAP_L2_SKIP 512
+#define PMAP_L1_SKIP 512
+#define PMAP_L0_SKIP 512
+
 typedef enum pmap_level {
 	PMAP_L0,
 	PMAP_L1,

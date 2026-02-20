@@ -39,6 +39,14 @@ union vaddr_040 {
 	uint32_t addr;
 };
 
+/*
+ * Since we allocate a whole page's worth of PML0 and PML1 at once, they can be
+ * treated as containing 1024 PTEs for the purposes of the skip logic that uses
+ * these definitions.
+ */
+#define PMAP_L1_SKIP 1024
+#define PMAP_L0_SKIP 1024
+
 /* root table descriptor */
 typedef struct __attribute__((packed))  pml2e_040 {
 	uint32_t addr : 28, used : 1, writeprotect : 1, type : 2;

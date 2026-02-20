@@ -381,12 +381,16 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			if (r < 0) {
 				vaddr_t align = PGSIZE;
 				switch (-r) {
+#if PMAP_LEVELS >= 4
 				case 3:
-					align *= 512; /* fallthrough */
+					align *= PMAP_L2_SKIP; /* fallthrough */
+#endif
+#if PMAP_LEVELS >= 3
 				case 2:
-					align *= 512; /* fallthrough */
+					align *= PMAP_L1_SKIP; /* fallthrough */
+#endif
 				case 1:
-					align *= 512;
+					align *= PMAP_L0_SKIP;
 					break;
 				default:
 					kfatal("Unexpected offset %d\n", -r);
@@ -401,6 +405,8 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			ppte = cursor.pte;
 			table_page = cursor.pages[0];
 		}
+
+		pte = pmap_load_pte(ppte);
 
 		switch (pmap_pte_characterise(pte)) {
 		case kPTEKindZero:
