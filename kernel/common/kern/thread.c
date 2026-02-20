@@ -51,3 +51,9 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	spinlock_unlock(&proc->threads_lock, ipl);
 #endif
 }
+
+void
+ke_set_tcb(uintptr_t value)
+{
+	ke_curthread()->tcb = value;
+}

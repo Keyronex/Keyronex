@@ -14,6 +14,8 @@
 #include <sys/pcb.h>
 #include <sys/vm.h>
 
+#include <keyronex/syscall.h>
+
 #include <libkern/lib.h>
 
 #include "goldfish.h"
@@ -22,6 +24,9 @@
 
 void vm_fault(vaddr_t va, vm_prot_t prot);
 void kep_dispatch_softints(ipl_t newipl);
+uintptr_t sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
+    uintptr_t arg5, uintptr_t arg6, uintptr_t *out1);
 
 static inline uint16_t
 m68k_sr_read(void)
@@ -172,6 +177,17 @@ c_trap(karch_trapframe_t *frame)
 		ke_arch_enable(true);
 
 		gfpic_dispatch((frame->vector_offset - 0x64) / 4, frame);
+		break;
+
+	case 0x80:
+		if (oldipl > IPL_0)
+			kfatal("Syscall from high IPL");
+
+		CPU_LOCAL_STORE(ipl, oldipl);
+		ke_arch_enable(true);
+
+		frame->d0 = sys_dispatch(frame, frame->d0, frame->d1, frame->d2, frame->d3,
+		    frame->d4, frame->d5, frame->a0, &frame->d1);
 		break;
 
 	default:

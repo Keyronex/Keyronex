@@ -84,6 +84,8 @@ typedef struct kthread {
 	void 		*kstack_base;	/* kernel stack base */
 	bool 		user;		/* user thread? (do FPU save/restore) */
 
+	uintptr_t 	tcb;
+
 	struct ktask	*task;	/* task this thread belongs to */
 
 	kspinlock_t lock;
@@ -120,6 +122,7 @@ void ke_thread_resume(kthread_t *, bool io_completion);
 
 void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
+void ke_set_tcb(uintptr_t value);
 
 kpri_t ke_thread_epri_locked(kthread_t *);
 void ke_thread_set_ipri_locked(kthread_t *, kpri_t);

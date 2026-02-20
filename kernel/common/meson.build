@@ -46,6 +46,7 @@ kernel_sources += [
     'os/exec.c',
     'os/main.c',
     'os/proc.c',
+    'os/syscall.c',
 
     'vm/init.c',
     'vm/fault.c',

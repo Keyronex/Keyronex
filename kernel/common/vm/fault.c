@@ -164,7 +164,6 @@ do_object_fault(struct fault_info *info,
 {
 	pte_t pte;
 	struct obj_pte_wire_state objcursor;
-	vm_prot_t user_prot = is_userland(info->vaddr) ? VM_USER : 0;
 	int r;
 
 	ke_spinlock_exit_nospl(&info->map->stealing_lock);
@@ -272,7 +271,8 @@ do_object_fault(struct fault_info *info,
 			    VM_PAGE_PFN(page[i]), PMAP_L0, 0,
 			    kCacheModeDefault);
 			pmap_pte_hwleaf_create(info->cursor.pte + i,
-			    VM_PAGE_PFN(page[i]), PMAP_L0, info->prot,
+			    VM_PAGE_PFN(page[i]), PMAP_L0,
+			    VM_READ | (info->prot & VM_EXEC) | userland_prot(info->vaddr),
 			    kCacheModeDefault);
 		}
 
@@ -311,7 +311,7 @@ do_object_fault(struct fault_info *info,
 		    info->prot & VM_WRITE && !info->entry_cow)
 		    prot |= VM_WRITE;
 		pmap_pte_hwleaf_create(info->cursor.pte, VM_PAGE_PFN(page), 0,
-		    prot | user_prot, kCacheModeDefault);
+		    prot | userland_prot(info->vaddr), kCacheModeDefault);
 		info->rs->valid_n += 1;
 		pmap_new_leaf_valid_ptes_created(info->rs, &info->cursor, 1);
 		pmap_unwire_pte(info->map, info->rs, &info->cursor);
@@ -601,7 +601,7 @@ vm_fault(vaddr_t addr, vm_prot_t type)
 
 				pmap_pte_hwleaf_create(info.cursor.pte,
 				    VM_PAGE_PFN(new_page), PMAP_L0,
-				    VM_READ | (info.prot & VM_EXEC) |
+				    VM_READ | VM_WRITE | (info.prot & VM_EXEC) |
 					userland_prot(info.vaddr),
 				    kCacheModeDefault);
 
@@ -665,8 +665,8 @@ vm_fault(vaddr_t addr, vm_prot_t type)
 
 		pmap_pte_hwleaf_create(info.cursor.pte, VM_PAGE_PFN(page),
 		    PMAP_L0,
-		    VM_READ | (type & VM_WRITE) | (info.prot & VM_EXEC) |
-			userland_prot(info.vaddr),
+		    VM_READ | ((info.prot & VM_WRITE) & (type & VM_WRITE)) |
+		    (info.prot & VM_EXEC) | userland_prot(info.vaddr),
 		    kCacheModeDefault);
 
 		pmap_new_leaf_valid_ptes_created(info.rs, &info.cursor, 1);

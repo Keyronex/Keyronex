@@ -159,7 +159,7 @@ obj_wire_pte(vm_object_t *obj, struct obj_pte_wire_state *state, vaddr_t offset,
 				table_page->objtable.nonzero_ptes++;
 			}
 
-			pmap_pte_hwleaf_create(ppte, VM_PAGE_PADDR(page),
+			pmap_pte_hwleaf_create(ppte, VM_PAGE_PFN(page),
 			    PMAP_L0, 0, level);
 
 			state->pages[level - 1] = page;
