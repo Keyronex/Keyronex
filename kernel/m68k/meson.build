@@ -5,5 +5,6 @@ kernel_sources += files(
     'kern/goldfish_rtc.c',
     'kern/intr.c',
     'kern/locore.S',
+    'vm/pmap.c',
 )
 common_kernel_includes += include_directories('.')
