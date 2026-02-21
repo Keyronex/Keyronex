@@ -16,6 +16,7 @@
 
 #include <sys/k_thread.h>
 #include <sys/k_wait.h>
+#include <sys/stropts.h>
 #include <sys/stream.h>
 
 struct req_waiter {
@@ -37,12 +38,6 @@ enum str_head_kind {
 	STR_HEAD_KIND_RPIPE,
 	STR_HEAD_KIND_WPIPE,
 	STR_HEAD_KIND_FIFO,
-};
-
-enum str_read_mode {
-	STR_RNORM, /* Byte stream (noncanon TTY, pipes, fifos, SOCK_STREAM) */
-	STR_RMSGD, /* Read one message, discard remainder (SOCK_DGRAM) */
-	STR_RMSGN, /* Read one message, leave remainder (canon TTY) */
 };
 
 typedef struct stdata {
@@ -87,6 +82,7 @@ typedef struct stdata {
 } stdata_t;
 
 stdata_t *stropen(struct streamtab *devtab, void *dev);
+int strpush(stdata_t *sh, struct streamtab *tab);
 int strread(stdata_t *, void *buf, size_t len, int options);
 int strwrite(stdata_t *, const void *buf, size_t len, int options);
 int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);

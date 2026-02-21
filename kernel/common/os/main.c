@@ -9,14 +9,15 @@
 
 #include <sys/k_cpu.h>
 #include <sys/k_log.h>
-#include <sys/kmem.h>
 #include <sys/k_thread.h>
+#include <sys/kmem.h>
+#include <sys/krx_vfs.h>
 #include <sys/limine.h>
 #include <sys/proc.h>
 #include <sys/vm.h>
 #include <sys/vmem.h>
+
 #include <abi-bits/fcntl.h>
-#include "sys/krx_vfs.h"
 
 #if defined(__amd64__)
 #define BSP_ARCH_ID bsp_lapic_id
@@ -200,13 +201,16 @@ runinit(void *)
 	kfatal("runinit: Should never reach this point\n");
 }
 
+static proc_t *proc1;
+static thread_t *thread1;
+
 static void
 exec_init(void)
 {
-	proc_t *init_proc = proc_create(&proc0, false);
-	thread_t *init_thread = proc_new_thread(init_proc, NULL, runinit, NULL);
-	init_thread->kthread.user = true;
-	ke_thread_resume(&init_thread->kthread, false);
+	proc1 = proc_create(&proc0, false);
+	thread1 = proc_new_thread(proc1, NULL, runinit, NULL);
+	thread1->kthread.user = true;
+	ke_thread_resume(&thread1->kthread, false);
 }
 
 static void
@@ -233,7 +237,7 @@ threaded_init(void *)
 		kcallout_t co;
 		ke_callout_init(&co);
 		ke_callout_set(&co, ke_time() + NS_PER_S);
-		kdprintf("Waiting for 1s\n");
+		//kdprintf("Waiting for 1s\n");
 		ke_wait1(&co, "callout", false, ABSTIME_FOREVER);
 	}
 

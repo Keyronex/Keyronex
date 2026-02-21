@@ -21,4 +21,20 @@ struct strioctl {
 	int rval;
 };
 
+enum str_option_flags {
+	SO_READMODE = 0x01, /* set read mode */
+};
+
+enum str_read_mode {
+	STR_RNORM, /* Byte stream (noncanon TTY, pipes, fifos, SOCK_STREAM) */
+	STR_RMSGD, /* Read one message, discard remainder (SOCK_DGRAM) */
+	STR_RMSGN, /* Read one message, leave remainder (canon TTY) */
+};
+
+struct stroptions {
+	enum str_option_flags flags;	/* option flags */
+	enum str_read_mode readopt;	/* read mode option */
+};
+
+
 #endif /* ECX_SYS_STROPTS_H */

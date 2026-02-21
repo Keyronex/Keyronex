@@ -182,6 +182,47 @@ str_head_alloc(enum str_head_kind kind)
 	return sh;
 }
 
+int
+strpush(stdata_t *sh, struct streamtab *tab)
+{
+	queue_t *newrq, *newwq;
+	queue_t *first_wq, *first_rq;
+
+	ke_mutex_enter(sh->mutex, "str_head_push");
+
+	newrq = qpair_alloc(sh, tab);
+	if (newrq == NULL) {
+		ke_mutex_exit(sh->mutex);
+		return -ENOMEM;
+	}
+	newwq = newrq->other;
+
+	first_wq = sh->wq->next;
+	first_rq = first_wq->other;
+
+	newwq->next = first_wq;
+	first_wq->back = newwq;
+	sh->wq->next = newwq;
+	newwq->back = sh->wq;
+	newrq->next = sh->rq;
+	sh->rq->back = newrq;
+	first_rq->next = newrq;
+	newrq->back = first_rq;
+
+	if (qpair_open(newrq, NULL) != 0) {
+		sh->wq->next = first_wq;
+		first_wq->back = sh->wq;
+		first_rq->next = sh->rq;
+		sh->rq->back = first_rq;
+		qpair_free(newrq);
+		ke_mutex_exit(sh->mutex);
+		return -ENOMEM;
+	}
+
+	ke_mutex_exit(sh->mutex);
+	return 0;
+}
+
 stdata_t *
 stropen(struct streamtab *devtab, void *dev)
 {
@@ -585,6 +626,9 @@ sth_rput(queue_t *q, mblk_t *mp)
 
 	case M_SETOPTS: {
 		struct stroptions *sop = (struct stroptions *)mp->rptr;
+
+		if (sop->flags & SO_READMODE)
+			sh->read_mode = sop->readopt;
 
 		str_freeb(mp);
 		break;

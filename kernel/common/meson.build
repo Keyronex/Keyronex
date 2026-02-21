@@ -22,6 +22,7 @@ kernel_sources += [
     'io/strhead.c',
     'io/strsched.c',
     'io/strsubr.c',
+    'io/ttyld.c',
 
     'kern/callout.c',
     'kern/clock.c',
