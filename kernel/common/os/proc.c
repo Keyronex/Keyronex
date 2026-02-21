@@ -53,7 +53,6 @@ proc_t *
 proc_create(proc_t *parent, bool fork)
 {
 	proc_t *proc;
-	ipl_t ipl;
 
 	proc = kmem_cache_alloc(proc_cache, VM_SLEEP);
 	if (proc == NULL)
@@ -70,6 +69,8 @@ proc_create(proc_t *parent, bool fork)
 
 	if (fork)
 		vm_fork(parent->vm_map, proc->vm_map);
+
+	ke_proc_init(&proc->ktask);
 
 #if 0
 	spinlock_init(&proc->threads_lock);

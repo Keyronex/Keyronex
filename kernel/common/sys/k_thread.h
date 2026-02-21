@@ -10,10 +10,11 @@
 #ifndef ECX_KERN_KTASK_H
 #define ECX_KERN_KTASK_H
 
-#include <libkern/queue.h>
-
 #include <sys/k_cpu.h>
 #include <sys/pcb.h>
+
+#include <libkern/queue.h>
+#include <stdint.h>
 
 struct limine_mp_info;
 
@@ -84,6 +85,7 @@ typedef struct kthread {
 	void 		*kstack_base;	/* kernel stack base */
 	bool 		user;		/* user thread? (do FPU save/restore) */
 
+	uint32_t	tid;
 	uintptr_t 	tcb;
 
 	struct ktask	*task;	/* task this thread belongs to */
@@ -114,7 +116,9 @@ typedef struct kthread {
 } kthread_t;
 
 typedef struct ktask {
+	kspinlock_t threads_lock;
 	LIST_HEAD(, kthread) threads;
+	uint32_t threads_count;
 } ktask_t;
 
 void ke_dispatch(void);
@@ -126,6 +130,8 @@ void ke_set_tcb(uintptr_t value);
 
 kpri_t ke_thread_epri_locked(kthread_t *);
 void ke_thread_set_ipri_locked(kthread_t *, kpri_t);
+
+void ke_proc_init(ktask_t *);
 
 void ke_disp_global_init(void);
 void ke_disp_init(kcpunum_t cpunum);

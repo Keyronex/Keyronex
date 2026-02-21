@@ -39,6 +39,7 @@ kernel_sources += [
     'libkern/objc/OSNumber.m',
     'libkern/objc/OSObject.m',
     'libkern/objc/OSString.m',
+    'libkern/idalloc.c',
     'libkern/murmurhash.c',
     'libkern/lib.c',
 
