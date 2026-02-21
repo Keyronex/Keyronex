@@ -11,13 +11,15 @@
  * @brief Stream head operations.
  */
 
- #include <sys/errno.h>
+#include <sys/errno.h>
+#include <sys/fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/kmem.h>
-#include <sys/stream.h>
-#include <sys/strsubr.h>
 #include <sys/libkern.h>
+#include <sys/socket.h>
+#include <sys/stream.h>
 #include <sys/stropts.h>
+#include <sys/strsubr.h>
 #include <sys/termios.h>
 
 static struct streamtab sth_streamtab;
@@ -215,6 +217,148 @@ stropen(struct streamtab *devtab, void *dev)
 	return sh;
 }
 
+
+int
+strread(stdata_t *sh, void *buf, size_t len, int options)
+{
+	size_t ncopied = 0;
+
+	if (len == 0)
+		return 0;
+
+	str_reqlock(sh);
+
+	while (ncopied < len) {
+		mblk_t *mp, *bp;
+		int r;
+
+		while (TAILQ_EMPTY(&sh->rq->msgq)) {
+			if (ncopied > 0) {
+				str_requnlock(sh);
+				return ncopied;
+			}
+
+			if (sh->hanged_up) {
+				str_requnlock(sh);
+				return 0;
+			}
+
+			if (options & O_NONBLOCK) {
+				str_requnlock(sh);
+				return -EWOULDBLOCK;
+			}
+
+			ke_event_set_signalled(&sh->data_readable, false);
+			str_requnlock(sh);
+
+			ke_wait1(&sh->data_readable, "sth_read", true,
+			    ABSTIME_FOREVER);
+
+			str_reqlock(sh);
+		}
+
+		mp = TAILQ_FIRST(&sh->rq->msgq);
+
+		for (bp = mp; bp != NULL && ncopied < len; bp = bp->cont) {
+			size_t avail, tocopy;
+
+			avail = bp->wptr - bp->rptr;
+			if (avail == 0)
+				continue;
+
+			tocopy = (avail < len - ncopied) ? avail :
+							   (len - ncopied);
+
+			/* todo: release mutex while doing memcpy_to_user */
+			r = memcpy_to_user((char *)buf + ncopied, bp->rptr,
+			    tocopy);
+			if (r < 0) {
+				str_requnlock(sh);
+				return ncopied > 0 ? ncopied : r;
+			}
+
+			ncopied += tocopy;
+
+			if ((options & MSG_PEEK) == 0) {
+				bp->rptr += tocopy;
+				sh->rq->count -= tocopy;
+				if (sh->rq->full &&
+				    sh->rq->count <= sh->rq->lowat) {
+					sh->rq->full = false;
+					if (sh->rq->wantw) {
+#if 0 /* implement me */
+						str_backenable(sh->rq);
+#endif
+					}
+				}
+			}
+		}
+
+		if ((options & MSG_PEEK) == 0) {
+			if (str_msgsize(mp) == 0) {
+				TAILQ_REMOVE(&sh->rq->msgq, mp, link);
+				str_freemsg(mp);
+
+				if (sh->read_mode != STR_RNORM)
+					break;
+			} else {
+				if (sh->read_mode == STR_RMSGD) {
+					sh->rq->count -= str_msgsize(mp);
+					TAILQ_REMOVE(&sh->rq->msgq, mp, link);
+					str_freemsg(mp);
+				}
+				/* RNORM/RMSGN leave the partial message in
+				 * queue */
+				break;
+			}
+		} else {
+			/* not correct for STR_RNORM! */
+			break;
+		}
+	}
+
+	str_requnlock(sh);
+
+	return ncopied;
+}
+
+int
+strwrite(stdata_t *sh, const void *buf, size_t len, int)
+{
+	int r;
+	mblk_t *mp;
+
+	mp = str_allocb(len);
+	if (mp == NULL) {
+		return -ENOMEM;
+	}
+
+	str_reqlock(sh);
+	ke_mutex_exit(sh->mutex);
+
+	r = memcpy_from_user(mp->wptr, buf, len);
+	if (r < 0) {
+		str_requnlock_mutexunheld(sh);
+		str_freeb(mp);
+		return r;
+	}
+
+	mp->wptr += len;
+
+	ke_mutex_enter(sh->mutex, "str_write");
+
+	if (sh->kind == STR_HEAD_KIND_WPIPE && sh->write_broken) {
+		str_freeb(mp);
+		str_requnlock(sh);
+		/* TODO: send SIGPIPE to process */
+		return -EPIPE;
+	}
+
+	str_putnext(sh->wq, mp);
+	str_requnlock(sh);
+
+	return len;
+}
 
 int
 strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)

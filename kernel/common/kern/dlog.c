@@ -88,12 +88,12 @@ ksnprintf(char *str, size_t size, const char *fmt, ...)
 }
 
 void
-kdputs(const char *str)
+kdputn(const char *str, size_t len)
 {
 	ipl_t ipl = splhigh();
 	ke_spinlock_enter_nospl(&dlog_lock);
-	while (*str++ != '\0')
-		ke_md_early_putc(*str, 0);
+	for (size_t i = 0; i < len; i++)
+		ke_md_early_putc(str[i], 0);
 	ke_spinlock_exit(&dlog_lock, ipl);
 }
 

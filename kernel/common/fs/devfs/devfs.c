@@ -137,6 +137,35 @@ dev_spec_open(vnode_t **vn, int)
 }
 
 int
+dev_spec_read(vnode_t *vn, void *buf, size_t length, off_t offset, int flags)
+{
+	dev_node_t *dn = VTODN(vn);
+
+	switch (dn->class->kind) {
+	case DEV_KIND_STREAM:
+		return strread(dn->stdata, buf, length, flags);
+
+	default:
+		kfatal("implement me");
+	}
+}
+
+int
+dev_spec_write(vnode_t *vn, const void *buf, size_t length, off_t offset,
+    int flags)
+{
+	dev_node_t *dn = VTODN(vn);
+
+	switch (dn->class->kind) {
+	case DEV_KIND_STREAM:
+		return strwrite(dn->stdata, buf, length, flags);
+
+	default:
+		kfatal("implement me");
+	}
+}
+
+int
 dev_spec_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 {
 	dev_node_t *dn = VTODN(vn);
@@ -189,6 +218,8 @@ mount_devfs(void)
 static struct vnode_ops dev_spec_vnops = {
 	.inactive = dev_spec_inactive,
 	.open = dev_spec_open,
+	.read = dev_spec_read,
+	.write = dev_spec_write,
 	.ioctl = dev_spec_ioctl,
 	.stack_depth = 2,
 	.iop_dispatch = dev_spec_iop_dispatch,

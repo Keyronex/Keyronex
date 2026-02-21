@@ -21,7 +21,7 @@ int kdvprintf(const char *fmt, va_list ap);
 int kdprintf(const char *fmt, ...);
 int kvsnprintf(char *str, size_t size, const char *fmt, va_list ap);
 int ksnprintf(char *str, size_t size, const char *fmt, ...);
-void kdputs(const char *str);
+void kdputn(const char *str, size_t len);
 
 #define kfatal(...) kfatal_internal(__FILE__, __LINE__, __VA_ARGS__)
 #define kunreachable() kfatal("Reached unreachable code")

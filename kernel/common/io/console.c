@@ -73,7 +73,7 @@ console_wput(queue_t *wq, mblk_t *mp)
 	switch (mp->db->type) {
 	case M_DATA:
 		for (mblk_t *bp = mp; bp != NULL; bp = bp->cont)
-			kdputs(bp->rptr);
+			kdputn(bp->rptr, bp->wptr - bp->rptr);
 		str_freemsg(mp);
 		break;
 
