@@ -291,7 +291,5 @@ _start(void)
 	init_thread = proc_new_system_thread(threaded_init, NULL);
 	ke_thread_resume(&init_thread->kthread, false);
 
-	kdprintf("Initialisation complete...\n");
-
 	idle();
 }

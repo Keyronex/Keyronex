@@ -98,7 +98,7 @@ kep_m68k_asm_switch: /* (void)(pcb_t *old, pcb_t *new) */
 	move.l %d0, %a0@(44)
 	move.l %sp, %a0@(48)
 	move.w %sr, %a0@(52)
-	move.w %a0@(52), %sr
+	move.w %a1@(52), %sr
 	move.l %a1@(48), %sp
 	move.l %a1@(44), %sp@
 	movem.l %a1@, %d2-%d7/%a2-%a6
