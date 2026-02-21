@@ -82,4 +82,5 @@ dk_platform_threaded_init(void)
 	[gPlatformRoot start];
 	[DKDevice drainStartQueue];
 	[gDeviceAxis printSubtreeOfDevice:gPlatformRoot];
+	gftty_enable_irq();
 }

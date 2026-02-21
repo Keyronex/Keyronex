@@ -27,5 +27,6 @@ uint64_t gfrtc_get_time(void);
 void gfrtc_oneshot(uint64_t ns);
 
 void gftty_init(void);
+void gftty_enable_irq(void);
 
 #endif /* ECX_KERN_GOLDFISH_H */

@@ -8,7 +8,12 @@
  *   thing instead.
  */
 
+#include <sys/k_log.h>
+#include <sys/kmem.h>
+
 #include <stdint.h>
+
+#include "goldfish.h"
 
 enum gftty_reg {
 	GFTTY_PUT_CHAR = 0x00,
@@ -26,11 +31,18 @@ enum gftty_cmd {
 };
 
 volatile char *gftty_regs = (void *)0x8000000;
+static char *buf;
 
 static void
 gftty_write(enum gftty_reg reg, uint32_t val)
 {
 	*((uint32_t *)&gftty_regs[reg]) = val;
+}
+
+static uint32_t
+gftty_read(enum gftty_reg reg)
+{
+	return *((uint32_t *)&gftty_regs[reg]);
 }
 
 void
@@ -40,17 +52,32 @@ gftty_init(void)
 }
 
 void
-pac_putc(int c, void *ctx)
+ke_md_early_putc(int c, void *)
 {
 	if (c == '\n')
 		gftty_write(GFTTY_PUT_CHAR, '\r');
 	gftty_write(GFTTY_PUT_CHAR, c);
 }
 
-void
-ke_md_early_putc(int c, void *)
+static bool gftty_handler(void *)
 {
-	if (c == '\n')
-		gftty_write(GFTTY_PUT_CHAR, '\r');
-	gftty_write(GFTTY_PUT_CHAR, c);
+	uint32_t bytes_ready;
+
+	while ((bytes_ready = gftty_read(GFTTY_BYTES_READY)) > 0) {
+		bytes_ready = MIN2(bytes_ready, 256);
+		gftty_write(GFTTY_DATA_PTR, (uintptr_t)v2p(buf));
+		gftty_write(GFTTY_DATA_LEN, bytes_ready);
+		gftty_write(GFTTY_CMD, GFTTY_CMD_READ_BUFFER);
+		kdputn(buf, bytes_ready);
+	}
+	return true;
+}
+
+void
+gftty_enable_irq(void)
+{
+	buf = kmem_alloc(256);
+	gfpic_handle_irq(31, gftty_handler, NULL);
+	gfpic_unmask_irq(31);
+	gftty_write(GFTTY_CMD, GFTTY_CMD_INT_ENABLE);
 }
