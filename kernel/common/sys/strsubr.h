@@ -31,9 +31,29 @@ enum {
 	ST_DEAD = (1 << 4),	/* stream is being closed */
 };
 
+enum str_head_kind {
+	STR_HEAD_KIND_NONE,
+	STR_HEAD_KIND_TTY,
+	STR_HEAD_KIND_RPIPE,
+	STR_HEAD_KIND_WPIPE,
+	STR_HEAD_KIND_FIFO,
+};
+
+enum str_read_mode {
+	STR_RNORM, /* Byte stream (noncanon TTY, pipes, fifos, SOCK_STREAM) */
+	STR_RMSGD, /* Read one message, discard remainder (SOCK_DGRAM) */
+	STR_RMSGN, /* Read one message, leave remainder (canon TTY) */
+};
+
 typedef struct stdata {
 	kmutex_t integral_mutex;
 	kmutex_t *mutex;
+
+	struct streamtab *devtab;
+	enum str_head_kind kind;
+
+	bool req_locked;
+	TAILQ_HEAD(, req_waiter) req_waiters;
 
 	kspinlock_t ingress_lock;
 	mblk_q_t ingress_head;
@@ -46,6 +66,26 @@ typedef struct stdata {
 	queue_t *rq_bottom;
 
 	TAILQ_ENTRY(stdata) sched_link;
+
+	/* stream head personality */
+	bool hanged_up;
+	kevent_t data_readable;
+	enum str_read_mode read_mode;
+
+	kevent_t ioctl_done_ev;
+
+	union {
+		struct {
+			struct pgrp *tty_pgrp; /* foreground process group */
+			struct session *tty_session; /* controlling session */
+		};
+		struct {
+			struct stdata *pipe_peer;
+			bool write_broken;
+		};
+	};
 } stdata_t;
+
+stdata_t *stropen(struct streamtab *devtab, void *dev);
 
 #endif /* ECX_SYS_STRSUBR_H */

@@ -180,8 +180,8 @@ runinit(void *)
 
 	for (int i = 0; i < 3; i++) {
 		r = sys_openat(AT_FDCWD, "/dev/console", 0, O_RDWR);
-		if (r != 0)
-			kfatal("Failed to open /dev/console");
+		if (r < 0)
+			kfatal("Failed to open /dev/console: %d", r);
 	}
 
 	r = vfs_lookup_simple(root_nch, &ld, "/usr/lib/ld.so", 0);

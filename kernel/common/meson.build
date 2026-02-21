@@ -18,6 +18,7 @@ kernel_sources += [
 
     'io/console.c',
     'io/iop.c',
+    'io/strhead.c',
     'io/strsched.c',
     'io/strsubr.c',
 

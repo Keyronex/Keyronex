@@ -28,6 +28,7 @@ static int
 console_ropen(queue_t *rq, void *)
 {
 	console_rq = rq;
+	return 0;
 }
 
 static void

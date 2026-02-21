@@ -15,6 +15,7 @@
 #include <sys/vnode.h>
 
 #include <fs/devfs/devfs.h>
+#include "sys/strsubr.h"
 
 #define VTODN(VN) ((dev_node_t *)(VN)->fsprivate_1)
 static struct vnode_ops dev_spec_vnops, dev_vnops;
@@ -35,6 +36,7 @@ devfs_create_node(dev_class_t *class, void *private, const char *fmt, ...)
 	node->vn = NULL;
 
 	node->devprivate = private;
+	node->stdata = NULL;
 
 	va_start(ap, fmt);
 	kvsnprintf(node->name, sizeof(node->name) - 1, fmt, ap);
@@ -67,7 +69,7 @@ devfs_lookup_early(const char *name)
 static int
 dev_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 {
-	dev_node_t *node = NULL;
+	dev_node_t *dn = NULL;
 
 	if (strcmp(name, ".") == 0) {
 		*out = dvn;
@@ -79,22 +81,22 @@ dev_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 	}
 
 	ke_rwlock_enter_read(&hash_lock, "devfs_dir_lookup");
-	TAILQ_FOREACH(node, &hash, hash_entry) {
-		if (strcmp(node->name, name) == 0)
+	TAILQ_FOREACH(dn, &hash, hash_entry) {
+		if (strcmp(dn->name, name) == 0)
 			break;
 	}
 	ke_rwlock_exit_read(&hash_lock);
 
-	if (node == NULL)
+	if (dn == NULL)
 		return -ENOENT;
 
-	ke_rwlock_enter_write(&node->open_lock, "dev_lookup node");
-	if (node->vn == NULL)
-		node->vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
-		    (uintptr_t)node, 0);
-	ke_rwlock_exit_write(&node->open_lock);
+	ke_rwlock_enter_write(&dn->open_lock, "dev_lookup node");
+	if (dn->vn == NULL)
+		dn->vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
+		    (uintptr_t)dn, 0);
+	ke_rwlock_exit_write(&dn->open_lock);
 
-	*out = node->vn;
+	*out = dn->vn;
 
 	return 0;
 }
@@ -109,14 +111,29 @@ static int
 dev_spec_open(vnode_t **vn, int)
 {
 	dev_node_t *dn = VTODN(*vn);
+
+	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_open");
+
+	dn->open_count++;
+	if (dn->open_count == 1) {
+		ke_rwlock_exit_write(&dn->open_lock);
+		return 0;
+	}
+
 	switch(dn->class->kind) {
 		case DEV_KIND_STREAM:
-			kfatal("stream");
+			dn->stdata = stropen(dn->class->streamtab,
+			    dn->devprivate);
+			break;
 
 		default:
 			kfatal("unsupported dev kind %d in %s\n",
 			    dn->class->kind, dn->name);
 	}
+
+	ke_rwlock_exit_write(&dn->open_lock);
+
+	return 0;
 }
 
 iop_return_t

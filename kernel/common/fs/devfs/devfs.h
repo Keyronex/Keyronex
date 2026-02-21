@@ -36,10 +36,8 @@ typedef struct dev_node {
 	TAILQ_ENTRY(dev_node) hash_entry;
 	uint32_t open_count;
 	krwlock_t open_lock; /* guarding open/close */
-	union {
-		void *devprivate;
-		struct stdata *stdata;
-	};
+	void *devprivate;
+	struct stdata *stdata;
 	char name[16];
 	struct vnode *vn;
 } dev_node_t;

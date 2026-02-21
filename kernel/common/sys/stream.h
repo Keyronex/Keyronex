@@ -14,6 +14,7 @@
 #ifndef ECX_SYS_STREAM_H
 #define ECX_SYS_STREAM_H
 
+#include <sys/k_thread.h>
 #include <sys/vnode.h>
 
 struct qinit;
@@ -34,7 +35,7 @@ typedef enum mtype {
 	M_DATA,		/* regular data */
 	M_PROTO,	/* protocol message */
 	M_HANGUP,	/* hangup indication */
-	M_TIOCTL,	/* ioctl request  */
+	M_IOCTL,	/* ioctl request  */
 
 	/* high-priority follows */
 
@@ -58,6 +59,7 @@ typedef struct queue {
 	queue_t		*other;	/* other queue of the pair */
 	queue_t		*next;	/* next queue in stream */
 	queue_t		*back;	/* previous queue in stream */
+	kmutex_t	*mutex;	/* stream head's mutex*/
 
 	mblk_q_t	msgq;	/* message queue */
 	uint32_t	count;	/* count of characters in q */
