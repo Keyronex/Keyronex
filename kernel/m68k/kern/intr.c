@@ -94,7 +94,8 @@ splraise(ipl_t newipl)
 	kassert(newipl >= oldipl, "splraise: lowering ipl");
 	CPU_LOCAL_STORE(ipl, newipl);
 
-	ke_arch_enable(tok);
+	(void)tok;
+	ke_arch_enable(1);
 	return oldipl;
 }
 
@@ -115,7 +116,8 @@ splx(ipl_t ipl)
 
 	kassert(previpl >= ipl, "splx: to higher IPL");
 
-	ke_arch_enable(tok);
+	(void)tok;
+	ke_arch_enable(1);
 
 	if ((pending_soft_ints() >> (uint32_t)ipl) != 0UL)
 		kep_dispatch_softints(ipl);
@@ -208,6 +210,7 @@ kep_arch_switch(struct kthread *old, struct kthread *new)
 void
 kep_m68k_thread_trampoline(void (*func)(void *), void *arg)
 {
+	kassert(ke_ipl() == IPL_DISP);
 	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
 	splx(IPL_0);
 	func(arg);
