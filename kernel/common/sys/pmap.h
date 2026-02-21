@@ -67,6 +67,13 @@ pmap_pte_soft_anon(pte_t pte)
 	return (struct vm_anon *)((pte.soft.data << 3) + PIN_HEAP_BASE);
 }
 
+static inline void
+pmap_pte_anon_create(pte_t *ppte, struct vm_anon *anon, bool was_hw)
+{
+	pmap_pte_soft_create(ppte, kPTEKindFork,
+	    ((uintptr_t)anon >> 3) - PIN_HEAP_BASE, was_hw);
+}
+
 int pmap_wire_pte(struct vm_map *map, struct vm_rs *rs,
     struct pte_cursor *state, vaddr_t vaddr, bool create);
 void pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs,
