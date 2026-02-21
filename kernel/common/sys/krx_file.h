@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 struct vnode;
+struct stat;
 
 typedef struct file {
 	uint32_t refcnt;
@@ -40,5 +41,11 @@ ssize_t sys_read(int fd, void *ubuf, size_t nbyte);
 ssize_t sys_write(int fd, const void *ubuf, size_t nbyte);
 int sys_lseek(int fd, off_t offset, int whence, off_t *out);
 int sys_ioctl(int fd, int cmd, intptr_t arg);
+int sys_fstatat(int fd, const char *upath, int flags, struct stat *sb);
+
+int sys_fcntl(int fd, int cmd, unsigned long arg);
+int sys_dup(int oldfd);
+int sys_dup2(int oldfd, int newfd);
+int sys_dup3(int oldfd, int newfd, unsigned int flags);
 
 #endif /* ECX_SYS_KRX_FILE_H */

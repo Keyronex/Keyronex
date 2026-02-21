@@ -17,6 +17,7 @@
 #include <stdalign.h>
 
 kmem_cache_t *turnstile_cache, *proc_cache, *thread_cache;
+_Atomic(pid_t) last_pid = 1;
 
 void
 proc_init(void)
@@ -27,6 +28,8 @@ proc_init(void)
 	    roundup2(sizeof(thread_t), 16), MIN2(alignof(thread_t), 16), NULL);
 	turnstile_cache = kmem_cache_create("Turnstile", sizeof(kturnstile_t),
 	    alignof(kturnstile_t), NULL);
+
+	proc0.pid = 0;
 }
 
 thread_t *
@@ -63,10 +66,7 @@ proc_create(proc_t *parent, bool fork)
 
 	proc->vm_map = vm_map_create();
 	proc->finfo = uf_new();
-#if 0
-	proc->pidp = pid_alloc();
-	proc->pid = proc->pidp->pid;
-#endif
+	proc->pid = atomic_fetch_add(&last_pid, 1);
 
 	if (fork)
 		vm_fork(parent->vm_map, proc->vm_map);

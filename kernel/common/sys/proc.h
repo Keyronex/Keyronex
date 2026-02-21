@@ -10,6 +10,7 @@
 #ifndef ECX_KEYRONEX_PROC_H
 #define ECX_KEYRONEX_PROC_H
 
+#include <sys/types.h>
 #include <sys/k_thread.h>
 #include <sys/pcb.h>
 
@@ -23,6 +24,7 @@ typedef struct proc {
 	char comm[32];
 	struct vm_map *vm_map;
 	struct uf_info *finfo;
+	pid_t pid;
 } proc_t;
 
 proc_t *proc_create(proc_t *parent, bool fork);

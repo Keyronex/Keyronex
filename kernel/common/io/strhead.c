@@ -370,12 +370,15 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	int r;
 
 	switch (cmd) {
-#if 0
 	case TIOCSCTTY:
+#if 0
 		r = do_setctty(vn, sh);
 		return r;
+#endif
+		return -ENOSYS;
 
 	case TIOCGPGRP: {
+#if 0
 		pid_t pgrp_id;
 
 		ipl = spinlock_lock(sh->lockp);
@@ -389,9 +392,13 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 
 		return memcpy_to_user(arg, &pgrp_id, sizeof(pid_t))
 		    ? -EFAULT : 0;
+#else
+		return -ENOSYS;
+#endif
 	}
 
 	case TIOCSPGRP: {
+#if 0
 		pid_t pgrp_id;
 		struct pgrp *pgrp;
 		struct proc *proc = curproc();
@@ -430,8 +437,10 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 
 		spinlock_unlock(&proctree_lock, ipl);
 		return 0;
-	}
+#else
+		return -ENOSYS;
 #endif
+	}
 
 	case TIOCGWINSZ:
 		out_size = sizeof(struct winsize);

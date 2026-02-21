@@ -61,7 +61,7 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 	}
 
 	default:
-		kdprintf("console_wput: unknown ioctl received, type=%d\n",
+		kdprintf("console_wput: unknown ioctl, type=0x%x\n",
 		    ioc->cmd);
 		str_freemsg(mp);
 	}

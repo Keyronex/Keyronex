@@ -25,6 +25,7 @@ void kdputn(const char *str, size_t len);
 
 #define kfatal(...) kfatal_internal(__FILE__, __LINE__, __VA_ARGS__)
 #define kunreachable() kfatal("Reached unreachable code")
+#define ktodo() kfatal("TODO: not yet implemented")
 
 #define kassert(test, ...) if (!(test)) {		\
 	kfatal("Assertion failed: %s" __VA_OPT__(	\

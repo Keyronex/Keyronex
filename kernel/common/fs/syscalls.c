@@ -11,6 +11,8 @@
  * @brief FS-related system calls.
  */
 
+#define _GNU_SOURCE
+
 #include <sys/krx_vfs.h>
 #include <sys/krx_file.h>
 #include <sys/krx_user.h>
@@ -20,7 +22,6 @@
 #include <sys/fcntl.h>
 #include <sys/proc.h>
 #include <sys/errno.h>
-
 
 static int
 get_dirfd_nch(int dirfd, namecache_handle_t *out)
@@ -259,6 +260,102 @@ sys_ioctl(int fd, int cmd, intptr_t arg)
 	kassert(file->vnode->ops->ioctl != NULL);
 	r = VOP_IOCTL(file->vnode, (unsigned long)cmd, (void *)arg);
 	file_release(file);
+
+	return r;
+}
+
+int
+sys_fstatat(int fd, const char *upath, int flags, struct stat *sb)
+{
+	struct file *file;
+	vattr_t vattr;
+	char *path;
+	int lookup_flags = 0;
+	int r, pathlen;
+
+	if (flags & AT_SYMLINK_NOFOLLOW)
+		lookup_flags |= LOOKUP_NOFOLLOW_FINAL;
+
+	pathlen = strldup_user(&path, upath, 4095);
+	if (pathlen < 0)
+		return pathlen;
+
+	if (fd == AT_FDCWD) {
+		namecache_handle_t nch;
+
+		r = vfs_lookup_simple(root_nch, &nch, path, lookup_flags);
+		if (r != 0)
+			goto out;
+
+		r = nch.nc->vp->ops->getattr(nch.nc->vp, &vattr);
+		nchandle_release(nch);
+	} else {
+		kassert(fd >= 0);
+		kassert(flags & AT_EMPTY_PATH || *path == '\0');
+
+		file = uf_lookup(curproc()->finfo, fd);
+		if (file == NULL) {
+			r = -EBADF;
+			goto out;
+		}
+
+		r = VOP_GETATTR(file->vnode, &vattr);
+		file_release(file);
+	}
+
+	if (r != 0)
+		goto out;
+
+	memset(sb, 0x0, sizeof(*sb));
+
+	sb->st_mode = vattr.mode & ~S_IFMT;
+
+	switch (vattr.type) {
+	case VREG:
+		sb->st_mode |= S_IFREG;
+		break;
+
+	case VDIR:
+		sb->st_mode |= S_IFDIR;
+		break;
+
+	case VBLK:
+		sb->st_mode |= S_IFBLK;
+		break;
+
+	case VCHR:
+		sb->st_mode |= S_IFCHR;
+		break;
+
+	case VLNK:
+		sb->st_mode |= S_IFLNK;
+		break;
+
+	case VSOCK:
+		sb->st_mode |= S_IFSOCK;
+		break;
+
+	case VFIFO:
+		sb->st_mode |= S_IFIFO;
+		break;
+
+	case VNON:
+	case VITER_MARKER:
+		kfatal("Should be unreachable! fd = %d, path = %s\n", fd, path);
+	}
+
+	sb->st_size = vattr.size;
+	sb->st_blocks = roundup2(vattr.size, 512) / 512;
+	sb->st_blksize = 512;
+	sb->st_atim = vattr.atim;
+	sb->st_ctim = vattr.ctim;
+	sb->st_mtim = vattr.mtim;
+	sb->st_ino = vattr.fileid;
+	sb->st_dev = vattr.fsid;
+
+out:
+	if (path != NULL)
+		kmem_free(path, pathlen + 1);
 
 	return r;
 }

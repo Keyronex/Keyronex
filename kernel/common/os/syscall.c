@@ -85,8 +85,55 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return 0;
 	}
 
-	case SYS_thread_gettid:
+	/*
+	 * processes
+	 */
+
+	case SYS_exit:
+		ktodo();
+
+	case SYS_fork:
+		ktodo();
+
+	case SYS_execve:
+		ktodo();
+
+	case SYS_wait4:
+		ktodo();
+
+	case SYS_pdfork:
+		ktodo();
+
+	case SYS_pdwait:
+		ktodo();
+
+	case SYS_getpid:
+		return curproc()->pid;
+
+	case SYS_getppid:
 		return 0;
+
+	/*
+	 * job control
+	 */
+	case SYS_getpgid:
+		return 0;
+
+	case SYS_setpgid:
+		return -ENOSYS;
+
+	case SYS_getsid:
+		ktodo();
+
+	case SYS_setsid:
+		ktodo();
+
+	/*
+	 * threads
+	 */
+
+	case SYS_thread_gettid:
+		return ke_curthread()->tid;
 
 	case SYS_tcb_set:
 		ke_set_tcb(arg1);
@@ -150,6 +197,26 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 
 	case SYS_ioctl:
 		return sys_ioctl(arg1, (unsigned long) arg2, arg3);
+
+	case SYS_fstatat:
+		return sys_fstatat(arg1, (const char *)arg2, (int)arg3,
+		    (struct stat *)arg4);
+
+	/* fd manipulation */
+	case SYS_pipe:
+		ktodo();
+
+	case SYS_dup:
+		return sys_dup((int)arg1);
+
+	case SYS_dup2:
+		return sys_dup2((int)arg1, (int)arg2);
+
+	case SYS_dup3:
+		return sys_dup3((int)arg1, (int)arg2, (int)arg3);
+
+	case SYS_fcntl:
+		return sys_fcntl((int)arg1, (int)arg2, (intptr_t)arg3);
 
 	/*
 	 * clock
