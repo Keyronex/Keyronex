@@ -125,6 +125,10 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 			 * So throw away the namecache handle. They aren't
 			 * needed but for namespace operations anyway, and you
 			 * don't do those on devices.
+			 *
+			 * FIXME: Pass in the namecache_handle to open?
+			 * Then the nc can be released and nulled, or replaced,
+			 * as desired by the driver.
 			 */
 			nchandle_release(result);
 			result = NCH_NULL;

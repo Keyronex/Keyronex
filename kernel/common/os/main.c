@@ -15,6 +15,7 @@
 #include <sys/proc.h>
 #include <sys/vm.h>
 #include <sys/vmem.h>
+#include <abi-bits/fcntl.h>
 #include "sys/krx_vfs.h"
 
 #if defined(__amd64__)
@@ -48,6 +49,8 @@ void dk_platform_threaded_init(void);
 
 /* to be sorted */
 void viewcache_init(void);
+void console_init(void);
+void mount_devfs(void);
 
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
@@ -175,6 +178,12 @@ runinit(void *)
 	int r;
 	namecache_handle_t ld, init;
 
+	for (int i = 0; i < 3; i++) {
+		r = sys_openat(AT_FDCWD, "/dev/console", 0, O_RDWR);
+		if (r != 0)
+			kfatal("Failed to open /dev/console");
+	}
+
 	r = vfs_lookup_simple(root_nch, &ld, "/usr/lib/ld.so", 0);
 	if (r != 0)
 		kfatal("Failed to look up RTLD\n");
@@ -182,6 +191,8 @@ runinit(void *)
 	r = vfs_lookup_simple(root_nch, &init, "/usr/sbin/init", 0);
 	if (r != 0)
 		kfatal("Failed to look up Init daemon\n");
+
+	kdprintf("exec_init: Loading init\n");
 
 	int load_init(struct vnode *initvn, struct vnode *ldvn);
 	load_init(init.nc->vp, ld.nc->vp);
@@ -212,6 +223,8 @@ threaded_init(void *)
 
 	viewcache_init();
 	mount_root();
+	mount_devfs();
+	console_init();
 	exec_init();
 
 	kdprintf("Threaded init!\n");

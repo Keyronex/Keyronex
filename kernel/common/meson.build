@@ -16,7 +16,10 @@ kernel_sources += [
     'fs/viewcache.c',
     'fs/vnode.c',
 
+    'io/console.c',
     'io/iop.c',
+    'io/strsched.c',
+    'io/strsubr.c',
 
     'kern/callout.c',
     'kern/clock.c',

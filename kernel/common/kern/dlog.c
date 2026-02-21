@@ -88,6 +88,16 @@ ksnprintf(char *str, size_t size, const char *fmt, ...)
 }
 
 void
+kdputs(const char *str)
+{
+	ipl_t ipl = splhigh();
+	ke_spinlock_enter_nospl(&dlog_lock);
+	while (*str++ != '\0')
+		ke_md_early_putc(*str, 0);
+	ke_spinlock_exit(&dlog_lock, ipl);
+}
+
+void
 kfatal_internal(const char *file, int line, const char *fmt, ...)
 {
 	va_list ap;

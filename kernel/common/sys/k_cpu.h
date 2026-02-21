@@ -76,6 +76,8 @@ struct kcpu_data {
 	bool redispatch_requested;
 
 	struct kep_rcu_per_cpu_data rcu_cpustate;
+
+	struct str_per_cpu_scheduler *str_scheduler;
 };
 
 #define ke_curcpu() CPU_LOCAL_GET()

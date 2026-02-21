@@ -41,6 +41,7 @@ typedef struct dev_node {
 		struct stdata *stdata;
 	};
 	char name[16];
+	struct vnode *vn;
 } dev_node_t;
 
 void devfs_create_node(dev_class_t *class, void *private, const char *fmt, ...);

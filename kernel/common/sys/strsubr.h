@@ -1,0 +1,51 @@
+/*
+ * Copyright (c) 2026 Cloudarox Solutions.
+ * Created on Sat Feb 21 2026.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+/*!
+ * @file strsubr.h
+ * @brief STREAMS implementation.
+ */
+
+#ifndef ECX_SYS_STRSUBR_H
+#define ECX_SYS_STRSUBR_H
+
+#include <sys/k_thread.h>
+#include <sys/k_wait.h>
+#include <sys/stream.h>
+
+struct req_waiter {
+	TAILQ_ENTRY(req_waiter) link;
+	kevent_t event;
+};
+
+enum {
+	ST_FROZEN = (1 << 0),	/* stream is frozen */
+	ST_QUEUED = (1 << 1),	/* on a CPU runq */
+	ST_RUNNING = (1 << 2),	/* worker currently servicing */
+	ST_NEEDRUN = (1 << 3),	/* some queue enabled while we can't run */
+	ST_DEAD = (1 << 4),	/* stream is being closed */
+};
+
+typedef struct stdata {
+	kmutex_t integral_mutex;
+	kmutex_t *mutex;
+
+	kspinlock_t ingress_lock;
+	mblk_q_t ingress_head;
+
+	atomic_uint flags; /* ST_FROZEN, ... */
+	kcpunum_t home_cpu;
+
+	queue_t *rq;
+	queue_t *wq;
+	queue_t *rq_bottom;
+
+	TAILQ_ENTRY(stdata) sched_link;
+} stdata_t;
+
+#endif /* ECX_SYS_STRSUBR_H */
