@@ -10,10 +10,11 @@
 #ifndef ECX_SYS_VNODE_H
 #define ECX_SYS_VNODE_H
 
+#include <sys/types.h>
 #include <sys/iop.h>
 #include <sys/k_intr.h>
 #include <sys/krx_atomic.h>
-#include <sys/types.h>
+#include <sys/krx_epoll.h>
 
 #include <libkern/queue.h>
 
@@ -75,12 +76,6 @@ typedef struct vfs_vn_iter {
 	vnode_t		*next_vn;
 	struct vfs	*vfs;
 } vfs_vnode_iter_t;
-
-/* What kind of chpoll operation is being done. */
-enum chpoll_mode {
-	CHPOLL_POLL,
-	CHPOLL_UNPOLL,
-};
 
 struct vnode_ops {
 	size_t stack_depth;

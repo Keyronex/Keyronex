@@ -22,6 +22,7 @@ typedef struct dev_ops {
 typedef struct dev_class {
 	enum dev_kind {
 		DEV_KIND_CHAR,
+		DEV_KIND_CHAR_CLONE,
 		DEV_KIND_STREAM,
 		DEV_KIND_STREAM_CLONE,
 	} kind;
