@@ -11,11 +11,58 @@
  * @brief Stream head operations.
  */
 
-#include <sys/stream.h>
+ #include <sys/errno.h>
+#include <sys/ioctl.h>
 #include <sys/kmem.h>
+#include <sys/stream.h>
 #include <sys/strsubr.h>
+#include <sys/libkern.h>
+#include <sys/stropts.h>
+#include <sys/termios.h>
 
 static struct streamtab sth_streamtab;
+
+void
+str_reqlock(stdata_t *sh)
+{
+	struct req_waiter waiter;
+
+	ke_mutex_enter(sh->mutex, "str_reqlock");
+
+	if (!sh->req_locked) {
+		sh->req_locked = true;
+		return;
+	}
+
+	ke_event_init(&waiter.event, 0);
+	TAILQ_INSERT_TAIL(&sh->req_waiters, &waiter, link);
+	ke_mutex_exit(sh->mutex);
+
+	ke_wait1(&waiter.event, "str_reqlock", false, ABSTIME_FOREVER);
+
+	return ke_mutex_enter(sh->mutex, "str_reqlock 2");
+}
+
+void
+str_requnlock(stdata_t *sh)
+{
+	if (!TAILQ_EMPTY(&sh->req_waiters)) {
+		struct req_waiter *waiter;
+		waiter = TAILQ_FIRST(&sh->req_waiters);
+		TAILQ_REMOVE(&sh->req_waiters, waiter, link);
+		ke_event_set_signalled(&waiter->event, true);
+	} else {
+		sh->req_locked = false;
+	}
+	ke_mutex_exit(sh->mutex);
+}
+
+void
+str_requnlock_mutexunheld(stdata_t *sh)
+{
+	ke_mutex_enter(sh->mutex, "str_requnlock_mutexunheld");
+	str_requnlock(sh);
+}
 
 static queue_t *
 qpair_alloc(stdata_t *s, struct streamtab *tab)
@@ -166,6 +213,185 @@ stropen(struct streamtab *devtab, void *dev)
 	}
 
 	return sh;
+}
+
+
+int
+strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
+{
+	mblk_t *mp;
+	void *data = NULL;
+	size_t in_size = 0, out_size = 0;
+	struct strioctl *ioc;
+	int r;
+
+	switch (cmd) {
+#if 0
+	case TIOCSCTTY:
+		r = do_setctty(vn, sh);
+		return r;
+
+	case TIOCGPGRP: {
+		pid_t pgrp_id;
+
+		ipl = spinlock_lock(sh->lockp);
+		if (sh->tty_pgrp == NULL) {
+			spinlock_unlock(sh->lockp, ipl);
+			kprintf("str_ioctl: TIOCGPGRP with no tty_pgrp\n");
+			return -ENOTTY;
+		}
+		pgrp_id = sh->tty_pgrp->pgid;
+		spinlock_unlock(sh->lockp, ipl);
+
+		return memcpy_to_user(arg, &pgrp_id, sizeof(pid_t))
+		    ? -EFAULT : 0;
+	}
+
+	case TIOCSPGRP: {
+		pid_t pgrp_id;
+		struct pgrp *pgrp;
+		struct proc *proc = curproc();
+
+		if (memcpy_from_user(&pgrp_id, arg, sizeof(pid_t)))
+			return -EFAULT;
+
+		ipl = spinlock_lock(&proctree_lock);
+
+		if (sh->tty_session == NULL || proc->pgrp == NULL ||
+		    proc->pgrp->session != sh->tty_session) {
+			spinlock_unlock(&proctree_lock, ipl);
+			kprintf("str_ioctl: TIOCSPGRP with no tty_session\n");
+			return -ENOTTY;
+		}
+
+		pgrp = NULL;
+		LIST_FOREACH(pgrp, &sh->tty_session->pgrps, session_link) {
+			if (pgrp->pgid == pgrp_id)
+				break;
+		}
+
+		if (pgrp == NULL) {
+			spinlock_unlock(&proctree_lock, ipl);
+			kprintf("str_ioctl: TIOCSPGRP with no matching pgrp\n");
+			return -ESRCH;
+		}
+
+		pgrp_ref(pgrp);
+
+		spinlock_lock_nospl(sh->lockp);
+		if (sh->tty_pgrp != NULL)
+			pgrp_unref(sh->tty_pgrp);
+		sh->tty_pgrp = pgrp;
+		spinlock_unlock_nospl(sh->lockp);
+
+		spinlock_unlock(&proctree_lock, ipl);
+		return 0;
+	}
+#endif
+
+	case TIOCGWINSZ:
+		out_size = sizeof(struct winsize);
+		break;
+
+	case TIOCSWINSZ:
+		in_size = sizeof(struct winsize);
+		break;
+
+	case TCGETS:
+		out_size = sizeof(struct termios);
+		break;
+
+	case TCSETS:
+	case TCSETSW:
+	case TCSETSF:
+		in_size = sizeof(struct termios);
+		break;
+
+#if 0
+	case I_PLINK:
+		return plink(sh, (int)(intptr_t)arg);
+
+	case SIOCADDRT:
+		in_size = sizeof(struct rtentry);
+		break;
+
+	case SIOCGIFFLAGS:
+	case SIOCGIFADDR:
+	case SIOCGIFNETMASK:
+		in_size = sizeof(struct ifreq);
+		out_size = sizeof(struct ifreq);
+		break;
+
+	case SIOCSIFFLAGS:
+	case SIOCSIFADDR:
+	case SIOCSIFNETMASK:
+		in_size = sizeof(struct ifreq);
+		break;
+
+	case SIOCSIFNAMEBYMUXID:
+		in_size = sizeof(struct ifreq);
+		break;
+#endif
+
+	default:
+		kfatal("str_ioctl: unhandled ioctl %lu/0x%x\n", cmd, cmd);
+	}
+
+	if (in_size != 0 || out_size != 0) {
+		data = kmem_alloc(MAX2(in_size, out_size));
+		if (data == NULL)
+			return -ENOMEM;
+	}
+
+	if (in_size > 0) {
+		r = memcpy_from_user(data, arg, in_size);
+		if (r < 0) {
+			kmem_free(data, MAX2(in_size, out_size));
+			return r;
+		}
+	}
+
+	mp = str_allocb(sizeof(struct strioctl));
+	if (mp == NULL) {
+		kmem_free(data, MAX2(in_size, out_size));
+		return -ENOMEM;
+	}
+
+	ioc = (struct strioctl *)mp->rptr;
+	ioc->cmd = cmd;
+	ioc->len = MAX2(in_size, out_size);
+	ioc->data = data;
+	mp->wptr += sizeof(struct strioctl);
+	mp->db->type = M_IOCTL;
+
+	str_reqlock(sh);
+	ke_event_set_signalled(&sh->ioctl_done_ev, false);
+	str_putnext(sh->wq, mp);
+	ke_mutex_exit(sh->mutex);
+
+	ke_wait1(&sh->ioctl_done_ev, "str_ioctl", true, ABSTIME_FOREVER);
+
+	ke_mutex_enter(sh->mutex, "strioctl");
+	str_requnlock(sh);
+
+	kassert(mp->db->type == M_IOCACK || mp->db->type == M_IOCNAK);
+
+	if (out_size > 0 && mp->db->type == M_IOCACK) {
+		r = memcpy_to_user(arg, data, out_size);
+		if (r < 0) {
+			kmem_free(data, MAX2(in_size, out_size));
+			return r;
+		}
+	} else if (mp->db->type == M_IOCNAK) {
+		kfatal("handle negative ioctl ack\n");
+	} else {
+		r = 0;
+	}
+
+	kmem_free(data, MAX2(in_size, out_size));
+	str_freeb(mp);
+
+	return r;
 }
 
 static void

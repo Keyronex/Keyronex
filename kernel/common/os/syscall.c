@@ -96,6 +96,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_seek:
 		return sys_lseek(arg1, arg2, (int)arg3, (off_t *)out1);
 
+	case SYS_ioctl:
+		return sys_ioctl(arg1, (unsigned long) arg2, arg3);
+
 	default:
 		kfatal("Unhandled syscall number %d", syscall);
 	}

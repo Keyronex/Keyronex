@@ -136,6 +136,20 @@ dev_spec_open(vnode_t **vn, int)
 	return 0;
 }
 
+int
+dev_spec_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
+{
+	dev_node_t *dn = VTODN(vn);
+
+	switch (dn->class->kind) {
+	case DEV_KIND_STREAM:
+		return strioctl(vn, dn->stdata, cmd, arg);
+
+	default:
+		kfatal("implement me");
+	}
+}
+
 iop_return_t
 dev_spec_iop_dispatch(vnode_t *vn, struct iop *iop)
 {
@@ -175,6 +189,7 @@ mount_devfs(void)
 static struct vnode_ops dev_spec_vnops = {
 	.inactive = dev_spec_inactive,
 	.open = dev_spec_open,
+	.ioctl = dev_spec_ioctl,
 	.stack_depth = 2,
 	.iop_dispatch = dev_spec_iop_dispatch,
 	.iop_complete = dev_spec_iop_complete,

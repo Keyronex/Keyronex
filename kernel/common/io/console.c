@@ -11,7 +11,10 @@
  * @brief System console driver.
  */
 
+#include <sys/libkern.h>
 #include <sys/stream.h>
+#include <sys/stropts.h>
+#include <sys/termios.h>
 
 #include <fs/devfs/devfs.h>
 
@@ -38,21 +41,50 @@ console_rclose(queue_t *rq)
 }
 
 static void
+console_ioctl(queue_t *wq, mblk_t *mp)
+{
+	struct strioctl *ioc = (struct strioctl *)mp->rptr;
+
+	switch (ioc->cmd) {
+	case TIOCGWINSZ: {
+		struct winsize ws;
+
+		ws.ws_row = 25;
+		ws.ws_col = 80;
+		ws.ws_xpixel = 0;
+		ws.ws_ypixel = 0;
+
+		memcpy(ioc->data, &ws, sizeof(struct winsize));
+		mp->db->type = M_IOCACK;
+		str_putnext(wq->other, mp);
+		break;
+	}
+
+	default:
+		kdprintf("console_wput: unknown ioctl received, type=%d\n",
+		    ioc->cmd);
+		str_freemsg(mp);
+	}
+}
+
+static void
 console_wput(queue_t *wq, mblk_t *mp)
 {
-	mblk_t *bp = mp;
+	switch (mp->db->type) {
+	case M_DATA:
+		for (mblk_t *bp = mp; bp != NULL; bp = bp->cont)
+			kdputs(bp->rptr);
+		str_freemsg(mp);
+		break;
 
-	if (mp->db->type != M_DATA) {
+	case M_IOCTL:
+		return console_ioctl(wq, mp);
+
+	default:
 		kdprintf("console_wput: non-data message received, type=%d\n",
 		    mp->db->type);
 		str_freemsg(mp);
-		return;
 	}
-
-	for (mblk_t *bp = mp; bp != NULL; bp = bp->cont)
-		kdputs(bp->rptr);
-
-	str_freemsg(mp);
 }
 
 static struct qinit console_rinit = {

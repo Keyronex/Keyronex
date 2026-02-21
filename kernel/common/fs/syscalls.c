@@ -162,6 +162,7 @@ sys_read(int fd, void *ubuf, size_t nbyte)
 		return -EBADF;
 
 	ke_mutex_enter(&file->offset_mutex, "offset_mutex");
+	kassert(file->vnode->ops->read != NULL);
 	r = VOP_READ(file->vnode, ubuf, nbyte, file->offset, file->flags);
 	if (r >= 0)
 		file->offset += r;
@@ -183,6 +184,7 @@ sys_write(int fd, const void *ubuf, size_t nbyte)
 		return -EBADF;
 
 	ke_mutex_enter(&file->offset_mutex, "offset_mutex");
+	kassert(file->vnode->ops->write != NULL);
 	r = VOP_WRITE(file->vnode, ubuf, nbyte, file->offset, file->flags);
 	if (r >= 0)
 		file->offset += r;
@@ -231,12 +233,32 @@ sys_lseek(int fd, off_t offset, int whence, off_t *out)
 		file_release(file);
 		return -EINVAL;
 	}
-	r = VOP_SEEK(file->vnode, file->offset, &new_off);
+	if (file->vnode->ops->seek == NULL)
+		r = -ESPIPE;
+	else
+		r = VOP_SEEK(file->vnode, file->offset, &new_off);
 	if (r == 0) {
 		file->offset = new_off;
 		*out = new_off;
 	}
 	ke_mutex_exit(&file->offset_mutex);
 	file_release(file);
+	return r;
+}
+
+int
+sys_ioctl(int fd, int cmd, intptr_t arg)
+{
+	file_t *file;
+	int r;
+
+	file = uf_lookup(curproc()->finfo, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	kassert(file->vnode->ops->ioctl != NULL);
+	r = VOP_IOCTL(file->vnode, (unsigned long)cmd, (void *)arg);
+	file_release(file);
+
 	return r;
 }

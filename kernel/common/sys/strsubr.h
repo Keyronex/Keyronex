@@ -87,5 +87,6 @@ typedef struct stdata {
 } stdata_t;
 
 stdata_t *stropen(struct streamtab *devtab, void *dev);
+int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);
 
 #endif /* ECX_SYS_STRSUBR_H */
