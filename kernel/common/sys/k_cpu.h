@@ -14,6 +14,7 @@
 #include <sys/cpulocal.h>
 #include <sys/k_intr.h>
 #include <sys/k_wait.h>
+#include <sys/k_rcu.h>
 
 #include <stdint.h>
 
@@ -73,6 +74,8 @@ struct kcpu_data {
 	struct kthread *prevthread;
 	struct kcpu_dispatcher disp;
 	bool redispatch_requested;
+
+	struct kep_rcu_per_cpu_data rcu_cpustate;
 };
 
 #define ke_curcpu() CPU_LOCAL_GET()

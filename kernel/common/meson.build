@@ -45,6 +45,8 @@ kernel_sources += [
 
     'os/copyinout.c',
     'os/exec.c',
+    'os/file.c',
+    'os/filedesc.c',
     'os/main.c',
     'os/proc.c',
     'os/syscall.c',

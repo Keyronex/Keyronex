@@ -22,6 +22,7 @@ typedef struct proc {
 	ktask_t ktask;
 	char comm[32];
 	struct vm_map *vm_map;
+	struct uf_info *finfo;
 } proc_t;
 
 proc_t *proc_create(proc_t *parent, bool fork);
