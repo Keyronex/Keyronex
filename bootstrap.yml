@@ -1,3 +1,6 @@
+imports:
+  - file: gnu.yml
+
 declare_options:
   - name: arch
     default: x86_64

@@ -17,6 +17,7 @@ kernel_sources += [
     'fs/vnode.c',
 
     'io/console.c',
+    'io/epoll.c',
     'io/iop.c',
     'io/strhead.c',
     'io/strsched.c',
@@ -49,11 +50,13 @@ kernel_sources += [
     'libkern/lib.c',
 
     'os/copyinout.c',
+    'os/cred.c',
     'os/exec.c',
     'os/file.c',
     'os/filedesc.c',
     'os/main.c',
     'os/proc.c',
+    'os/signal.c',
     'os/syscall.c',
 
     'vm/init.c',

@@ -10,13 +10,57 @@
 #include <sys/errno.h>
 #include <sys/k_log.h>
 #include <sys/kmem.h>
+#include <sys/krx_cred.h>
 #include <sys/krx_file.h>
+#include <sys/krx_signal.h>
 #include <sys/krx_vfs.h>
 #include <sys/libkern.h>
 #include <sys/pcb.h>
 #include <sys/proc.h>
+#include <sys/utsname.h>
 
 #include <keyronex/syscall.h>
+#include <time.h>
+
+int
+sys_clock_gettime(int clock_id, struct timespec *tp)
+{
+	kabstime_t now = ke_time();
+	tp->tv_sec = now / NS_PER_S;
+	tp->tv_nsec = now % NS_PER_S;
+	return 0;
+}
+
+int
+sys_clock_getres(int clock_id, struct timespec *tp)
+{
+	tp->tv_sec = 0;
+	tp->tv_nsec = NS_PER_S / KERN_HZ;
+	return 0;
+}
+
+static knanosecs_t
+ts_to_ns(const struct timespec *ts)
+{
+	return (knanosecs_t)ts->tv_sec * NS_PER_S + ts->tv_nsec;
+}
+
+int
+sys_clock_nanosleep(int clock_id, int flags, const struct timespec *rqtp,
+    struct timespec *rmtp)
+{
+	kabstime_t til;
+	kevent_t ev;
+
+	kassert(!(flags & ~TIMER_ABSTIME));
+
+	ke_event_init(&ev, false);
+	til = ke_time() + ts_to_ns(rqtp);
+	kassert(ke_wait1(&ev, "clock_nanosleep", false, til) == -ETIMEDOUT);
+
+	return 0;
+}
+
 
 uintptr_t
 sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
@@ -55,9 +99,17 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	 * signals
 	 */
 	case SYS_sigaction:
-		return -ENOSYS;
+		return sys_sigaction((int)arg1, (const struct sigaction *)arg2,
+		    (struct sigaction *)arg3);
 
 	case SYS_sigentry:
+		return 0;
+
+	case SYS_sigprocmask:
+		return sys_sigprocmask((int)arg1, (const sigset_t *)arg2,
+		    (sigset_t *)arg3);
+
+	case SYS_sigsuspend:
 		return -ENOSYS;
 
 	/*
@@ -98,6 +150,44 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 
 	case SYS_ioctl:
 		return sys_ioctl(arg1, (unsigned long) arg2, arg3);
+
+	/*
+	 * clock
+	 */
+	case SYS_clock_gettime:
+		return sys_clock_gettime((int)arg1, (struct timespec *)arg2);
+
+	case SYS_clock_getres:
+		return sys_clock_getres((int)arg1, (struct timespec *)arg2);
+
+	case SYS_clock_nanosleep:
+		return sys_clock_nanosleep((int)arg1, (int)arg2,
+		    (const struct timespec *)arg3,
+		    (struct timespec *)arg4);
+
+
+	/*
+	 * creds
+	 */
+
+	case SYS_getresuid:
+		return sys_getresuid((uid_t *)arg1, (uid_t *)arg2,
+		    (uid_t *)arg3);
+
+	case SYS_getresgid:
+		return sys_getresgid((gid_t *)arg1, (gid_t *)arg2,
+		    (gid_t *)arg3);
+
+	case SYS_utsname: {
+		struct utsname name = { 0 };
+		strcpy(name.sysname, "Keyronex");
+		strcpy(name.nodename, "keyronex");
+		strcpy(name.release, "0.4");
+		strcpy(name.version, __DATE__ " " __TIME__);
+		strcpy(name.machine, "?");
+		return memcpy_to_user((struct utsname *)arg1, &name,
+		   sizeof(struct utsname)) ? -EFAULT : 0;
+	}
 
 	default:
 		kfatal("Unhandled syscall number %d", syscall);

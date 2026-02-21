@@ -188,7 +188,7 @@ runinit(void *)
 	if (r != 0)
 		kfatal("Failed to look up RTLD\n");
 
-	r = vfs_lookup_simple(root_nch, &init, "/usr/sbin/init", 0);
+	r = vfs_lookup_simple(root_nch, &init, "/usr/bin/bash", 0);
 	if (r != 0)
 		kfatal("Failed to look up Init daemon\n");
 

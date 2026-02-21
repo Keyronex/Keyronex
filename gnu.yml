@@ -1,0 +1,147 @@
+
+packages:
+  - name: coreutils
+    source:
+      subdir: 'sources'
+      url: 'https://ftpmirror.gnu.org/gnu/coreutils/coreutils-9.2.tar.xz'
+      format: 'tar.xz'
+      version: '9.2'
+      extract_path: 'coreutils-9.2'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+      regenerate:
+        - args: [ 'autoreconf', '-fvi' ]
+    tools_required:
+      - host-gcc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - 'CFLAGS=-DSLOW_BUT_NO_HACKS -Wno-error'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: bash
+    source:
+      subdir: 'sources'
+      url: https://ftpmirror.gnu.org/gnu/bash/bash-5.2.15.tar.gz
+      version: '5.2.15'
+      format: 'tar.gz'
+      extract_path: 'bash-5.2.15'
+      patch-path-strip: 1
+      regenerate:
+        - args: [ 'libtoolize', '-cfvi' ]
+        - args: [ 'env', 'AUTOHEADER=true', 'autoreconf', '-fvi' ]
+      tools_required:
+        - host-libtool
+        - host-autoconf-2.69
+        - host-automake-1.16
+    tools_required:
+      - host-gcc
+      - host-libtool
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--without-bash-malloc'
+        environ:
+          ac_cv_func_wcswidth: 'no'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', 'install']
+      - args: ['ln', '-sf', '/usr/bin/bash', '@THIS_COLLECT_DIR@/usr/bin/sh']
+
+  - name: ncurses
+    source:
+      url: https://ftpmirror.gnu.org/gnu/ncurses/ncurses-6.4.tar.gz
+      version: '6.4'
+      subdir: 'sources'
+      format: 'tar.gz'
+      extract_path: 'ncurses-6.4'
+      patch-path-strip: 1
+      regenerate:
+        - args: [ 'libtoolize', '-cfvi' ]
+        - args: ['cp',
+          '@BUILD_ROOT@/tools/host-automake-1.16/share/automake-1.16/config.sub',
+          '@THIS_SOURCE_DIR@/']
+    tools_required:
+      - host-gcc
+      - host-pkgconf
+      - host-libtool
+    pkgs_required:
+      - mlibc
+    revision: 4
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--without-ada'
+        - '--enable-pc-files'
+        - '--with-shared'
+        - '--without-normal'
+        - '--with-manpage-format=normal'
+        - '--with-pkg-config-libdir=/usr/lib/pkgconfig'
+        - '--with-termlib'
+        - '--enable-widec'
+        - '--disable-stripping'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - 'CFLAGS=-D_GNU_SOURCE'
+        environ:
+          cf_cv_func_nanosleep: 'yes'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', 'install']
+      # As we build ncurses with wide character support, make some compatibility links
+      - args: |
+          for lib in ncurses form panel menu tinfo ; do
+              rm -vf                    @THIS_COLLECT_DIR@/usr/lib/lib${lib}.so
+              echo "INPUT(-l${lib}w)" > @THIS_COLLECT_DIR@/usr/lib/lib${lib}.so
+              ln -sfv ${lib}w.pc        @THIS_COLLECT_DIR@/usr/lib/pkgconfig/${lib}.pc
+          done
+          rm -vf                     @THIS_COLLECT_DIR@/usr/lib/libcursesw.so
+          echo "INPUT(-lncursesw)" > @THIS_COLLECT_DIR@/usr/lib/libcursesw.so
+          ln -sfv libncurses.so      @THIS_COLLECT_DIR@/usr/lib/libcurses.so
+
+  - name: readline
+    source:
+      subdir: 'sources'
+      url: 'https://ftpmirror.gnu.org/gnu/readline/readline-8.2.tar.gz'
+      extract_path: 'readline-8.2'
+      format: 'tar.gz'
+      version: '8.2'
+      regenerate:
+        - args: [ 'libtoolize', '-cfvi' ]
+        - args: [ 'env', 'AUTOHEADER=true', 'autoreconf', '-fvi' ]
+      tools_required:
+        - host-libtool
+        - host-autoconf-2.69
+        - host-automake-1.16
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - ncurses
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=x86_64-keyronex'
+        - '--prefix=/usr'
+        - '--disable-static'
+        - '--enable-multibyte'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+      - args: |
+                ln -sfv libreadline.so.8 @THIS_COLLECT_DIR@/usr/lib/libreadline.so
