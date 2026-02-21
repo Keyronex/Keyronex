@@ -54,42 +54,42 @@ uf_list_free_rcu(void *arg)
 static int
 uf_info_expand(uf_info_t *info, unsigned int min)
 {
-	uf_list_t *old_entries = info->list, *new_entries;
+	uf_list_t *old_list = info->list, *new_list;
 	uint32_t new_max;
 
 	/* info->lock must be held */
 
-	if (min <= old_entries->capacity)
+	if (min <= old_list->capacity)
 		return 0;
 
-	if (old_entries->capacity == 0)
+	if (old_list->capacity == 0)
 		new_max = 64;
 	else
-		new_max = old_entries->capacity * 2;
+		new_max = old_list->capacity * 2;
 
 	while (new_max < min)
 		new_max *= 2;
 
-	new_entries = kmem_alloc(sizeof(*new_entries));
-	if (new_entries == NULL)
+	new_list = kmem_alloc(sizeof(*new_list));
+	if (new_list == NULL)
 		return -ENOMEM;
 
-	new_entries->capacity = new_max;
-	new_entries->entries = kmem_alloc(new_max * sizeof(uf_entry_t));
-	if (new_entries->entries == NULL) {
-		kmem_free(new_entries, sizeof(uf_list_t));
+	new_list->capacity = new_max;
+	new_list->entries = kmem_alloc(new_max * sizeof(uf_entry_t));
+	if (new_list->entries == NULL) {
+		kmem_free(new_list, sizeof(uf_list_t));
 		return -ENOMEM;
 	}
 
-	for (unsigned int i = 0; i < old_entries->capacity; i++) {
-		new_entries->entries[i].file = old_entries->entries[i].file;
-		new_entries->entries[i].flags = old_entries->entries[i].flags;
+	for (unsigned int i = 0; i < old_list->capacity; i++) {
+		new_list->entries[i].file = old_list->entries[i].file;
+		new_list->entries[i].flags = old_list->entries[i].flags;
 	}
 
-	memset(new_entries->entries + old_entries->capacity, 0x0,
-	    sizeof(uf_entry_t) * (new_max - old_entries->capacity));
+	memset(new_list->entries + old_list->capacity, 0x0,
+	    sizeof(uf_entry_t) * (new_max - old_list->capacity));
 
-	ke_rcu_assign_pointer(info->list, new_entries);
+	ke_rcu_assign_pointer(info->list, new_list);
 
 #if 0
 	ke_rcu_call(&old_entries->rcu, uf_list_free_rcu, old_entries);
@@ -139,10 +139,11 @@ uf_lookup(uf_info_t *info, int fd)
 }
 
 int
-uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int flags)
+uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int oflags)
 {
 	int error;
-	unsigned int fd = start_fd;
+	uint32_t fd = start_fd;
+	uint32_t flags = 0;
 	uf_list_t *list;
 
 	ke_mutex_enter(&info->lock, "reserve_fd");
@@ -159,6 +160,9 @@ uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int flags)
 		}
 		list = info->list;
 	}
+
+	if (oflags & O_CLOEXEC)
+		flags |= FD_CLOEXEC;
 
 	list->entries[fd].flags = flags;
 	ke_rcu_assign_pointer(list->entries[fd].file, FD_RESERVED);
@@ -181,6 +185,32 @@ uf_install_reserved(uf_info_t *info, int fd, struct file *file)
 	ke_rcu_assign_pointer(list->entries[fd].file, file);
 
 	ke_mutex_exit(&info->lock);
+}
+
+uf_info_t *
+uf_new(void)
+{
+	uf_info_t *info;
+	uf_list_t *list;
+
+	info = kmem_alloc(sizeof(*info));
+	if (info == NULL)
+		return NULL;
+
+	ke_mutex_init(&info->lock);
+
+	list = kmem_alloc(sizeof(*list));
+	if (list == NULL) {
+		kmem_free(info, sizeof(*info));
+		return NULL;
+	}
+
+	list->capacity = 0;
+	list->entries = NULL;
+
+	info->list = list;
+
+	return info;
 }
 
 uf_info_t *

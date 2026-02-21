@@ -19,6 +19,7 @@
 struct file;
 typedef struct uf_info uf_info_t;
 
+uf_info_t *uf_new(void);
 uf_info_t *uf_fork(uf_info_t *);
 
 struct file *uf_lookup(uf_info_t *info, int fd);

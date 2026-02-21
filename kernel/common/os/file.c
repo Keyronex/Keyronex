@@ -13,9 +13,33 @@
 
 #include <sys/krx_file.h>
 #include <sys/krx_vfs.h>
+#include <sys/kmem.h>
 #include <sys/vnode.h>
 
 #include <stdbool.h>
+
+file_t *
+file_new(namecache_handle_t nch, vnode_t *vn)
+{
+	file_t *file;
+
+	file = kmem_alloc(sizeof(file_t));
+	if (file == NULL) {
+		return NULL;
+	}
+
+	__atomic_store_n(&file->refcnt, 1, __ATOMIC_RELAXED);
+	file->nch = nch;
+	file->vnode = vn;
+	ke_mutex_init(&file->offset_mutex);
+	file->offset = 0;
+	file->flags = 0;
+
+	ke_spinlock_init(&file->epoll_lock);
+	LIST_INIT(&file->epoll_watches);
+
+	return file;
+}
 
 file_t *
 file_tryretain_rcu(file_t *f)

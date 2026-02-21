@@ -10,6 +10,7 @@
 #ifndef ECX_SYS_KRX_VFS_H
 #define ECX_SYS_KRX_VFS_H
 
+#include <sys/types.h>
 #include <sys/k_intr.h>
 #include <sys/krx_atomic.h>
 #include <sys/tree.h>
@@ -87,6 +88,8 @@ int vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
     const char *path, enum lookup_flags flags);
 
 void vfs_init(vfs_t *);
+
+int sys_openat(int dirfd, const char *path, int flags, mode_t mode);
 
 namecache_handle_t nchandle_retain(namecache_handle_t in);
 namecache_handle_t nchandle_release(namecache_handle_t in);

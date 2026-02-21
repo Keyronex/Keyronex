@@ -12,6 +12,7 @@
 
 #include <sys/vm_arch.h>
 #include <sys/vm_types.h>
+#include <sys/types.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -84,5 +85,8 @@ void vm_page_delete(vm_page_t *page, bool unref);
 
 vaddr_t vm_page_hhdm_addr(vm_page_t *page);
 paddr_t vm_page_paddr(vm_page_t *page);
+
+void *sys_mmap(void *addr, size_t len, int prot, int flags, int fildes,
+    off_t offset);
 
 #endif /* ECX_KEYRONEX_VM_H */

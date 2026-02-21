@@ -1121,18 +1121,14 @@ ninep_unlock_for_vc_io(vnode_t *vn, bool write)
 static int
 ninep_read(vnode_t *vn, void *buf, size_t buflen, off_t offset, int)
 {
-#if 0
 	struct ninep_node *node = VTO9(vn);
 	buflen = MIN2(buflen, node->vattr.size - offset);
 	return viewcache_io(vn, offset, buflen, false, buf);
-#endif
-	kfatal("implement me");
 }
 
 static int
 ninep_write(vnode_t *vn, const void *buf, size_t buflen, off_t offset, int)
 {
-#if 0
 	struct ninep_node *node = VTO9(vn);
 	int r;
 	ke_rwlock_enter_write(&node->rwlock, "ninep_write");
@@ -1143,8 +1139,6 @@ ninep_write(vnode_t *vn, const void *buf, size_t buflen, off_t offset, int)
 	r = viewcache_io(vn, offset, buflen, true, (void *)buf);
 	ke_rwlock_exit_read(&node->rwlock);
 	return r;
-#endif
-	kfatal("implement me");
 }
 
 static int

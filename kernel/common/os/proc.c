@@ -9,8 +9,9 @@
 
 #include <sys/k_log.h>
 #include <sys/kmem.h>
+#include <sys/krx_user.h>
+#include <sys/libkern.h>
 #include <sys/pcb.h>
-#include <libkern/lib.h>
 #include <sys/proc.h>
 
 #include <stdalign.h>
@@ -61,8 +62,8 @@ proc_create(proc_t *parent, bool fork)
 	strcpy(proc->comm, "unnamed");
 
 	proc->vm_map = vm_map_create();
+	proc->finfo = uf_new();
 #if 0
-	proc->filedesc = filedesc_create(parent->filedesc);
 	proc->pidp = pid_alloc();
 	proc->pid = proc->pidp->pid;
 #endif

@@ -22,7 +22,7 @@ typedef struct file {
 	uint32_t refcnt;
 	namecache_handle_t nch;
 	struct vnode *vnode;
-	kspinlock_t offset_mutex;
+	kmutex_t offset_mutex;
 	off_t offset;
 	int flags;
 
@@ -30,7 +30,14 @@ typedef struct file {
 	LIST_HEAD(, poll_entry) epoll_watches;
 } file_t;
 
+file_t *file_new(namecache_handle_t, struct vnode *);
+
 file_t *file_tryretain_rcu(file_t *file);
 void file_release(file_t *file);
+
+int sys_close(int fd);
+ssize_t sys_read(int fd, void *ubuf, size_t nbyte);
+ssize_t sys_write(int fd, const void *ubuf, size_t nbyte);
+int sys_lseek(int fd, off_t offset, int whence, off_t *out);
 
 #endif /* ECX_SYS_KRX_FILE_H */
