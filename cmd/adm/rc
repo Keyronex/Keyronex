@@ -1,0 +1,6 @@
+echo "Keyronex RC"
+
+echo "Setting up network interface en0"
+/sbin/ifconfig en0 plumb
+/sbin/ifconfig en0 192.168.77.100 netmask ffffff00
+/sbin/route add default 192.168.77.1

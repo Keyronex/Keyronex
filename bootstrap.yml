@@ -450,6 +450,24 @@ packages:
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
 
+  - name: adm
+    metadata:
+      summary: Administrative files
+    source:
+      name: 'cmd/adm'
+    tools_required:
+      - 'crossfile'
+    configure:
+      - args:
+        - 'meson'
+        - 'setup'
+        - '@THIS_SOURCE_DIR@'
+        - '--prefix=/'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
 
   - name: init
     metadata:
