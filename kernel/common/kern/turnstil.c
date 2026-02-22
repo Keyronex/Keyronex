@@ -235,8 +235,9 @@ ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 	ke_spinlock_enter_nospl(&thread->lock);
 	lend_priority(thread, chain);
 	ke_spinlock_exit_nospl(&chain->lock);
-	ke_dispatch();
+	ke_spinlock_exit_nospl(&thread->lock);
 	splx(ipl);
+	ke_wait1(&wb.event, "turnstile_block", false, ABSTIME_FOREVER);
 }
 
 static void
