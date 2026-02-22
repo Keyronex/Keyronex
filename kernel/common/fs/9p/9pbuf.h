@@ -106,6 +106,7 @@ int ninep_buf_getu8(struct ninep_buf *buf, uint8_t *num);
 int ninep_buf_getu16(struct ninep_buf *buf, uint16_t *num);
 int ninep_buf_getu32(struct ninep_buf *buf, uint32_t *num);
 int ninep_buf_getu64(struct ninep_buf *buf, uint64_t *num);
+int ninep_buf_gettime(struct ninep_buf *buf, time_t *num);
 int ninep_buf_getstr(struct ninep_buf *buf, char **str);
 int ninep_buf_getqid(struct ninep_buf *buf, struct ninep_qid *qid_out);
 

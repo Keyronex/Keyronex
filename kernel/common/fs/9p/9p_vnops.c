@@ -348,12 +348,12 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
 	ninep_buf_getu64(buf_out, &vattr->size);
 	ninep_buf_getu64(buf_out, &vattr->bsize);
 	ninep_buf_getu64(buf_out, &blocks);
-	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->atim.tv_sec);
-	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->atim.tv_nsec);
-	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->mtim.tv_sec);
-	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->mtim.tv_nsec);
-	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->ctim.tv_sec);
-	ninep_buf_getu64(buf_out, (uint64_t *)&vattr->ctim.tv_nsec);
+	ninep_buf_gettime(buf_out, &vattr->atim.tv_sec);
+	ninep_buf_gettime(buf_out, &vattr->atim.tv_nsec);
+	ninep_buf_gettime(buf_out, &vattr->mtim.tv_sec);
+	ninep_buf_gettime(buf_out, &vattr->mtim.tv_nsec);
+	ninep_buf_gettime(buf_out, &vattr->ctim.tv_sec);
+	ninep_buf_gettime(buf_out, &vattr->ctim.tv_nsec);
 
 	vattr->fileid = qid.path;
 	vattr->fsid = 0;

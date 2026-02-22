@@ -101,6 +101,21 @@ dev_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 	return 0;
 }
 
+int
+dev_getattr(vnode_t *vn, vattr_t *attr)
+{
+	dev_node_t *dn = VTODN(vn);
+	memset(attr, 0x0, sizeof(*attr));
+	attr->type = VDIR;
+	attr->fileid = (uintptr_t)dn - HHDM_BASE;
+	attr->fsid = (uintptr_t)vn->vfs;
+	return 0;
+}
+
+/*
+ * special ops
+ */
+
 static int
 dev_spec_inactive(vnode_t *vn)
 {
@@ -259,4 +274,5 @@ static struct vnode_ops dev_spec_vnops = {
 
 static struct vnode_ops dev_vnops = {
 	.lookup = dev_lookup,
+	.getattr = dev_getattr,
 };

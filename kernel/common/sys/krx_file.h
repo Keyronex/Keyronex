@@ -39,6 +39,7 @@ void file_release(file_t *file);
 int sys_close(int fd);
 ssize_t sys_read(int fd, void *ubuf, size_t nbyte);
 ssize_t sys_write(int fd, const void *ubuf, size_t nbyte);
+int sys_getdents(int fd, void *buf, size_t nbyte);
 int sys_lseek(int fd, off_t offset, int whence, off_t *out);
 int sys_ioctl(int fd, int cmd, intptr_t arg);
 int sys_fstatat(int fd, const char *upath, int flags, struct stat *sb);

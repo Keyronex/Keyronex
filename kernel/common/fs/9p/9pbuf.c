@@ -170,6 +170,15 @@ ninep_buf_getu64(struct ninep_buf *buf, uint64_t *num_out)
 }
 
 int
+ninep_buf_gettime(struct ninep_buf *buf, time_t *out)
+{
+	uint64_t val;
+	ninep_buf_getu64(buf, &val);
+	*out = (time_t)val;
+	return 0;
+}
+
+int
 ninep_buf_getstr(struct ninep_buf *buf, char **str_out)
 {
 	size_t slen;

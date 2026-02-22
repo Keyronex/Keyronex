@@ -195,6 +195,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_write:
 		return sys_write(arg1, (const void *)arg2, arg3);
 
+	case SYS_getdents:
+		return sys_getdents(arg1, (void *)arg2, arg3);
+
 	case SYS_seek:
 		return sys_lseek(arg1, arg2, (int)arg3, (off_t *)out1);
 

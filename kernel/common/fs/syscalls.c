@@ -196,6 +196,25 @@ sys_write(int fd, const void *ubuf, size_t nbyte)
 	return r;
 }
 
+int
+sys_getdents(int fd, void *buf, size_t nbyte)
+{
+	file_t *file;
+	int r;
+
+	file = uf_lookup(curproc()->finfo, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	ke_mutex_enter(&file->offset_mutex, "sys_getdents");
+	kassert(file->vnode->ops->readdir != NULL);
+	r = VOP_READDIR(file->vnode, buf, nbyte, &file->offset);
+	ke_mutex_exit(&file->offset_mutex);
+
+	file_release(file);
+
+	return r;
+}
 
 int
 sys_lseek(int fd, off_t offset, int whence, off_t *out)
@@ -288,7 +307,8 @@ sys_fstatat(int fd, const char *upath, int flags, struct stat *sb)
 		if (r != 0)
 			goto out;
 
-		r = nch.nc->vp->ops->getattr(nch.nc->vp, &vattr);
+		kassert(nch.nc->vp->ops->getattr != NULL);
+		r = VOP_GETATTR(nch.nc->vp, &vattr);
 		nchandle_release(nch);
 	} else {
 		kassert(fd >= 0);
