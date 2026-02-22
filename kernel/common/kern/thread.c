@@ -43,6 +43,10 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	atomic_store_explicit(&thread->runtime, 0, memory_order_relaxed);
 #endif
 
+	thread ->inherited_prio = 0;
+	thread->effective_prio = 0;
+	SLIST_INIT(&thread->pi_head);
+
 	thread->wait_reason = NULL;
 
 	thread->turnstile = ts;

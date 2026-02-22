@@ -220,6 +220,7 @@ sys_lseek(int fd, off_t offset, int whence, off_t *out)
 
 	case SEEK_END: {
 		vattr_t vattr;
+		kassert(file->vnode->ops->getattr != NULL);
 		r = VOP_GETATTR(file->vnode, &vattr);
 		if (r != 0) {
 			ke_mutex_exit(&file->offset_mutex);
@@ -299,6 +300,7 @@ sys_fstatat(int fd, const char *upath, int flags, struct stat *sb)
 			goto out;
 		}
 
+		kassert(file->vnode->ops->getattr != NULL);
 		r = VOP_GETATTR(file->vnode, &vattr);
 		file_release(file);
 	}
