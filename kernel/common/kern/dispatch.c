@@ -316,6 +316,7 @@ ke_dispatch(void)
 		/* going to sleep. account for sleep time here? */
 	} else if (oldt->state == TS_TERMINATED) {
 		/* queue it on a done queue, to be invoked from DPC... */
+		kdprintf("TODO: queue thread for destruction\n");
 	}
 
 	nextt = next_thread(disp);
@@ -432,4 +433,13 @@ ke_thread_set_affinity(kthread_t *thread, kcpunum_t cpu)
 {
 	kassert(thread->state == TS_CREATED);
 	thread->bound_cpu = cpu;
+}
+
+void
+ke_thread_exit(void)
+{
+	spldisp();
+	ke_spinlock_enter_nospl(&ke_curthread()->lock);
+	ke_curthread()->state = TS_TERMINATED;
+	ke_dispatch();
 }

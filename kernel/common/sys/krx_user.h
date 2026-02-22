@@ -21,6 +21,7 @@ typedef struct uf_info uf_info_t;
 
 uf_info_t *uf_new(void);
 uf_info_t *uf_fork(uf_info_t *);
+void uf_destroy(uf_info_t *info);
 
 struct file *uf_lookup(uf_info_t *info, int fd);
 int uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int flags);

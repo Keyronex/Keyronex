@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/k_thread.h>
 #include <sys/pcb.h>
+#include <stdbool.h>
 
 struct rusage;
 
@@ -43,6 +44,7 @@ struct pgrp {
 /*
  * ~: invariant from creation
  * T: proctree_mutex
+ * t: proc->ktask.threads_lock
  */
 typedef struct proc {
 	ktask_t	ktask;
@@ -57,6 +59,7 @@ typedef struct proc {
 	TAILQ_HEAD(, proc)	children;	/* T: child processes */
 	TAILQ_ENTRY(proc)	sibling_qlink;	/* T: links parent's children */
 	bool		exited;	 	/* T: process exited, needs wait()'d */
+	bool		exiting;	/* t: is process exiting? */
 	int		exit_status; 	/* effectively T: set after 'exited' */
 	kevent_t	*wait_ev;	/* T: signalled if child exits */
 

@@ -91,7 +91,7 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	 */
 
 	case SYS_exit:
-		ktodo();
+		sys_thread_exit();
 
 	case SYS_fork:
 		return sys_fork(frame);

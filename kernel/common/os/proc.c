@@ -18,6 +18,8 @@
 
 #include <stdalign.h>
 
+void pmap_activate(vm_map_t *map);
+
 kmem_cache_t *turnstile_cache, *proc_cache, *thread_cache;
 _Atomic(pid_t) last_pid = 1;
 struct session session0;
@@ -163,7 +165,6 @@ proc_new_system_thread(void (*func)(void *), void *arg)
 void
 thread_activate(thread_t *old, thread_t *new)
 {
-	void pmap_activate(vm_map_t *map);
 	if (thread_vm_map(old) != thread_vm_map(new))
 		pmap_activate(thread_vm_map(new));
 }
@@ -173,6 +174,57 @@ fork_thread(void *arg)
 {
 	/* nothing to do yet; just return */
 }
+
+void
+sys_thread_exit(void)
+{
+	thread_t *curthread = curthread();
+	proc_t *proc = curproc();
+	bool proc_exited = false;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
+	LIST_REMOVE(&curthread->kthread, proc_link);
+	if (--proc->ktask.threads_count == 0) {
+		if (!proc->exiting) {
+			proc->exiting = true;
+			proc->exit_status = W_EXITCODE(0, 0);
+		}
+		proc_exited = true;
+	}
+	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+
+	curthread->vm_map = proc0.vm_map;
+	pmap_activate(proc0.vm_map);
+
+	if (proc_exited) {
+#if TRACE_TODO
+		kprintf("= TODO: proper process teardown...\n");
+#endif
+
+		/* tear down what's not needed to wait on */
+		vm_unmap(proc->vm_map, LOWER_HALF,
+		    LOWER_HALF + LOWER_HALF_SIZE);
+		vm_map_release(proc->vm_map);
+		proc->vm_map = NULL;
+
+		uf_destroy(proc->finfo);
+		proc->finfo = NULL;
+
+		ke_mutex_enter(&proctree_mutex, "sys_thread_exit");
+		proc->exited = true;
+		if (proc->parent->wait_ev != NULL)
+			ke_event_set_signalled(proc->parent->wait_ev, true);
+#if 0
+		if (proc->procdesc != NULL)
+			procdesc_notify_exit(proc->procdesc, proc->exit_status);
+#endif
+		ke_mutex_exit(&proctree_mutex);
+	}
+
+	ke_thread_exit();
+}
+
 
 pid_t
 sys_wait4(pid_t pid, int *out_ustatus, int flags,

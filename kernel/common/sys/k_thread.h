@@ -126,6 +126,7 @@ typedef struct ktask {
 
 void ke_dispatch(void);
 void ke_thread_resume(kthread_t *, bool io_completion);
+void ke_thread_exit(void);
 
 void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);

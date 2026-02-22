@@ -264,6 +264,22 @@ uf_fork(uf_info_t *old_info)
 	return new_info;
 }
 
+void
+uf_destroy(uf_info_t *info)
+{
+	for (unsigned int i = 0; i < info->list->capacity; i++) {
+		struct file *f = info->list->entries[i].file;
+		kassert(f != FD_RESERVED);
+		if (f != NULL)
+			file_release(f);
+	}
+
+	kmem_free(info->list->entries,
+	    sizeof(uf_entry_t) * info->list->capacity);
+	kmem_free(info->list, sizeof(uf_list_t));
+	kmem_free(info, sizeof(uf_info_t));
+}
+
 int
 sys_dup3(int oldfd, int newfd, unsigned int flags)
 {
