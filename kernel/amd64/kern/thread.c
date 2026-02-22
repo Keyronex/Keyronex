@@ -25,7 +25,6 @@ void
 ke_set_tcb(uintptr_t value)
 {
 	ke_curthread()->tcb = value;
-	kdprintf("ke_set_tcb: setting TCB to %p\n", (void *)value);
 	wrmsr(AMD64_FSBASE_MSR, value);
 }
 

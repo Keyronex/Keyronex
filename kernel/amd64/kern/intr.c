@@ -16,9 +16,12 @@
 #include <sys/x86.h>
 
 #include <kern/defs.h>
+#include <keyronex/syscall.h>
 #include <libkern/lib.h>
 
 #include "asm_intr.h"
+
+enum posix_syscall;
 
 struct __attribute__((packed)) idt_entry {
 	uint16_t isr_low;
@@ -36,6 +39,9 @@ IDT_ENTRIES(EXTERN_ISR)
 
 void ke_hardclock(void);
 void kep_dispatch_softints(ipl_t newipl);
+uintptr_t sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
+    uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t arg4,
+    uintptr_t arg5, uintptr_t arg6, uintptr_t *out1);
 
 void lapic_eoi(void);
 
@@ -194,6 +200,18 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 		vm_fault(cr2, prot);
 
 		ke_arch_disable();
+		break;
+	}
+
+	case 128: {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+		ke_arch_enable(1);
+		frame->rax = sys_dispatch(frame, frame->rax, frame->rdi,
+		    frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9,
+		    &frame->rdi);
+#pragma GCC diagnostic pop
+		break;
 	}
 
 	case 224: {
@@ -217,6 +235,8 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 		if (num >= 48 && num < 224) {
 			ipl_t ipl = splhigh();
 			struct kirq *entry;
+			if (LIST_EMPTY(&irqs[num]))
+				kfatal("unhandled irq %lu\n", num);
 			LIST_FOREACH(entry, &irqs[num], list_entry)
 				entry->handler(entry->arg);
 			lapic_eoi();

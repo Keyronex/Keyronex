@@ -139,12 +139,10 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return ke_curthread()->tid;
 
 	case SYS_tcb_set:
-		kdprintf("SYS_TCB_SET\n");
 		ke_set_tcb(arg1);
 		return 0;
 
 	case SYS_tcb_get:
-		kdprintf("SYS_TCB_GET\n");
 		return ke_curthread()->tcb;
 
 	/*
