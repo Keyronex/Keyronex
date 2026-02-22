@@ -75,7 +75,7 @@ typedef enum pmap_level {
 } pmap_level_t;
 
 struct pte_soft {
-	uintptr_t kind: 2, data: 28, hw_type: 2;
+	uintptr_t kind: 3, data: 27, hw_type: 2;
 };
 
 typedef union pte {
@@ -182,6 +182,7 @@ pmap_pte_hwleaf_clear_writeable(pte_t *ppte)
 static inline void
 pmap_pte_soft_create(pte_t *ppte, int kind, uintptr_t data, bool was_hw)
 {
+	kassert(data <= 0x7FFFFFF);
 	union pte pte = {
 		.soft = {
 			.hw_type = 0,
@@ -226,6 +227,8 @@ pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 	pte_t *start_ppte = (pte_t*)((uintptr_t)ppte & ~mask);
 	pte_t ret;
 
+	kassert((table & (PGSIZE - 1)) == 0);
+
 	for (size_t i = 0; i < nptes; i++) {
 		union pte pte;
 		paddr_t paddr;
@@ -254,7 +257,26 @@ pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 }
 
 static inline void
-pmap_pte_zerodir_create(pte_t *ppte,pmap_level_t level)
+pmap_pte_softdir_create(pte_t *ppte, pmap_level_t level, int kind,
+    uintptr_t data, bool was_hw)
+{
+	size_t nptes = m68040_dir_nptes_group(level);
+	uintptr_t mask = (nptes * sizeof(pte_t)) - 1;
+	pte_t *start_ppte = (pte_t*)((uintptr_t)ppte & ~mask);
+	union pte pte = {
+		.soft = {
+			.hw_type = 0,
+			.data = data,
+			.kind = kind,
+		},
+	};
+
+	for (size_t i = 0; i < nptes; i++)
+		pmap_store_pte(start_ppte + i, pte);
+}
+
+static inline void
+pmap_pte_zerodir_create(pte_t *ppte, pmap_level_t level)
 {
 	size_t nptes = m68040_dir_nptes_group(level);
 	uintptr_t mask = (nptes * sizeof(pte_t)) - 1;

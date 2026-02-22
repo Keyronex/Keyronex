@@ -141,6 +141,16 @@ dev_spec_open(vnode_t **vn, int)
 }
 
 int
+dev_spec_getattr(vnode_t *vn, vattr_t *attr)
+{
+	dev_node_t *dn = VTODN(vn);
+	memset(attr, 0x0, sizeof(*attr));
+	attr->type = VCHR;
+	attr->rdev = (uintptr_t)dn - HHDM_BASE;
+	return 0;
+}
+
+int
 dev_spec_read(vnode_t *vn, void *buf, size_t length, off_t offset, int flags)
 {
 	dev_node_t *dn = VTODN(vn);
@@ -237,6 +247,7 @@ mount_devfs(void)
 static struct vnode_ops dev_spec_vnops = {
 	.inactive = dev_spec_inactive,
 	.open = dev_spec_open,
+	.getattr = dev_spec_getattr,
 	.read = dev_spec_read,
 	.write = dev_spec_write,
 	.ioctl = dev_spec_ioctl,

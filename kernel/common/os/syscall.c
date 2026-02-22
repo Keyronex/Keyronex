@@ -94,13 +94,15 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		ktodo();
 
 	case SYS_fork:
-		ktodo();
+		return sys_fork(frame);
 
 	case SYS_execve:
-		ktodo();
+		return sys_execve((const char *)arg1, (char *const *)arg2,
+		    (char *const *)arg3);
 
 	case SYS_wait4:
-		ktodo();
+		return sys_wait4((pid_t)arg1, (int *)arg2, (int)arg3,
+		    (struct rusage *)arg4);
 
 	case SYS_pdfork:
 		ktodo();

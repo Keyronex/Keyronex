@@ -231,6 +231,20 @@ pmap_pte_hwdir_create(pte_t *ppte, paddr_t table, pmap_level_t level)
 }
 
 static inline void
+pmap_pte_softdir_create(pte_t *ppte, pmap_level_t level, int kind,
+    uintptr_t data, bool was_hw)
+{
+	union pte pte = {
+		.soft = {
+			.valid = 0,
+			.data = data,
+			.kind = kind,
+		},
+	};
+	pmap_store_pte(ppte, pte);
+}
+
+static inline void
 pmap_pte_zerodir_create(pte_t *ppte, pmap_level_t level)
 {
 	union pte pte = { .hw = { .valid = 0 } };

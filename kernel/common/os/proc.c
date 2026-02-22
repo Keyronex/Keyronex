@@ -12,7 +12,9 @@
 #include <sys/krx_user.h>
 #include <sys/libkern.h>
 #include <sys/pcb.h>
+#include <sys/errno.h>
 #include <sys/proc.h>
+#include <sys/wait.h>
 
 #include <stdalign.h>
 
@@ -91,11 +93,14 @@ proc_create(proc_t *parent, bool fork)
 	strcpy(proc->comm, "unnamed");
 
 	proc->vm_map = vm_map_create();
-	proc->finfo = uf_new();
 	proc->pid = atomic_fetch_add(&last_pid, 1);
 
-	if (fork)
+	if (fork) {
+		proc->finfo = uf_fork(parent->finfo);
 		vm_fork(parent->vm_map, proc->vm_map);
+	} else {
+		proc->finfo = uf_new();
+	}
 
 	ke_proc_init(&proc->ktask);
 
@@ -161,6 +166,111 @@ thread_activate(thread_t *old, thread_t *new)
 	void pmap_activate(vm_map_t *map);
 	if (thread_vm_map(old) != thread_vm_map(new))
 		pmap_activate(thread_vm_map(new));
+}
+
+static void
+fork_thread(void *arg)
+{
+	/* nothing to do yet; just return */
+}
+
+pid_t
+sys_wait4(pid_t pid, int *out_ustatus, int flags,
+    struct rusage *out_urusage)
+{
+	proc_t *proc = curproc();
+	kevent_t event;
+
+	kassert(pid == -1 || pid > 0);
+
+	ke_mutex_enter(&proctree_mutex, "sys_wait4: proctree_mutex");
+	while (true) {
+		proc_t *child;
+		proc_t *found = NULL;
+
+		TAILQ_FOREACH(child, &proc->children, sibling_qlink) {
+			if (!child->exited)
+				continue;
+			if (pid == -1 || child->pid == pid) {
+				found = child;
+				break;
+			}
+		}
+
+		if (found) {
+			int status = found->exit_status;
+			pid_t ret_pid = found->pid;
+
+			if (!(flags & WNOWAIT)) {
+				TAILQ_REMOVE(&proc->children, found,
+				    sibling_qlink);
+				TAILQ_REMOVE(&allproc, found, allproc_qlink);
+
+				pgrp_remove_member(found);
+
+#if 0
+				if (found->procdesc != NULL) {
+					procdesc_orphan(found->procdesc);
+					found->procdesc = NULL;
+				}
+#endif
+
+				/* (unref it! unalloc pid!) */
+#if TRACE_TODO
+				kprintf("= TODO: fully reap zombie..\n");
+#endif
+			}
+			ke_mutex_exit(&proctree_mutex);
+
+			*out_ustatus = status;
+			return ret_pid;
+		}
+
+		if (flags & WNOHANG) {
+			ke_mutex_exit(&proctree_mutex);
+			return 0;
+		}
+
+		/* if no event yet */
+		ke_event_init(&event, false);
+		proc->wait_ev = &event;
+		ke_mutex_exit(&proctree_mutex);
+
+		ke_wait1(&event, "sys_wait4", false, ABSTIME_FOREVER);
+		ke_mutex_enter(&proctree_mutex, "sys_wait4");
+		proc->wait_ev = NULL;
+	}
+}
+
+pid_t
+sys_fork(karch_trapframe_t *frame)
+{
+	proc_t *proc = curproc();
+	proc_t *child_proc;
+	thread_t *child_thread;
+	pid_t pid;
+
+	child_proc = proc_create(proc, true);
+	if (child_proc == NULL)
+		return -ENOMEM;
+
+	pid = child_proc->pid;
+
+	child_thread = proc_new_thread(child_proc, frame, fork_thread, NULL);
+	child_thread->kthread.user = true;
+	if (child_thread == NULL) {
+		kfatal("todo: cleanup proc!\n");
+		return -ENOMEM;
+	}
+
+	//ke_copy_fpu_state(child_thread);
+	child_thread->kthread.tcb = curthread()->kthread.tcb;
+
+	ke_thread_resume(&child_thread->kthread, false);
+
+	kassert(pid != 0);
+
+	return pid;
 }
 
 pid_t

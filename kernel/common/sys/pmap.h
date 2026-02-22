@@ -64,14 +64,16 @@ pmap_pte_soft_page(pte_t *ppte)
 static inline struct vm_anon *
 pmap_pte_soft_anon(pte_t pte)
 {
-	return (struct vm_anon *)((pte.soft.data << 3) + PIN_HEAP_BASE);
+	return (struct vm_anon *)((pte.soft.data << 3) + HHDM_BASE);
 }
 
 static inline void
 pmap_pte_anon_create(pte_t *ppte, struct vm_anon *anon, bool was_hw)
 {
-	pmap_pte_soft_create(ppte, kPTEKindFork,
-	    ((uintptr_t)anon >> 3) - PIN_HEAP_BASE, was_hw);
+	uintptr_t val = (uintptr_t)anon;
+	kassert(val >= HHDM_BASE && val <= HHDM_BASE + HHDM_SIZE);
+	pmap_pte_soft_create(ppte, kPTEKindFork, (val - HHDM_BASE) >> 3,
+	    was_hw);
 }
 
 int pmap_wire_pte(struct vm_map *map, struct vm_rs *rs,

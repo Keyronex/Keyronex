@@ -482,19 +482,22 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			n_zeroed++;
 			break;
 		}
+#endif
 
 		case kPTEKindFork: {
-			struct vm_anon *anon = pmap_pte_anon(pte);
+			struct vm_anon *anon = pmap_pte_soft_anon(pte);
 
 			/* fork PTE: decrement anon refcount */
 
 			ke_spinlock_enter_nospl(&anon_creation_lock);
 			if (--anon->refcount == 0) {
 				/* last reference to this anon; free the page */
-				switch (pmap_pte_characterise(&anon->pte)) {
+				pte_t anonpte = pmap_load_pte(&anon->pte);
+				switch (pmap_pte_characterise(anonpte)) {
 				case kPTEKindHW: {
 					vm_page_t *page =
-					    pmap_pte_hw_page(&anon->pte, 0);
+					    pmap_pte_hwleaf_page(anonpte,
+					    PMAP_L0);
 					vm_page_delete(page, true);
 					break;
 				}
@@ -508,19 +511,19 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			}
 			ke_spinlock_exit_nospl(&anon_creation_lock);
 
-			pmap_pte_hw_create_zero(pte);
+			pmap_pte_zeroleaf_create(ppte, PMAP_L0);
 			/* fork PTEs are NOT noswap */
+			/* FIXME: can we do this? I think so */
 			table_page->proctable.nonzero_ptes--;
 			break;
 		}
-#endif
-
 		case kPTEKindBusy:
 			/* should be impossible with rwlock held write .... */
 			kfatal("impossible");
 
 		default:
-			kfatal("unexpected pte kind");
+			kfatal("unexpected pte kind %d",
+			    pmap_pte_characterise(pte));
 	}
 	}
 

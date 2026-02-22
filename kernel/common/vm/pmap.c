@@ -138,14 +138,13 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 			break;
 		}
 
-#if 0
 		case kPTEKindTrans: {
-			vm_page_t *page = pmap_pte_soft_page(pte);
+			/* todo: use loaded pte */
+			vm_page_t *page = pmap_pte_soft_page(ppte);
 
 			vm_page_retain(page);
 
-			pmap_pte_hw_create_table(pte, VM_PAGE_PADDR(page),
-			    level);
+			pmap_pte_hwdir_create(ppte, VM_PAGE_PADDR(page), level);
 
 			/* pin the next level */
 
@@ -153,7 +152,9 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 			page->proctable.nonzero_ptes++;
 
 			state->pages[level - 1] = page;
-			table = (pte_t *)vm_page_hhdm_addr(page);
+
+			pte = pmap_load_pte(ppte);
+			table = (pte_t *)p2v(pmap_pte_hwdir_paddr(pte, level));
 			table_page = page;
 
 			/* sanity checks */
@@ -162,7 +163,6 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 
 			break;
 		}
-#endif
 
 		case kPTEKindSwap: {
 			kfatal("Swap directory PTE - Implement me\n");
@@ -297,14 +297,12 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
 		page->proctable.noswap_ptes -= n;
 		if (page->proctable.noswap_ptes == 0 &&
 		    !page->proctable.is_root) {
-#if 0
-			pmap_pte_hwdir_create_soft(page->pte, kPTEKindTrans,
+		#if 1 /* Enabling this breaks m68k - why? */
+			pmap_pte_softdir_create(page->pte,
+			    page->proctable.level + 1, kPTEKindTrans,
 			    VM_PAGE_PFN(page), true);
-			/* todo(low): page table dirtiness tracking? */
 			vm_page_release_and_dirty(page, true);
-#else
-			kfatal("Implement me: unpinning pagetable\n");
-#endif
+		#endif
 		}
 	}
 }
