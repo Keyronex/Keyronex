@@ -8,12 +8,14 @@
  */
 
 #include <sys/k_cpu.h>
-#include <sys/k_log.h>
 #include <sys/k_intr.h>
+#include <sys/k_log.h>
 #include <sys/k_thread.h>
 #include <sys/pcb.h>
+#include <sys/vm_types.h>
 #include <sys/x86.h>
 
+#include <kern/defs.h>
 #include <libkern/lib.h>
 
 #include "asm_intr.h"
@@ -38,6 +40,7 @@ void kep_dispatch_softints(ipl_t newipl);
 void lapic_eoi(void);
 
 static struct idt_entry bsp_idt[256];
+static LIST_HEAD(, kirq) irqs[256];
 
 bool
 ke_arch_disable(void)
@@ -160,6 +163,9 @@ kep_arch_set_vbase(bool bsp)
 		SPEC_IDT_ENTRIES(IDT_SET);
 		IDT_ENTRIES(IDT_SET);
 		idt_set(bsp_idt, 0x80, &isr_128, 0xee, 0);
+
+		for (size_t i = 0; i < 256; i++)
+			LIST_INIT(&irqs[i]);
 	}
 
 	asm volatile("lidt %0" : : "m"(idtr));
@@ -168,18 +174,85 @@ kep_arch_set_vbase(bool bsp)
 void
 kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 {
-	switch(num) {
-		case 225: {
+	switch (num) {
+	case 14: {
+		uintptr_t cr2 = read_cr2();
+		vm_prot_t prot = VM_READ;
+
+		kassert(ke_ipl() < IPL_DISP);
+
+		ke_arch_enable(1);
+
+		if (frame->code & (1 << 1))
+			prot |= VM_WRITE;
+		if (frame->code & (1 << 4))
+			prot |= VM_EXEC;
+		if (frame->code & (1 << 2))
+			prot |= VM_USER;
+
+		void vm_fault(vaddr_t va, vm_prot_t prot);
+		vm_fault(cr2, prot);
+
+		ke_arch_disable();
+	}
+
+	case 224: {
+		ipl_t ipl = splhigh();
+		ke_hardclock();
+		lapic_eoi();
+		splx(ipl);
+		break;
+	}
+
+	case 225: {
+		ipl_t ipl = splhigh();
+		void kep_xcall_handler(void *unused);
+		kep_xcall_handler(NULL);
+		lapic_eoi();
+		splx(ipl);
+		break;
+	}
+
+	default:
+		if (num >= 48 && num < 224) {
 			ipl_t ipl = splhigh();
-			ke_hardclock();
+			struct kirq *entry;
+			LIST_FOREACH(entry, &irqs[num], list_entry)
+				entry->handler(entry->arg);
 			lapic_eoi();
 			splx(ipl);
 			break;
 		}
-
-		default:
-			kfatal("int %lu\n", num);
+		kfatal("int %lu\n", num);
 	}
+}
+
+int
+ke_amd64_idt_alloc(struct kirq_source *source, kirq_t *entry,
+    kirq_handler_t *handler, void *arg, uint8_t *vec, kcpunum_t *cpu_out)
+{
+	static kspinlock_t irq_lock;
+	ipl_t ipl;
+
+	ipl = splhigh();
+	ke_spinlock_enter_nospl(&irq_lock);
+
+	for (int i = 48; i < 224; i++) {
+		if (LIST_EMPTY(&irqs[i]) || (!source->edge)) {
+			entry->source = *source;
+			entry->handler = handler;
+			entry->arg = arg;
+			entry->cpu = CPU_LOCAL_LOAD(cpu_num);
+			*cpu_out = entry->cpu;
+			*vec = i;
+			LIST_INSERT_HEAD(&irqs[i], entry, list_entry);
+			ke_spinlock_exit(&irq_lock, ipl);
+			return 0;
+		}
+	}
+
+	ke_spinlock_exit(&irq_lock, ipl);
+	return -1;
 }
 
 void kep_amd64_asm_switch(struct karch_pcb *old, struct karch_pcb *new);
@@ -200,13 +273,9 @@ fxrstor(uint8_t *state)
 void
 kep_arch_switch(struct kthread *old, struct kthread *next)
 {
-#if 0
 	wrmsr(AMD64_FSBASE_MSR, next->tcb);
-#endif
-#if 0
 	CPU_LOCAL_LOAD(arch.tss)->rsp0 = (uintptr_t)next->kstack_base +
 	    KSTACK_SIZE;
-#endif
 	if (old->user)
 		fxsave(old->pcb.fpu);
 	if (next->user)

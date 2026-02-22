@@ -8,11 +8,14 @@
  */
 
 #include <sys/k_cpu.h>
+#include <sys/k_intr.h>
 #include <sys/k_log.h>
-#include <sys/x86.h>
+#include <sys/kmem.h>
 #include <sys/vm.h>
+#include <sys/x86.h>
 
 #include <asm/io.h>
+#include <kern/defs.h>
 
 enum {
 	LAPIC_REG_EOI = 0xb0,
@@ -84,8 +87,7 @@ lapic_write(uint32_t reg, uint32_t val)
 	*addr = val;
 }
 
-
-	static kspinlock_t calib = KSPINLOCK_INITIALISER;
+static kspinlock_t calib = KSPINLOCK_INITIALISER;
 
 void
 lapic_early_init(void)
@@ -142,7 +144,7 @@ lapic_eoi(void)
 void
 lapic_timer_start(void)
 {
-	lapic_write(LAPIC_REG_TIMER, kLAPICTimerPeriodic | 225);
+	lapic_write(LAPIC_REG_TIMER, kLAPICTimerPeriodic | 224);
 	lapic_write(LAPIC_REG_TIMER_INITIAL,
 	    CPU_LOCAL_LOAD(arch.lapic_tps) / KERN_HZ);
 }
@@ -153,10 +155,96 @@ ke_platform_early_init(void)
 	lapic_early_init();
 }
 
+
+typedef struct {
+	uint16_t length;
+	uint16_t base_low;
+	uint8_t base_mid;
+	uint8_t access;
+	uint8_t flags;
+	uint8_t base_high;
+	uint32_t base_upper;
+	uint32_t reserved;
+} __attribute__((packed)) tss_gdt_entry_t;
+
+static struct gdt {
+	uint64_t null;
+	uint64_t code16;
+	uint64_t data16;
+	uint64_t code32;
+	uint64_t data32;
+	uint64_t code64;
+	uint64_t data64;
+	uint64_t code64_user;
+	uint64_t data64_user;
+	tss_gdt_entry_t tss;
+} __attribute__((packed)) gdt = {
+	.null = 0x0,
+	.code16 = 0x8f9a000000ffff,
+	.data16 = 0x8f92000000ffff,
+	.code32 = 0xcf9a000000ffff,
+	.data32 = 0xcf92000000ffff,
+	.code64 = 0xaf9a000000ffff,
+	.data64 = 0x8f92000000ffff,
+	.code64_user = 0xaffa000000ffff,
+	.data64_user = 0x8ff2000000ffff,
+	.tss = { .length = 0x68, .access = 0x89 },
+};
+
+void
+load_gdt()
+{
+	struct {
+		uint16_t limit;
+		vaddr_t addr;
+	} __attribute__((packed)) gdtr = { sizeof(gdt) - 1, (vaddr_t)&gdt };
+
+	asm volatile("lgdt %0" : : "m"(gdtr));
+}
+
+void
+setup_cpu_gdt(void)
+{
+	static kspinlock_t gdt_lock = KSPINLOCK_INITIALISER;
+	ipl_t ipl = ke_spinlock_enter(&gdt_lock);
+	struct tss *tss = kmem_alloc(sizeof(struct tss));
+
+	// kassert((uintptr_t)cpu->tss / PGSIZE ==
+	//     ((uintptr_t)cpu->tss + 104) / PGSIZE);
+	CPU_LOCAL_STORE(arch.tss, tss);
+
+	gdt.tss.length = 0x68;
+	gdt.tss.base_low = (uintptr_t)tss;
+	gdt.tss.base_mid = (uintptr_t)tss >> 16;
+	gdt.tss.access = 0x89;
+	gdt.tss.flags = 0x0;
+	gdt.tss.base_high = (uintptr_t)tss >> 24;
+	gdt.tss.base_upper = (uintptr_t)tss >> 32;
+	gdt.tss.reserved = 0x0;
+	load_gdt();
+	asm volatile("ltr %0" ::"rm"((uint16_t)offsetof(struct gdt, tss)));
+	ke_spinlock_exit(&gdt_lock, ipl);
+}
+
+
 void
 ke_platform_start_dispatching(void)
 {
+	/* enable SSE and SSE2 */
+	uint64_t cr0, cr4;
+
+	cr0 = read_cr0();
+	cr0 &= ~((uint64_t)1 << 2);
+	cr0 |= (uint64_t)1 << 1;
+	write_cr0(cr0);
+
+	cr4 = read_cr4();
+	cr4 |= (uint64_t)3 << 9;
+	write_cr4(cr4);
+
+	setup_cpu_gdt();
 	lapic_cpu_init();
+
 	CPU_LOCAL_STORE(arch.lapic_tps, 0);
 	/* measure thrice & average it */
 	for (int i = 0; i < 3; i++)

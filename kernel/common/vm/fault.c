@@ -310,8 +310,10 @@ do_object_fault(struct fault_info *info,
 		if (info->type & VM_WRITE &&
 		    info->prot & VM_WRITE && !info->entry_cow)
 		    prot |= VM_WRITE;
-		pmap_pte_hwleaf_create(info->cursor.pte, VM_PAGE_PFN(page), 0,
-		    prot | userland_prot(info->vaddr), kCacheModeDefault);
+		pmap_pte_hwleaf_create(info->cursor.pte, VM_PAGE_PFN(page),
+		    PMAP_L0,
+		    prot | (info->prot & VM_EXEC) | userland_prot(info->vaddr),
+		    kCacheModeDefault);
 		info->rs->valid_n += 1;
 		pmap_new_leaf_valid_ptes_created(info->rs, &info->cursor, 1);
 		pmap_unwire_pte(info->map, info->rs, &info->cursor);

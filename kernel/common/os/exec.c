@@ -261,6 +261,7 @@ load_init(vnode_t *server_vnode, vnode_t *ld_vnode)
 	 * we want proc struct to keep an nch reference on what it opened anyway
 	 */
 
+	kdprintf("Entering usermode\n");
 	ke_md_enter_usermode(rtldpkg.entry, pkg.sp);
 
 	return r;

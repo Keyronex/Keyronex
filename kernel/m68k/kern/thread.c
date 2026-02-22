@@ -7,6 +7,9 @@
  * @brief m68k thread machdep.
  */
 
+#include <sys/k_cpu.h>
+#include <sys/k_thread.h>
+
 #include <stdint.h>
 
 void
@@ -25,4 +28,10 @@ ke_md_enter_usermode(uintptr_t ip, uintptr_t sp)
 		     :
 		     : "a"(sp), "a"(ip), "a"(sr)
 		     : "memory");
+}
+
+void
+ke_set_tcb(uintptr_t value)
+{
+	ke_curthread()->tcb = value;
 }

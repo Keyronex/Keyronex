@@ -12,7 +12,12 @@
 
 #include <stdint.h>
 
+#include <libkern/queue.h>
+
 struct tss;
+struct kirq;
+
+LIST_HEAD(kirq_list, kirq);
 
 struct karch_cpu_data {
 	uint32_t lapic_id;
@@ -20,7 +25,6 @@ struct karch_cpu_data {
 	uint64_t lapic_tps;
 	struct tss *tss;
 };
-
 
 #define CPU_LOCAL_OFFSET(FIELD) __builtin_offsetof(struct kcpu_data, FIELD)
 

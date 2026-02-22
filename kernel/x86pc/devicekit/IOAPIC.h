@@ -39,7 +39,7 @@ struct isa_intr_override {
  *
  * @returns 0 if handler installed successfully
  */
-- (int)handleSource:(struct kirq_source *)source
++ (int)handleSource:(struct kirq_source *)source
 	withHandler:(kirq_handler_t *)handler
 	   argument:(void *)arg
 	 atPriority:(ipl_t *)ipl

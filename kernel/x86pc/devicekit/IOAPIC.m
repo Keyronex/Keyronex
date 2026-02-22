@@ -7,6 +7,7 @@
  * @brief I/O APIC
  */
 
+#include <sys/k_cpu.h>
 #include <sys/k_intr.h>
 #include <sys/k_log.h>
 #include <sys/kmem.h>
@@ -61,12 +62,13 @@ ioapic_write(vaddr_t vaddr, uint32_t reg, uint32_t val)
 }
 
 static void
-ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol, bool edge)
+ioapic_route(vaddr_t vaddr, uint64_t lapic_id, uint8_t i, uint8_t vec,
+    bool lopol, bool edge)
 {
 	uint64_t ent = vec;
 	ent |= kDeliveryModeFixed << 8;
 	ent |= kDestinationModePhysical << 11;
-	ent |= 0ul << 56; /* lapic id 0 */
+	ent |= lapic_id << 56;
 	if (lopol)
 		ent |= 1 << 13; /* polarity low */
 	if (!edge)
@@ -119,16 +121,16 @@ ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol, bool edge)
 			uint8_t vec;
 			uint8_t intr = gsi - ioapic->m_gsi_base;
 			int r;
+			kcpunum_t cpunum;
+			ipl_t ipl = spldisp();
 
 			kassert(ioapic->m_redirs[intr] == 0 && "shared");
 
-#if 0
-			r = md_intr_alloc("gsi", prio, handler, arg,
-			    !source->edge, &vec, entry);
-#else
-			r = -1;
-			vec = 0;
-#endif
+			int ke_amd64_idt_alloc(struct kirq_source * source,
+			    kirq_t * entry, kirq_handler_t * handler, void *arg,
+			    uint8_t *vec, kcpunum_t *cpu_out);
+			r = ke_amd64_idt_alloc(source, object, handler, arg,
+			    &vec, &cpunum);
 
 			if (r != 0) {
 				kdprintf(
@@ -138,9 +140,12 @@ ioapic_route(vaddr_t vaddr, uint8_t i, uint8_t vec, bool lopol, bool edge)
 				return -1;
 			}
 
-			ioapic_route(ioapic->m_vaddr, intr, vec,
+			ioapic_route(ioapic->m_vaddr,
+			    ke_cpu_data[cpunum]->arch.lapic_id, intr, vec,
 			    source->low_polarity, source->edge);
 			ioapic->m_redirs[intr] = vec;
+
+			splx(ipl);
 
 			found = true;
 			break;

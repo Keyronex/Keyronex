@@ -51,4 +51,18 @@
 	}
 }
 
+- (int)handleSource:(struct kirq_source *)source
+	withHandler:(kirq_handler_t *)handler
+	   argument:(void *)arg
+	 atPriority:(ipl_t *)ipl
+	  irqObject:(out kirq_t *)object;
+{
+	[IOApic handleSource:source
+		 withHandler:handler
+		    argument:arg
+		  atPriority:ipl
+		   irqObject:object];
+}
+
+
 @end

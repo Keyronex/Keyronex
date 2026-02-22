@@ -7,9 +7,10 @@
  * @brief AMD64 thread.
  */
 
-#include <sys/k_cpu.h>
 #include <sys/cpulocal.h>
+#include <sys/k_cpu.h>
 #include <sys/k_intr.h>
+#include <sys/k_log.h>
 #include <sys/k_thread.h>
 #include <sys/pcb.h>
 #include <sys/x86.h>
@@ -18,6 +19,14 @@ void
 kep_arch_set_tp(void *addr)
 {
 	wrmsr(AMD64_GSBASE_MSR, (uint64_t)addr);
+}
+
+void
+ke_set_tcb(uintptr_t value)
+{
+	ke_curthread()->tcb = value;
+	kdprintf("ke_set_tcb: setting TCB to %p\n", (void *)value);
+	wrmsr(AMD64_FSBASE_MSR, value);
 }
 
 void
