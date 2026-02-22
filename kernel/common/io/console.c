@@ -14,12 +14,13 @@
 #include <sys/libkern.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
+#include <sys/strsubr.h>
 #include <sys/termios.h>
 
 #include <fs/devfs/devfs.h>
 
 static struct dev_class console_class;
-static queue_t *console_rq;
+static stdata_t *console_stdata;
 
 void
 console_init(void)
@@ -27,17 +28,44 @@ console_init(void)
 	devfs_create_node(&console_class, NULL, "console");
 }
 
+void
+console_input(const char *buf, int count)
+{
+	mblk_t *mp;
+
+	kassert(ke_ipl() == IPL_DISP);
+
+	mp = str_allocb(count);
+	if (mp == NULL)
+		return;
+
+	memcpy(mp->wptr, buf, count);
+	mp->wptr += count;
+
+	ke_spinlock_enter_nospl(&console_stdata->ingress_lock);
+	TAILQ_INSERT_TAIL(&console_stdata->ingress_head, mp, link);
+	ke_spinlock_exit_nospl(&console_stdata->ingress_lock);
+	str_kick(console_stdata);
+}
+
+
 static int
 console_ropen(queue_t *rq, void *)
 {
-	console_rq = rq;
+	console_stdata = rq->stdata;
 	return 0;
 }
 
 static void
 console_rclose(queue_t *rq)
 {
-	console_rq = NULL;
+	console_stdata = NULL;
+}
+
+static void
+console_rput(queue_t *rq, mblk_t *mp)
+{
+	str_putnext(rq, mp);
 }
 
 static void
@@ -90,6 +118,7 @@ console_wput(queue_t *wq, mblk_t *mp)
 static struct qinit console_rinit = {
 	.qopen = console_ropen,
 	.qclose = console_rclose,
+	.putp = console_rput,
 };
 
 static struct qinit console_winit = {

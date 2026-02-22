@@ -82,6 +82,8 @@ typedef struct stdata {
 	};
 } stdata_t;
 
+void str_kick(stdata_t *st);
+
 stdata_t *stropen(struct streamtab *devtab, void *dev);
 int strpush(stdata_t *sh, struct streamtab *tab);
 int strread(stdata_t *, void *buf, size_t len, int options);

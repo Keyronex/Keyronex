@@ -91,7 +91,7 @@ qpair_alloc(stdata_t *s, struct streamtab *tab)
 	rq->other = wq;
 	wq->other = rq;
 
-	rq->mutex = wq->mutex = s->mutex;
+	rq->stdata = wq->stdata = s;
 	TAILQ_INIT(&rq->msgq);
 	TAILQ_INIT(&wq->msgq);
 	rq->count = wq->count = 0;

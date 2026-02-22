@@ -59,7 +59,7 @@ typedef struct queue {
 	queue_t		*other;	/* other queue of the pair */
 	queue_t		*next;	/* next queue in stream */
 	queue_t		*back;	/* previous queue in stream */
-	kmutex_t	*mutex;	/* stream head's mutex*/
+	stdata_t	*stdata; /* stream head */
 
 	mblk_q_t	msgq;	/* message queue */
 	uint32_t	count;	/* count of characters in q */

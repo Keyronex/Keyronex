@@ -26,7 +26,7 @@ struct str_per_cpu_scheduler {
 
 void str_unlock(stdata_t *st);
 
-static inline void
+void
 str_kick(stdata_t *st)
 {
 	struct str_per_cpu_scheduler *sc;
@@ -53,23 +53,21 @@ str_kick(stdata_t *st)
 	ke_spinlock_exit_nospl(&sc->lock);
 }
 
-static inline mblk_q_t
-detach_ingress(stdata_t *st)
+static inline void
+detach_ingress(stdata_t *st, mblk_q_t *mq)
 {
-	mblk_q_t q;
-
+	TAILQ_INIT(mq);
 	ke_spinlock_enter_nospl(&st->ingress_lock);
-	q = st->ingress_head;
-	TAILQ_INIT(&st->ingress_head);
+	TAILQ_CONCAT(mq, &st->ingress_head, link);
 	ke_spinlock_exit_nospl(&st->ingress_lock);
-
-	return q;
 }
 
 static inline void
 drain_ingress(stdata_t *st)
 {
-	mblk_q_t mq = detach_ingress(st);
+	mblk_q_t mq;
+
+	detach_ingress(st, &mq);
 
 	while (!TAILQ_EMPTY(&mq)) {
 		mblk_t *mp = TAILQ_FIRST(&mq);
