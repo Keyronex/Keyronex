@@ -12,6 +12,7 @@
 #ifndef ECX_KEYRONEX_PMAP_H
 #define ECX_KEYRONEX_PMAP_H
 
+#include <sys/k_log.h>
 #include <sys/pmap_arch.h>
 
 #include <vm/page.h>

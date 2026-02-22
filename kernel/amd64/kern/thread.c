@@ -27,3 +27,22 @@ kep_thread_trampoline(void (*func)(void *), void *arg)
 	splx(IPL_0);
 	func(arg);
 }
+
+void
+ke_md_enter_usermode(uintptr_t ip, uintptr_t sp)
+{
+	uint64_t frame[5];
+
+	frame[0] = ip;
+	frame[1] = 0x38 | 0x3;
+	frame[2] = 0x202;
+	frame[3] = sp;
+	frame[4] = 0x40 | 0x3;
+
+	asm volatile("mov %0, %%rsp\n\t"
+		     "swapgs\n\t"
+		     "iretq\n"
+	    :
+	    : "r"(frame)
+	    : "memory");
+}

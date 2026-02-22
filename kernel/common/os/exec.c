@@ -236,7 +236,7 @@ load_init(vnode_t *server_vnode, vnode_t *ld_vnode)
 {
 	int r = 0;
 	struct exec_package pkg, rtldpkg;
-	const char *argp[] = { "-bash", NULL },
+	const char *argp[] = { "init", NULL },
 		   *envp[] = { NULL };
 
 	/* assume it's not PIE */
