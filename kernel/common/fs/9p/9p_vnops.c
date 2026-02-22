@@ -10,20 +10,19 @@
 /* FIXME: Old code, needs review!! */
 
 #include <sys/errno.h>
+#include <sys/fcntl.h>
 #include <sys/k_thread.h>
+#include <sys/kmem.h>
+#include <sys/krx_vfs.h>
 #include <sys/stat.h>
 #include <sys/tree.h>
-#include <sys/krx_vfs.h>
 #include <sys/vnode.h>
-#include <sys/fcntl.h>
-
-#include <libkern/lib.h>
 
 #include <dirent.h>
 #include <inttypes.h>
+#include <libkern/lib.h>
 
 #include "9pbuf.h"
-#include <sys/kmem.h>
 
 typedef uint32_t fid_t;
 
@@ -34,7 +33,6 @@ struct ninep_node {
 	vnode_t *vnode;
 	krwlock_t rwlock, paging_rwlock;
 	vattr_t vattr;
-
 };
 
 struct ninepfs_state {

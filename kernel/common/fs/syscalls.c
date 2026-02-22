@@ -223,6 +223,8 @@ sys_lseek(int fd, off_t offset, int whence, off_t *out)
 	off_t new_off;
 	int r;
 
+	offset = (off_t)(int32_t)offset; /* hack for 32-bit arches */
+
 	file = uf_lookup(curproc()->finfo, fd);
 	if (file == NULL)
 		return -EBADF;
@@ -264,6 +266,7 @@ sys_lseek(int fd, off_t offset, int whence, off_t *out)
 	}
 	ke_mutex_exit(&file->offset_mutex);
 	file_release(file);
+
 	return r;
 }
 

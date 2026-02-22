@@ -19,8 +19,8 @@
 
 struct kevent;
 
-typedef intptr_t io_off_t;
-typedef uintptr_t iop_result_t;
+typedef int64_t io_off_t;
+typedef uint64_t iop_result_t;
 
 typedef struct sg_seg {
 	paddr_t paddr;
