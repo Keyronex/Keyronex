@@ -183,6 +183,21 @@ dev_spec_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 	}
 }
 
+static int
+dev_spec_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
+{
+	dev_node_t *dn = VTODN(vn);
+
+	switch (dn->class->kind) {
+	case DEV_KIND_STREAM:
+		return strchpoll(dn->stdata, pe, mode);
+
+	default:
+		kfatal("implement me");
+	}
+
+}
+
 iop_return_t
 dev_spec_iop_dispatch(vnode_t *vn, struct iop *iop)
 {
@@ -225,6 +240,7 @@ static struct vnode_ops dev_spec_vnops = {
 	.read = dev_spec_read,
 	.write = dev_spec_write,
 	.ioctl = dev_spec_ioctl,
+	.chpoll = dev_spec_chpoll,
 	.stack_depth = 2,
 	.iop_dispatch = dev_spec_iop_dispatch,
 	.iop_complete = dev_spec_iop_complete,

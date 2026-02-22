@@ -63,6 +63,7 @@ typedef struct stdata {
 	TAILQ_ENTRY(stdata) sched_link;
 
 	/* stream head personality */
+	pollhead_t pollhead;
 	bool hanged_up;
 	kevent_t data_readable;
 	enum str_read_mode read_mode;
@@ -86,5 +87,6 @@ int strpush(stdata_t *sh, struct streamtab *tab);
 int strread(stdata_t *, void *buf, size_t len, int options);
 int strwrite(stdata_t *, const void *buf, size_t len, int options);
 int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);
+int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
 
 #endif /* ECX_SYS_STRSUBR_H */

@@ -158,9 +158,7 @@ str_head_alloc(enum str_head_kind kind)
 	ke_event_init(&sh->ioctl_done_ev, 0);
 	sh->read_mode = STR_RNORM;
 
-#if 0
 	pollhead_init(&sh->pollhead);
-#endif
 
 	if (kind == STR_HEAD_KIND_TTY) {
 		sh->tty_pgrp = NULL;
@@ -588,6 +586,42 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	return r;
 }
 
+int
+strchpoll(stdata_t *sh, struct poll_entry *pe, enum chpoll_mode mode)
+{
+	int r = 0;
+
+	if (mode == CHPOLL_UNPOLL) {
+		kassert(pe != NULL);
+		pollhead_unregister(&sh->pollhead, pe);
+		return 0;
+	}
+
+	if (pe != NULL)
+		pollhead_register(&sh->pollhead, pe);
+
+	ke_mutex_enter(sh->mutex, "strchpoll");
+
+	r = 0;
+
+	if (!sh->write_broken)
+		r |= EPOLLOUT;
+	else
+		r |= EPOLLERR;
+
+	if (sh->rq->count > 0)
+		r |= EPOLLIN | EPOLLRDNORM;
+	else if (sh->read_mode == STR_RMSGN && !TAILQ_EMPTY(&sh->rq->msgq))
+		r |= EPOLLIN | EPOLLRDNORM; /* canon tty, zero msg for EOF */
+
+	if (sh->hanged_up)
+		r |= EPOLLHUP;
+
+	ke_mutex_exit(sh->mutex);
+
+	return r;
+}
+
 static void
 sth_rput(queue_t *q, mblk_t *mp)
 {
@@ -604,17 +638,13 @@ sth_rput(queue_t *q, mblk_t *mp)
 
 		ke_event_set_signalled(&sh->data_readable, true);
 		TAILQ_INSERT_TAIL(&sh->rq->msgq, mp, link);
-#if 0
 		pollhead_deliver_events(&sh->pollhead, EPOLLIN | EPOLLRDNORM);
-#endif
 		break;
 
 	case M_HANGUP:
 		str_freeb(mp);
 		sh->hanged_up = true;
-#if 0
 		pollhead_deliver_events(&sh->pollhead, EPOLLHUP);
-#endif
 
 #if 0
 		if (sh->tty_pgrp != NULL)

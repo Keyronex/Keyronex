@@ -11,6 +11,7 @@
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/krx_cred.h>
+#include <sys/krx_epoll.h>
 #include <sys/krx_file.h>
 #include <sys/krx_signal.h>
 #include <sys/krx_vfs.h>
@@ -202,7 +203,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return sys_fstatat(arg1, (const char *)arg2, (int)arg3,
 		    (struct stat *)arg4);
 
-	/* fd manipulation */
+	/*
+	 * fd manipulation
+	 */
 	case SYS_pipe:
 		ktodo();
 
@@ -217,6 +220,24 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 
 	case SYS_fcntl:
 		return sys_fcntl((int)arg1, (int)arg2, (intptr_t)arg3);
+
+	/*
+	 * sockets
+	 */
+
+	/*
+	 * linux affinity
+	 */
+	case SYS_epoll_create:
+		return sys_epoll_create(arg1);
+
+	case SYS_epoll_ctl:
+		return sys_epoll_ctl(arg1, arg2, arg3,
+		    (struct epoll_event *)arg4);
+
+	case SYS_epoll_wait:
+		return sys_epoll_wait(arg1, (struct epoll_event *)arg2, arg3,
+		    arg4);
 
 	/*
 	 * clock

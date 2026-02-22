@@ -166,8 +166,9 @@ watch_add(struct epoll *ep, int desc, struct file *watch_file,
 
 	LIST_INSERT_HEAD(&ep->watches, entry, epoll_watch_link);
 
-	r = watch_file->vnode->ops->chpoll(watch_file->vnode, entry,
-	    CHPOLL_POLL);
+	kassert(entry->file->vnode->ops->chpoll != NULL);
+	r =  VOP_CHPOLL(watch_file->vnode, entry, CHPOLL_POLL);
+
 	/*
 	 * could be done from chpoll if we export an appropriate API?
 	 * maybe better here to avoid more complicated call stacks and simplify
@@ -410,12 +411,12 @@ process_ready(struct epoll *ep, int maxevents, struct epoll_event *revents)
 
 			do {
 				uint32_t gen = entry->generation;
-				ke_spinlock_exit_nospl(&ep->ready_lock);
+				ke_spinlock_exit(&ep->ready_lock, ipl);
 
 				r = VOP_CHPOLL(entry->file->vnode, NULL,
 				    CHPOLL_POLL);
 
-				ke_spinlock_enter_nospl(&ep->ready_lock);
+				ipl = ke_spinlock_enter(&ep->ready_lock);
 				if ((r & entry->event.events) != 0 ||
 				    entry->generation == gen)
 					break;
