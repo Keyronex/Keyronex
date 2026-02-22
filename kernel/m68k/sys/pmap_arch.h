@@ -34,7 +34,7 @@
 
 union vaddr_040 {
 	struct {
-		uint32_t l3i : 7, l2i : 7, l1i : 6, pgi : 12;
+		uint32_t l2i : 7, l1i : 7, l0i : 6, pgi : 12;
 	};
 	uint32_t addr;
 };
@@ -44,7 +44,7 @@ union vaddr_040 {
  * treated as containing 1024 PTEs for the purposes of the skip logic that uses
  * these definitions.
  */
-#define PMAP_L1_SKIP 1024
+#define PMAP_L1_SKIP 64
 #define PMAP_L0_SKIP 1024
 
 /* root table descriptor */
@@ -91,9 +91,9 @@ pmap_indexes(vaddr_t vaddr, size_t indexes[PMAP_MAX_LEVELS])
 {
 	union vaddr_040 addr;
 	addr.addr = vaddr;
-	indexes[0] = addr.l1i;
-	indexes[1] = addr.l2i;
-	indexes[2] = addr.l3i;
+	indexes[0] = addr.l0i;
+	indexes[1] = addr.l1i;
+	indexes[2] = addr.l2i;
 }
 
 static inline union pte
