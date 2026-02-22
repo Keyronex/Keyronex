@@ -112,22 +112,22 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return curproc()->pid;
 
 	case SYS_getppid:
-		return 0;
+		return sys_getppid(curproc());
 
 	/*
 	 * job control
 	 */
 	case SYS_getpgid:
-		return 0;
+		return sys_getpgid((pid_t)arg1);
 
 	case SYS_setpgid:
-		return -ENOSYS;
+		return sys_setpgid((pid_t)arg1, (pid_t)arg2);
 
 	case SYS_getsid:
-		ktodo();
+		return sys_getsid((pid_t)arg1);
 
 	case SYS_setsid:
-		ktodo();
+		return sys_setsid();
 
 	/*
 	 * threads

@@ -267,12 +267,12 @@ load_init(vnode_t *server_vnode, vnode_t *ld_vnode)
 }
 
 int
-sys_execve(proc_t *proc, const char *upath, char *const uarpg[],
-    char *const uenvp[])
+sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 {
 	int r;
 	char *path = NULL, **argp = NULL, **envp = NULL;
 	namecache_handle_t exe_nch = { 0 }, ld_nch = { 0 };
+	proc_t *proc = curproc();
 	vm_map_t *newmap = NULL, *oldmap = proc->vm_map;
 	struct exec_package pkg, rtldpkg;
 	ipl_t ipl;

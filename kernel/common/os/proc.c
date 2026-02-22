@@ -18,6 +18,10 @@
 
 kmem_cache_t *turnstile_cache, *proc_cache, *thread_cache;
 _Atomic(pid_t) last_pid = 1;
+struct session session0;
+struct pgrp pgrp0;
+TAILQ_HEAD(, proc) allproc;
+kmutex_t proctree_mutex = KMUTEX_INITIALISER;
 
 void
 proc_init(void)
@@ -30,6 +34,28 @@ proc_init(void)
 	    alignof(kturnstile_t), NULL);
 
 	proc0.pid = 0;
+
+	pgrp0.refcount = 1;
+	pgrp0.pgid = 0;
+	pgrp0.session = &session0;
+	LIST_INIT(&pgrp0.members);
+	LIST_INSERT_HEAD(&session0.pgrps, &pgrp0, session_link);
+
+	session0.refcount = 1;
+	session0.sid = 0;
+	session0.leader = &proc0;
+	session0.ctty_vn = NULL;
+	session0.ctty_str = NULL;
+	LIST_INIT(&session0.pgrps);
+
+	proc0.pgrp = &pgrp0;
+	LIST_INSERT_HEAD(&pgrp0.members, &proc0, pgrp_link);
+
+	strcpy(proc0.comm, "(swapper)");
+	TAILQ_INIT(&proc0.children);
+
+	TAILQ_INIT(&allproc);
+	TAILQ_INSERT_TAIL(&allproc, &proc0, allproc_qlink);
 }
 
 thread_t *
@@ -73,28 +99,20 @@ proc_create(proc_t *parent, bool fork)
 
 	ke_proc_init(&proc->ktask);
 
-#if 0
-	spinlock_init(&proc->threads_lock);
-	proc->exiting = false;
-	proc->threads_count = 0;
-	TAILQ_INIT(&proc->threads);
-
 	proc->parent = parent;
 	TAILQ_INIT(&proc->children);
 	proc->exited = false;
 
-	proc->waiting_event = NULL;
+	proc->wait_ev = NULL;
 	proc->procdesc = NULL;
 
-	ipl = spinlock_lock(&proctree_lock);
+	ke_mutex_enter(&proctree_mutex, "proc_create");
 	proc->pgrp = NULL;
 	pgrp_add_member(parent->pgrp, proc);
 
 	TAILQ_INSERT_TAIL(&allproc, proc, allproc_qlink);
 	TAILQ_INSERT_TAIL(&parent->children, proc, sibling_qlink);
-	spinlock_unlock(&proctree_lock, ipl);
-#endif
-
+	ke_mutex_exit(&proctree_mutex);
 	return proc;
 }
 
@@ -143,4 +161,14 @@ thread_activate(thread_t *old, thread_t *new)
 	void pmap_activate(vm_map_t *map);
 	if (thread_vm_map(old) != thread_vm_map(new))
 		pmap_activate(thread_vm_map(new));
+}
+
+pid_t
+sys_getppid(proc_t *proc)
+{
+	pid_t ppid;
+	ke_mutex_enter(&proctree_mutex, "sys_getppid");
+	ppid = proc->parent ? proc->parent->pid : 0;
+	ke_mutex_exit(&proctree_mutex);
+	return ppid;
 }

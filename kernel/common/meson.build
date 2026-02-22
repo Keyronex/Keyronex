@@ -55,6 +55,7 @@ kernel_sources += [
     'os/exec.c',
     'os/file.c',
     'os/filedesc.c',
+    'os/jobctl.c',
     'os/main.c',
     'os/proc.c',
     'os/signal.c',

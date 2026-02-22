@@ -67,10 +67,12 @@ typedef struct kturnstile {
 typedef struct krwlock {
 	uintptr_t val;
 } krwlock_t;
+#define KRWLOCK_INITIALISER { 0 }
 
 typedef struct kmutex {
 	uintptr_t val;
 } kmutex_t;
+#define KMUTEX_INITIALISER { 0 }
 
 /*
  * A kernel thread.
@@ -165,6 +167,7 @@ void ke_mutex_init(kmutex_t *);
 void ke_mutex_enter(kmutex_t *, const char *reason);
 void ke_mutex_exit(kmutex_t *);
 bool ke_mutex_tryenter(kmutex_t *);
+bool ke_mutex_held(kmutex_t *);
 
 extern ktask_t *ke_task0;
 

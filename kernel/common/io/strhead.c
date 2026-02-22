@@ -16,13 +16,28 @@
 #include <sys/ioctl.h>
 #include <sys/kmem.h>
 #include <sys/libkern.h>
+#include <sys/proc.h>
 #include <sys/socket.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
 #include <sys/strsubr.h>
 #include <sys/termios.h>
 
+extern kmutex_t proctree_mutex;
+
 static struct streamtab sth_streamtab;
+
+void
+str_enter(stdata_t *sh, const char *reason)
+{
+	ke_mutex_enter(sh->mutex, reason);
+}
+
+void
+str_exit(stdata_t *sh)
+{
+	ke_mutex_exit(sh->mutex);
+}
 
 void
 str_reqlock(stdata_t *sh)
@@ -399,6 +414,48 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 	return len;
 }
 
+static int
+do_setctty(struct vnode *vn, stdata_t *sh)
+{
+	ipl_t ipl;
+	struct session *sess;
+	proc_t *proc = curproc();
+
+	ke_mutex_enter(&proctree_mutex, "do_setctty");
+
+	if (proc->pgrp == NULL) {
+		ke_mutex_exit(&proctree_mutex);
+		return -ESRCH;
+	}
+
+	sess = proc->pgrp->session;
+
+	if (sess->leader != proc) {
+		/* process is not the session leader */
+		ke_mutex_exit(&proctree_mutex);
+		return -EPERM;
+	}
+
+	if (sess->ctty_str != NULL) {
+		/* session has a controlling terminal already */
+		ke_mutex_exit(&proctree_mutex);
+		return -EPERM;
+	}
+
+	session_ref(sess);
+	pgrp_ref(proc->pgrp);
+
+	sh->tty_session = sess;
+	sh->tty_pgrp = proc->pgrp;
+
+	sess->ctty_str = sh;
+	sess->ctty_vn = vn;
+
+	ke_mutex_exit(&proctree_mutex);
+
+	return 0;
+}
+
 int
 strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 {
@@ -410,34 +467,25 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 
 	switch (cmd) {
 	case TIOCSCTTY:
-#if 0
 		r = do_setctty(vn, sh);
 		return r;
-#endif
-		return -ENOSYS;
 
 	case TIOCGPGRP: {
-#if 0
 		pid_t pgrp_id;
 
-		ipl = spinlock_lock(sh->lockp);
+		str_enter(sh, "TIOCGPGRP");
 		if (sh->tty_pgrp == NULL) {
-			spinlock_unlock(sh->lockp, ipl);
-			kprintf("str_ioctl: TIOCGPGRP with no tty_pgrp\n");
+			str_exit(sh);
+			kdprintf("str_ioctl: TIOCGPGRP with no tty_pgrp\n");
 			return -ENOTTY;
 		}
 		pgrp_id = sh->tty_pgrp->pgid;
-		spinlock_unlock(sh->lockp, ipl);
+		str_exit(sh);
 
-		return memcpy_to_user(arg, &pgrp_id, sizeof(pid_t))
-		    ? -EFAULT : 0;
-#else
-		return -ENOSYS;
-#endif
+		return memcpy_to_user(arg, &pgrp_id, sizeof(pid_t));
 	}
 
 	case TIOCSPGRP: {
-#if 0
 		pid_t pgrp_id;
 		struct pgrp *pgrp;
 		struct proc *proc = curproc();
@@ -445,12 +493,12 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		if (memcpy_from_user(&pgrp_id, arg, sizeof(pid_t)))
 			return -EFAULT;
 
-		ipl = spinlock_lock(&proctree_lock);
+		ke_mutex_enter(&proctree_mutex, "TIOCSPGRP");
 
 		if (sh->tty_session == NULL || proc->pgrp == NULL ||
 		    proc->pgrp->session != sh->tty_session) {
-			spinlock_unlock(&proctree_lock, ipl);
-			kprintf("str_ioctl: TIOCSPGRP with no tty_session\n");
+			ke_mutex_exit(&proctree_mutex);
+			kdprintf("str_ioctl: TIOCSPGRP with no tty_session\n");
 			return -ENOTTY;
 		}
 
@@ -461,24 +509,22 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		}
 
 		if (pgrp == NULL) {
-			spinlock_unlock(&proctree_lock, ipl);
-			kprintf("str_ioctl: TIOCSPGRP with no matching pgrp\n");
+			ke_mutex_exit(&proctree_mutex);
+			kdprintf(
+			    "str_ioctl: TIOCSPGRP with no matching pgrp\n");
 			return -ESRCH;
 		}
 
 		pgrp_ref(pgrp);
 
-		spinlock_lock_nospl(sh->lockp);
+		str_enter(sh, "TIOCSPGRP");
 		if (sh->tty_pgrp != NULL)
 			pgrp_unref(sh->tty_pgrp);
 		sh->tty_pgrp = pgrp;
-		spinlock_unlock_nospl(sh->lockp);
+		str_exit(sh);
 
-		spinlock_unlock(&proctree_lock, ipl);
+		ke_mutex_exit(&proctree_mutex);
 		return 0;
-#else
-		return -ENOSYS;
-#endif
 	}
 
 	case TIOCGWINSZ:

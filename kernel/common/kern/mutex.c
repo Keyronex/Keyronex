@@ -103,3 +103,11 @@ ke_mutex_exit(kmutex_t *mtx)
 	__atomic_store_n(&mtx->val, 0, __ATOMIC_RELEASE);
 	ke_turnstile_wakeup(ts, true, ts->nwaiters[1], NULL, ipl);
 }
+
+bool
+ke_mutex_held(kmutex_t *mtx)
+{
+	kthread_t *self = ke_curthread();
+	uintptr_t val = __atomic_load_n(&mtx->val, __ATOMIC_RELAXED);
+	return MTX_OWNER(val) == self;
+}
