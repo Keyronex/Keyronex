@@ -89,7 +89,8 @@ int vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
 
 void vfs_init(vfs_t *);
 
-int sys_openat(int dirfd, const char *path, int flags, mode_t mode);
+int sys_openat(int dirfd, const char *upath, int flags, mode_t mode);
+int sys_readlinkat(int dirfd, const char *upath, char *ubuf, size_t bufsiz);
 
 namecache_handle_t nchandle_retain(namecache_handle_t in);
 namecache_handle_t nchandle_release(namecache_handle_t in);

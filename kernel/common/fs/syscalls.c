@@ -47,7 +47,6 @@ get_dirfd_nch(int dirfd, namecache_handle_t *out)
 	return 0;
 }
 
-
 int
 sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 {
@@ -148,6 +147,45 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		file_release(file);
 	else
 		uf_install_reserved(curproc()->finfo, r, file);
+
+	return r;
+}
+
+int
+sys_readlinkat(int dirfd, const char *upath, char *ubuf, size_t bufsiz)
+{
+	char *path;
+	namecache_handle_t dirnch, result;
+	int r, len;
+
+	len = strldup_user(&path, upath, 4095);
+	if (len < 0)
+		return len;
+
+	r = get_dirfd_nch(dirfd, &dirnch);
+	if (r != 0) {
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	r = vfs_lookup_simple(dirnch, &result, path, LOOKUP_NOFOLLOW_FINAL);
+	if (r != 0) {
+		nchandle_release(dirnch);
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	if (result.nc->vp->type != VLNK) {
+		r = -EINVAL;
+		goto out;
+	}
+
+	r = VOP_READLINK(result.nc->vp, ubuf, bufsiz);
+
+out:
+	nchandle_release(result);
+	nchandle_release(dirnch);
+	kmem_free(path, len + 1);
 
 	return r;
 }

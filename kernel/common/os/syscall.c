@@ -182,6 +182,27 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_openat:
 		return sys_openat(arg1, (const char *)arg2, arg3, arg4);
 
+
+	case SYS_faccessat:
+		ktodo();
+
+	case SYS_mkdirat:
+		ktodo();
+
+	case SYS_linkat:
+		ktodo();
+
+	case SYS_unlinkat:
+		ktodo();
+
+	case SYS_renameat:
+		ktodo();
+
+	case SYS_readlinkat:
+		return sys_readlinkat((int)arg1, (const char *)arg2,
+		    (char *)arg3, (size_t)arg4);
+
+
 	/*
 	 *  file ops
 	 */
