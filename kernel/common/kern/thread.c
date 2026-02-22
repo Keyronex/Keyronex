@@ -38,6 +38,7 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	thread->sched_class = SCHED_OTHER;
 	thread->prio = 0;
 	thread->last_cpu_num = KCPUNUM_NULL;
+	thread->bound_cpu = KCPUNUM_NULL;
 #if 0
 	atomic_store_explicit(&thread->runtime, 0, memory_order_relaxed);
 #endif

@@ -200,11 +200,16 @@ str_thaw(stdata_t *st)
 }
 
 void
-str_per_cpu_init(void)
+str_sched_init(void)
 {
-	struct str_per_cpu_scheduler *sc = kmem_alloc(sizeof(*sc));
-	ke_spinlock_init(&sc->lock);
-	TAILQ_INIT(&sc->runq);
-	ke_event_init(&sc->event, false);
-	sc->worker = proc_new_system_thread(worker, sc);
+	for (kcpunum_t i = 0; i < ke_ncpu; i++) {
+		struct str_per_cpu_scheduler *sc = kmem_alloc(sizeof(*sc));
+		ke_spinlock_init(&sc->lock);
+		TAILQ_INIT(&sc->runq);
+		ke_event_init(&sc->event, false);
+		sc->worker = proc_new_system_thread(worker, sc);
+		ke_cpu_data[i]->str_scheduler = sc;
+		ke_thread_set_affinity(&sc->worker->kthread, i);
+		ke_thread_resume(&sc->worker->kthread, false);
+	}
 }

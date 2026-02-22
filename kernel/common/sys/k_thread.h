@@ -98,6 +98,7 @@ typedef struct kthread {
 		TS_SLEEPING,
 		TS_TERMINATED
 	} state;
+	kcpunum_t	bound_cpu;	/* CPU affine to */
 	kcpunum_t	last_cpu_num;	/* CPU running on/last ran on */
 	uint8_t		sched_class;	/* scheduling class (SCHED_*) */
 	uint8_t		nice;		/* nice value (currently unused) */
@@ -127,6 +128,7 @@ void ke_thread_resume(kthread_t *, bool io_completion);
 void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
 void ke_set_tcb(uintptr_t value);
+void ke_thread_set_affinity(kthread_t *, kcpunum_t);
 
 kpri_t ke_thread_epri_locked(kthread_t *);
 void ke_thread_set_ipri_locked(kthread_t *, kpri_t);

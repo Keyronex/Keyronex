@@ -52,6 +52,7 @@ void dk_platform_threaded_init(void);
 void viewcache_init(void);
 void console_init(void);
 void mount_devfs(void);
+void str_sched_init(void);
 
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
@@ -119,8 +120,6 @@ smp_init(void)
 		ke_cpu_init(i, data, info, &idle->kthread);
 
 		// rcu_per_cpu_init(&data->rcu_cpustate);
-		// str_per_cpu_init(&data->str_scheduler);
-
 	}
 }
 
@@ -228,6 +227,7 @@ threaded_init(void *)
 	viewcache_init();
 	mount_root();
 	mount_devfs();
+	str_sched_init();
 	console_init();
 	exec_init();
 

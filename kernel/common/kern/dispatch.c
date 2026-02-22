@@ -135,7 +135,9 @@ should_preempt(struct kcpu_dispatcher *disp, kthread_t *thread)
 uint32_t
 pick_cpu(kthread_t *thread)
 {
-	if (thread->last_cpu_num != KCPUNUM_NULL &&
+	if (thread->bound_cpu != KCPUNUM_NULL) {
+		return thread->bound_cpu;
+	} else if (thread->last_cpu_num != KCPUNUM_NULL &&
 	    atomic_cpumask_isset(&idle_cpu_mask, thread->last_cpu_num,
 	    memory_order_relaxed)) {
 		return thread->last_cpu_num;
@@ -379,6 +381,7 @@ ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
 	thread->sched_class = SCHED_OTHER;
 	thread->prio = 0;
 	thread->last_cpu_num = cpunum;
+	thread->bound_cpu = cpunum;
 
 	(void)ipl;
 
@@ -422,4 +425,11 @@ ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data,
 	data->curthread = idle;
 	ke_idle_thread_init(cpunum, idle);
 	ke_disp_init(cpunum);
+}
+
+void
+ke_thread_set_affinity(kthread_t *thread, kcpunum_t cpu)
+{
+	kassert(thread->state == TS_CREATED);
+	thread->bound_cpu = cpu;
 }
