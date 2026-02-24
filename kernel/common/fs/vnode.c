@@ -72,6 +72,7 @@ vn_release(vnode_t *vn)
 
 			kassert(old == 1);
 
+			kassert(vn->ops->inactive != NULL);
 			r = vn->ops->inactive(vn);
 			if (r == -EAGAIN) {
 				/* retry release */

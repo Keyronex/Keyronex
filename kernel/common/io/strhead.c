@@ -178,10 +178,9 @@ str_head_alloc(enum str_head_kind kind)
 	if (kind == STR_HEAD_KIND_TTY) {
 		sh->tty_pgrp = NULL;
 		sh->tty_session = NULL;
-	} else if (kind == STR_HEAD_KIND_RPIPE ||
-		   kind == STR_HEAD_KIND_WPIPE) {
-		sh->pipe_peer = NULL;
-		sh->write_broken = false;
+	} else if (kind == STR_HEAD_KIND_FIFO) {
+		sh->nreaders = 0;
+		sh->nwriters = 0;
 	}
 
 	sh->rq = qpair_alloc(sh, &sth_streamtab);
@@ -196,12 +195,12 @@ str_head_alloc(enum str_head_kind kind)
 }
 
 stdata_t *
-stropen(struct streamtab *devtab, void *dev)
+stropen(struct streamtab *devtab, void *dev, enum str_head_kind kind)
 {
 	stdata_t *sh;
 	queue_t *devrq;
 
-	sh = str_head_alloc(STR_HEAD_KIND_TTY);
+	sh = str_head_alloc(STR_HEAD_KIND_FIFO);
 	if (sh == NULL)
 		return NULL;
 
@@ -400,7 +399,7 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 
 	ke_mutex_enter(sh->mutex, "str_write");
 
-	if (sh->kind == STR_HEAD_KIND_WPIPE && sh->write_broken) {
+	if (sh->kind == STR_HEAD_KIND_FIFO && sh->nreaders == 0) {
 		str_freeb(mp);
 		str_requnlock(sh);
 		/* TODO: send SIGPIPE to process */
@@ -649,10 +648,14 @@ strchpoll(stdata_t *sh, struct poll_entry *pe, enum chpoll_mode mode)
 
 	r = 0;
 
-	if (!sh->write_broken)
+	if (sh->kind == STR_HEAD_KIND_FIFO) {
+		if (sh->nreaders > 0)
+			r |= EPOLLOUT;
+		else
+			r |= EPOLLERR;
+	} else {
 		r |= EPOLLOUT;
-	else
-		r |= EPOLLERR;
+	}
 
 	if (sh->rq->count > 0)
 		r |= EPOLLIN | EPOLLRDNORM;

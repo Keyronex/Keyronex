@@ -138,7 +138,7 @@ dev_spec_open(vnode_t **vn, int)
 	switch(dn->class->kind) {
 		case DEV_KIND_STREAM:
 			dn->stdata = stropen(dn->class->streamtab,
-			    dn->devprivate);
+			    dn->devprivate, STR_HEAD_KIND_TTY);
 
 			/* FIXME: implement autopush instead */
 			extern struct streamtab ldterm_tab;

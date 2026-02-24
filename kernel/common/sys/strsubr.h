@@ -35,8 +35,6 @@ enum {
 enum str_head_kind {
 	STR_HEAD_KIND_NONE,
 	STR_HEAD_KIND_TTY,
-	STR_HEAD_KIND_RPIPE,
-	STR_HEAD_KIND_WPIPE,
 	STR_HEAD_KIND_FIFO,
 };
 
@@ -76,19 +74,22 @@ typedef struct stdata {
 			struct session *tty_session; /* controlling session */
 		};
 		struct {
-			struct stdata *pipe_peer;
-			bool write_broken;
+			size_t nreaders;
+			size_t nwriters;
 		};
 	};
 } stdata_t;
 
-void str_kick(stdata_t *st);
-
-stdata_t *stropen(struct streamtab *devtab, void *dev);
+stdata_t *stropen(struct streamtab *devtab, void *dev, enum str_head_kind);
 int strpush(stdata_t *sh, struct streamtab *tab);
 int strread(stdata_t *, void *buf, size_t len, int options);
 int strwrite(stdata_t *, const void *buf, size_t len, int options);
 int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);
 int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
+
+void str_reqlock(stdata_t *);
+void str_requnlock(stdata_t *);
+
+void str_kick(stdata_t *st);
 
 #endif /* ECX_SYS_STRSUBR_H */
