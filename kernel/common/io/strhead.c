@@ -195,6 +195,41 @@ str_head_alloc(enum str_head_kind kind)
 	return sh;
 }
 
+stdata_t *
+stropen(struct streamtab *devtab, void *dev)
+{
+	stdata_t *sh;
+	queue_t *devrq;
+
+	sh = str_head_alloc(STR_HEAD_KIND_TTY);
+	if (sh == NULL)
+		return NULL;
+
+	sh->devtab = devtab;
+
+	devrq = qpair_alloc(sh, devtab);
+	if (devrq == NULL) {
+		qpair_free(sh->rq);
+		kmem_free(sh, sizeof(*sh));
+		return NULL;
+	}
+
+	devrq->next = sh->rq;
+	sh->rq->back = devrq;
+	sh->wq->next = devrq->other;
+	devrq->other->back = sh->wq;
+	sh->rq_bottom = devrq;
+
+	if (qpair_open(sh->rq, dev) != 0 || qpair_open(devrq, dev) != 0) {
+		qpair_free(devrq);
+		qpair_free(sh->rq);
+		kmem_free(sh, sizeof(*sh));
+		return NULL;
+	}
+
+	return sh;
+}
+
 int
 strpush(stdata_t *sh, struct streamtab *tab)
 {
@@ -235,42 +270,6 @@ strpush(stdata_t *sh, struct streamtab *tab)
 	ke_mutex_exit(sh->mutex);
 	return 0;
 }
-
-stdata_t *
-stropen(struct streamtab *devtab, void *dev)
-{
-	stdata_t *sh;
-	queue_t *devrq;
-
-	sh = str_head_alloc(STR_HEAD_KIND_TTY);
-	if (sh == NULL)
-		return NULL;
-
-	sh->devtab = devtab;
-
-	devrq = qpair_alloc(sh, devtab);
-	if (devrq == NULL) {
-		qpair_free(sh->rq);
-		kmem_free(sh, sizeof(*sh));
-		return NULL;
-	}
-
-	devrq->next = sh->rq;
-	sh->rq->back = devrq;
-	sh->wq->next = devrq->other;
-	devrq->other->back = sh->wq;
-	sh->rq_bottom = devrq;
-
-	if (qpair_open(sh->rq, dev) != 0 || qpair_open(devrq, dev) != 0) {
-		qpair_free(devrq);
-		qpair_free(sh->rq);
-		kmem_free(sh, sizeof(*sh));
-		return NULL;
-	}
-
-	return sh;
-}
-
 
 int
 strread(stdata_t *sh, void *buf, size_t len, int options)
