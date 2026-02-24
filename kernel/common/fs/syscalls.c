@@ -136,7 +136,7 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 
 	}
 
-	file = file_new(result, vn);
+	file = file_new(result, vn, flags);
 	if (file == NULL) {
 		nchandle_release(result);
 		return -ENOMEM;

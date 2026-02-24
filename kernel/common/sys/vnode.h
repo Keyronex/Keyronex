@@ -108,6 +108,7 @@ struct vnode_ops {
 };
 
 #define VOP_OPEN(VN, FLAGS) (*(VN))->ops->open(VN, FLAGS);
+#define VOP_CLOSE(VN, FLAGS) (VN)->ops->close(VN, FLAGS)
 #define VOP_RENAME(SVN, SNAME, DVN, DNAME) \
     (SVN)->ops->rename(SVN, SNAME, DVN, DNAME)
 #define VOP_CHPOLL(VN, POLL, MODE) (VN)->ops->chpoll(VN, (POLL), (MODE));

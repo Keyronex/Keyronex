@@ -19,7 +19,7 @@
 #include <stdbool.h>
 
 file_t *
-file_new(namecache_handle_t nch, vnode_t *vn)
+file_new(namecache_handle_t nch, vnode_t *vn, int flags)
 {
 	file_t *file;
 
@@ -33,7 +33,7 @@ file_new(namecache_handle_t nch, vnode_t *vn)
 	file->vnode = vn;
 	ke_mutex_init(&file->offset_mutex);
 	file->offset = 0;
-	file->flags = 0;
+	file->flags = flags;
 
 	ke_spinlock_init(&file->epoll_lock);
 	LIST_INIT(&file->epoll_watches);
@@ -61,9 +61,14 @@ file_release(file_t *file)
 	uint32_t old = __atomic_fetch_sub(&file->refcnt, 1, __ATOMIC_ACQ_REL);
 
 	if (old == 1) {
-		if (file->nch.nc != NULL)
+		if (file->nch.nc != NULL) {
+			if (file->nch.nc->vp->ops->close != NULL)
+				VOP_CLOSE(file->nch.nc->vp, file->flags);
 			nchandle_release(file->nch);
-		else if (file->vnode != NULL)
+		} else if (file->vnode != NULL) {
+			if (file->vnode->ops->close != NULL)
+				VOP_CLOSE(file->vnode, file->flags);
 			vn_release(file->vnode);
+		}
 	}
 }

@@ -511,7 +511,8 @@ sys_epoll_create(int flags)
 		return -ENOMEM;
 	}
 
-	file = file_new((namecache_handle_t) { NULL, NULL }, vnode);
+	/* fixme: flags */
+	file = file_new((namecache_handle_t) { NULL, NULL }, vnode, 0);
 	if (file == NULL) {
 		kmem_free(ep, sizeof(struct epoll));
 		vn_release(vnode);

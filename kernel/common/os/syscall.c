@@ -24,6 +24,9 @@
 #include <time.h>
 
 int
+sys_pipe(int upipefd[2], int flags);
+
+int
 sys_clock_gettime(int clock_id, struct timespec *tp)
 {
 	kabstime_t now = ke_time();
@@ -233,7 +236,7 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	 * fd manipulation
 	 */
 	case SYS_pipe:
-		ktodo();
+		return sys_pipe((int *)arg1, (int)arg2);
 
 	case SYS_dup:
 		return sys_dup((int)arg1);
