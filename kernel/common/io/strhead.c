@@ -229,6 +229,11 @@ stropen(struct streamtab *devtab, void *dev, enum str_head_kind kind)
 	return sh;
 }
 
+void strclose(stdata_t *sh)
+{
+	ktodo();
+}
+
 int
 strpush(stdata_t *sh, struct streamtab *tab)
 {

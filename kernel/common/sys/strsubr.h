@@ -81,7 +81,8 @@ typedef struct stdata {
 } stdata_t;
 
 stdata_t *stropen(struct streamtab *devtab, void *dev, enum str_head_kind);
-int strpush(stdata_t *sh, struct streamtab *tab);
+void strclose(stdata_t *);
+int strpush(stdata_t *, struct streamtab *);
 int strread(stdata_t *, void *buf, size_t len, int options);
 int strwrite(stdata_t *, const void *buf, size_t len, int options);
 int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);

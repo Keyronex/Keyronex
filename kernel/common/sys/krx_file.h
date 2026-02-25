@@ -31,6 +31,7 @@ typedef struct file {
 	LIST_HEAD(, poll_entry) epoll_watches;
 } file_t;
 
+/* steals namecache/vnode ref */
 file_t *file_new(namecache_handle_t, struct vnode *, int flags);
 
 file_t *file_tryretain_rcu(file_t *file);

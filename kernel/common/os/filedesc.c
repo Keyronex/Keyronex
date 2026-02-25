@@ -172,6 +172,12 @@ uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int oflags)
 }
 
 void
+uf_unreserve_fd(uf_info_t *info, int fd)
+{
+	ktodo();
+}
+
+void
 uf_install_reserved(uf_info_t *info, int fd, struct file *file)
 {
 	uf_list_t *list;

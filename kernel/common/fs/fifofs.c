@@ -155,44 +155,84 @@ fifo_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 }
 
 int
-sys_pipe(int upipefd[2], int flags)
+sys_pipe(int ufd[2], int flags)
 {
 	struct fifonode *fn;
 	stdata_t *st;
 	vnode_t *vn;
 	struct file *rf, *wf;
-	int rfd, wfd;
+	int fd[2];
+	int r;
 
 	if ((flags & ~(O_NONBLOCK | O_CLOEXEC)) != 0)
 		return -EINVAL;
 
 	st = stropen(&loopback_streamtab, NULL, STR_HEAD_KIND_FIFO);
+	if (st == NULL)
+		return -ENOMEM;
+
 	st->nreaders = 1;
 	st->nwriters = 1;
 
 	st->rq_bottom->other->back = st->wq;
 
 	fn = kmem_alloc(sizeof(struct fifonode));
+	if (fn == NULL) {
+		strclose(st);
+		return -ENOMEM;
+	}
+
 	fn->st = st;
 
 	vn = vn_alloc(NULL, VFIFO, &fifo_vnops, (uintptr_t)fn, 0);
+	if (vn == NULL) {
+		kmem_free(fn, sizeof(*fn));
+		strclose(st);
+		return -ENOMEM;
+	}
 
 	rf = file_new(NCH_NULL, vn, O_RDONLY | (flags & O_NONBLOCK));
+	if (rf == NULL) {
+		vn_release(vn);
+		return -ENOMEM;
+	}
+
+	vn_retain(vn); /* file_new() steals a ref */
 
 	wf = file_new(NCH_NULL, vn, O_WRONLY | (flags & O_NONBLOCK));
+	if (wf == NULL) {
+		vn_release(vn);
+		file_release(rf);
+	}
 
-	rfd = uf_reserve_fd(curproc()->finfo, 0,
+	fd[0] = uf_reserve_fd(curproc()->finfo, 0,
 	    flags & O_CLOEXEC ? FD_CLOEXEC : 0);
+	if (fd[0] < 0) {
+		file_release(rf);
+		file_release(wf);
+		return fd[0];
+	}
 
-	wfd = uf_reserve_fd(curproc()->finfo, 0,
+	fd[1] = uf_reserve_fd(curproc()->finfo, 0,
 	    flags & O_CLOEXEC ? FD_CLOEXEC : 0);
+	if (fd[1] < 0) {
+		uf_unreserve_fd(curproc()->finfo, fd[0]);
+		file_release(rf);
+		file_release(wf);
+		return fd[1];
+	}
 
-	uf_install_reserved(curproc()->finfo, rfd, rf);
+	r = memcpy_to_user(ufd, fd, sizeof(fd));
+	if (r < 0) {
+		uf_unreserve_fd(curproc()->finfo, fd[0]);
+		uf_unreserve_fd(curproc()->finfo, fd[1]);
+		file_release(rf);
+		file_release(wf);
+		return r;
+	}
 
-	uf_install_reserved(curproc()->finfo, wfd, wf);
-
-	upipefd[0] = rfd;
-	upipefd[1] = wfd;
+	uf_install_reserved(curproc()->finfo, fd[0], rf);
+	uf_install_reserved(curproc()->finfo, fd[1], wf);
 
 	return 0;
 }

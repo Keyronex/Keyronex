@@ -25,6 +25,7 @@ void uf_destroy(uf_info_t *info);
 
 struct file *uf_lookup(uf_info_t *info, int fd);
 int uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int flags);
+void uf_unreserve_fd(uf_info_t *info, int fd);
 void uf_install_reserved(uf_info_t *info, int fd, struct file *file);
 
 int sys_dup(int oldfd);
