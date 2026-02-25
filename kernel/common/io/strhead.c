@@ -231,7 +231,62 @@ stropen(struct streamtab *devtab, void *dev, enum str_head_kind kind)
 
 void strclose(stdata_t *sh)
 {
-	ktodo();
+	struct str_per_cpu_scheduler *sc =
+	    ke_cpu_data[sh->home_cpu]->str_scheduler;
+	ipl_t ipl;
+
+	ke_mutex_enter(sh->mutex, "strclose");
+
+	atomic_fetch_or(&sh->flags, ST_FROZEN | ST_DEAD);
+
+	kassert(!sh->req_locked);
+	kassert(TAILQ_EMPTY(&sh->req_waiters));
+
+	for (queue_t *nextwq, *wq = sh->wq->next; wq != NULL; wq = nextwq) {
+		queue_t *rq = wq->other;
+
+		nextwq = wq->next;
+
+		str_flushq(rq, FLUSHALL);
+		str_flushq(wq, FLUSHALL);
+
+		if (rq->qinfo->qclose != NULL)
+			rq->qinfo->qclose(rq);
+		if (wq->qinfo->qclose != NULL)
+			wq->qinfo->qclose(wq);
+
+		qpair_free(rq);
+	}
+
+	str_flushq(sh->rq, FLUSHALL);
+	str_flushq(sh->wq, FLUSHALL);
+	qpair_free(sh->rq);
+
+	if (sh->kind == STR_HEAD_KIND_TTY) {
+		ke_mutex_enter(&proctree_mutex, "strclose tty");
+		if (sh->tty_session != NULL) {
+			sh->tty_session->ctty_str = NULL;
+			sh->tty_session->ctty_vn = NULL;
+			session_unref(sh->tty_session);
+		}
+		if (sh->tty_pgrp != NULL)
+			pgrp_unref(sh->tty_pgrp);
+		ke_mutex_exit(&proctree_mutex);
+	}
+
+	kassert(LIST_EMPTY(&sh->pollhead.pollers));
+
+	ke_mutex_exit(sh->mutex);
+
+	/* by this point, no one is left able to kick the stream */
+
+	ipl = ke_spinlock_enter(&sc->lock);
+	if (sh->flags & ST_QUEUED)
+		TAILQ_REMOVE(&sc->runq, sh, sched_link);
+	TAILQ_INSERT_TAIL(&sc->freeq, sh, sched_link);
+	ke_spinlock_exit(&sc->lock, ipl);
+
+	kmem_free(sh, sizeof(*sh));
 }
 
 int

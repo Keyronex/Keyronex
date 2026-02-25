@@ -116,3 +116,13 @@ str_qreply(queue_t *q, mblk_t *mp)
 {
 	str_putnext(q->other, mp);
 }
+
+void str_flushq(queue_t *q, int flag)
+{
+	kassert(flag == FLUSHALL);
+	while (!TAILQ_EMPTY(&q->msgq)) {
+		mblk_t *mp = TAILQ_FIRST(&q->msgq);
+		TAILQ_REMOVE(&q->msgq, mp, link);
+		str_freemsg(mp);
+	}
+}

@@ -97,6 +97,11 @@ struct linkblk {
 	int	index;	/* link index (for I_UNLINK) */
 };
 
+enum {
+	FLUSHDATA,
+	FLUSHALL,
+};
+
 mblk_t *str_allocb(size_t);
 void str_freeb(mblk_t *);
 void str_freemsg(mblk_t *);
@@ -105,6 +110,8 @@ size_t str_msgsize(mblk_t *);
 void str_put(queue_t *q, mblk_t *mp);
 void str_putnext(queue_t *, mblk_t *);
 void str_qreply(queue_t *, mblk_t *);
+
+void str_flushq(queue_t *, int flag);
 
 bool str_canput(queue_t *);
 bool str_canputnext(queue_t *);

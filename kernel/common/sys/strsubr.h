@@ -19,6 +19,8 @@
 #include <sys/stropts.h>
 #include <sys/stream.h>
 
+struct thread;
+
 struct req_waiter {
 	TAILQ_ENTRY(req_waiter) link;
 	kevent_t event;
@@ -80,6 +82,13 @@ typedef struct stdata {
 	};
 } stdata_t;
 
+struct str_per_cpu_scheduler {
+	kspinlock_t lock;
+	TAILQ_HEAD(, stdata) runq, freeq;
+	struct thread *worker;
+	kevent_t event;
+};
+
 stdata_t *stropen(struct streamtab *devtab, void *dev, enum str_head_kind);
 void strclose(stdata_t *);
 int strpush(stdata_t *, struct streamtab *);
@@ -90,6 +99,9 @@ int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
 
 void str_reqlock(stdata_t *);
 void str_requnlock(stdata_t *);
+
+void str_freeze(stdata_t *st);
+void str_thaw(stdata_t *st);
 
 void str_kick(stdata_t *st);
 

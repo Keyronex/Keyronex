@@ -17,13 +17,6 @@
 #include <sys/proc.h>
 #include <sys/strsubr.h>
 
-struct str_per_cpu_scheduler {
-	kspinlock_t lock;
-	TAILQ_HEAD(, stdata) runq;
-	thread_t *worker;
-	kevent_t event;
-};
-
 void str_unlock(stdata_t *st);
 
 void
@@ -109,6 +102,12 @@ drain(struct str_per_cpu_scheduler *sc)
 		uint32_t flags;
 
 		ke_spinlock_enter_nospl(&sc->lock);
+
+		while (!TAILQ_EMPTY(&sc->freeq)) {
+			st = TAILQ_FIRST(&sc->freeq);
+			TAILQ_REMOVE(&sc->freeq, st, sched_link);
+			kmem_free(st, sizeof(*st));
+		}
 
 		st = TAILQ_FIRST(&sc->runq);
 		if (st == NULL) {
@@ -204,6 +203,7 @@ str_sched_init(void)
 		struct str_per_cpu_scheduler *sc = kmem_alloc(sizeof(*sc));
 		ke_spinlock_init(&sc->lock);
 		TAILQ_INIT(&sc->runq);
+		TAILQ_INIT(&sc->freeq);
 		ke_event_init(&sc->event, false);
 		sc->worker = proc_new_system_thread(worker, sc);
 		ke_cpu_data[i]->str_scheduler = sc;

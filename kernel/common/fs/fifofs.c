@@ -65,8 +65,11 @@ loopback_put(queue_t *q, mblk_t *mp)
 }
 
 static int
-fifo_inactive(vnode_t *)
+fifo_inactive(vnode_t *vn)
 {
+	struct fifonode *fn = VTOFN(vn);
+	strclose(fn->st);
+	kmem_free(fn, sizeof(*fn));
 	return 0;
 }
 
