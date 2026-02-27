@@ -13,6 +13,7 @@
 
  #include <sys/kmem.h>
 #include <sys/stream.h>
+#include <sys/strsubr.h>
 
 static void
 dblk_release(dblk_t *db)
@@ -117,7 +118,99 @@ str_qreply(queue_t *q, mblk_t *mp)
 	str_putnext(q->other, mp);
 }
 
-void str_flushq(queue_t *q, int flag)
+bool
+str_canput(queue_t *q)
+{
+	while (q->next != NULL && q->qinfo->srvp == NULL)
+		q = q->next;
+
+	if (q->full) {
+		q->wantw = true;
+		return false;
+	}
+
+	return true;
+}
+
+bool
+str_canputnext(queue_t *q)
+{
+	kassert(q->next != NULL);
+	return str_canput(q->next);
+}
+
+void
+str_putq(queue_t *q, mblk_t *mp)
+{
+	bool was_empty = TAILQ_EMPTY(&q->msgq);
+	size_t size = str_msgsize(mp);
+
+	if (mp->db->type >= M_SETOPTS) /* first hi-priority */
+		TAILQ_INSERT_HEAD(&q->msgq, mp, link);
+	else
+		TAILQ_INSERT_TAIL(&q->msgq, mp, link);
+
+	q->count += size;
+
+	if (q->count >= q->hiwat)
+		q->full = true;
+
+	if (was_empty && q->qinfo->srvp != NULL)
+		str_qenable(q);
+}
+
+void
+str_putbq(queue_t *q, mblk_t *mp)
+{
+	bool was_empty = TAILQ_EMPTY(&q->msgq);
+	size_t size = str_msgsize(mp);
+
+	TAILQ_INSERT_HEAD(&q->msgq, mp, link);
+
+	q->count += size;
+
+	if (q->count >= q->hiwat)
+		q->full = true;
+
+	if (was_empty && q->qinfo->srvp != NULL)
+		str_qenable(q);
+}
+
+void
+str_backenable(queue_t *q)
+{
+	queue_t *bq = q->back;
+
+	while (bq != NULL && bq->qinfo->srvp == NULL)
+		bq = bq->back;
+
+	if (bq != NULL)
+		str_qenable(bq);
+}
+
+mblk_t *
+str_getq(queue_t *q)
+{
+	mblk_t *mp = TAILQ_FIRST(&q->msgq);
+	if (mp == NULL)
+		return NULL;
+
+	TAILQ_REMOVE(&q->msgq, mp, link);
+	q->count -= str_msgsize(mp);
+
+	if (q->full && q->count <= q->lowat) {
+		q->full = false;
+		if (q->wantw) {
+			q->wantw = false;
+			str_backenable(q);
+		}
+	}
+
+	return mp;
+}
+
+void
+str_flushq(queue_t *q, int flag)
 {
 	kassert(flag == FLUSHALL);
 	while (!TAILQ_EMPTY(&q->msgq)) {

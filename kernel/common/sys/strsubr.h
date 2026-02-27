@@ -100,8 +100,12 @@ int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
 void str_reqlock(stdata_t *);
 void str_requnlock(stdata_t *);
 
-void str_freeze(stdata_t *st);
-void str_thaw(stdata_t *st);
+void str_freeze(stdata_t *);
+void str_thaw(stdata_t *);
+
+void str_qenable(queue_t *);
+
+void str_ingress_putq(stdata_t *, mblk_t *);
 
 void str_kick(stdata_t *st);
 

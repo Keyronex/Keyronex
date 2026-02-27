@@ -197,6 +197,29 @@ str_thaw(stdata_t *st)
 }
 
 void
+str_qenable(queue_t *q)
+{
+	kassert(q->qinfo != NULL);
+	kassert(q->qinfo->srvp != NULL);
+
+	/* nothing to do if already enabled */
+	if (atomic_exchange(&q->enabled, 1) != 0)
+		return;
+
+	str_kick(q->stdata);
+}
+
+
+void
+str_ingress_putq(stdata_t *st, mblk_t *mp)
+{
+	ipl_t ipl = ke_spinlock_enter(&st->ingress_lock);
+	TAILQ_INSERT_TAIL(&st->ingress_head, mp, link);
+	ke_spinlock_exit(&st->ingress_lock, ipl);
+	str_kick(st);
+}
+
+void
 str_sched_init(void)
 {
 	for (kcpunum_t i = 0; i < ke_ncpu; i++) {
