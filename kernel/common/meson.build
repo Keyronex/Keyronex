@@ -13,6 +13,7 @@ kernel_sources += [
     'fs/devfs/devfs.c',
     'fs/fifofs.c',
     'fs/namecache.c',
+    'fs/sockfs.c',
     'fs/syscalls.c',
     'fs/viewcache.c',
     'fs/vnode.c',
@@ -24,6 +25,7 @@ kernel_sources += [
     'io/strsched.c',
     'io/strsubr.c',
     'io/ttyld.c',
+    'io/unix.c',
 
     'kern/callout.c',
     'kern/clock.c',

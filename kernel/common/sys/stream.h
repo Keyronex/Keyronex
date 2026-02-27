@@ -39,6 +39,7 @@ typedef enum mtype {
 
 	/* high-priority follows */
 
+	M_PCPROTO,
 	M_SETOPTS,	/* set stream head options */
 	M_LINK,		/* link streams */
 	M_FLUSH,	/* flush queues */
