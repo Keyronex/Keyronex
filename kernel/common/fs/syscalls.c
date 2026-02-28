@@ -151,6 +151,123 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	return r;
 }
 
+/*
+ * given a starting point and a path, resolve it up to the penultimate
+ * component, return the final component
+ *
+ * retained penultimate component handle written to parent_nch
+ * final component pointer (within path) written to basename
+ */
+static int
+lookup_parent_and_basename(namecache_handle_t start, const char *path,
+    enum lookup_flags flags, namecache_handle_t *parent_nch,
+    const char **basename)
+{
+	struct lookup_info info;
+	const char *slash, *name;
+	int r;
+
+	/* find the last component */
+	slash = strrchr(path, '/');
+	if (slash == NULL) {
+		/* e.g. "file" */
+		name = path;
+		*parent_nch = nchandle_retain(start);
+	} else if (slash == path) {
+		/* e.g. "/" */
+		name = slash + 1;
+		*parent_nch = nchandle_retain(root_nch);
+	} else {
+		/* e.g. "dir/foo" - need to lookup parent */
+		size_t dirlen = slash - path;
+		char *dirpath = kmem_alloc(dirlen + 1);
+		if (dirpath == NULL)
+			return -ENOMEM;
+
+		memcpy(dirpath, path, dirlen);
+		dirpath[dirlen] = '\0';
+		name = slash + 1;
+
+		r = vfs_lookup_init(&info, start, dirpath, flags);
+		if (r != 0) {
+			kmem_free(dirpath, dirlen + 1);
+			return r;
+		}
+
+		r = vfs_lookup(&info);
+		kmem_free(dirpath, dirlen + 1);
+
+		if (r != 0)
+			return r;
+
+		if (info.result.nc->vp->type != VDIR) {
+			nchandle_release(info.result);
+			return -ENOTDIR;
+		}
+
+		*parent_nch = info.result;
+	}
+
+	/* basename musn't be empty */
+	if (*name == '\0') {
+		nchandle_release(*parent_nch);
+		return -ENOENT;
+	}
+
+	*basename = name;
+	return 0;
+}
+
+int
+sys_unlinkat(int dirfd, const char *upath, int flags)
+{
+	char *path;
+	namecache_handle_t dirnch, parent_nch;
+	const char *name;
+	bool isdir;
+	int r, len;
+
+	len = strldup_user(&path, upath, 4095);
+	if (len < 0)
+		return len;
+
+	isdir = (flags & AT_REMOVEDIR) != 0;
+
+#if TRACE_SYSCALLS
+	kprintf("sys_unlinkat: dirfd=%d path='%s' flags=0x%x\n",
+	    dirfd, path, flags);
+#endif
+
+	r = get_dirfd_nch(dirfd, &dirnch);
+	if (r != 0) {
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	r = lookup_parent_and_basename(dirnch, path, 0, &parent_nch, &name);
+	if (r != 0) {
+		nchandle_release(dirnch);
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	/* can't remove "." or ".." */
+	if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+		r = -EINVAL;
+		goto out;
+	}
+
+	r = nc_remove(parent_nch, name, isdir);
+
+out:
+	nchandle_release(parent_nch);
+	nchandle_release(dirnch);
+	kmem_free(path, len + 1);
+
+	return r;
+}
+
+
 int
 sys_readlinkat(int dirfd, const char *upath, char *ubuf, size_t bufsiz)
 {
