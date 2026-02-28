@@ -200,7 +200,7 @@ stropen(struct streamtab *devtab, void *dev, enum str_head_kind kind)
 	stdata_t *sh;
 	queue_t *devrq;
 
-	sh = str_head_alloc(STR_HEAD_KIND_FIFO);
+	sh = str_head_alloc(kind);
 	if (sh == NULL)
 		return NULL;
 

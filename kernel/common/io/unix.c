@@ -190,14 +190,18 @@ ux_ropen(queue_t *rq, void *)
 	ke_mutex_init(&ep->lock);
 	atomic_store_explicit(&ep->refcnt, 1, memory_order_relaxed);
 	ep->rq = rq;
-	ep->peer = NULL;
 	ep->state = UX_UNBOUND;
 	ep->closing = false;
+	ep->peer = NULL;
 
 	ep->my_seqno = -1;
+	ep->connecting_listener = NULL;
 
 	LIST_INIT(&ep->conninds);
 	ep->next_seqno = 1;
+
+	ep->discon_ind_mp = NULL;
+	ep->ordrel_ind_mp = NULL;
 
 	ke_rwlock_enter_write(&ux_bindings_rwlock, "ux_ropen");
 	RB_INSERT(ux_endp_tree, &ux_bindings, ep);
@@ -477,7 +481,7 @@ do_peer:
 static void
 ux_rput(queue_t *rq, mblk_t *mp)
 {
-	ktodo();
+	str_putnext(rq, mp);
 }
 
 static void
@@ -636,6 +640,8 @@ ux_wput_conn_req(queue_t *wq, mblk_t *mp)
 
 	ux_send_conn_ind(listenerep, ep, cimp);
 	ke_mutex_exit(&listenerep->lock);
+
+	ux_reply_ok_ack(wq, mp, T_CONN_RES); /* ack to ourselves */
 
 	str_freemsg(mp);
 }

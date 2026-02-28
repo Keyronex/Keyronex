@@ -59,7 +59,9 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	task->threads_count++;
 	ke_spinlock_exit(&task->threads_lock, ipl);
 }
-void ke_proc_init(ktask_t *task)
+
+void
+ke_proc_init(ktask_t *task)
 {
 	ke_spinlock_init(&task->threads_lock);
 	LIST_INIT(&task->threads);

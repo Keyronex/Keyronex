@@ -99,6 +99,7 @@ int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
 
 void str_reqlock(stdata_t *);
 void str_requnlock(stdata_t *);
+void str_requnlock_mutexunheld(stdata_t *);
 
 void str_freeze(stdata_t *);
 void str_thaw(stdata_t *);
