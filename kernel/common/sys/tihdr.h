@@ -27,21 +27,20 @@ struct sockaddr_ux {
 #define AF_UX 220
 
 enum T_prim {
-	T_CONN_REQ = 0,
-	T_CONN_RES = 1,
-	T_BIND_REQ = 6,
+	T_CONN_REQ = 0,		/* connection request */
+	T_CONN_RES = 1,		/* connection response*/
+	T_BIND_REQ = 6,		/* bind request */
+	T_ORDREL_REQ = 10,	/* orderly-release request */
 
-	T_CONN_IND = 11,
-	T_CONN_CON = 12,
-	T_DISCON_IND = 13,
+	T_CONN_IND = 11,	/* connection indication */
+	T_CONN_CON = 12,	/* connection confirmation */
+	T_DISCON_IND = 13,	/* disconnection indication */
 
-	T_BIND_ACK = 17,
-	T_ERROR_ACK = 18,
-	T_OK_ACK = 19,
+	T_BIND_ACK = 17,	/* bind acknowledgement */
+	T_ERROR_ACK = 18,	/* error acknowledgement */
+	T_OK_ACK = 19,		/* success acknowledge */
 
-	T_ORDREL_IND = 23,
-
-	T_LISTEN_REQ = 1001,
+	T_ORDREL_IND = 23,	/* orderly-release indication */
 };
 
 /*

@@ -48,6 +48,8 @@ enum ux_state {
 	UX_LISTENING,
 	UX_CONNECTING,
 	UX_CONNECTED,
+	UX_WREQ_ORDREL,
+	UX_WIND_ORDREL,
 	UX_DISCONNECTED,
 };
 
@@ -72,6 +74,7 @@ typedef struct ux_endp {
 
 	/* UX_CONNECTING/UX_CONNECTED */
 	mblk_t *discon_ind_mp;
+	mblk_t *ordrel_ind_mp;
 } ux_endp_t;
 
 RB_HEAD(ux_endp_tree, ux_endp);
@@ -205,8 +208,12 @@ ux_ropen(queue_t *rq, void *)
 	return 0;
 }
 
+/*
+ * Send the preallocated T_DISCON_IND up to an endpoint, conusming it.
+ * Caller must hold ep->lock.
+ */
 static void
-ux_send_discon_ind(ux_endp_t *ep)
+ux_send_discon_ind(ux_endp_t *ep, int reason)
 {
 	mblk_t *mp = ep->discon_ind_mp;
 	struct T_discon_ind *di;
@@ -217,12 +224,89 @@ ux_send_discon_ind(ux_endp_t *ep)
 	mp->db->type = M_PROTO;
 	di = (typeof(di))mp->rptr;
 	di->PRIM_type = T_DISCON_IND;
-	di->DISCON_reason = ECONNRESET;
+	di->DISCON_reason = reason;
 	di->SEQ_number = -1;
 	mp->wptr = mp->rptr + sizeof(*di);
 
 	ep->discon_ind_mp = NULL;
 	str_ingress_putq(ep->rq->stdata, mp);
+}
+
+/*
+ * Send the preallocated T_ORDREL_IND up to an endpoint, consuming it.
+ * Caller must hold ep->lock.
+ */
+static void
+ux_send_ordrel_ind(ux_endp_t *ep)
+{
+	mblk_t *mp = ep->ordrel_ind_mp;
+	struct T_ordrel_ind *oi;
+
+	kassert(ke_mutex_held(&ep->lock));
+	kassert(mp != NULL);
+
+	mp->db->type = M_PROTO;
+	oi = (typeof(oi))mp->rptr;
+	oi->PRIM_type = T_ORDREL_IND;
+	mp->wptr = mp->rptr + sizeof(*oi);
+
+	ep->ordrel_ind_mp = NULL;
+	str_ingress_putq(ep->rq->stdata, mp);
+}
+
+/*
+ * Break the connection between two connected peers.
+ *
+ * Only done from ux_rclose at present.
+ */
+static void
+ux_rclose_disconnect_peer(ux_endp_t *ep, ux_endp_t *peer)
+{
+	kassert(ke_mutex_held(&ep->lock));
+	kassert(ke_mutex_held(&peer->lock));
+	kassert(ep->peer == peer);
+	kassert(peer->peer == ep);
+
+	ep_release(peer); /* ep's ref on peer */
+	ep->peer = NULL;
+
+	ep_release(ep); /* peer's ref on ep */
+	peer->peer = NULL;
+
+	switch (peer->state) {
+	case UX_CONNECTED:
+		/*
+		 * Peer in normal data transfer. Send orderly release
+		 * indication; peer transitions to half-closed.
+		 */
+		peer->state = UX_WREQ_ORDREL;
+		ux_send_ordrel_ind(peer);
+		break;
+
+	case UX_WREQ_ORDREL:
+		/*
+		 * Peer already received our orderly release (we were in
+		 * UX_WIND_ORDREL). Both ordrels exchanged; connection
+		 * is fully torn down.
+		 */
+		peer->state = UX_DISCONNECTED;
+		ux_send_discon_ind(peer, 0);
+		break;
+
+	case UX_WIND_ORDREL:
+		/*
+		 * Peer already sent its orderly release to us. It awaits our
+		 * T_ORDREL_IND.
+		 * Send T_DISCON_IND with reason 0 to indicate mutual close.
+		 */
+		peer->state = UX_DISCONNECTED;
+		ux_send_discon_ind(peer, 0);
+		break;
+
+	default:
+		kfatal("ux_rclose_disconnect_peer: bad peer state %d",
+		    peer->state);
+	}
 }
 
 static void
@@ -261,24 +345,18 @@ ux_rclose(queue_t *rq)
 
 	ke_mutex_exit(&ep->lock);
 
-	/* Second, if connected, disconnect peer. */
+	/* Second, if connected (or half-closed), disconnect peer. */
 do_peer:
 	if (peer != NULL) {
 		ux_lock_two_eps(ep, peer, "ux_rclose connected");
 
 		if (ep->peer == peer) {
 			kassert(peer->peer == ep);
-			kassert(ep->state == UX_CONNECTED);
-			kassert(peer->state == UX_CONNECTED);
+			kassert(ep->state == UX_CONNECTED ||
+			    ep->state == UX_WIND_ORDREL ||
+			    ep->state == UX_WREQ_ORDREL);
 
-			ep_release(peer); /* ep's ref on peer */
-			ep->peer = NULL;
-
-			ep_release(ep); /* peer's ref on ep */
-			peer->peer = NULL;
-
-			peer->state = UX_DISCONNECTED;
-			ux_send_discon_ind(peer);
+			ux_rclose_disconnect_peer(ep, peer);
 		} else {
 			/* they disconnected first */
 		}
@@ -360,7 +438,7 @@ do_peer:
 				ep_release(ep); /* connector's ref on ep */
 
 				c->state = UX_DISCONNECTED;
-				ux_send_discon_ind(c);
+				ux_send_discon_ind(c, ECONNRESET);
 
 			} else {
 				ux_endp_t *var;
@@ -385,6 +463,8 @@ do_peer:
 	ke_mutex_enter(&ep->lock, "ux_rclose finally");
 	if (ep->discon_ind_mp != NULL)
 		str_freeb(ep->discon_ind_mp);
+	if (ep->ordrel_ind_mp != NULL)
+		str_freeb(ep->ordrel_ind_mp);
 
 	ep->state = UX_DISCONNECTED;
 	ep->rq = NULL;
@@ -474,6 +554,33 @@ ux_send_conn_ind(ux_endp_t *listener, ux_endp_t *peer, mblk_t *mp)
 	str_ingress_putq(listener->rq->stdata, mp);
 }
 
+/*
+ * Preallocate discon_ind_mp and ordrel_ind_mp for an endpoint that will be
+ * connected.
+ *
+ * Mutex needn't be held because at this point the endpoint doesn't have a peer
+ * yet.
+ */
+static int
+ux_preallocate_conn_mps(ux_endp_t *ep)
+{
+	kassert(ep->peer == NULL);
+
+	if (ep->discon_ind_mp == NULL) {
+		ep->discon_ind_mp = str_allocb(sizeof(struct T_discon_ind));
+		if (ep->discon_ind_mp == NULL)
+			return -ENOMEM;
+	}
+
+	if (ep->ordrel_ind_mp == NULL) {
+		ep->ordrel_ind_mp = str_allocb(sizeof(struct T_ordrel_ind));
+		if (ep->ordrel_ind_mp == NULL)
+			return -ENOMEM;
+	}
+
+	return 0;
+}
+
 static void
 ux_wput_conn_req(queue_t *wq, mblk_t *mp)
 {
@@ -481,6 +588,7 @@ ux_wput_conn_req(queue_t *wq, mblk_t *mp)
 	struct T_conn_req *cr = (typeof(cr))mp->rptr;
 	struct sockaddr_ux *sux = (typeof(sux))&cr->DEST;
 	mblk_t *cimp;
+	int r;
 
 	cimp = str_allocb(sizeof(struct T_conn_ind));
 	if (cimp == NULL) {
@@ -488,13 +596,11 @@ ux_wput_conn_req(queue_t *wq, mblk_t *mp)
 		return;
 	}
 
-	if (ep->discon_ind_mp == NULL) {
-		ep->discon_ind_mp = str_allocb(sizeof(struct T_discon_ind));
-		if (ep->discon_ind_mp == NULL) {
-			str_freeb(cimp);
-			ux_reply_error_ack(wq, mp, T_CONN_REQ, ENOMEM);
-			return;
-		}
+	r = ux_preallocate_conn_mps(ep);
+	if (r < 0) {
+		str_freeb(cimp);
+		ux_reply_error_ack(wq, mp, T_CONN_REQ, -r);
+		return;
 	}
 
 	listenerep = sux->sux_rq->ptr;
@@ -553,7 +659,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 	queue_t *acceptorrq;
 	ux_endp_t *listenerep = wq->ptr, *peerep, *acceptorep;
 	struct T_conn_res *cres = (typeof(cres))mp->rptr;
-	mblk_t *ccmp, *ccdi;
+	mblk_t *ccmp, *ccdi, *ccoi;
 
 	/* sockfs/timod contract: won't send this unless this is the case */
 	kassert(listenerep->state == UX_LISTENING);
@@ -583,10 +689,21 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 		return;
 	}
 
+	ccoi = str_allocb(sizeof(struct T_ordrel_ind));
+	if (ccoi == NULL) {
+		str_freeb(ccmp);
+		str_freeb(ccdi);
+		ux_reply_error_ack(wq, mp, T_CONN_RES, ENOMEM);
+		if (peerep != NULL)
+			ep_release(peerep);
+		return;
+	}
+
 	if (peerep == NULL) {
 		ux_reply_error_ack(wq, mp, T_CONN_RES, ECONNABORTED);
 		str_freeb(ccmp);
 		str_freeb(ccdi);
+		str_freeb(ccoi);
 		return;
 	}
 
@@ -607,6 +724,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 		ep_release(peerep);
 		str_freeb(ccmp);
 		str_freeb(ccdi);
+		str_freeb(ccoi);
 		ux_reply_error_ack(wq, mp, T_CONN_RES, EINVAL); /* TBADF? */
 		return;
 	}
@@ -619,6 +737,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 		ke_mutex_exit(&acceptorep->lock);
 		str_freeb(ccmp);
 		str_freeb(ccdi);
+		str_freeb(ccoi);
 		ep_release(peerep);
 		ux_reply_error_ack(wq, mp, T_CONN_RES, EINVAL); /* TBADSEQ */
 		return;
@@ -636,10 +755,16 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 
 	LIST_REMOVE(peerep, conninds_entry);
 
-	/* peer should've allocated one at T_CONN_REQ time */
+	/* peer should've allocated these at T_CONN_REQ time */
 	kassert(peerep->discon_ind_mp != NULL);
+	kassert(peerep->ordrel_ind_mp != NULL);
+
+	/* acceptorep, if in state UX_BOUND/UX_UNBOUND, shouldn't have these */
+	kassert(acceptorep->discon_ind_mp == NULL);
+	kassert(acceptorep->ordrel_ind_mp == NULL);
 
 	acceptorep->discon_ind_mp = ccdi;
+	acceptorep->ordrel_ind_mp = ccoi;
 
 	peerep->connecting_listener = NULL;
 	peerep->peer = acceptorep;
@@ -664,40 +789,149 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 }
 
 static void
-ux_wput(queue_t *wq, mblk_t *mp)
+ux_wput_ordrel_req(queue_t *wq, mblk_t *mp)
 {
 	ux_endp_t *ep = wq->ptr;
+	ux_endp_t *peerep;
 
-	switch (mp->db->type) {
-	case M_DATA: {
-		ux_endp_t *peerep;
+	ke_mutex_enter(&ep->lock, "ux_wput_ordrel_req");
 
-		ke_mutex_enter(&ep->lock, "ux_wput data");
-		peerep = ep->peer;
-		if (peerep != NULL)
-			ep_retain(peerep);
+	if (ep->state != UX_CONNECTED && ep->state != UX_WREQ_ORDREL) {
 		ke_mutex_exit(&ep->lock);
-
-		if (peerep == NULL) {
-			str_freemsg(mp);
-			return;
-		}
-
-		ke_mutex_enter(&peerep->lock, "ux_wput data peer");
-		if (peerep->state != UX_CONNECTED) {
-			ke_mutex_exit(&peerep->lock);
-			ep_release(peerep);
-			str_freemsg(mp);
-			return;
-		}
-		/* if ep is in connected state, it's rq cannot be NULL yet */
-		kassert(peerep->rq != NULL);
-		str_ingress_putq(peerep->rq->stdata, mp);
-		ke_mutex_exit(&peerep->lock);
-		ep_release(peerep);
-
+		ux_reply_error_ack(wq, mp, T_ORDREL_REQ, EPROTO);
 		return;
 	}
+
+	peerep = ep->peer;
+	if (peerep == NULL) {
+		/*
+		 * Peer is already gone (we were raced).
+		 * WE will have already gotten discon_ind or ordrel_ind from it.
+		 */
+		ke_mutex_exit(&ep->lock);
+		str_freemsg(mp);
+		return;
+	}
+
+	ep_retain(peerep);
+	ke_mutex_exit(&ep->lock);
+
+	ux_lock_two_eps(ep, peerep, "ux_wput_ordrel_req");
+
+	if (ep->peer != peerep) {
+		/* peer went away between check and lock */
+		ke_mutex_exit(&ep->lock);
+		ke_mutex_exit(&peerep->lock);
+		ep_release(peerep);
+		str_freemsg(mp);
+		return;
+	}
+
+	kassert(peerep->peer == ep);
+
+	if (ep->state == UX_CONNECTED) {
+		/*
+		 * Normal orderly release on our side.. Peer should be in
+		 * UX_CONNECTED.
+		 * We transition to WIND_ORDREL (await peer's ordrel_ind)
+		 * They transition to WREQ_ORDREL (await user's ordrel_req)
+		 */
+		kassert(peerep->state == UX_CONNECTED);
+
+		ep->state = UX_WIND_ORDREL;
+		peerep->state = UX_WREQ_ORDREL;
+		ux_send_ordrel_ind(peerep);
+
+		ke_mutex_exit(&ep->lock);
+		ke_mutex_exit(&peerep->lock);
+		ep_release(peerep);
+	} else if (ep->state == UX_WREQ_ORDREL) {
+		/*
+		 * Completing orderly release: peer already orderly-released on
+		 * its side so they will be in UX_WIND_ORDREL.
+		 * Now we are orderly-releasing on our side.
+		 * The connection can be torn down.
+		 */
+		kassert(peerep->state == UX_WIND_ORDREL);
+
+		ep->state = UX_DISCONNECTED;
+		peerep->state = UX_DISCONNECTED;
+
+		ep_release(peerep); /* ep's ref on peer */
+		ep->peer = NULL;
+
+		ep_release(ep); /* peer's ref on ep */
+		peerep->peer = NULL;
+
+		ux_send_ordrel_ind(peerep);
+
+		ke_mutex_exit(&ep->lock);
+		ke_mutex_exit(&peerep->lock);
+		ep_release(peerep);
+	} else {
+		/* state changed between check and lock; shouldn't happen */
+		ke_mutex_exit(&ep->lock);
+		ke_mutex_exit(&peerep->lock);
+		ep_release(peerep);
+	}
+
+	str_freemsg(mp);
+}
+
+static void
+ux_wput_data(queue_t *wq, mblk_t *mp)
+{
+	ux_endp_t *ep = wq->ptr, *peerep;
+	enum ux_state state;
+
+	ke_mutex_enter(&ep->lock, "ux_wput data");
+	state = ep->state;
+	peerep = ep->peer;
+	if (peerep != NULL)
+		ep_retain(peerep);
+	ke_mutex_exit(&ep->lock);
+
+	if (peerep == NULL) {
+		/*
+		 * Peer is gone. If we are in UX_WIND_ORDREL (we already sent
+		 * our orderly release, peer closed and tore down), put up
+		 * T_DISCON_IND on our side with reason 0. (SockFS will give
+		 * EPIPE after this.)
+		 */
+		if (state == UX_WIND_ORDREL || state == UX_WREQ_ORDREL) {
+			ke_mutex_enter(&ep->lock, "ux_wput data discon");
+			if (ep->discon_ind_mp != NULL) {
+				ep->state = UX_DISCONNECTED;
+				ux_send_discon_ind(ep, 0);
+			}
+			ke_mutex_exit(&ep->lock);
+		}
+		str_freemsg(mp);
+		return;
+	}
+
+	ke_mutex_enter(&peerep->lock, "ux_wput data peer");
+	if (peerep->state != UX_CONNECTED && peerep->state != UX_WREQ_ORDREL &&
+	    peerep->state != UX_WIND_ORDREL) {
+		ke_mutex_exit(&peerep->lock);
+		ep_release(peerep);
+		str_freemsg(mp);
+		return;
+	}
+	/* if ep is in connected state, it's rq cannot be NULL yet */
+	kassert(peerep->rq != NULL);
+	str_ingress_putq(peerep->rq->stdata, mp);
+	ke_mutex_exit(&peerep->lock);
+	ep_release(peerep);
+}
+
+static void
+ux_wput(queue_t *wq, mblk_t *mp)
+{
+	switch (mp->db->type) {
+	case M_DATA:
+		ux_wput_data(wq, mp);
+		break;
 
 	case M_PROTO: {
 		union T_primitives *prim = (union T_primitives *)mp->rptr;
@@ -712,6 +946,10 @@ ux_wput(queue_t *wq, mblk_t *mp)
 
 		case T_BIND_REQ:
 			ux_wput_bind_req(wq, mp);
+			break;
+
+		case T_ORDREL_REQ:
+			ux_wput_ordrel_req(wq, mp);
 			break;
 
 		default:
