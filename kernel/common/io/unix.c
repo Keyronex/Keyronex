@@ -660,6 +660,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 	ux_endp_t *listenerep = wq->ptr, *peerep, *acceptorep;
 	struct T_conn_res *cres = (typeof(cres))mp->rptr;
 	mblk_t *ccmp, *ccdi, *ccoi;
+	bool selfaccept = false;
 
 	/* sockfs/timod contract: won't send this unless this is the case */
 	kassert(listenerep->state == UX_LISTENING);
@@ -713,14 +714,40 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 	kassert(acceptorrq->qinfo == &ux_rinit);
 	acceptorep = acceptorrq->ptr;
 
-	ux_lock_three_eps(listenerep, peerep, acceptorep, "ux_wput_conn_res");
+	if (acceptorep == listenerep)
+		selfaccept = true;
 
-	if ((acceptorep->state != UX_BOUND &&
+	if (selfaccept)
+		ux_lock_two_eps(acceptorep, peerep, "ux_wput_conn_res");
+	else
+		ux_lock_three_eps(listenerep, peerep, acceptorep,
+		    "ux_wput_conn_res");
+
+	if (selfaccept) {
+		/* stream is locked, so this should be impossible */
+		kassert(acceptorep->state == UX_LISTENING &&
+		    !acceptorep->closing);
+		if (LIST_EMPTY(&listenerep->conninds) ||
+		    LIST_NEXT(LIST_FIRST(&listenerep->conninds),
+			conninds_entry) != NULL) {
+			/* can't self-accept if other conninds are pending */
+			ke_mutex_exit(&listenerep->lock);
+			ke_mutex_exit(&peerep->lock);
+			ep_release(peerep);
+			str_freeb(ccmp);
+			str_freeb(ccdi);
+			str_freeb(ccoi);
+			ux_reply_error_ack(wq, mp, T_CONN_RES,
+			    EINVAL); /* TLOOK? */
+		}
+
+	} else if ((acceptorep->state != UX_BOUND &&
 	    acceptorep->state != UX_UNBOUND) || acceptorep->closing) {
 		/* acceptor changed state? */
 		ke_mutex_exit(&listenerep->lock);
 		ke_mutex_exit(&peerep->lock);
-		ke_mutex_exit(&acceptorep->lock);
+		if (listenerep != acceptorep)
+			ke_mutex_exit(&acceptorep->lock);
 		ep_release(peerep);
 		str_freeb(ccmp);
 		str_freeb(ccdi);
@@ -734,7 +761,8 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 		/* connector went away between scan and lock? */
 		ke_mutex_exit(&listenerep->lock);
 		ke_mutex_exit(&peerep->lock);
-		ke_mutex_exit(&acceptorep->lock);
+		if (listenerep != acceptorep)
+			ke_mutex_exit(&acceptorep->lock);
 		str_freeb(ccmp);
 		str_freeb(ccdi);
 		str_freeb(ccoi);
@@ -775,7 +803,8 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 	ep_retain(peerep); /* acceptor's ref on peer */
 
 	ke_mutex_exit(&listenerep->lock);
-	ke_mutex_exit(&acceptorep->lock);
+	if (acceptorep != listenerep)
+		ke_mutex_exit(&acceptorep->lock);
 
 	ux_send_conn_con(listenerep, peerep, ccmp); /* T_CONN_CON to peer */
 	ke_mutex_exit(&peerep->lock);
