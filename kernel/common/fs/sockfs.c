@@ -57,6 +57,7 @@ struct socknode {
 
 	struct sockaddr_storage bound_addr;
 	socklen_t bound_addrlen;
+	namecache_handle_t bound_nch; /* for AF_UNIX, bound socket file */
 
 	/* for synchronous waiting on TPI ack/nak */
 	kevent_t tpi_ack_ev;
@@ -234,12 +235,11 @@ sock_rput(queue_t *rq, mblk_t *mp)
 		ke_event_set_signalled(&sn->conn_ind_ev, true);
 		pollhead_deliver_events(&sn->stream->pollhead,
 		    EPOLLIN | EPOLLRDNORM);
-		str_freeb(mp);
 		break;
 
 	case T_DISCON_IND:
-		sn->state &= ~(
-		    SS_ISCONNECTING | SS_ISCONNECTED | SS_ISDISCONNECTING);
+		sn->state &= ~(SS_ISCONNECTING | SS_ISCONNECTED |
+		    SS_ISDISCONNECTING);
 		sn->state |= SS_CANTRCVMORE | SS_CANTSENDMORE;
 		ke_event_set_signalled(&sn->conn_con_ev, true);
 		ke_event_set_signalled(&sn->stream->data_readable, true);
@@ -248,6 +248,7 @@ sock_rput(queue_t *rq, mblk_t *mp)
 		sn->stream->hanged_up = true;
 		pollhead_deliver_events(&sn->stream->pollhead,
 		    EPOLLIN | EPOLLHUP | EPOLLERR);
+		break;
 
 	case T_ORDREL_IND:
 		sn->state |= SS_CANTRCVMORE;
@@ -309,8 +310,20 @@ sock_tpi_errno(mblk_t *mp)
 	}
 }
 
+static void
+sock_requeue_conn_ind_mp(struct socknode *sn, mblk_t *mp)
+{
+	kassert(ke_mutex_held(sn->stream->mutex));
+
+	TAILQ_INSERT_HEAD(&sn->conn_indq, mp, link);
+	sn->conn_indq_len++;
+	ke_event_set_signalled(&sn->conn_ind_ev, true);
+	pollhead_deliver_events(&sn->stream->pollhead, EPOLLIN | EPOLLRDNORM);
+}
+
 static int
-so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr, socklen_t *addrlen, int flags)
+so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
+    socklen_t *addrlen, int flags)
 {
 	stdata_t *sh = sn->stream;
 	mblk_t *cimp, *crmp;
@@ -318,7 +331,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr, socklen_t 
 	struct socknode *acceptor_sn;
 	struct T_conn_ind *ci;
 	struct T_conn_res *cr;
-	int r;
+	int r, fd;
 
 	str_reqlock(sh);
 	if ((sn->state & SS_ISLISTENING) == 0) {
@@ -350,12 +363,29 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr, socklen_t 
 	r = so_create(&acceptor_fp, &acceptor_sn, sn->domain, sn->type | flags,
 	    sn->protocol);
 	if (r != 0) {
-		kfatal("so_accept4 failure handling");
+		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
+		sock_requeue_conn_ind_mp(sn, cimp);
+		str_requnlock(sh);
+		return r;
 	}
 
 	crmp = str_allocb(sizeof(struct T_conn_res));
 	if (crmp == NULL) {
-		kfatal("so_accept4 failure handling 2");
+		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
+		sock_requeue_conn_ind_mp(sn, cimp);
+		str_requnlock(sh);
+		file_release(acceptor_fp);
+		return -ENOMEM;
+	}
+
+	fd = uf_reserve_fd(curproc()->finfo, 0,
+	    flags & SOCK_CLOEXEC ? FD_CLOEXEC : 0);
+	if (fd < 0) {
+		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
+		sock_requeue_conn_ind_mp(sn, cimp);
+		str_requnlock(sh);
+		file_release(acceptor_fp);
+		return -ENOMEM;
 	}
 
 	crmp->db->type = M_PROTO;
@@ -365,24 +395,34 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr, socklen_t 
 	cr->SEQ_number = ci->SEQ_number;
 	crmp->wptr += sizeof(*cr);
 
-	acceptor_sn->state |= SS_ISCONNECTED;
-
 	ke_mutex_enter(sh->mutex, "so_accept4 conn_res");
 	crmp = sock_tpi_request(sn, crmp);
 	r = sock_tpi_errno(crmp);
+	str_freemsg(crmp);
 	if (r != 0) {
-		kfatal("so_accept4 failure handling 3");
+		/*
+		 * TODO: special handling for this case - we requeue the
+		 * conn_ind despite having sent down a conn_res. (this is what
+		 * the Unix transports expects.) But it's subtle and the Unix
+		 * transport also
+		 */
+		if (r == ENOMEM)
+			sock_requeue_conn_ind_mp(sn, cimp);
+		else
+			str_freemsg(cimp);
+		str_requnlock(sh);
+		file_release(acceptor_fp);
+		uf_unreserve_fd(curproc()->finfo, fd);
+		return -r;
+	} else {
+		str_freemsg(cimp);
 	}
 	str_requnlock(sh);
 
-	r = uf_reserve_fd(curproc()->finfo, 0,
-	    flags & SOCK_CLOEXEC ? FD_CLOEXEC : 0);
-	if (r < 0) {
-		kfatal("so_accept4 failure handling 4");
-	}
+	acceptor_sn->state |= SS_ISCONNECTED;
 
-	uf_install_reserved(curproc()->finfo, r, acceptor_fp);
-	return r;
+	uf_install_reserved(curproc()->finfo, fd, acceptor_fp);
+	return fd;
 }
 
 static int
@@ -418,7 +458,6 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 		vattr_t attr = { 0 };
 		struct lookup_info li;
 		struct sockaddr_ux *sux;
-		int r;
 
 		/*
 		 * We translate the sockaddr_un to a sockaddr_ux.
@@ -471,9 +510,9 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 			 */
 			li.result.nc->vp->sock.sockvn = vn;
 			li.result.nc->vp->type = VSOCK;
-#if 0
-			sn->socketfile_nch = li.result;
-#endif
+
+			/* this takes over the retained lookup */
+			sn->bound_nch = li.result;
 		}
 
 		br->ADDR_length = addrlen +
@@ -688,7 +727,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 	sn->state |= SS_ISCONNECTING;
 	mp = sock_tpi_request(sn, mp);
 	r = sock_tpi_errno(mp);
-	if (r < 0) {
+	if (r != 0) {
 		kfatal("so_connect failed");
 	}
 	ke_mutex_exit(sh->mutex);
@@ -804,7 +843,7 @@ sys_socket(int domain, int type, int protocol)
 	r = so_create(&fp, NULL, domain, type, protocol);
 	if (r < 0) {
 		uf_unreserve_fd(curproc()->finfo, fd);
-		return -ENOMEM;
+		return r;
 	}
 
 	uf_install_reserved(curproc()->finfo, fd, fp);

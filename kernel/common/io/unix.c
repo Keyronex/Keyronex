@@ -642,8 +642,6 @@ ux_wput_conn_req(queue_t *wq, mblk_t *mp)
 	ke_mutex_exit(&listenerep->lock);
 
 	ux_reply_ok_ack(wq, mp, T_CONN_RES); /* ack to ourselves */
-
-	str_freemsg(mp);
 }
 
 static void
@@ -743,6 +741,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 			str_freeb(ccmp);
 			str_freeb(ccdi);
 			str_freeb(ccoi);
+			/* todo: send a discon to peer here? */
 			ux_reply_error_ack(wq, mp, T_CONN_RES,
 			    EINVAL); /* TLOOK? */
 		}
@@ -758,6 +757,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 		str_freeb(ccmp);
 		str_freeb(ccdi);
 		str_freeb(ccoi);
+		/* todo: send a discon to peer here? */
 		ux_reply_error_ack(wq, mp, T_CONN_RES, EINVAL); /* TBADF? */
 		return;
 	}
@@ -773,6 +773,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 		str_freeb(ccdi);
 		str_freeb(ccoi);
 		ep_release(peerep);
+		/* don't need to send a discon to peer here, they gave up */
 		ux_reply_error_ack(wq, mp, T_CONN_RES, EINVAL); /* TBADSEQ */
 		return;
 	}
