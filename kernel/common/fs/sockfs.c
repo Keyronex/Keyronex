@@ -74,7 +74,8 @@ struct socknode {
 
 #define VTOSN(VN) ((struct socknode *)(VN)->fsprivate_1)
 
-static void sock_rput(queue_t *, mblk_t *);
+static void sockmod_close(queue_t *);
+static void sockmod_rput(queue_t *, mblk_t *);
 
 static int sock_inactive(vnode_t *);
 static int sock_close(vnode_t *, int flags);
@@ -88,7 +89,8 @@ static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
 
 static struct qinit sock_rinit = {
-	.putp = sock_rput,
+	.qclose = sockmod_close,
+	.putp = sockmod_rput,
 };
 static struct qinit sock_winit = {
 	.putp = str_putnext,
@@ -203,7 +205,14 @@ err:
 }
 
 static void
-sock_rput(queue_t *rq, mblk_t *mp)
+sockmod_close(queue_t *rq)
+{
+	if (rq->ptr != NULL)
+		kmem_free(rq->ptr, sizeof(struct socknode));
+}
+
+static void
+sockmod_rput(queue_t *rq, mblk_t *mp)
 {
 	struct socknode *sn = rq->ptr;
 	union T_primitives *prim = (union T_primitives *)mp->rptr;
@@ -737,6 +746,10 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 	/* conn_con handling in sock_rput will set appropriate flags */
 
 	str_requnlock_mutexunheld(sh);
+
+	if (peervn != NULL)
+		vn_release(peervn);
+
 	return 0;
 }
 
@@ -745,15 +758,18 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
  */
 
 static int
-sock_inactive(vnode_t *)
+sock_inactive(vnode_t *vn)
 {
-	ktodo();
+	struct socknode *sn = VTOSN(vn);
+	strclose(sn->stream);
+	return 0;
 }
 
 static int
 sock_close(vnode_t *, int flags)
 {
-	ktodo();
+	/* don't think we need to do anything here */
+	return 0;
 }
 
 static int
@@ -818,7 +834,7 @@ sock_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 		r |= EPOLLIN | EPOLLRDNORM;
 
 	if (sh->hanged_up)
-		r |= EPOLLHUP;
+		r |= EPOLLHUP | EPOLLIN | EPOLLRDNORM;
 
 	ke_mutex_exit(sh->mutex);
 
