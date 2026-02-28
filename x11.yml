@@ -1,0 +1,1816 @@
+################################################################################
+#
+# Sources
+#
+################################################################################
+sources:
+  - name: xtrans
+    subdir: 'sources'
+    url: 'https://www.x.org/archive/individual/lib/xtrans-1.4.0.tar.gz'
+    format: 'tar.gz'
+    extract_path: 'xtrans-1.4.0'
+    version: '1.4.0'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-xorg-macros
+    regenerate:
+      - args: ['libtoolize', '-cfvi']
+      - args: ['autoreconf', '-fvi']
+
+  - name: xorg-util-macros
+    subdir: 'sources'
+    url: 'https://www.x.org/archive/individual/util/util-macros-1.19.3.tar.gz'
+    format: 'tar.gz'
+    extract_path: 'util-macros-1.19.3'
+    version: '1.19.3'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+    regenerate:
+      - args: ['libtoolize', '-cfvi']
+      - args: ['autoreconf', '-fvi']
+
+  - name: xorg-font-util
+    subdir: 'sources'
+    url: 'https://www.x.org/archive/individual/font/font-util-1.3.3.tar.xz'
+    format: 'tar.xz'
+    extract_path: 'font-util-1.3.3'
+    version: '1.3.3'
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-xorg-macros
+    regenerate:
+      - args: ['libtoolize', '-cfvi']
+      - args: ['autoreconf', '-fvi']
+
+################################################################################
+#
+# Tools
+#
+################################################################################
+tools:
+  - name: host-xorg-macros
+    exports_aclocal: true
+    from_source: xorg-util-macros
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: host-xtrans
+    exports_aclocal: true
+    from_source: xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+  - name: host-xorg-font-util
+    exports_aclocal: true
+    from_source: xorg-font-util
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--prefix=@PREFIX@'
+    compile:
+      - args: ['make', '-j@PARALLELISM@']
+    install:
+      - args: ['make', 'install']
+
+################################################################################
+#
+# Packages
+#
+################################################################################
+packages:
+  - name: xorg-util-macros
+    from_source: xorg-util-macros
+    tools_required:
+      - host-gcc
+      - host-xorg-macros
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xorgproto
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/proto/xorgproto-2022.1.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xorgproto-2022.1'
+      version: '2022.1'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xcb-proto
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/proto/xcb-proto-1.15.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xcb-proto-1.15'
+      version: '1.15'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libXau
+      - libXdmcp
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+#
+# Xorg core libraries
+#
+  - name: glu
+    source:
+      subdir: 'sources'
+      url: 'https://archive.mesa3d.org/glu/glu-9.0.2.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'glu-9.0.2'
+      version: '9.0.2'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - mesa
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xtrans
+    from_source: xtrans
+    tools_required:
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libxcb
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXdmcp
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXdmcp-1.1.3.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXdmcp-1.1.3'
+      version: '1.1.3'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libXau
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXau
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXau-1.0.9.tar.gz'
+      extract_path: 'libXau-1.0.9'
+      format: 'tar.gz'
+      version: '1.0.9'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libxcb
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libxcb-1.15.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libxcb-1.15'
+      version: '1.15'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libXau
+      - libXdmcp
+      - xcb-proto
+    configure:
+      - args: ['sed', '-i', "s/pthread-stubs//", '@THIS_SOURCE_DIR@/configure']
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--without-doxygen'
+        - '--with-sysroot=@SYSROOT_DIR@'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libX11
+    source:
+      subdir: 'sources'
+      url: 'http://www.x.org/archive/individual/lib/libX11-1.8.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libX11-1.8'
+      version: '1.8'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libxcb
+      - xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-ipv6'
+        - '--disable-malloc0returnsnull'
+        - '--with-keysymdefdir=@SYSROOT_DIR@/usr/include/X11'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libxkbfile
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libxkbfile-1.1.0.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libxkbfile-1.1.0'
+      version: '1.1.0'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - libxml2
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libfontenc
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libfontenc-1.1.4.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libfontenc-1.1.4'
+      version: '1.1.4'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xorg-font-util
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - xorg-font-util
+      - zlib
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXfont2
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXfont2-2.0.5.tar.gz'
+      format: 'tar.gz'
+      extract_path:  'libXfont2-2.0.5'
+      version: '2.0.5'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-xtrans
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - freetype
+      - libfontenc
+      - fontconfig
+      - zlib
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-devel-docs'
+        - '--disable-selective-werror'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: pixman
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/pixman-0.42.2.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'pixman-0.42.2'
+      version: '0.42.2'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - libpng
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--with-sysroot=@SYSROOT_DIR@' # Set libtool's lt_sysroot.
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libepoxy
+    source:
+      subdir: 'sources'
+      url: 'https://download.gnome.org/sources/libepoxy/1.5/libepoxy-1.5.10.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libepoxy-1.5.10'
+      version: '1.5.10'
+    tools_required:
+      - host-pkgconf
+      - host-gcc
+      - virtual: pkgconfig-for-target
+        triple: "@OPTION:arch-triple@"
+    pkgs_required:
+      - mlibc
+      - xorgproto
+      - libX11
+    configure:
+      - args:
+          - 'meson'
+          - '--cross-file'
+          - '@BUILD_ROOT@/crossfile.ini'
+          - '--prefix=/usr'
+          - '-Degl=no'
+          - '-Dtests=false'
+          - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXaw
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXaw-1.0.14.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXaw-1.0.14'
+      version: '1.0.14'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - libXext
+      - libXt
+      - libXmu
+      - libXpm
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXext
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXext-1.3.5.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libXext-1.3.5'
+      version: '1.3.5'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-malloc0returnsnull'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXfixes
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXfixes-6.0.1.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libXfixes-6.0.1'
+      version: '6.0.1'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXft
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXft-2.3.4.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXft-2.3.4'
+      version: '2.3.4'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - libXrender
+      - freetype
+      - fontconfig
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--with-sysroot=@SYSROOT_DIR@' # Set libtool's lt_sysroot.
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXi
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXi-1.8.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXi-1.8'
+      version: '1.8'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - libXext
+      - libXfixes
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-malloc0returnsnull'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libICE
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libICE-1.0.10.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libICE-1.0.10'
+      version: '1.0.10'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXmu
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXmu-1.1.4.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libXmu-1.1.4'
+      version: '1.1.4'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - libXext
+      - xtrans
+      - libXt
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libSM
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libSM-1.2.3.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libSM-1.2.3'
+      version: '1.2.g'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xtrans
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-gcc
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - libICE
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXpm
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXpm-3.5.13.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXpm-3.5.13'
+      version: '3.5.13'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - gettext
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - libXext
+      - libXt
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        environ:
+          ac_cv_search_gettext: '-lintl'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXrandr
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXrandr-1.5.2.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXrandr-1.5.2'
+      version: '1.5.2'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - libXrender
+      - libXext
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-malloc0returnsnull'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXrender
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXrender-0.9.10.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXrender-0.9.10'
+      version: '0.9.10'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-malloc0returnsnull'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: libXt
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/lib/libXt-1.2.1.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'libXt-1.2.1'
+      version: '1.2.1'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libX11
+      - xtrans
+      - libSM
+      - libICE
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--disable-malloc0returnsnull'
+        - '--with-appdefaultdir=/etc/X11/app-defaults'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: mesa
+    source:
+      subdir: 'sources'
+      url: 'https://archive.mesa3d.org/older-versions/21.x/mesa-21.3.9.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'mesa-21.3.9'
+      patch-path-strip: 1
+      version: '21.3.9'
+      tools_required:
+        - host-pkgconf
+    tools_required:
+      - host-pkgconf
+      - host-gcc
+      - virtual: pkgconfig-for-target
+        triple: "@OPTION:arch-triple@"
+      - virtual: pkgconfig-for-host
+        program_name: host-pkg-config
+    pkgs_required:
+      - mlibc
+      - zlib
+      - libXrandr
+      - libXfixes
+      - libX11
+      - libXext
+      - libxcb
+    configure:
+      - args: 'env'
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '--libdir=lib'
+        - '--buildtype=release'
+        - '-Dglx=gallium-xlib'
+        - '-Dplatforms=x11'
+        - '-Ddri-drivers='
+        - '-Dgallium-drivers=swrast'
+        - '-Dvulkan-drivers='
+        - '-Dc_args="-D_GNU_SOURCE"'
+        - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja', '-j@PARALLELISM@']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: mesa-demos
+    source:
+      subdir: 'sources'
+      url: 'https://archive.mesa3d.org/demos/mesa-demos-9.0.0.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'mesa-demos-9.0.0'
+      patch-path-strip: 1
+      version: '9.0.0'
+      tools_required:
+        - host-pkgconf
+    tools_required:
+      - host-pkgconf
+      - host-gcc
+      - virtual: pkgconfig-for-target
+        triple: "@OPTION:arch-triple@"
+      - virtual: pkgconfig-for-host
+        program_name: host-pkg-config
+    pkgs_required:
+      - mlibc
+      - zlib
+      - libXrandr
+      - libXfixes
+      - libX11
+      - libXext
+      - libxcb
+    configure:
+      - args: 'env'
+      - args:
+        - 'meson'
+        - 'setup'
+        - '--cross-file'
+        - '@BUILD_ROOT@/crossfile.ini'
+        - '--prefix=/usr'
+        - '--libdir=lib'
+        - '--buildtype=release'
+        - '-Dx11=enabled'
+        - '-Dwith-system-data-files=true'
+        - '@THIS_SOURCE_DIR@'
+    build:
+      - args: ['ninja', '-j@PARALLELISM@']
+      - args: ['ninja', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+
+#
+# guest tools
+#
+  - name: xorg-font-util
+    from_source: xorg-font-util
+    tools_required:
+      - host-gcc
+      - host-pkgconf
+      - host-libtool
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xkbcomp
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/app/xkbcomp-1.4.5.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xkbcomp-1.4.5'
+      version: '1.4.5'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - libX11
+      - libxkbfile
+      - libxml2
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xorg-server
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/releases/individual/xserver/xorg-server-1.20.14.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'xorg-server-1.20.14'
+      version: '1.20.14'
+      patch-path-strip: 1
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+        - host-xorg-font-util
+        - host-xtrans
+      regenerate:
+        - args: ['./autogen.sh']
+          environ:
+            NOCONFIGURE: 'yes'
+    tools_required:
+      - host-gcc
+      - host-pkgconf
+      - host-xorg-font-util
+      - host-xtrans
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - xorgproto
+      - libepoxy
+      - libxkbfile
+      - libXfont2
+      - pixman
+      - openssl
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--with-xkb-output=/var/lib/xkb'
+        - '--with-xkb-bin-directory=/usr/bin'
+        - '--with-xkb-path=/usr/share/X11/xkb'
+        - '--with-fontrootdir=/usr/share/fonts/X11'
+        - '--enable-xorg'
+        - '--enable-xv'
+        - '--enable-xvfb'
+        - '--disable-xephyr'
+        - '--disable-xwayland'
+        - '--disable-xnest'
+        - '--disable-dmx'
+        - '--disable-suid-wrapper'
+        - '--disable-pciaccess'
+        - '--disable-dpms'
+        - '--disable-screensaver'
+        - '--disable-xres'
+        - '--disable-xinerama'
+        - '--disable-xvmc'
+        - '--disable-systemd-logind'
+        - '--disable-secure-rpc'
+        - '--disable-config-udev'
+        - '--disable-dri'
+        - '--disable-dri2'
+        - '--disable-dri3'
+        - '--disable-vbe'
+        - '--disable-int10-module'
+        - '--disable-vgahw'
+        - '--disable-libdrm'
+        - '--disable-glamor'
+        - '--disable-glx'
+        environ:
+          CFLAGS: '-Wno-error=array-bounds -pipe -ggdb'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xinit
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/app/xinit-1.4.4.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xinit-1.4.4'
+      version: '1.4.4'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-util-macros
+      - libX11
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xeyes
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/app/xeyes-1.2.0.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xeyes-1.2.0'
+      version: '1.2.0'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - libX11
+      - libxkbfile
+      - libiconv
+      - libXi
+      - libXrender
+      - libXmu
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-selective-werror' # strncasecmp
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xclock
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/app/xclock-1.0.9.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xclock-1.0.9'
+      patch-path-strip: 1
+      version: '1.0.9'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - gettext
+      - mlibc
+      - libX11
+      - libxkbfile
+      - libiconv
+      - libXft
+      - libXi
+      - libXrender
+      - libXmu
+      - libXaw
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-selective-werror' # strncasecmp
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xev
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/app/xev-1.2.5.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'xev-1.2.5'
+      version: '1.2.5'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - libX11
+      - libXrandr
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-selective-werror' # strncasecmp
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: twm
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/app/twm-1.0.12.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'twm-1.0.12'
+      version: '1.0.12'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - libSM
+      - libX11
+      - libXmu
+      - libXrandr
+      - libXt
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-selective-werror' # strncasecmp
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+
+  - name: xterm
+    source:
+      subdir: 'sources'
+      url: 'https://invisible-mirror.net/archives/xterm/xterm-390.tgz'
+      format: 'tar.gz'
+      extract_path: 'xterm-390'
+      patch-path-strip: 1
+      version: '390'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+      - host-gcc
+    pkgs_required:
+      - gettext
+      - mlibc
+      - ncurses
+      - libX11
+      - libXmu
+      - libXaw
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-tcap-fkeys'
+        - '--disable-tcap-query'
+        - '--enable-256-color'
+        environ:
+            LIBS: '-lXmu'
+    build:
+      - args: ['make', '-j@PARALLELISM@', 'SHLIB_LIBS="-ltinfow"', 'CFLAGS="-DHAVE_LIB_XAW=1"']
+      - args: ['make', 'install', 'DESTDIR=@THIS_COLLECT_DIR@']
+
+#
+# X drivers
+#
+  - name: xf86-video-fbdev
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/releases/individual/driver/xf86-video-fbdev-0.5.0.tar.gz'
+      format: 'tar.gz'
+      patch-path-strip: 1
+      extract_path: 'xf86-video-fbdev-0.5.0'
+      version: '0.5.0'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-server
+      - xorg-util-macros
+      - libX11
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--with-sysroot=@SYSROOT_DIR@'
+        - '--disable-pciaccess'
+        environ:
+          SYSROOT: '@SYSROOT_DIR@'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xf86-input-keyboard
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/releases/individual/driver/xf86-input-keyboard-1.9.0.tar.gz'
+      format: 'tar.gz'
+      patch-path-strip: 1
+      extract_path: 'xf86-input-keyboard-1.9.0'
+      version: '1.9.0'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-server
+      - xorg-util-macros
+      - libX11
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--with-sysroot=@SYSROOT_DIR@' # Set libtool's lt_sysroot.
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: xf86-input-mouse
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/releases/individual/driver/xf86-input-mouse-1.9.4.tar.gz'
+      format: 'tar.gz'
+      patch-path-strip: 1
+      extract_path: 'xf86-input-mouse-1.9.4'
+      version: '1.9.4'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-gcc
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-pkgconf
+    pkgs_required:
+      - mlibc
+      - xorg-server
+      - xorg-util-macros
+      - libX11
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--disable-static'
+        - '--with-sysroot=@SYSROOT_DIR@'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+
+#
+# Data
+#
+  - name: xkeyboard-config
+    source:
+      subdir: 'sources'
+      url: 'https://www.x.org/archive/individual/data/xkeyboard-config/xkeyboard-config-2.34.tar.gz'
+      format: 'tar.gz'
+      extract_path: 'xkeyboard-config-2.34'
+      version: '2.34'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+        - host-xorg-macros
+      regenerate:
+        - args: ['libtoolize', '-cfvi']
+        - args: ['autoreconf', '-fvi']
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-libtool
+      - host-pkgconf
+      - host-xorg-macros
+      - host-gcc
+    pkgs_required:
+      - mlibc
+      - libX11
+      - xorgproto
+      - libxml2
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        - '--with-xkb-rules-symlink=xorg'
+        - '--disable-nls'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
