@@ -1,5 +1,6 @@
 imports:
   - file: gnu.yml
+  - file: x11.yml
 
 declare_options:
   - name: arch
