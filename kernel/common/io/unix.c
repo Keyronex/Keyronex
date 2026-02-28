@@ -99,12 +99,12 @@ static struct qinit ux_winit = {
 	.putp = ux_wput,
 };
 
-struct streamtab ux_stream_streamtab = {
+struct streamtab ux_cotsord_streamtab = {
 	.rinit = &ux_rinit,
 	.winit = &ux_winit,
 };
 
-struct streamtab ux_dgram_streamtab = {
+struct streamtab ux_clts_streamtab = {
 	.rinit = &ux_rinit,
 	.winit = &ux_winit,
 };

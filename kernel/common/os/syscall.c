@@ -18,13 +18,26 @@
 #include <sys/libkern.h>
 #include <sys/pcb.h>
 #include <sys/proc.h>
+#include <sys/socket.h>
 #include <sys/utsname.h>
 
 #include <keyronex/syscall.h>
 #include <time.h>
 
-int
-sys_pipe(int upipefd[2], int flags);
+int sys_pipe(int upipefd[2], int flags);
+
+int sys_socket(int domain, int type, int protocol);
+int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
+    int flags);
+int sys_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int sys_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int sys_listen(int sockfd, int backlog);
+int sys_getsockopt(int sockfd, int level, int optname, void *optval,
+    socklen_t *optlen);
+int sys_setsockopt(int sockfd, int level, int optname, const void *optval,
+    socklen_t optlen);
+int sys_recvmsg(int sockfd, struct msghdr *msg, int flags);
+int sys_sendmsg(int sockfd, const struct msghdr *msg, int flags);
 
 int
 sys_clock_gettime(int clock_id, struct timespec *tp)
@@ -253,6 +266,35 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	/*
 	 * sockets
 	 */
+
+	case SYS_socket:
+		return sys_socket((int)arg1, (int)arg2, (int)arg3);
+
+	case SYS_accept4:
+		return sys_accept4((int)arg1, (struct sockaddr *)arg2,
+		    (socklen_t *)arg3, (int)arg4);
+
+	case SYS_bind:
+		return sys_bind((int)arg1, (const struct sockaddr *)arg2,
+		    (socklen_t)arg3);
+
+	case SYS_connect:
+		return sys_connect((int)arg1, (const struct sockaddr *)arg2,
+		    (socklen_t)arg3);
+
+	case SYS_listen:
+		return sys_listen((int)arg1, (int)arg2);
+
+	case SYS_getsockopt:
+		return sys_getsockopt((int)arg1, (int)arg2, (int)arg3,
+		    (void *)arg4, (socklen_t *)arg5);
+
+	case SYS_setsockopt:
+		return sys_setsockopt((int)arg1, (int)arg2, (int)arg3,
+		    (const void *)arg4, (socklen_t)arg5);
+
+	case SYS_recvmsg:
+		return sys_recvmsg((int)arg1, (struct msghdr *)arg2, (int)arg3);
 
 	/*
 	 * linux affinity
