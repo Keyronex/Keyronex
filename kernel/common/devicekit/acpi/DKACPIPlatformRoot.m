@@ -8,12 +8,15 @@
  */
 
 #include <sys/k_log.h>
+#include <sys/limine.h>
+#include <sys/vm.h>
 
 #include <devicekit/acpi/DKACPINode.h>
 #include <devicekit/acpi/DKACPIPlatformRoot.h>
 #include <devicekit/pci/DKPCIBridge.h>
 #include <devicekit/DKAxis.h>
 #include <devicekit/DKPlatformRoot.h>
+#include <devicekit/SimpleFramebuffer.h>
 
 #include <uacpi/acpi.h>
 #include <uacpi/resources.h>
@@ -29,6 +32,9 @@
 
 void DKLogAttach(DKDevice *child, DKDevice *parent);
 
+extern __attribute__((section(".requests")))
+volatile struct limine_framebuffer_request framebuffer_request;
+
 DKAxis *gACPIAxis;
 
 @implementation DKACPIPlatform
@@ -36,6 +42,51 @@ DKAxis *gACPIAxis;
 + (instancetype)root
 {
 	return (DKACPIPlatform *)gPlatformRoot;
+}
+
+- (void)createFramebuffers
+{
+	SimpleFramebuffer *bootFb;
+	struct limine_framebuffer *fb;
+	struct fb_fix_screeninfo fix;
+	struct fb_var_screeninfo var;
+
+	fb =  framebuffer_request.response->framebuffers[0];
+
+	fix.smem_start = (uintptr_t)v2p((paddr_t)fb->address);
+	fix.smem_len = fb->pitch * fb->height;
+	fix.smem_len = fb->pitch * fb->height;
+	fix.mmio_len = fb->pitch * fb->height;
+	fix.line_length = fb->pitch;
+	fix.type = FB_TYPE_PACKED_PIXELS;
+	fix.visual = FB_VISUAL_TRUECOLOR;
+
+	var.xres = fb->width;
+	var.yres = fb->height;
+	var.xres_virtual = fb->width;
+	var.yres_virtual = fb->height;
+	var.bits_per_pixel = fb->bpp;
+	var.red = (struct fb_bitfield) {
+		.offset = fb->red_mask_shift,
+		.length = fb->red_mask_size
+	};
+	var.green = (struct fb_bitfield) {
+		.offset = fb->green_mask_shift,
+		.length = fb->green_mask_size
+	};
+	var.blue = (struct fb_bitfield) {
+		.offset = fb->blue_mask_shift,
+		.length = fb->blue_mask_size
+	};
+	var.activate = FB_ACTIVATE_NOW;
+	var.vmode = FB_VMODE_NONINTERLACED;
+	var.width = -1;
+	var.height = -1;
+
+	bootFb = [[SimpleFramebuffer alloc] initWithFix:&fix var:&var];
+	[bootFb start];
+
+	[self attachChild:bootFb onAxis:gDeviceAxis];
 }
 
 - (instancetype)init
@@ -54,6 +105,9 @@ DKAxis *gACPIAxis;
 		[gACPIAxis addChild:self ofParent:nil];
 		DKLogAttach(self, nil);
 	}
+
+	[self createFramebuffers];
+
 	return self;
 }
 

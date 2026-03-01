@@ -147,7 +147,7 @@ fifo_write(vnode_t *vn, const void *buf, size_t buflen, off_t, int flags)
 static int
 fifo_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 {
-	ktodo();
+	return -ENOTTY;
 }
 
 static int

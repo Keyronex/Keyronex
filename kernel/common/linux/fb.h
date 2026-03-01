@@ -90,7 +90,9 @@ struct fb_cmap {
 	uint16_t *transp;
 };
 
+#define FB_TYPE_PACKED_PIXELS	0
 
+#define FB_ACTIVATE_NOW		0
 #define FB_ACTIVATE_TEST	2
 
 #define FB_SYNC_HOR_HIGH_ACT 	1

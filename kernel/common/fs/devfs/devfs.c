@@ -136,6 +136,10 @@ dev_spec_open(vnode_t **vn, int)
 	}
 
 	switch(dn->class->kind) {
+		case DEV_KIND_CHAR:
+			kdprintf("todo: dev_spec_open for char\n");
+			break;
+
 		case DEV_KIND_STREAM:
 			dn->stdata = stropen(dn->class->streamtab,
 			    dn->devprivate, STR_HEAD_KIND_TTY);
