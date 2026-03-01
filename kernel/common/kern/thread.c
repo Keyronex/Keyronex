@@ -43,6 +43,13 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	atomic_store_explicit(&thread->runtime, 0, memory_order_relaxed);
 #endif
 
+#if defined(__amd64__) /* TODO: extract into ke_md_thread_init_fpu_state? */
+	for (size_t i = 0; i < elementsof(thread->pcb.fpu); i++)
+		thread->pcb.fpu[i] = 0;
+	(*(uint16_t *)(thread->pcb.fpu + 0)) = 0x037f;
+	(*(uint32_t *)(thread->pcb.fpu + 24)) = 0x1f80;
+#endif
+
 	thread ->inherited_prio = 0;
 	thread->effective_prio = 0;
 	SLIST_INIT(&thread->pi_head);

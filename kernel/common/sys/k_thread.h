@@ -132,6 +132,7 @@ void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
 void ke_set_tcb(uintptr_t value);
 void ke_thread_set_affinity(kthread_t *, kcpunum_t);
+void ke_thread_copy_fpu_state(kthread_t *);
 
 kpri_t ke_thread_epri_locked(kthread_t *);
 void ke_thread_set_ipri_locked(kthread_t *, kpri_t);

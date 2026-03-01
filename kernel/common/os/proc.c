@@ -318,7 +318,7 @@ sys_fork(karch_trapframe_t *frame)
 		return -ENOMEM;
 	}
 
-	//ke_copy_fpu_state(child_thread);
+	ke_thread_copy_fpu_state(&child_thread->kthread);
 	child_thread->kthread.tcb = curthread()->kthread.tcb;
 
 	ke_thread_resume(&child_thread->kthread, false);

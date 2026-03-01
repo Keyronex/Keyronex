@@ -15,6 +15,9 @@
 #include <sys/pcb.h>
 #include <sys/x86.h>
 
+void fxsave(uint8_t *state);
+void fxrstor(uint8_t *state);
+
 void
 kep_arch_set_tp(void *addr)
 {
@@ -53,4 +56,14 @@ ke_md_enter_usermode(uintptr_t ip, uintptr_t sp)
 	    :
 	    : "r"(frame)
 	    : "memory");
+}
+
+void
+ke_thread_copy_fpu_state(kthread_t *dst)
+{
+	ipl_t ipl = spldisp();
+	fxsave(dst->pcb.fpu);
+	(*(uint16_t *)(dst->pcb.fpu + 0)) = 0x037f;
+	(*(uint32_t *)(dst->pcb.fpu + 24)) = 0x1f80;
+	splx(ipl);
 }

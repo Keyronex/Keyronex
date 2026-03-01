@@ -278,13 +278,13 @@ ke_amd64_idt_alloc(struct kirq_source *source, kirq_t *entry,
 void kep_amd64_asm_switch(struct karch_pcb *old, struct karch_pcb *new);
 void kep_amd64_asm_thread_trampoline(void);
 
-static inline void
+void
 fxsave(uint8_t *state)
 {
 	asm volatile("fxsave %0" : "+m"(*state) : : "memory");
 }
 
-static inline void
+void
 fxrstor(uint8_t *state)
 {
 	asm volatile("fxrstor %0" : : "m"(*state) : "memory");
