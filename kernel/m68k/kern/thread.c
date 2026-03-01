@@ -35,3 +35,9 @@ ke_set_tcb(uintptr_t value)
 {
 	ke_curthread()->tcb = value;
 }
+
+void
+ke_thread_copy_fpu_state(kthread_t *)
+{
+	/* epsilon */
+}
