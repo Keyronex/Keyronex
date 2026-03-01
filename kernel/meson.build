@@ -39,8 +39,6 @@ if not headers_only_option
     ]
 
     if (target_machine.cpu_family() == 'x86_64')
-        platforms = [ 'x86pc' ]
-
         common_kernel_args += [
             '-mno-80387',
             '-mno-mmx',
@@ -55,7 +53,6 @@ if not headers_only_option
         ]
 
     elif (target_machine.cpu_family() == 'm68k')
-        platforms = [ 'virt68k' ]
         common_kernel_args += [ '-mcpu=68040' ]
 
     elif (target_machine.cpu_family() == 'aarch64')
@@ -82,6 +79,12 @@ if not headers_only_option
     endif
 
 endif # not headers_only_option
+
+if (target_machine.cpu_family() == 'x86_64')
+    platforms = [ 'x86pc' ]
+elif (target_machine.cpu_family() == 'm68k')
+    platforms = [ 'virt68k' ]
+endif
 
 common_kernel_includes = [include_directories('../vendor')]
 kernel_sources = []
