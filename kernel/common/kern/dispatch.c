@@ -386,12 +386,9 @@ ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
 
 	(void)ipl;
 
-#if 0
-	ipl = ke_spinlock_enter(&proc0.threads_lock);
-	TAILQ_INSERT_TAIL(&proc0.threads, thread, threads_qlink);
-	proc0.threads_count++;
-	ke_spinlock_exit(&proc0.threads_lock, ipl);
-#endif
+	ipl = ke_spinlock_enter(&ke_task0->threads_lock);
+	LIST_INSERT_HEAD(&ke_task0->threads, thread, proc_link);
+	ke_spinlock_exit(&ke_task0->threads_lock, ipl);
 
 #if 0 // defined (__amd64__) /* TODO: move this out */
 	memset(&thread->pcb, 0, sizeof(thread->pcb));

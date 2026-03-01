@@ -71,6 +71,9 @@ sys_clock_nanosleep(int clock_id, int flags, const struct timespec *rqtp,
 
 	kassert(!(flags & ~TIMER_ABSTIME));
 
+	kdprintf("sleep for %lu ns, %lu seconds\n", ts_to_ns(rqtp),
+	    ts_to_ns(rqtp) / NS_PER_S);
+
 	ke_event_init(&ev, false);
 	til = ke_time() + ts_to_ns(rqtp);
 	kassert(ke_wait1(&ev, "clock_nanosleep", false, til) == -ETIMEDOUT);

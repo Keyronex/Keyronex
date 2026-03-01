@@ -104,6 +104,8 @@ void obj_table_pte_did_become_swap(vm_object_t *obj, vm_page_t *table_page);
 void pmap_tlb_flush_vaddr_globally(vaddr_t vaddr);
 void pmap_tlb_flush_all_globally(void);
 
+void pmap_tlb_flush_all(void *unused);
+
 void rs_evict_leaf_pte(struct vm_rs *rs, vaddr_t vaddr, vm_page_t *page,
     pte_t *pte);
 

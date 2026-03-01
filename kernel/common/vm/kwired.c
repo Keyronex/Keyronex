@@ -118,10 +118,15 @@ unmap_batch_init(struct unmap_batch *batch)
 static void
 unmap_batch_flush(struct unmap_batch *batch)
 {
+	extern int kern_initlevel;
+
 	if (batch->count == 0)
 		return;
 
-	pmap_tlb_flush_all_globally();
+	if (kern_initlevel >= 2) /* SMP started */
+		pmap_tlb_flush_all_globally();
+	else
+		pmap_tlb_flush_all(0);
 
 	for (size_t i = 0; i < batch->count; i++)
 		vm_page_delete(batch->pages[i], true);
@@ -147,8 +152,6 @@ vm_kwired_free(void *ptr, size_t npages)
 	pte_t *ppte = NULL;
 	struct unmap_batch batch;
 	int r;
-
-	kdprintf("VM_KWIRED_FREE %p\n", ptr);
 
 	if (npages == 1) {
 		kassert((vaddr_t) ptr >= HHDM_BASE &&  (vaddr_t) ptr < HHDM_END, "");

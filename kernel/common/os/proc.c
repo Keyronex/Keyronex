@@ -92,7 +92,10 @@ proc_create(proc_t *parent, bool fork)
 	if (proc == NULL)
 		return NULL;
 
-	strcpy(proc->comm, "unnamed");
+	if (!fork)
+		strcpy(proc->comm, "unnamed");
+	else
+	 	strcpy(proc->comm, parent->comm);
 
 	proc->vm_map = vm_map_create();
 	proc->pid = atomic_fetch_add(&last_pid, 1);
@@ -333,4 +336,32 @@ sys_getppid(proc_t *proc)
 	ppid = proc->parent ? proc->parent->pid : 0;
 	ke_mutex_exit(&proctree_mutex);
 	return ppid;
+}
+
+void
+dbg_proc_dump_all_threads(void)
+{
+	proc_t *proc;
+
+	/* note: GDB wants executable stack so will fault after this */
+
+	ke_mutex_enter(&proctree_mutex, "dbg_proc_dump_all_threads");
+	TAILQ_FOREACH(proc, &allproc, allproc_qlink) {
+		kthread_t *thread;
+		ipl_t ipl;
+
+		ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
+		kdprintf("- process %d (comm %s):\n", proc->pid, proc->comm);
+		LIST_FOREACH(thread, &proc->ktask.threads, proc_link) {
+			ke_spinlock_enter_nospl(&thread->lock);
+			kdprintf("  -> thread %d", thread->tid);
+			if (thread->wait_reason != NULL)
+				kdprintf(" (waiting on %s)", thread->wait_reason);
+			kdprintf("\n");
+			ke_spinlock_exit_nospl(&thread->lock);
+		}
+		splx(ipl);
+	}
+
+	ke_mutex_exit(&proctree_mutex);
 }

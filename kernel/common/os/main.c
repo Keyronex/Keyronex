@@ -289,6 +289,7 @@ _start(void)
 #endif
 
 	smp_start();
+	kern_initlevel = 2;
 	ke_platform_start_dispatching();
 	splx(IPL_0);
 

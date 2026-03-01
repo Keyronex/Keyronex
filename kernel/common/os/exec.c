@@ -256,6 +256,8 @@ load_init(vnode_t *server_vnode, vnode_t *ld_vnode)
 	r = copyout_args(&pkg, argp, envp);
 	kassert(r == 0);
 
+	strcpy(curproc()->comm, "init");
+
 	/*
 	 * leaks init nch?
 	 * we want proc struct to keep an nch reference on what it opened anyway
