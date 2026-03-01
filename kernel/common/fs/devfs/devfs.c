@@ -130,7 +130,7 @@ dev_spec_open(vnode_t **vn, int)
 	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_open");
 
 	dn->open_count++;
-	if (dn->open_count == 1) {
+	if (dn->open_count > 1) {
 		ke_rwlock_exit_write(&dn->open_lock);
 		return 0;
 	}

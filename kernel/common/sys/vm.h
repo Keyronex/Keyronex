@@ -77,6 +77,10 @@ int vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
     vm_prot_t prot, vm_cache_mode_t cache, bool exact);
 int vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end);
 
+int vm_voaddr_acquire(struct vm_map *, vaddr_t, struct vm_voaddr *out);
+void vm_voaddr_release(struct vm_map *, struct vm_voaddr *);
+intptr_t vm_voaddr_cmp(const struct vm_voaddr *a, const struct vm_voaddr *b);
+
 vm_object_t *vm_obj_new_vnode(struct vnode *);
 
 vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,

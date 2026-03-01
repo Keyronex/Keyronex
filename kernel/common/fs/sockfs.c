@@ -114,14 +114,14 @@ static int
 so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int protocol)
 {
 	bool nonblock = type & SOCK_NONBLOCK;
-	struct streamtab *streamtab;
+	struct streamtab *streamtab = NULL;
 	stdata_t *sh = NULL;
 	struct socknode *sn = NULL;
 	vnode_t *vn = NULL;
 	file_t *fp = NULL;
 	int r;
 
-	type &= ~SOCK_NONBLOCK;
+	type &= ~(SOCK_NONBLOCK|SOCK_CLOEXEC);
 
 	switch (domain) {
 	case AF_UNIX:
@@ -129,15 +129,22 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		case SOCK_STREAM:
 			streamtab = &ux_cotsord_streamtab;
 			break;
+
 		case SOCK_DGRAM:
 			ktodo();
 			break;
+
+		default:
+			kfatal("unexpected AF_UNIX type %d (0x%x)\n", type,
+			    type);
 		}
 		break;
 
 	default:
 		ktodo();
 	}
+
+	kassert(streamtab != NULL);
 
 	sh = stropen(streamtab, NULL, STR_HEAD_KIND_NONE);
 	if (sh == NULL) {
@@ -949,7 +956,30 @@ sys_setsockopt(int sockfd, int level, int optname, const void *optval,
 int
 sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 {
-	ktodo();
+	file_t *file;
+	struct socknode *sn;
+	int readflags = 0;
+	int r = lookup_sockfd(sockfd, &file);
+
+	/* TODO: this is not recvmsg! */
+
+	sn = VTOSN(file->vnode);
+
+	kassert(msg->msg_iovlen == 1);
+
+	if (flags & MSG_DONTWAIT)
+		readflags |= O_NONBLOCK;
+	if (flags & MSG_PEEK)
+		readflags |= MSG_PEEK;
+	if (file->flags & O_NONBLOCK)
+		readflags |= O_NONBLOCK;
+
+	r = strread(sn->stream, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len,
+	    readflags);
+
+	file_release(file);
+
+	return r;
 }
 
 int

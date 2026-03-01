@@ -24,12 +24,13 @@ str_kick(stdata_t *st)
 {
 	struct str_per_cpu_scheduler *sc;
 	uint32_t flags;
+	ipl_t ipl;
 
 	atomic_fetch_or(&st->flags, ST_NEEDRUN);
 
 	sc = ke_cpu_data[st->home_cpu]->str_scheduler;
 
-	ke_spinlock_enter_nospl(&sc->lock);
+	ipl = ke_spinlock_enter(&sc->lock);
 
 	flags = atomic_load(&st->flags);
 
@@ -43,7 +44,7 @@ str_kick(stdata_t *st)
 	TAILQ_INSERT_TAIL(&sc->runq, st, sched_link);
 	ke_event_set_signalled(&sc->event, true);
 
-	ke_spinlock_exit_nospl(&sc->lock);
+	ke_spinlock_exit(&sc->lock, ipl);
 }
 
 static inline void

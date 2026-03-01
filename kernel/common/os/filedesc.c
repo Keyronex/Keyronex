@@ -418,6 +418,24 @@ sys_fcntl(int fd, int cmd, unsigned long arg)
 		ke_mutex_exit(&info->lock);
 		return r;
 
+	case F_GETFL:
+		f = uf_lookup(info, fd);
+		if (f == NULL)
+			return -EBADF;
+
+		r = f->flags;
+		file_release(f);
+		return r;
+
+	case F_SETFL:
+		f = uf_lookup(info, fd);
+		if (f == NULL)
+			return -EBADF;
+
+		/* FIXME: lock flags? atomic? */
+		f->flags = (int)arg & (O_APPEND | O_NONBLOCK);
+		return 0;
+
 	default:
 		return -EINVAL;
 	}

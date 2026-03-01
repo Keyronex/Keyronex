@@ -285,8 +285,6 @@ void strclose(stdata_t *sh)
 		TAILQ_REMOVE(&sc->runq, sh, sched_link);
 	TAILQ_INSERT_TAIL(&sc->freeq, sh, sched_link);
 	ke_spinlock_exit(&sc->lock, ipl);
-
-	kmem_free(sh, sizeof(*sh));
 }
 
 int

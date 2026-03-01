@@ -26,6 +26,10 @@
 
 int sys_pipe(int upipefd[2], int flags);
 
+int sys_futex_wait(int *u_pointer, int expected,
+    const struct timespec *user_ts);
+int sys_futex_wake(int *u_pointer, int count);
+
 int sys_socket(int domain, int type, int protocol);
 int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
     int flags);
@@ -109,6 +113,7 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	 * processes
 	 */
 
+	case SYS_thread_exit:
 	case SYS_exit:
 		sys_thread_exit();
 
@@ -153,6 +158,16 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	/*
 	 * threads
 	 */
+
+	case SYS_thread_create:
+		return sys_fork_thread(arg1, arg2);
+
+	case SYS_futex_wait:
+		return sys_futex_wait((void *)arg1, (int)arg2,
+		    (const struct timespec *)arg3);
+
+	case SYS_futex_wake:
+		return sys_futex_wake((int *)arg1, (int)arg2);
 
 	case SYS_thread_gettid:
 		return ke_curthread()->tid;

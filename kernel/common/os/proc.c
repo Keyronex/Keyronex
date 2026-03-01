@@ -178,10 +178,40 @@ thread_activate(thread_t *old, thread_t *new)
 		pmap_activate(thread_vm_map(new));
 }
 
+struct thread_new_info {
+	uintptr_t entry;
+	uintptr_t stack;
+};
+
+
 static void
-fork_thread(void *arg)
+user_thread_trampoline(void *arg)
 {
-	/* nothing to do yet; just return */
+	struct thread_new_info info = *(struct thread_new_info *)arg;
+	void ke_md_enter_usermode(uintptr_t ip, uintptr_t sp);
+	kmem_free(arg, sizeof(info));
+	ke_md_enter_usermode(info.entry, info.stack);
+}
+
+int sys_fork_thread(uintptr_t entry, uintptr_t stack)
+{
+	thread_t *thread;
+	struct thread_new_info *info = kmem_alloc(sizeof(*info));
+	uint32_t tid;
+
+	info->entry = entry;
+	info->stack = stack;
+
+	thread = proc_new_thread(curproc(), NULL, user_thread_trampoline, info);
+	if (thread == NULL) {
+		kmem_free(info, sizeof(*info));
+		return -ENOMEM;
+	}
+
+	tid = thread->kthread.tid;
+	ke_thread_resume(&thread->kthread, false);
+
+	return tid;
 }
 
 void
@@ -301,6 +331,12 @@ sys_wait4(pid_t pid, int *out_ustatus, int flags,
 		ke_mutex_enter(&proctree_mutex, "sys_wait4");
 		proc->wait_ev = NULL;
 	}
+}
+
+static void
+fork_thread(void *arg)
+{
+	/* nothing to do yet; just return */
 }
 
 pid_t
