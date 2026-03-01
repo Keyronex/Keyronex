@@ -10,6 +10,7 @@ meson.add_install_script(
   '''
   ROOT="${DESTDIR}${MESON_INSTALL_PREFIX}"
   mkdir -p "$ROOT/dev"
+  mkdir -p "$ROOT/tmp"
   ln -sf usr/bin  "$ROOT/bin"
   ln -sf usr/sbin "$ROOT/sbin"
   '''
