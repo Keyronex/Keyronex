@@ -50,6 +50,8 @@ packages:
         - '--host=@OPTION:arch-triple@'
         - '--prefix=/usr'
         - 'CFLAGS=-DSLOW_BUT_NO_HACKS -Wno-error'
+        environ:
+          gl_cv_header_working_stdint_h: 'yes'
     build:
       - args: ['make', '-j@PARALLELISM@']
       - args: ['make', 'install']
@@ -112,7 +114,7 @@ packages:
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
-        - '--host=x86_64-keyronex'
+        - '--host=@OPTION:arch-triple@'
         - '--prefix=/usr'
         - '--without-ada'
         - '--enable-pc-files'
@@ -163,7 +165,7 @@ packages:
     configure:
       - args:
         - '@THIS_SOURCE_DIR@/configure'
-        - '--host=x86_64-keyronex'
+        - '--host=@OPTION:arch-triple@'
         - '--prefix=/usr'
         - '--disable-static'
         - '--enable-multibyte'
@@ -175,6 +177,42 @@ packages:
       - args: |
                 ln -sfv libreadline.so.8 @THIS_COLLECT_DIR@/usr/lib/libreadline.so
 
+  - name: nano
+    source:
+      url: https://ftpmirror.gnu.org/gnu/nano/nano-7.2.tar.gz
+      version: '7.2'
+      subdir: 'sources'
+      format: 'tar.gz'
+      extract_path: 'nano-7.2'
+      patch-path-strip: 1
+      regenerate:
+        - args: [ 'libtoolize', '-cfvi' ]
+        - args: [ 'autoreconf', '-fvi' ]
+      tools_required:
+        - host-libtool
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+    tools_required:
+      - host-gcc
+      - host-libtool
+    pkgs_required:
+      - mlibc
+      - ncurses
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--localstatedir=/var'
+        environ:
+          ac_cv_func_wcswidth: 'no'
+          gl_cv_header_working_stdint_h: 'yes'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', 'install']
 
   - name: libexpat
     source:
