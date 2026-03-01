@@ -101,21 +101,62 @@ vm_kwired_alloc(size_t npages, vm_alloc_flags_t flags)
 	return (void *)addr;
 }
 
+/* TODO: unify with similar in map.c? */
+#define UNMAP_BATCH_SIZE 64
+
+struct unmap_batch {
+	vm_page_t *pages[UNMAP_BATCH_SIZE];
+	size_t count;
+};
+
+static void
+unmap_batch_init(struct unmap_batch *batch)
+{
+	batch->count = 0;
+}
+
+static void
+unmap_batch_flush(struct unmap_batch *batch)
+{
+	if (batch->count == 0)
+		return;
+
+	pmap_tlb_flush_all_globally();
+
+	for (size_t i = 0; i < batch->count; i++)
+		vm_page_delete(batch->pages[i], true);
+
+	batch->count = 0;
+}
+
+static void
+unmap_batch_add(struct unmap_batch *batch, vm_page_t *page)
+{
+	if (batch->count == UNMAP_BATCH_SIZE)
+		unmap_batch_flush(batch);
+
+	batch->pages[batch->count++] = page;
+}
+
 void
 vm_kwired_free(void *ptr, size_t npages)
 {
-#if 0
 	vmem_addr_t addr = (vmem_addr_t)ptr;
 	ipl_t ipl;
 	struct pte_cursor state;
-	pte_t *pte = NULL;
+	pte_t *ppte = NULL;
+	struct unmap_batch batch;
 	int r;
+
+	kdprintf("VM_KWIRED_FREE %p\n", ptr);
 
 	if (npages == 1) {
 		kassert((vaddr_t) ptr >= HHDM_BASE &&  (vaddr_t) ptr < HHDM_END, "");
 		vm_page_delete(VM_PAGE_FOR_PADDR(v2p((vaddr_t)ptr)), true);
 		return;
 	}
+
+	unmap_batch_init(&batch);
 
 	ipl = ke_spinlock_enter(&kwired_lock);
 	ke_spinlock_enter_nospl(&proc0.vm_map->creation_lock);
@@ -125,34 +166,35 @@ vm_kwired_free(void *ptr, size_t npages)
 
 	for (size_t i = 0; i < npages; i++) {
 		vm_page_t *page;
+		pte_t pte;
 
-		if (i == 0 || ((uintptr_t)(++pte) & (PGSIZE - 1)) == 0) {
-			if (pte != NULL)
+		if (i == 0 || ((uintptr_t)(++ppte) & (PGSIZE - 1)) == 0) {
+			if (ppte != NULL)
 				pmap_unwire_pte(proc0.vm_map, &vm_kwired_rs, &state);
 
 			r = pmap_wire_pte(proc0.vm_map, &vm_kwired_rs, &state,
 			    addr + (i << PGSHIFT), true);
 			kassert(r == 0);
 
-			pte = state.pte;
+			ppte = state.pte;
 		}
 
-		page = pmap_pte_hw_page(pte, 0);
+		pte = pmap_load_pte(ppte);
+		page = pmap_pte_hwleaf_page(pte, PMAP_L0);
+		pmap_pte_zeroleaf_create(ppte, PMAP_L0);
 
-		/* TODO: zero the PTE.... */
 		state.pages[0]->proctable.noswap_ptes--;
 		state.pages[0]->proctable.nonzero_ptes--;
 
-		vm_page_delete(page, true);
+		unmap_batch_add(&batch, page);
 	}
 	pmap_unwire_pte(proc0.vm_map, &vm_kwired_rs, &state);
 
 	ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
 	ke_spinlock_exit_nospl(&proc0.vm_map->creation_lock);
 	ke_spinlock_exit(&kwired_lock, ipl);
-#else
-	/* do nothing for now... */
-#endif
+
+	unmap_batch_flush(&batch);
 }
 
 int
