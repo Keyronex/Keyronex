@@ -1216,6 +1216,8 @@ packages:
       - libX11
       - libXext
       - libxcb
+      - mesa
+      - glu
     configure:
       - args: 'env'
       - args:
