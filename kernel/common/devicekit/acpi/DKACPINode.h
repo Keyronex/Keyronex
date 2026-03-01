@@ -18,6 +18,8 @@ struct uacpi_namespace_node;
 	struct uacpi_namespace_node *m_nsNode;
 }
 
+@property (readonly) struct uacpi_namespace_node* nsNode;
+
 - (instancetype)initWithNamespaceNode:(struct uacpi_namespace_node *)node;
 
 @end;

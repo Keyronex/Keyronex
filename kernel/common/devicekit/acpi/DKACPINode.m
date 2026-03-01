@@ -17,6 +17,7 @@
 #include <devicekit/acpi/DKACPIPlatformRoot.h>
 #include <devicekit/pci/DKPCIBridge.h>
 #include <devicekit/DKAxis.h>
+#include <devicekit/PS2Keyboard.h>
 
 #include <uacpi/namespace.h>
 #include <uacpi/uacpi.h>
@@ -31,6 +32,8 @@ dk_device_queue_t gStartDevicesQueue =
     TAILQ_HEAD_INITIALIZER(gStartDevicesQueue);
 
 @implementation DKACPINode
+
+@synthesize nsNode = m_nsNode;
 
 + (void)drainStartDevicesQueue
 {
@@ -149,6 +152,11 @@ iteration_callback(void *user, uacpi_namespace_node *node, uacpi_u32 depth)
 							 promNode:self];
 		[[DKACPIPlatform root] attachChild:bridge onAxis:gDeviceAxis];
 		[bridge start];
+	} else if (uacpi_device_matches_pnp_id(m_nsNode,
+		       (const uacpi_char *[]) { "PNP0303", UACPI_NULL })) {
+		PS2Keyboard *kbd = [[PS2Keyboard alloc] initWithACPINode:self];
+		[[DKACPIPlatform root] attachChild:kbd onAxis:gDeviceAxis];
+		[kbd start];
 	}
 
 	for (DKACPINode *node in [gACPIAxis childrenOf:self])

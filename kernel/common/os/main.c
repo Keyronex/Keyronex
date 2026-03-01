@@ -97,7 +97,7 @@ smp_init(void)
 	struct limine_mp_response *smp_resp = smp_request.response;
 
 	ke_ncpu = smp_resp->cpu_count;
-	kdprintf("smp_init: bringing up %d CPUs\n", ke_ncpu);
+	kdprintf("smp_init: bringing up %zu CPUs\n", ke_ncpu);
 
 	ke_cpu_data = kmem_alloc(sizeof(struct cpu_local_data *) * ke_ncpu);
 
@@ -153,7 +153,7 @@ smp_start(void)
 	while (atomic_load_explicit(&up_cpus, memory_order_acquire) != ke_ncpu)
 		;
 
-	kdprintf("smp_start: brought up %d CPUs\n", ke_ncpu);
+	kdprintf("smp_start: brought up %zu CPUs\n", ke_ncpu);
 #endif
 }
 

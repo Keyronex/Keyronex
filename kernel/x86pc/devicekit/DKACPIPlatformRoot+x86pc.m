@@ -57,7 +57,7 @@
 	 atPriority:(ipl_t *)ipl
 	  irqObject:(out kirq_t *)object;
 {
-	[IOApic handleSource:source
+	return [IOApic handleSource:source
 		 withHandler:handler
 		    argument:arg
 		  atPriority:ipl
