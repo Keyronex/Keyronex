@@ -604,6 +604,10 @@ ninep_remove(vnode_t *dvn, const char *name)
 	int r;
 
 	if (node->paging_fid == 0) {
+		/*
+		 * maybe we need two here to fix the 'reused after remove' bug?
+		 * and clean up the last one only after we've hit inactive()
+		 */
 		int r = node_make_paging_fid(fs, node);
 		kassert(r == 0);
 	}

@@ -931,14 +931,19 @@ int
 sys_getsockopt(int sockfd, int level, int optname, void *optval,
     socklen_t *optlen)
 {
-	ktodo();
+	kdprintf("sys_getsockopt(sockfd=%d, level=0x%d, optname=0x%d, "
+	    "optval=%p, optlen=%p)\n", sockfd, level, optname, optval, optlen);
+	return -ENOSYS;
 }
 
 int
 sys_setsockopt(int sockfd, int level, int optname, const void *optval,
     socklen_t optlen)
 {
-	ktodo();
+	kdprintf("sys_setsockopt(sockfd=%d, level=0x%d, optname=0x%d, "
+	    " optval=%p, optlen=0x%u)\n", sockfd, level, optname, optval,
+	    optlen);
+	return -ENOSYS;
 }
 
 int

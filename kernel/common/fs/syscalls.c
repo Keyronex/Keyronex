@@ -255,7 +255,61 @@ sys_faccessat(int dirfd, const char *upath, int mode, int flags)
 int
 sys_mkdirat(int dirfd, const char *upath, mode_t mode)
 {
-	ktodo();
+	char *path;
+	namecache_handle_t dirnch;
+	struct lookup_info info;
+	vattr_t create_attr;
+	int r, len;
+
+	len = strldup_user(&path, upath, 4095);
+	if (len < 0)
+		return len;
+
+	if (path[0] == '\0') {
+		kmem_free(path, len + 1);
+		return -ENOENT;
+	}
+
+#if TRACE_SYSCALLS
+	kprintf("sys_mkdirat (%s): dirfd=%d path='%s' mode=0o%o\n",
+	    curproc()->comm, dirfd, path, mode);
+#endif
+
+	r = get_dirfd_nch(dirfd, &dirnch);
+	if (r != 0) {
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	r = vfs_lookup_init(&info, dirnch, path, 0);
+	if (r != 0) {
+		nchandle_release(dirnch);
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	memset(&create_attr, 0, sizeof(create_attr));
+	create_attr.type = VDIR;
+	create_attr.mode = mode & ~S_IFMT;
+	/* TODO: umask here */
+
+	info.flags |= LOOKUP_CREATE;
+	info.create_attr = &create_attr;
+
+	r = vfs_lookup(&info);
+	nchandle_release(dirnch);
+	kmem_free(path, len + 1);
+	if (r != 0)
+		return r;
+
+	if (!info.did_create) {
+		nchandle_release(info.result);
+		return -EEXIST;
+	}
+
+	nchandle_release(info.result);
+
+	return 0;
 }
 
 int
