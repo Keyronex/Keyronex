@@ -171,6 +171,10 @@ dev_spec_read(vnode_t *vn, void *buf, size_t length, off_t offset, int flags)
 	dev_node_t *dn = VTODN(vn);
 
 	switch (dn->class->kind) {
+	case DEV_KIND_CHAR:
+		return dn->class->charops->read(dn->devprivate, buf, length,
+		    offset, flags);
+
 	case DEV_KIND_STREAM:
 		return strread(dn->stdata, buf, length, flags);
 
@@ -186,6 +190,10 @@ dev_spec_write(vnode_t *vn, const void *buf, size_t length, off_t offset,
 	dev_node_t *dn = VTODN(vn);
 
 	switch (dn->class->kind) {
+	case DEV_KIND_CHAR:
+		return dn->class->charops->write(dn->devprivate, buf, length,
+		    offset, flags);
+
 	case DEV_KIND_STREAM:
 		return strwrite(dn->stdata, buf, length, flags);
 
@@ -200,6 +208,9 @@ dev_spec_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 	dev_node_t *dn = VTODN(vn);
 
 	switch (dn->class->kind) {
+	case DEV_KIND_CHAR:
+		return dn->class->charops->ioctl(dn->devprivate, cmd, arg);
+
 	case DEV_KIND_STREAM:
 		return strioctl(vn, dn->stdata, cmd, arg);
 
@@ -221,6 +232,22 @@ dev_spec_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 		kfatal("implement me");
 	}
 
+}
+
+static int
+dev_spec_mmap(void *addr, size_t len, int prot, int flags, vnode_t *vn,
+    off_t offset, vaddr_t *window)
+{
+	dev_node_t *dn = VTODN(vn);
+
+	switch (dn->class->kind) {
+	case DEV_KIND_CHAR:
+		return dn->class->charops->mmap(addr, len, prot, flags,
+		    dn->devprivate, offset, window);
+
+	default:
+		ktodo();
+	}
 }
 
 iop_return_t
@@ -267,6 +294,7 @@ static struct vnode_ops dev_spec_vnops = {
 	.write = dev_spec_write,
 	.ioctl = dev_spec_ioctl,
 	.chpoll = dev_spec_chpoll,
+	.mmap = dev_spec_mmap,
 	.stack_depth = 2,
 	.iop_dispatch = dev_spec_iop_dispatch,
 	.iop_complete = dev_spec_iop_complete,

@@ -68,6 +68,11 @@ typedef struct proc {
 	struct uf_info *finfo;		/* belongs in user*/
 } proc_t;
 
+
+void proc_init(void);
+
+proc_t *proc_curproc(void);
+
 proc_t *proc_create(proc_t *parent, bool fork);
 
 thread_t *proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
@@ -102,8 +107,6 @@ pid_t sys_getpgid(pid_t pid);
 pid_t sys_getsid(pid_t pid);
 int sys_setpgid(pid_t pid, pid_t pgid);
 pid_t sys_setsid(void);
-
-void proc_init(void);
 
 extern proc_t proc0;
 

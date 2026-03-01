@@ -62,6 +62,12 @@ proc_init(void)
 	TAILQ_INSERT_TAIL(&allproc, &proc0, allproc_qlink);
 }
 
+proc_t *
+proc_curproc(void)
+{
+	return curproc();
+}
+
 thread_t *
 proc_alloc_idle_thread(void)
 {

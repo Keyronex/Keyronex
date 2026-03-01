@@ -14,6 +14,14 @@
 #include <sys/k_thread.h>
 
 typedef struct dev_ops {
+	int (*read)(void *dp, void *buf, size_t length, off_t,
+	    int flags);
+	int (*write)(void *dp, const void *buf, size_t length, off_t,
+	    int flags);
+	int (*ioctl)(void *dp, unsigned long cmd, void *data);
+	int (*mmap)(void *addr, size_t len, int prot, int flags, void *dp,
+	    off_t offset, vaddr_t *window);
+
 	size_t stack_depth;
 	iop_return_t (*iop_dispatch)(void *devprivate, struct iop *);
 	iop_return_t (*iop_complete)(void *devprivate, struct iop *);

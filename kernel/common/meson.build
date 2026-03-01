@@ -3,6 +3,8 @@ kernel_sources += [
     'devicekit/virtio/VirtIO9pPort.m',
     'devicekit/virtio/VirtIOMMIOTransport.m',
 
+    'devicekit/SimpleFramebuffer.m',
+
     'devicekit/DKAxis.m',
     'devicekit/DKDevice.m',
     'devicekit/DKPROMNode.m',
