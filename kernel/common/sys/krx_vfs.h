@@ -90,7 +90,13 @@ int vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
 void vfs_init(vfs_t *);
 
 int sys_openat(int dirfd, const char *upath, int flags, mode_t mode);
+int sys_faccessat(int dirfd, const char *path, int mode, int flags);
+int sys_mkdirat(int dirfd, const char *path, mode_t mode);
+int sys_linkat(int olddirfd, const char *oldpath, int newdirfd,
+    const char *newpath, int flags);
 int sys_unlinkat(int dirfd, const char *upath, int flags);
+int sys_renameat(int olddirfd, const char *oldpath, int newdirfd,
+    const char *newpath);
 int sys_readlinkat(int dirfd, const char *upath, char *ubuf, size_t bufsiz);
 
 namecache_handle_t nchandle_retain(namecache_handle_t in);

@@ -219,6 +219,116 @@ lookup_parent_and_basename(namecache_handle_t start, const char *path,
 }
 
 int
+sys_faccessat(int dirfd, const char *upath, int mode, int flags)
+{
+	char *path;
+	namecache_handle_t dirnch, result;
+	int r, len;
+
+	len = strldup_user(&path, upath, 4095);
+	if (len < 0)
+		return len;
+
+	r = get_dirfd_nch(dirfd, &dirnch);
+	if (r != 0) {
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	r = vfs_lookup_simple(dirnch, &result, path,
+	    (flags & AT_SYMLINK_NOFOLLOW) ? LOOKUP_NOFOLLOW_FINAL : 0);
+	if (r != 0) {
+		nchandle_release(dirnch);
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	/* ... permission check ... */
+
+	kmem_free(path, len + 1);
+	nchandle_release(result);
+	nchandle_release(dirnch);
+
+	return 0;
+}
+
+int
+sys_mkdirat(int dirfd, const char *upath, mode_t mode)
+{
+	ktodo();
+}
+
+int
+sys_linkat(int olddirfd, const char *uoldpath, int newdirfd,
+    const char *unewpath, int flags)
+{
+	char *oldpath, *newpath;
+	namecache_handle_t old_dirnch, new_dirnch;
+	namecache_handle_t target_nch, new_parent_nch;
+	const char *newname;
+	int r, oldlen, newlen;
+
+	oldlen = strldup_user(&oldpath, uoldpath, 4095);
+	if (oldlen < 0)
+		return oldlen;
+
+	newlen = strldup_user(&newpath, unewpath, 4095);
+	if (newlen < 0) {
+		kmem_free(oldpath, oldlen + 1);
+		return newlen;
+	}
+
+#if TRACE_SYSCALLS
+	kprintf("sys_linkat: olddirfd=%d oldpath='%s' newdirfd=%d "
+	    "newpath='%s' flags=0x%x\n",
+	    olddirfd, oldpath, newdirfd, newpath, flags);
+#endif
+
+	/* get the starting directories */
+	r = get_dirfd_nch(olddirfd, &old_dirnch);
+	if (r != 0)
+		goto out_free_paths;
+
+	r = get_dirfd_nch(newdirfd, &new_dirnch);
+	if (r != 0)
+		goto out_release_old_dir;
+
+	/* look up the source file */
+	r = vfs_lookup_simple(old_dirnch, &target_nch, oldpath,
+	    (flags & AT_SYMLINK_NOFOLLOW) ? LOOKUP_NOFOLLOW_FINAL : 0);
+	if (r != 0)
+		goto out_release_new_dir;
+
+	/* can't hard link directories */
+	if (target_nch.nc->vp->type == VDIR) {
+		r = -EPERM;
+		goto out_release_target;
+	}
+
+	/* look up the new parent directory */
+	r = lookup_parent_and_basename(new_dirnch, newpath, 0,
+	    &new_parent_nch, &newname);
+	if (r != 0)
+		goto out_release_target;
+
+	r = nc_link(new_parent_nch, target_nch.nc->vp, newname);
+
+	nchandle_release(new_parent_nch);
+out_release_target:
+	nchandle_release(target_nch);
+out_release_new_dir:
+	nchandle_release(new_dirnch);
+out_release_old_dir:
+	nchandle_release(old_dirnch);
+out_free_paths:
+	kmem_free(newpath, newlen + 1);
+	kmem_free(oldpath, oldlen + 1);
+
+
+	return r;
+}
+
+int
 sys_unlinkat(int dirfd, const char *upath, int flags)
 {
 	char *path;
@@ -267,6 +377,81 @@ out:
 	return r;
 }
 
+int
+sys_renameat(int olddirfd, const char *uoldpath, int newdirfd,
+    const char *unewpath)
+{
+	char *oldpath, *newpath;
+	namecache_handle_t old_dirnch, new_dirnch;
+	namecache_handle_t old_parent_nch, new_parent_nch;
+	const char *oldname, *newname;
+	int r, oldlen, newlen;
+
+	oldlen = strldup_user(&oldpath, uoldpath, 4095);
+	if (oldlen < 0)
+		return oldlen;
+
+	newlen = strldup_user(&newpath, unewpath, 4095);
+	if (newlen < 0) {
+		kmem_free(oldpath, oldlen + 1);
+		return newlen;
+	}
+
+#if TRACE_SYSCALLS
+	kprintf("sys_renameat: olddirfd=%d oldpath='%s' newdirfd=%d "
+	    "newpath='%s'\n",
+	    olddirfd, oldpath, newdirfd, newpath);
+#endif
+
+	/* get the starting directories */
+	r = get_dirfd_nch(olddirfd, &old_dirnch);
+	if (r != 0)
+		goto out_free_paths;
+
+	r = get_dirfd_nch(newdirfd, &new_dirnch);
+	if (r != 0)
+		goto out_release_old_dir;
+
+	/* look up the old parent directory */
+	r = lookup_parent_and_basename(old_dirnch, oldpath, 0,
+	    &old_parent_nch, &oldname);
+	if (r != 0)
+		goto out_release_new_dir;
+
+	/* can't rename "." or ".." */
+	if (strcmp(oldname, ".") == 0 || strcmp(oldname, "..") == 0) {
+		r = -EINVAL;
+		goto out_release_old_parent;
+	}
+
+	/* look up the new parent directory */
+	r = lookup_parent_and_basename(new_dirnch, newpath, 0,
+	    &new_parent_nch, &newname);
+	if (r != 0)
+		goto out_release_old_parent;
+
+	/* can't rename to "." or ".." */
+	if (strcmp(newname, ".") == 0 || strcmp(newname, "..") == 0) {
+		r = -EINVAL;
+		goto out_release_new_parent;
+	}
+
+	r = nc_rename(old_parent_nch, oldname, new_parent_nch, newname);
+
+out_release_new_parent:
+	nchandle_release(new_parent_nch);
+out_release_old_parent:
+	nchandle_release(old_parent_nch);
+out_release_new_dir:
+	nchandle_release(new_dirnch);
+out_release_old_dir:
+	nchandle_release(old_dirnch);
+out_free_paths:
+	kmem_free(newpath, newlen + 1);
+	kmem_free(oldpath, oldlen + 1);
+
+	return r;
+}
 
 int
 sys_readlinkat(int dirfd, const char *upath, char *ubuf, size_t bufsiz)

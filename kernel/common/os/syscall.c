@@ -201,21 +201,23 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_openat:
 		return sys_openat(arg1, (const char *)arg2, arg3, arg4);
 
-
 	case SYS_faccessat:
-		ktodo();
+		return sys_faccessat((int)arg1, (const char *)arg2, (int)arg3,
+		    (int)arg4);
 
 	case SYS_mkdirat:
-		ktodo();
+		return sys_mkdirat((int)arg1, (const char *)arg2, (mode_t)arg3);
 
 	case SYS_linkat:
-		ktodo();
+		return sys_linkat((int)arg1, (const char *)arg2, (int)arg3,
+		    (const char *)arg4, (int)arg5);
 
 	case SYS_unlinkat:
 		return sys_unlinkat((int)arg1, (const char *)arg2, (int)arg3);
 
 	case SYS_renameat:
-		ktodo();
+		return sys_renameat((int)arg1, (const char *)arg2, (int)arg3,
+		    (const char *)arg4);
 
 	case SYS_readlinkat:
 		return sys_readlinkat((int)arg1, (const char *)arg2,

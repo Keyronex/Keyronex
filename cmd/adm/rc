@@ -1,5 +1,7 @@
 echo "Keyronex RC"
 
+rm -f /tmp/.tX0-lock
+
 echo "Setting up network interface en0"
 /sbin/ifconfig en0 plumb
 /sbin/ifconfig en0 192.168.77.100 netmask ffffff00
