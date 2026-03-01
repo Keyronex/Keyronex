@@ -88,6 +88,11 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 		break;
 	}
 
+	case TIOCSWINSZ:
+		mp->db->type = M_IOCACK;
+		str_putnext(wq->other, mp);
+		break;
+
 	default:
 		kdprintf("console_wput: unknown ioctl, type=0x%x\n",
 		    ioc->cmd);

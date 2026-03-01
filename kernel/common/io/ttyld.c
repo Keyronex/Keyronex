@@ -421,25 +421,6 @@ ldterm_ioctl(struct ldterm_state *ld, queue_t *wq, mblk_t *mp)
 	tcflag_t old_lflag;
 
 	switch (ioc->cmd) {
-	case TIOCGWINSZ: {
-		struct winsize ws;
-
-		ws.ws_row = 25;
-		ws.ws_col = 80;
-		ws.ws_xpixel = 0;
-		ws.ws_ypixel = 0;
-
-		memcpy(ioc->data, &ws, sizeof(struct winsize));
-		mp->db->type = M_IOCACK;
-		str_putnext(wq->other, mp);
-		break;
-	}
-
-	case TIOCSWINSZ:
-		mp->db->type = M_IOCACK;
-		str_putnext(wq->other, mp);
-		break;
-
 	case TCGETS:
 		memcpy(ioc->data, &ld->termios, sizeof(struct termios));
 		mp->db->type = M_IOCACK;

@@ -285,7 +285,7 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 		return r;
 
 #if TRACE_SYSCALLS
-	kprintf_dbg("sys_execve: path='%s'\n", path);
+	kdprintf("sys_execve: path='%s'\n", path);
 #endif
 
 	r = copyin_strv(uarpg, &argp);
