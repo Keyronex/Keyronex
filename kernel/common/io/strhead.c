@@ -652,9 +652,9 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	}
 
 	ioc = (struct strioctl *)mp->rptr;
-	ioc->cmd = cmd;
-	ioc->len = MAX2(in_size, out_size);
-	ioc->data = data;
+	ioc->ic_cmd = cmd;
+	ioc->ic_len = MAX2(in_size, out_size);
+	ioc->ic_dp = data;
 	mp->wptr += sizeof(struct strioctl);
 	mp->db->type = M_IOCTL;
 

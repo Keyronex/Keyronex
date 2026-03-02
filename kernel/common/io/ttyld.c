@@ -420,9 +420,9 @@ ldterm_ioctl(struct ldterm_state *ld, queue_t *wq, mblk_t *mp)
 	struct strioctl *ioc = (struct strioctl *)mp->rptr;
 	tcflag_t old_lflag;
 
-	switch (ioc->cmd) {
+	switch (ioc->ic_cmd) {
 	case TCGETS:
-		memcpy(ioc->data, &ld->termios, sizeof(struct termios));
+		memcpy(ioc->ic_dp, &ld->termios, sizeof(struct termios));
 		mp->db->type = M_IOCACK;
 		str_putnext(wq->other, mp);
 		break;
@@ -431,9 +431,9 @@ ldterm_ioctl(struct ldterm_state *ld, queue_t *wq, mblk_t *mp)
 	case TCSETSW:
 	case TCSETSF:
 		old_lflag = ld->termios.c_lflag;
-		memcpy(&ld->termios, ioc->data, sizeof(struct termios));
+		memcpy(&ld->termios, ioc->ic_dp, sizeof(struct termios));
 
-		if (ioc->cmd == TCSETSF)
+		if (ioc->ic_cmd == TCSETSF)
 			ldterm_flush(ld);
 
 		if ((old_lflag ^ ld->termios.c_lflag) & ICANON) {

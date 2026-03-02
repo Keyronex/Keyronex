@@ -73,7 +73,7 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 {
 	struct strioctl *ioc = (struct strioctl *)mp->rptr;
 
-	switch (ioc->cmd) {
+	switch (ioc->ic_cmd) {
 	case TIOCGWINSZ: {
 		struct winsize ws;
 
@@ -82,7 +82,7 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 		ws.ws_xpixel = 0;
 		ws.ws_ypixel = 0;
 
-		memcpy(ioc->data, &ws, sizeof(struct winsize));
+		memcpy(ioc->ic_dp, &ws, sizeof(struct winsize));
 		mp->db->type = M_IOCACK;
 		str_putnext(wq->other, mp);
 		break;
@@ -95,7 +95,7 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 
 	default:
 		kdprintf("console_wput: unknown ioctl, type=0x%x\n",
-		    ioc->cmd);
+		    ioc->ic_cmd);
 		str_freemsg(mp);
 	}
 }
