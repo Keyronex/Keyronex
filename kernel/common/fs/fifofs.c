@@ -81,7 +81,7 @@ fifo_close(vnode_t *vn, int flags)
 	bool last_reader = false;
 	bool last_writer = false;
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 
 	if (flags == O_RDONLY) {
 		kassert(sh->nreaders > 0);
@@ -118,7 +118,7 @@ fifo_close(vnode_t *vn, int flags)
 	if (last_reader)
 		pollhead_deliver_events(&sh->pollhead, EPOLLOUT | EPOLLERR);
 
-	str_requnlock(sh);
+	str_req_end(sh);
 	return 0;
 }
 

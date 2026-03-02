@@ -17,7 +17,7 @@
 #include <sys/proc.h>
 #include <sys/strsubr.h>
 
-void str_unlock(stdata_t *st);
+void str_exit(stdata_t *st);
 
 void
 str_kick(stdata_t *st)
@@ -150,7 +150,7 @@ drain(struct str_per_cpu_scheduler *sc)
 
 		atomic_fetch_and(&st->flags, ~ST_RUNNING);
 
-		str_unlock(st);
+		str_exit(st);
 	}
 }
 
@@ -168,7 +168,7 @@ worker(void *arg)
 }
 
 void
-str_unlock(stdata_t *st)
+str_exit(stdata_t *st)
 {
 	uint32_t flags;
 

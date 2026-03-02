@@ -15,6 +15,8 @@
 #include <sys/fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/kmem.h>
+#include <sys/krx_file.h>
+#include <sys/krx_user.h>
 #include <sys/libkern.h>
 #include <sys/proc.h>
 #include <sys/socket.h>
@@ -23,9 +25,14 @@
 #include <sys/strsubr.h>
 #include <sys/termios.h>
 
+#include <fs/devfs/devfs.h>
+
 extern kmutex_t proctree_mutex;
 
+static struct qinit sth_rinit;
+static struct qinit sth_winit;
 static struct streamtab sth_streamtab;
+static atomic_uint next_link_index = 0;
 
 void
 str_enter(stdata_t *sh, const char *reason)
@@ -34,17 +41,11 @@ str_enter(stdata_t *sh, const char *reason)
 }
 
 void
-str_exit(stdata_t *sh)
-{
-	ke_mutex_exit(sh->mutex);
-}
-
-void
-str_reqlock(stdata_t *sh)
+str_req_begin(stdata_t *sh)
 {
 	struct req_waiter waiter;
 
-	ke_mutex_enter(sh->mutex, "str_reqlock");
+	ke_mutex_enter(sh->mutex, "str_req_begin");
 
 	if (!sh->req_locked) {
 		sh->req_locked = true;
@@ -55,13 +56,13 @@ str_reqlock(stdata_t *sh)
 	TAILQ_INSERT_TAIL(&sh->req_waiters, &waiter, link);
 	ke_mutex_exit(sh->mutex);
 
-	ke_wait1(&waiter.event, "str_reqlock", false, ABSTIME_FOREVER);
+	ke_wait1(&waiter.event, "str_req_begin", false, ABSTIME_FOREVER);
 
-	return ke_mutex_enter(sh->mutex, "str_reqlock 2");
+	return ke_mutex_enter(sh->mutex, "str_req_begin 2");
 }
 
 void
-str_requnlock(stdata_t *sh)
+str_req_end(stdata_t *sh)
 {
 	if (!TAILQ_EMPTY(&sh->req_waiters)) {
 		struct req_waiter *waiter;
@@ -75,10 +76,10 @@ str_requnlock(stdata_t *sh)
 }
 
 void
-str_requnlock_mutexunheld(stdata_t *sh)
+str_req_end_unheld(stdata_t *sh)
 {
-	ke_mutex_enter(sh->mutex, "str_requnlock_mutexunheld");
-	str_requnlock(sh);
+	ke_mutex_enter(sh->mutex, "str_req_end_unheld");
+	str_req_end(sh);
 }
 
 static queue_t *
@@ -190,6 +191,8 @@ str_head_alloc(enum str_head_kind kind)
 	}
 	sh->wq = sh->rq->other;
 	sh->rq->ptr = sh->wq->ptr = sh;
+
+	TAILQ_INIT(&sh->plinks);
 
 	return sh;
 }
@@ -336,7 +339,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 	if (len == 0)
 		return 0;
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 
 	while (ncopied < len) {
 		mblk_t *mp, *bp;
@@ -344,27 +347,27 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 
 		while (TAILQ_EMPTY(&sh->rq->msgq)) {
 			if (ncopied > 0) {
-				str_requnlock(sh);
+				str_req_end(sh);
 				return ncopied;
 			}
 
 			if (sh->hanged_up) {
-				str_requnlock(sh);
+				str_req_end(sh);
 				return 0;
 			}
 
 			if (options & O_NONBLOCK) {
-				str_requnlock(sh);
+				str_req_end(sh);
 				return -EWOULDBLOCK;
 			}
 
 			ke_event_set_signalled(&sh->data_readable, false);
-			str_requnlock(sh);
+			str_req_end(sh);
 
 			ke_wait1(&sh->data_readable, "sth_read", true,
 			    ABSTIME_FOREVER);
 
-			str_reqlock(sh);
+			str_req_begin(sh);
 		}
 
 		mp = TAILQ_FIRST(&sh->rq->msgq);
@@ -383,7 +386,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 			r = memcpy_to_user((char *)buf + ncopied, bp->rptr,
 			    tocopy);
 			if (r < 0) {
-				str_requnlock(sh);
+				str_req_end(sh);
 				return ncopied > 0 ? ncopied : r;
 			}
 
@@ -427,7 +430,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 		}
 	}
 
-	str_requnlock(sh);
+	str_req_end(sh);
 
 	return ncopied;
 }
@@ -443,12 +446,12 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 		return -ENOMEM;
 	}
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 	ke_mutex_exit(sh->mutex);
 
 	r = memcpy_from_user(mp->wptr, buf, len);
 	if (r < 0) {
-		str_requnlock_mutexunheld(sh);
+		str_req_end_unheld(sh);
 		str_freeb(mp);
 		return r;
 	}
@@ -459,13 +462,13 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 
 	if (sh->kind == STR_HEAD_KIND_FIFO && sh->nreaders == 0) {
 		str_freeb(mp);
-		str_requnlock(sh);
+		str_req_end(sh);
 		/* TODO: send SIGPIPE to process */
 		return -EPIPE;
 	}
 
 	str_putnext(sh->wq, mp);
-	str_requnlock(sh);
+	str_req_end(sh);
 
 	return len;
 }
@@ -473,7 +476,6 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 static int
 do_setctty(struct vnode *vn, stdata_t *sh)
 {
-	ipl_t ipl;
 	struct session *sess;
 	proc_t *proc = curproc();
 
@@ -510,6 +512,126 @@ do_setctty(struct vnode *vn, stdata_t *sh)
 	ke_mutex_exit(&proctree_mutex);
 
 	return 0;
+}
+
+static int
+do_plink(stdata_t *upper_sh, int fd)
+{
+	struct file *lowerfp;
+	stdata_t *lower_sh;
+	struct linkblk *linkp;
+	struct strioctl *ioc;
+	mblk_t *iocmp;
+	int r;
+
+	lowerfp = uf_lookup(curproc()->finfo, fd);
+	if (lowerfp == NULL)
+		return -EBADF;
+
+	lower_sh = devfs_spec_get_stream(lowerfp->vnode);
+	if (lower_sh == NULL) {
+		file_release(lowerfp);
+		return -ENOMEM;
+	}
+
+	linkp = kmem_alloc(sizeof(*linkp));
+	if (linkp == NULL) {
+		file_release(lowerfp);
+		return -ENOMEM;
+	}
+
+	iocmp = str_allocb(sizeof(struct strioctl));
+	if (iocmp == NULL) {
+		kmem_free(linkp, sizeof(*linkp));
+		file_release(lowerfp);
+		return -ENOMEM;
+	}
+
+	iocmp->db->type = M_IOCTL;
+	ioc = (typeof(ioc))iocmp->rptr;
+	ioc->ic_cmd = I_PLINK;
+	ioc->ic_len = sizeof(*linkp);
+	ioc->ic_dp = linkp;
+	iocmp->wptr += sizeof(*ioc);
+
+	/* lock out concurrent read/write/ioctl on both streams */
+	if (lower_sh < upper_sh) {
+		str_req_begin(lower_sh);
+		str_req_begin(upper_sh);
+	} else {
+		str_req_begin(upper_sh);
+		str_req_begin(lower_sh);
+	}
+
+	/* exit upper stream; we don't need its mutex yet */
+	str_exit(upper_sh);
+
+	/* freeze the lower stream so we can manipulate it */
+	str_freeze(lower_sh);
+
+	/* replace the stream head with the mux routines. */
+
+	/* assert lower stream is currently a real stream w/ head... */
+	kassert(lower_sh->rq->qinfo == &sth_rinit &&
+	    lower_sh->wq->qinfo == &sth_winit);
+	kassert(lower_sh->wq->ptr == lower_sh && lower_sh->rq->ptr == lower_sh);
+
+	lower_sh->rq->qinfo = upper_sh->devtab->muxrinit;
+	lower_sh->wq->qinfo = upper_sh->devtab->muxwinit;
+	lower_sh->rq->ptr = lower_sh->wq->ptr = NULL;
+
+	linkp->index = atomic_fetch_add(&next_link_index, 1);
+	linkp->qtop = upper_sh->rq_bottom->other;
+	linkp->qbot = lower_sh->wq;
+
+	r = qpair_open(lower_sh->rq, NULL);
+	if (r != 0) {
+		/* restore original qinfo */
+		lower_sh->rq->qinfo = &sth_rinit;
+		lower_sh->wq->qinfo = &sth_winit;
+		lower_sh->rq->ptr = lower_sh;
+		lower_sh->wq->ptr = lower_sh;
+		str_thaw(lower_sh);
+		str_exit(lower_sh);
+		str_enter(upper_sh, "do_plink fail");
+		str_req_end(upper_sh);
+		str_req_end(lower_sh);
+		str_freeb(iocmp);
+		kmem_free(linkp, sizeof(*linkp));
+		file_release(lowerfp);
+		return -ENOMEM;
+	}
+
+	/* lower stream now free to run again */
+	str_thaw(lower_sh);
+	str_exit(lower_sh);
+
+	/* now enter the upper stream and send ioctl down */
+	str_enter(upper_sh, "do_plink ioctl");
+	ke_event_set_signalled(&upper_sh->ioctl_done_ev, false);
+	str_putnext(upper_sh->wq, iocmp);
+	str_exit(upper_sh);
+
+	ke_wait1(&upper_sh->ioctl_done_ev, "do_plink wait ioctl", true,
+	    ABSTIME_FOREVER);
+
+	str_enter(upper_sh, "do_plink post-ioctl");
+	/* iocmp is rewritten by upper_sh */
+	if (iocmp->db->type == M_IOCACK) {
+		linkp->lowerfp = file_retain(lowerfp);
+		TAILQ_INSERT_TAIL(&upper_sh->plinks, linkp, link);
+		r = linkp->index;
+	} else {
+		kassert(iocmp->db->type == M_IOCNAK);
+		kfatal("rejected i_plink");
+	}
+
+	str_req_end(lower_sh);
+	str_req_end(upper_sh);
+
+	file_release(lowerfp);
+
+	return r;
 }
 
 int
@@ -601,10 +723,10 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		in_size = sizeof(struct termios);
 		break;
 
-#if 0
 	case I_PLINK:
-		return plink(sh, (int)(intptr_t)arg);
+		return do_plink(sh, (int)(intptr_t)arg);
 
+#if 0
 	case SIOCADDRT:
 		in_size = sizeof(struct rtentry);
 		break;
@@ -658,7 +780,7 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	mp->wptr += sizeof(struct strioctl);
 	mp->db->type = M_IOCTL;
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 	ke_event_set_signalled(&sh->ioctl_done_ev, false);
 	str_putnext(sh->wq, mp);
 	ke_mutex_exit(sh->mutex);
@@ -666,7 +788,7 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	ke_wait1(&sh->ioctl_done_ev, "str_ioctl", true, ABSTIME_FOREVER);
 
 	ke_mutex_enter(sh->mutex, "strioctl");
-	str_requnlock(sh);
+	str_req_end(sh);
 
 	kassert(mp->db->type == M_IOCACK || mp->db->type == M_IOCNAK);
 
@@ -792,18 +914,18 @@ sth_wsrv(queue_t *q)
 	kfatal("TODO: sth_wsrv: may unblock writers, wake pollers\n");
 }
 
-static struct qinit rinit = {
+static struct qinit sth_rinit = {
 	.putp = sth_rput,
 	.hiwat = 536,
 	.lowat = 128,
 };
 
-static struct qinit winit = {
+static struct qinit sth_winit = {
 	.putp = sth_wput,
 	.srvp = sth_wsrv,
 };
 
 static struct streamtab sth_streamtab = {
-	.rinit = &rinit,
-	.winit = &winit,
+	.rinit = &sth_rinit,
+	.winit = &sth_winit,
 };

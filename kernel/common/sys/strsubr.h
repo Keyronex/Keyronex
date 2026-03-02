@@ -80,6 +80,9 @@ typedef struct stdata {
 			size_t nwriters;
 		};
 	};
+
+
+	TAILQ_HEAD(, linkblk) plinks;  /* persistent links to this stream */
 } stdata_t;
 
 struct str_per_cpu_scheduler {
@@ -97,9 +100,13 @@ int strwrite(stdata_t *, const void *buf, size_t len, int options);
 int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);
 int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
 
-void str_reqlock(stdata_t *);
-void str_requnlock(stdata_t *);
-void str_requnlock_mutexunheld(stdata_t *);
+void str_req_begin(stdata_t *);
+void str_req_end(stdata_t *);
+void str_req_end_unheld(stdata_t *);
+
+void str_enter(stdata_t *, const char *reason);
+
+void str_exit(stdata_t *);
 
 void str_freeze(stdata_t *);
 void str_thaw(stdata_t *);

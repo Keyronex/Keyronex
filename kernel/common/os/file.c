@@ -55,6 +55,14 @@ file_tryretain_rcu(file_t *f)
 	}
 }
 
+file_t *
+file_retain(file_t *fp)
+{
+	fp = file_tryretain_rcu(fp);
+	kassert(fp != NULL);
+	return fp;
+}
+
 void
 file_release(file_t *file)
 {

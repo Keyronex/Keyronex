@@ -35,6 +35,7 @@ typedef struct file {
 file_t *file_new(namecache_handle_t, struct vnode *, int flags);
 
 file_t *file_tryretain_rcu(file_t *file);
+file_t *file_retain(file_t *file);
 void file_release(file_t *file);
 
 int sys_close(int fd);

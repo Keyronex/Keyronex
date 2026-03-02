@@ -66,6 +66,18 @@ devfs_lookup_early(const char *name)
 	return vn_alloc(NULL, VCHR, &dev_spec_vnops, (uintptr_t)node, 0);
 }
 
+stdata_t *
+devfs_spec_get_stream(vnode_t *vn)
+{
+	dev_node_t *dn;
+	if (vn->ops != &dev_spec_vnops)
+		return NULL;
+	dn = VTODN(vn);
+	if (dn->class->kind != DEV_KIND_STREAM)
+		return NULL;
+	return dn->stdata;
+}
+
 static int
 dev_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 {

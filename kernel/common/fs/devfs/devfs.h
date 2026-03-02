@@ -53,5 +53,6 @@ typedef struct dev_node {
 
 void devfs_create_node(dev_class_t *class, void *private, const char *fmt, ...);
 struct vnode *devfs_lookup_early(const char *name);
+struct stdata *devfs_spec_get_stream(struct vnode *vn);
 
 #endif /* ECX_DEVFS_DEVFS_H */

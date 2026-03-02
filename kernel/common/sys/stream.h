@@ -96,6 +96,9 @@ struct linkblk {
 	queue_t	*qtop; 	/* bottom write queue of upper stream */
 	queue_t	*qbot;	/* top write queue of lower stream */
 	int	index;	/* link index (for I_UNLINK) */
+
+	TAILQ_ENTRY(linkblk) link;
+	struct file *lowerfp;	/* lower stream file pointer (for I_PLINK) */
 };
 
 enum {

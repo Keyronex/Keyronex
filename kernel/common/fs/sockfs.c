@@ -349,15 +349,15 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	struct T_conn_res *cr;
 	int r, fd;
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 	if ((sn->state & SS_ISLISTENING) == 0) {
-		str_requnlock(sh);
+		str_req_end(sh);
 		return -EINVAL;
 	}
 
 	while (TAILQ_EMPTY(&sn->conn_indq)) {
 		if (nonblock) {
-			str_requnlock(sh);
+			str_req_end(sh);
 			return -EAGAIN;
 		}
 
@@ -381,7 +381,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	if (r != 0) {
 		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
 		sock_requeue_conn_ind_mp(sn, cimp);
-		str_requnlock(sh);
+		str_req_end(sh);
 		return r;
 	}
 
@@ -389,7 +389,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	if (crmp == NULL) {
 		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
 		sock_requeue_conn_ind_mp(sn, cimp);
-		str_requnlock(sh);
+		str_req_end(sh);
 		file_release(acceptor_fp);
 		return -ENOMEM;
 	}
@@ -399,7 +399,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	if (fd < 0) {
 		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
 		sock_requeue_conn_ind_mp(sn, cimp);
-		str_requnlock(sh);
+		str_req_end(sh);
 		file_release(acceptor_fp);
 		return -ENOMEM;
 	}
@@ -426,14 +426,14 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 			sock_requeue_conn_ind_mp(sn, cimp);
 		else
 			str_freemsg(cimp);
-		str_requnlock(sh);
+		str_req_end(sh);
 		file_release(acceptor_fp);
 		uf_unreserve_fd(curproc()->finfo, fd);
 		return -r;
 	} else {
 		str_freemsg(cimp);
 	}
-	str_requnlock(sh);
+	str_req_end(sh);
 
 	acceptor_sn->state |= SS_ISCONNECTED;
 
@@ -449,16 +449,16 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 	struct T_bind_req *br;
 	int r;
 
-	str_reqlock(sn->stream);
+	str_req_begin(sn->stream);
 	if (sn->state != 0) {
-		str_requnlock(sn->stream);
+		str_req_end(sn->stream);
 		return -EINVAL;
 	}
 	ke_mutex_exit(sn->stream->mutex);
 
 	mp = str_allocb(sizeof(struct T_bind_req));
 	if (mp == NULL) {
-		str_requnlock(sn->stream);
+		str_req_end(sn->stream);
 		return -ENOMEM;
 	}
 
@@ -482,18 +482,18 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 
 		if (addrlen < sizeof(sa_family_t) ||
 		    addrlen > sizeof(struct sockaddr_un)) {
-			str_requnlock_mutexunheld(sn->stream);
+			str_req_end_unheld(sn->stream);
 			return -EINVAL;
 		}
 
 		r = memcpy_from_user(&fam, addr, sizeof(sa_family_t));
 		if (r != 0) {
-			str_requnlock_mutexunheld(sn->stream);
+			str_req_end_unheld(sn->stream);
 			return -EFAULT;
 		}
 
 		if (fam != AF_UNIX) {
-			str_requnlock_mutexunheld(sn->stream);
+			str_req_end_unheld(sn->stream);
 			return -EINVAL;
 		}
 
@@ -502,7 +502,7 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 			    (const char *)addr + sizeof(sa_family_t),
 			    addrlen - sizeof(sa_family_t));
 			if (r != 0) {
-				str_requnlock_mutexunheld(sn->stream);
+				str_req_end_unheld(sn->stream);
 				return -EFAULT;
 			}
 
@@ -515,7 +515,7 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 			r = vfs_lookup(&li);
 
 			if (r != 0) {
-				str_requnlock_mutexunheld(sn->stream);
+				str_req_end_unheld(sn->stream);
 				kdprintf("sobind: vfs_lookup failed: %d\n", r);
 				kdprintf("sobind: path was '%s'\n", path);
 				return r;
@@ -544,7 +544,7 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 		br->ADDR_length = addrlen;
 		r = memcpy_from_user(&br->ADDR, addr, addrlen);
 		if (r != 0) {
-			str_requnlock_mutexunheld(sn->stream);
+			str_req_end_unheld(sn->stream);
 			return -EFAULT;
 		}
 	}
@@ -564,7 +564,7 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 		kfatal("bind failed\n");
 	}
 
-	str_requnlock(sn->stream);
+	str_req_end(sn->stream);
 
 	str_freemsg(mp);
 
@@ -585,9 +585,9 @@ so_listen(struct socknode *sn, int backlog)
 	if (backlog < 1)
 		backlog = 1;
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 	if (!(sn->state & SS_ISBOUND) || sn->state & SS_ISLISTENING) {
-		str_requnlock(sh);
+		str_req_end(sh);
 		return -EINVAL;
 	}
 	ke_mutex_exit(sh->mutex);
@@ -613,7 +613,7 @@ so_listen(struct socknode *sn, int backlog)
 	} else {
 		kfatal("listen failed\n");
 	}
-	str_requnlock(sh);
+	str_req_end(sh);
 
 	str_freemsg(mp);
 
@@ -635,9 +635,9 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		return -EINVAL;
 	}
 
-	str_reqlock(sh);
+	str_req_begin(sh);
 	if (sn->state != 0) {
-		str_requnlock(sh);
+		str_req_end(sh);
 		return -EINVAL;
 	}
 	ke_mutex_exit(sh->mutex);
@@ -645,7 +645,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 
 	mp = str_allocb(sizeof(struct T_conn_req));
 	if (mp == NULL) {
-		str_requnlock_mutexunheld(sh);
+		str_req_end_unheld(sh);
 		return -ENOMEM;
 	}
 
@@ -663,7 +663,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 
 		if (addrlen < sizeof(sa_family_t) ||
 		    addrlen > sizeof(struct sockaddr_un)) {
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_connect: invalid addrlen %u (AF_UNIX)\n",
 			    addrlen);
 			return -EINVAL;
@@ -671,13 +671,13 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 
 		r = memcpy_from_user(&fam, addr, sizeof(sa_family_t));
 		if (r != 0) {
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_connect: copyin family failed\n");
 			return -EFAULT;
 		}
 
 		if (fam != AF_UNIX) {
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_connect: invalid family %u for AF_UNIX\n",
 			    fam);
 			return -EINVAL;
@@ -687,7 +687,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		    (const char *)addr + sizeof(sa_family_t),
 		    addrlen - sizeof(sa_family_t));
 		if (r != 0) {
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_connect: copyin path failed\n");
 			return -EFAULT;
 		}
@@ -698,7 +698,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		r = vfs_lookup(&li);
 
 		if (r != 0) {
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_connect: vfs_lookup failed: %d\n", r);
 			return r;
 		}
@@ -706,7 +706,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		boundvn = li.result.nc->vp;
 		if (boundvn->type != VSOCK || boundvn->sock.sockvn == NULL) {
 			nchandle_release(li.result);
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_connect: target is not a socket "
 				"(type=%d, sock=%p)\n",
 			    boundvn->type, boundvn->sock.sockvn);
@@ -730,7 +730,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		br->DEST_length = addrlen;
 		r = memcpy_from_user(&br->DEST, addr, addrlen);
 		if (r != 0) {
-			str_requnlock_mutexunheld(sh);
+			str_req_end_unheld(sh);
 			kdprintf("sys_bind: failed to copy addr from user\n");
 			return -EFAULT;
 		}
@@ -752,7 +752,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 
 	/* conn_con handling in sock_rput will set appropriate flags */
 
-	str_requnlock_mutexunheld(sh);
+	str_req_end_unheld(sh);
 
 	if (peervn != NULL)
 		vn_release(peervn);
