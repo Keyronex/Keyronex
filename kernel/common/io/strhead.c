@@ -27,6 +27,8 @@
 
 #include <fs/devfs/devfs.h>
 
+static int do_punlink(stdata_t *upper_sh, int index);
+
 extern kmutex_t proctree_mutex;
 
 static struct qinit sth_rinit;
@@ -58,7 +60,23 @@ str_req_begin(stdata_t *sh)
 
 	ke_wait1(&waiter.event, "str_req_begin", false, ABSTIME_FOREVER);
 
-	return ke_mutex_enter(sh->mutex, "str_req_begin 2");
+	ke_mutex_enter(sh->mutex, "str_req_begin 2");
+	return;
+}
+
+bool
+str_req_trybegin(stdata_t *sh)
+{
+	if (!ke_mutex_tryenter(sh->mutex))
+		return false;
+
+	if (!sh->req_locked) {
+		sh->req_locked = true;
+		return true;
+	} else {
+		ke_mutex_exit(sh->mutex);
+		return false;
+	}
 }
 
 void
@@ -140,8 +158,11 @@ qpair_open(queue_t *rq, void *dev)
 	}
 
 	if (wq->qinfo->qopen != NULL) {
-		if (wq->qinfo->qopen(wq, dev) != 0)
+		if (wq->qinfo->qopen(wq, dev) != 0) {
+			if (rq->qinfo->qclose != NULL)
+				rq->qinfo->qclose(rq);
 			return -1;
+		}
 	}
 
 	return 0;
@@ -222,13 +243,22 @@ stropen(struct streamtab *devtab, void *dev, enum str_head_kind kind)
 	devrq->other->back = sh->wq;
 	sh->rq_bottom = devrq;
 
-	if (qpair_open(sh->rq, dev) != 0 || qpair_open(devrq, dev) != 0) {
+	if (qpair_open(sh->rq, dev) != 0) {
 		qpair_free(devrq);
 		qpair_free(sh->rq);
 		kmem_free(sh, sizeof(*sh));
 		return NULL;
 	}
-
+	if (qpair_open(devrq, dev) != 0) {
+		if (sh->wq->qinfo->qclose)
+			sh->wq->qinfo->qclose(sh->wq);
+		if (sh->rq->qinfo->qclose)
+			sh->rq->qinfo->qclose(sh->rq);
+		qpair_free(devrq);
+		qpair_free(sh->rq);
+		kmem_free(sh, sizeof(*sh));
+		return NULL;
+	}
 	return sh;
 }
 
@@ -237,6 +267,19 @@ void strclose(stdata_t *sh)
 	struct str_per_cpu_scheduler *sc =
 	    ke_cpu_data[sh->home_cpu]->str_scheduler;
 	ipl_t ipl;
+
+	for (;;) {
+		int index;
+		str_enter(sh, "strclose punlink");
+		if (TAILQ_EMPTY(&sh->plinks)) {
+			str_exit(sh);
+			break;
+		}
+		index = TAILQ_FIRST(&sh->plinks)->index;
+		str_exit(sh);
+		/* I_PUNLINK can't be vetoed */
+		do_punlink(sh, index);
+	}
 
 	ke_mutex_enter(sh->mutex, "strclose");
 
@@ -253,10 +296,10 @@ void strclose(stdata_t *sh)
 		str_flushq(rq, FLUSHALL);
 		str_flushq(wq, FLUSHALL);
 
-		if (rq->qinfo->qclose != NULL)
-			rq->qinfo->qclose(rq);
 		if (wq->qinfo->qclose != NULL)
 			wq->qinfo->qclose(wq);
+		if (rq->qinfo->qclose != NULL)
+			rq->qinfo->qclose(rq);
 
 		qpair_free(rq);
 	}
@@ -296,14 +339,13 @@ strpush(stdata_t *sh, struct streamtab *tab)
 	queue_t *newrq, *newwq;
 	queue_t *first_wq, *first_rq;
 
-	ke_mutex_enter(sh->mutex, "str_head_push");
-
 	newrq = qpair_alloc(sh, tab);
-	if (newrq == NULL) {
-		ke_mutex_exit(sh->mutex);
+	if (newrq == NULL)
 		return -ENOMEM;
-	}
+
 	newwq = newrq->other;
+
+	str_req_begin(sh);
 
 	first_wq = sh->wq->next;
 	first_rq = first_wq->other;
@@ -323,11 +365,11 @@ strpush(stdata_t *sh, struct streamtab *tab)
 		first_rq->next = sh->rq;
 		sh->rq->back = first_rq;
 		qpair_free(newrq);
-		ke_mutex_exit(sh->mutex);
+		str_req_end(sh);
 		return -ENOMEM;
 	}
 
-	ke_mutex_exit(sh->mutex);
+		str_req_end(sh);
 	return 0;
 }
 
@@ -514,6 +556,16 @@ do_setctty(struct vnode *vn, stdata_t *sh)
 	return 0;
 }
 
+/* convert a muxed stream back into one with a normal head */
+static void
+unmux(stdata_t *lower_sh)
+{
+	lower_sh->rq->qinfo = &sth_rinit;
+	lower_sh->wq->qinfo = &sth_winit;
+	lower_sh->rq->ptr = lower_sh;
+	lower_sh->wq->ptr = lower_sh;
+}
+
 static int
 do_plink(stdata_t *upper_sh, int fd)
 {
@@ -531,7 +583,7 @@ do_plink(stdata_t *upper_sh, int fd)
 	lower_sh = devfs_spec_get_stream(lowerfp->vnode);
 	if (lower_sh == NULL) {
 		file_release(lowerfp);
-		return -ENOMEM;
+		return -EINVAL;
 	}
 
 	linkp = kmem_alloc(sizeof(*linkp));
@@ -569,9 +621,7 @@ do_plink(stdata_t *upper_sh, int fd)
 	/* freeze the lower stream so we can manipulate it */
 	str_freeze(lower_sh);
 
-	/* replace the stream head with the mux routines. */
-
-	/* assert lower stream is currently a real stream w/ head... */
+	/* replace the stream head with the mux routines */
 	kassert(lower_sh->rq->qinfo == &sth_rinit &&
 	    lower_sh->wq->qinfo == &sth_winit);
 	kassert(lower_sh->wq->ptr == lower_sh && lower_sh->rq->ptr == lower_sh);
@@ -587,15 +637,11 @@ do_plink(stdata_t *upper_sh, int fd)
 	r = qpair_open(lower_sh->rq, NULL);
 	if (r != 0) {
 		/* restore original qinfo */
-		lower_sh->rq->qinfo = &sth_rinit;
-		lower_sh->wq->qinfo = &sth_winit;
-		lower_sh->rq->ptr = lower_sh;
-		lower_sh->wq->ptr = lower_sh;
+		unmux(lower_sh);
 		str_thaw(lower_sh);
 		str_exit(lower_sh);
-		str_enter(upper_sh, "do_plink fail");
-		str_req_end(upper_sh);
-		str_req_end(lower_sh);
+		str_req_end_unheld(upper_sh);
+		str_req_end_unheld(lower_sh);
 		str_freeb(iocmp);
 		kmem_free(linkp, sizeof(*linkp));
 		file_release(lowerfp);
@@ -616,23 +662,175 @@ do_plink(stdata_t *upper_sh, int fd)
 	    ABSTIME_FOREVER);
 
 	str_enter(upper_sh, "do_plink post-ioctl");
-	/* iocmp is rewritten by upper_sh */
+
 	if (iocmp->db->type == M_IOCACK) {
 		linkp->lowerfp = file_retain(lowerfp);
 		TAILQ_INSERT_TAIL(&upper_sh->plinks, linkp, link);
 		r = linkp->index;
 	} else {
 		kassert(iocmp->db->type == M_IOCNAK);
-		kfatal("rejected i_plink");
+
+		/* link rejected by driver, undo it */
+		str_exit(upper_sh);
+
+		str_enter(lower_sh, "do_plink nak undo");
+		str_freeze(lower_sh);
+
+		if (lower_sh->rq->qinfo->qclose != NULL)
+			lower_sh->rq->qinfo->qclose(lower_sh->rq);
+		if (lower_sh->wq->qinfo->qclose != NULL)
+			lower_sh->wq->qinfo->qclose(lower_sh->wq);
+
+		unmux(lower_sh);
+
+		str_thaw(lower_sh);
+		str_exit(lower_sh);
+
+		str_enter(upper_sh, "do_plink nak cleanup");
+		kmem_free(linkp, sizeof(*linkp));
+
+		r = -EINVAL;
 	}
 
-	str_req_end(lower_sh);
+	str_freeb(iocmp);
 	str_req_end(upper_sh);
+	str_req_end_unheld(lower_sh);
 
 	file_release(lowerfp);
 
 	return r;
 }
+
+static void
+plink_teardown(stdata_t *upper_sh, struct linkblk *linkp)
+{
+	stdata_t *lower_sh;
+
+	lower_sh = devfs_spec_get_stream(linkp->lowerfp->vnode);
+	kassert(lower_sh != NULL);
+
+	/* freeze lower stream while we manipulate it */
+	str_enter(lower_sh, "plink_teardown");
+	str_freeze(lower_sh);
+
+	/* close the mux side of the queue pair */
+	if (lower_sh->wq->qinfo->qclose != NULL)
+		lower_sh->wq->qinfo->qclose(lower_sh->wq);
+	if (lower_sh->rq->qinfo->qclose != NULL)
+		lower_sh->rq->qinfo->qclose(lower_sh->rq);
+
+	/* flush any residual messages */
+	str_flushq(lower_sh->rq, FLUSHALL);
+	str_flushq(lower_sh->wq, FLUSHALL);
+
+	/* restore the stream head qinit */
+	unmux(lower_sh);
+
+	str_thaw(lower_sh);
+	str_exit(lower_sh);
+
+	file_release(linkp->lowerfp);
+	kmem_free(linkp, sizeof(*linkp));
+}
+
+static int
+do_punlink(stdata_t *upper_sh, int index)
+{
+	struct linkblk *linkp;
+	struct strioctl *ioc;
+	stdata_t *lower_sh;
+	mblk_t *iocmp;
+
+retry:
+	str_req_begin(upper_sh);
+
+	TAILQ_FOREACH(linkp, &upper_sh->plinks, link) {
+		if (linkp->index == index)
+			break;
+	}
+
+	if (linkp == NULL) {
+		str_req_end(upper_sh);
+		return -EINVAL;
+	}
+
+	lower_sh = devfs_spec_get_stream(linkp->lowerfp->vnode);
+	kassert(lower_sh != NULL);
+
+	if (lower_sh > upper_sh ) {
+		str_req_begin(lower_sh);
+	} else if (lower_sh < upper_sh && !str_req_trybegin(lower_sh)) {
+		file_t *lowerfp = file_retain(linkp->lowerfp);
+		int index = linkp->index;
+		struct linkblk *var;
+
+		str_req_end(upper_sh);
+		str_req_begin(lower_sh);
+		str_req_begin(upper_sh);
+
+		TAILQ_FOREACH(var, &upper_sh->plinks, link)
+			if (var->index == index && var->lowerfp == lowerfp)
+				break;
+
+		if (var == NULL) {
+			str_req_end(upper_sh);
+			str_req_end(lower_sh);
+			file_release(lowerfp);
+			goto retry;
+		}
+
+		linkp = var;
+		file_release(lowerfp);
+	}
+
+	str_exit(upper_sh);
+	str_exit(lower_sh);
+
+	/* build the I_PUNLINK ioctl to notify the driver */
+	iocmp = str_allocb(sizeof(struct strioctl));
+	if (iocmp == NULL) {
+		str_req_end_unheld(upper_sh);
+		str_req_end_unheld(lower_sh);
+		return -ENOMEM;
+	}
+
+	iocmp->db->type = M_IOCTL;
+	ioc = (typeof(ioc))iocmp->rptr;
+	ioc->ic_cmd = I_PUNLINK;
+	ioc->ic_len = sizeof(*linkp);
+	ioc->ic_dp = linkp;
+	iocmp->wptr += sizeof(*ioc);
+
+	/* send the unlink ioctl down to the mux driver */
+	str_enter(upper_sh, "do_punlink ioctl");
+	ke_event_set_signalled(&upper_sh->ioctl_done_ev, false);
+	str_putnext(upper_sh->wq, iocmp);
+	str_exit(upper_sh);
+
+	ke_wait1(&upper_sh->ioctl_done_ev, "do_punlink wait ioctl", true,
+	    ABSTIME_FOREVER);
+
+	str_enter(upper_sh, "do_punlink post-ioctl");
+
+	if (iocmp->db->type == M_IOCNAK)
+		kfatal("driver tried to refuse a legitimate I_PUNLINK");
+
+	kassert(iocmp->db->type == M_IOCACK);
+
+	TAILQ_REMOVE(&upper_sh->plinks, linkp, link);
+
+	str_exit(upper_sh);
+
+	/* tear down the mux qinit on the lower stream */
+	plink_teardown(upper_sh, linkp);
+
+	str_freeb(iocmp);
+	str_req_end_unheld(upper_sh);
+	str_req_end_unheld(lower_sh);
+
+	return 0;
+}
+
 
 int
 strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
@@ -725,6 +923,9 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 
 	case I_PLINK:
 		return do_plink(sh, (int)(intptr_t)arg);
+
+	case I_PUNLINK:
+		return do_punlink(sh, (int)(intptr_t)arg);
 
 #if 0
 	case SIOCADDRT:
@@ -893,6 +1094,7 @@ sth_rput(queue_t *q, mblk_t *mp)
 	}
 
 	case M_IOCACK:
+	case M_IOCNAK:
 		ke_event_set_signalled(&sh->ioctl_done_ev, true);
 		break;
 
