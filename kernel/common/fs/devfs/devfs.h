@@ -25,23 +25,18 @@ typedef struct dev_ops {
 	size_t stack_depth;
 	iop_return_t (*iop_dispatch)(void *devprivate, struct iop *);
 	iop_return_t (*iop_complete)(void *devprivate, struct iop *);
+
+	struct streamtab *streamtab;
 } dev_ops_t;
 
-typedef struct dev_class {
+typedef struct dev_node {
 	enum dev_kind {
 		DEV_KIND_CHAR,
 		DEV_KIND_CHAR_CLONE,
 		DEV_KIND_STREAM,
 		DEV_KIND_STREAM_CLONE,
 	} kind;
-	union {
-		dev_ops_t *charops;
-		struct streamtab *streamtab;
-	};
-} dev_class_t;
-
-typedef struct dev_node {
-	dev_class_t *class;
+	dev_ops_t *ops;
 	TAILQ_ENTRY(dev_node) hash_entry;
 	uint32_t open_count;
 	krwlock_t open_lock; /* guarding open/close */
@@ -51,7 +46,7 @@ typedef struct dev_node {
 	struct vnode *vn;
 } dev_node_t;
 
-void devfs_create_node(dev_class_t *class, void *private, const char *fmt, ...);
+void devfs_create_node(enum dev_kind kind, dev_ops_t *ops, void *private, const char *fmt, ...);
 struct vnode *devfs_lookup_early(const char *name);
 struct stdata *devfs_spec_get_stream(struct vnode *vn);
 

@@ -19,13 +19,13 @@
 
 #include <fs/devfs/devfs.h>
 
-static struct dev_class console_class;
 static stdata_t *console_stdata;
+static dev_ops_t console_ops;
 
 void
 console_init(void)
 {
-	devfs_create_node(&console_class, NULL, "console");
+	devfs_create_node(DEV_KIND_STREAM, &console_ops, NULL, "console");
 }
 
 void
@@ -135,7 +135,6 @@ static struct streamtab console_streamtab = {
 	.winit = &console_winit,
 };
 
-static struct dev_class console_class = {
-	.kind = DEV_KIND_STREAM,
-	.streamtab = &console_streamtab
+static struct dev_ops console_ops = {
+	.streamtab = &console_streamtab,
 };

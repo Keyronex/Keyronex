@@ -23,14 +23,16 @@ static TAILQ_HEAD(, dev_node) hash = TAILQ_HEAD_INITIALIZER(hash);
 static krwlock_t hash_lock;
 
 void
-devfs_create_node(dev_class_t *class, void *private, const char *fmt, ...)
+devfs_create_node(enum dev_kind kind, dev_ops_t *ops, void *private,
+    const char *fmt, ...)
 {
 	va_list ap;
 	dev_node_t *node;
 
 	node = kmem_alloc(sizeof(*node));
 
-	node->class = class;
+	node->kind = kind;
+	node->ops = ops;
 	node->open_count = 0;
 	ke_rwlock_init(&node->open_lock);
 	node->vn = NULL;
@@ -73,7 +75,7 @@ devfs_spec_get_stream(vnode_t *vn)
 	if (vn->ops != &dev_spec_vnops)
 		return NULL;
 	dn = VTODN(vn);
-	if (dn->class->kind != DEV_KIND_STREAM)
+	if (dn->kind != DEV_KIND_STREAM)
 		return NULL;
 	return dn->stdata;
 }
@@ -147,13 +149,13 @@ dev_spec_open(vnode_t **vn, int)
 		return 0;
 	}
 
-	switch(dn->class->kind) {
+	switch(dn->kind) {
 		case DEV_KIND_CHAR:
 			kdprintf("todo: dev_spec_open for char\n");
 			break;
 
 		case DEV_KIND_STREAM:
-			dn->stdata = stropen(dn->class->streamtab,
+			dn->stdata = stropen(dn->ops->streamtab,
 			    dn->devprivate, STR_HEAD_KIND_TTY);
 
 			/* FIXME: implement autopush instead */
@@ -163,7 +165,7 @@ dev_spec_open(vnode_t **vn, int)
 
 		default:
 			kfatal("unsupported dev kind %d in %s\n",
-			    dn->class->kind, dn->name);
+			    dn->kind, dn->name);
 	}
 
 	ke_rwlock_exit_write(&dn->open_lock);
@@ -186,9 +188,9 @@ dev_spec_read(vnode_t *vn, void *buf, size_t length, off_t offset, int flags)
 {
 	dev_node_t *dn = VTODN(vn);
 
-	switch (dn->class->kind) {
+	switch (dn->kind) {
 	case DEV_KIND_CHAR:
-		return dn->class->charops->read(dn->devprivate, buf, length,
+		return dn->ops->read(dn->devprivate, buf, length,
 		    offset, flags);
 
 	case DEV_KIND_STREAM:
@@ -205,9 +207,9 @@ dev_spec_write(vnode_t *vn, const void *buf, size_t length, off_t offset,
 {
 	dev_node_t *dn = VTODN(vn);
 
-	switch (dn->class->kind) {
+	switch (dn->kind) {
 	case DEV_KIND_CHAR:
-		return dn->class->charops->write(dn->devprivate, buf, length,
+		return dn->ops->write(dn->devprivate, buf, length,
 		    offset, flags);
 
 	case DEV_KIND_STREAM:
@@ -223,9 +225,9 @@ dev_spec_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 {
 	dev_node_t *dn = VTODN(vn);
 
-	switch (dn->class->kind) {
+	switch (dn->kind) {
 	case DEV_KIND_CHAR:
-		return dn->class->charops->ioctl(dn->devprivate, cmd, arg);
+		return dn->ops->ioctl(dn->devprivate, cmd, arg);
 
 	case DEV_KIND_STREAM:
 		return strioctl(vn, dn->stdata, cmd, arg);
@@ -240,7 +242,7 @@ dev_spec_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 {
 	dev_node_t *dn = VTODN(vn);
 
-	switch (dn->class->kind) {
+	switch (dn->kind) {
 	case DEV_KIND_STREAM:
 		return strchpoll(dn->stdata, pe, mode);
 
@@ -256,9 +258,9 @@ dev_spec_mmap(void *addr, size_t len, int prot, int flags, vnode_t *vn,
 {
 	dev_node_t *dn = VTODN(vn);
 
-	switch (dn->class->kind) {
+	switch (dn->kind) {
 	case DEV_KIND_CHAR:
-		return dn->class->charops->mmap(addr, len, prot, flags,
+		return dn->ops->mmap(addr, len, prot, flags,
 		    dn->devprivate, offset, window);
 
 	default:
@@ -270,14 +272,14 @@ iop_return_t
 dev_spec_iop_dispatch(vnode_t *vn, struct iop *iop)
 {
 	dev_node_t *dn = VTODN(vn);
-	return dn->class->charops->iop_dispatch(dn->devprivate, iop);
+	return dn->ops->iop_dispatch(dn->devprivate, iop);
 }
 
 iop_return_t
 dev_spec_iop_complete(vnode_t *vn, struct iop *iop)
 {
 	dev_node_t *dn = VTODN(vn);
-	return dn->class->charops->iop_complete(dn->devprivate, iop);
+	return dn->ops->iop_complete(dn->devprivate, iop);
 }
 
 void

@@ -18,10 +18,18 @@
 #include <devicekit/SimpleFramebuffer.h>
 #include <fs/devfs/devfs.h>
 
-static struct dev_ops fb_devops;
-static dev_class_t fb_devclass = {
-	.kind = DEV_KIND_CHAR,
-	.charops = &fb_devops
+static int fbdev_read(void *dev, void *buf, size_t len, io_off_t offset, int);
+static int fbdev_write(void *dev, const void *buf, size_t len, io_off_t offset,
+    int);
+static int fbdev_mmap(void *addr, size_t len, int prot, int flags, void *dev,
+    io_off_t offset, vaddr_t *window);
+static int fbdev_ioctl(void *dev, unsigned long command, void *arg);
+
+static dev_ops_t fb_devops = {
+	.read = fbdev_read,
+	.write = fbdev_write,
+	.mmap = fbdev_mmap,
+	.ioctl = fbdev_ioctl,
 };
 
 @implementation DKFramebuffer
@@ -49,7 +57,7 @@ static dev_class_t fb_devclass = {
 	[terminal attachToProvider:self onAxis:kDKDeviceAxis];
 	[terminal start];
 #endif
-	devfs_create_node(&fb_devclass, self, "fb0");
+	devfs_create_node(DEV_KIND_CHAR, &fb_devops, self, "fb0");
 }
 
 @end
@@ -106,10 +114,3 @@ fbdev_ioctl(void *dev, unsigned long command, void *arg)
 		return -EINVAL;
 	}
 }
-
-static struct dev_ops fb_devops = {
-	.read = fbdev_read,
-	.write = fbdev_write,
-	.mmap = fbdev_mmap,
-	.ioctl = fbdev_ioctl,
-};
