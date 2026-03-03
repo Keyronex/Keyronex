@@ -93,12 +93,13 @@ struct streamtab {
 };
 
 struct linkblk {
-	queue_t	*qtop; 	/* bottom write queue of upper stream */
-	queue_t	*qbot;	/* top write queue of lower stream */
-	int	index;	/* link index (for I_UNLINK) */
+	queue_t	*qtop; 	/* upper stream's bottom write q (NULL if I_PLINK) */
+	queue_t	*qbot;	/* lower stream's top write q */
+	int	index;	/* link index (for I_[P]UNLINK) */
 
 	TAILQ_ENTRY(linkblk) link;
-	struct file *lowerfp;	/* lower stream file pointer (for I_PLINK) */
+	struct file *lowerfp;	/* lower stream file pointer (retained) */
+	struct streamtab *tabtop; /* streamtab of upper stream (if I_PLINK) */
 };
 
 enum {

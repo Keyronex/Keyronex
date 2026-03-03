@@ -14,8 +14,10 @@
 #ifndef ECX_SYS_STROPTS_H
 #define ECX_SYS_STROPTS_H
 
-#define I_PLINK 0x4001
-#define I_PUNLINK 0x4002
+#define I_LINK 0x4001
+#define I_UNLINK 0x4002
+#define I_PLINK 0x4003
+#define I_PUNLINK 0x4004
 
 struct strioctl {
 	int ic_cmd;

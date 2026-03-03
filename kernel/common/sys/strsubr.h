@@ -82,7 +82,7 @@ typedef struct stdata {
 	};
 
 
-	TAILQ_HEAD(, linkblk) plinks;  /* persistent links to this stream */
+	TAILQ_HEAD(, linkblk) links;  /* links under this stream */
 } stdata_t;
 
 struct str_per_cpu_scheduler {

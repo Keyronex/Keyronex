@@ -27,14 +27,18 @@
 
 #include <fs/devfs/devfs.h>
 
-static int do_punlink(stdata_t *upper_sh, int index);
+static int do_unlink(stdata_t *upper_sh, int index);
 
 extern kmutex_t proctree_mutex;
 
 static struct qinit sth_rinit;
 static struct qinit sth_winit;
 static struct streamtab sth_streamtab;
+
+static kmutex_t mux_links_lock = KMUTEX_INITIALISER;
+static TAILQ_HEAD(, linkblk) mux_links = TAILQ_HEAD_INITIALIZER(mux_links);
 static atomic_uint next_link_index = 0;
+
 
 void
 str_enter(stdata_t *sh, const char *reason)
@@ -213,7 +217,7 @@ str_head_alloc(enum str_head_kind kind)
 	sh->wq = sh->rq->other;
 	sh->rq->ptr = sh->wq->ptr = sh;
 
-	TAILQ_INIT(&sh->plinks);
+	TAILQ_INIT(&sh->links);
 
 	return sh;
 }
@@ -270,15 +274,15 @@ void strclose(stdata_t *sh)
 
 	for (;;) {
 		int index;
-		str_enter(sh, "strclose punlink");
-		if (TAILQ_EMPTY(&sh->plinks)) {
+		str_enter(sh, "strclose unlink");
+		if (TAILQ_EMPTY(&sh->links)) {
 			str_exit(sh);
 			break;
 		}
-		index = TAILQ_FIRST(&sh->plinks)->index;
+		index = TAILQ_FIRST(&sh->links)->index;
 		str_exit(sh);
-		/* I_PUNLINK can't be vetoed */
-		do_punlink(sh, index);
+		/* I_UNLINK can't be vetoed */
+		do_unlink(sh, index);
 	}
 
 	ke_mutex_enter(sh->mutex, "strclose");
@@ -567,7 +571,7 @@ unmux(stdata_t *lower_sh)
 }
 
 static int
-do_plink(stdata_t *upper_sh, int fd)
+do_link(stdata_t *upper_sh, int fd)
 {
 	struct file *lowerfp;
 	stdata_t *lower_sh;
@@ -581,7 +585,7 @@ do_plink(stdata_t *upper_sh, int fd)
 		return -EBADF;
 
 	lower_sh = devfs_spec_get_stream(lowerfp->vnode);
-	if (lower_sh == NULL) {
+	if (lower_sh == NULL || lower_sh == upper_sh) {
 		file_release(lowerfp);
 		return -EINVAL;
 	}
@@ -601,7 +605,7 @@ do_plink(stdata_t *upper_sh, int fd)
 
 	iocmp->db->type = M_IOCTL;
 	ioc = (typeof(ioc))iocmp->rptr;
-	ioc->ic_cmd = I_PLINK;
+	ioc->ic_cmd = I_LINK;
 	ioc->ic_len = sizeof(*linkp);
 	ioc->ic_dp = linkp;
 	iocmp->wptr += sizeof(*ioc);
@@ -653,19 +657,19 @@ do_plink(stdata_t *upper_sh, int fd)
 	str_exit(lower_sh);
 
 	/* now enter the upper stream and send ioctl down */
-	str_enter(upper_sh, "do_plink ioctl");
+	str_enter(upper_sh, "do_link ioctl");
 	ke_event_set_signalled(&upper_sh->ioctl_done_ev, false);
 	str_putnext(upper_sh->wq, iocmp);
 	str_exit(upper_sh);
 
-	ke_wait1(&upper_sh->ioctl_done_ev, "do_plink wait ioctl", true,
+	ke_wait1(&upper_sh->ioctl_done_ev, "do_link wait ioctl", true,
 	    ABSTIME_FOREVER);
 
-	str_enter(upper_sh, "do_plink post-ioctl");
+	str_enter(upper_sh, "do_link post-ioctl");
 
 	if (iocmp->db->type == M_IOCACK) {
 		linkp->lowerfp = file_retain(lowerfp);
-		TAILQ_INSERT_TAIL(&upper_sh->plinks, linkp, link);
+		TAILQ_INSERT_TAIL(&upper_sh->links, linkp, link);
 		r = linkp->index;
 	} else {
 		kassert(iocmp->db->type == M_IOCNAK);
@@ -673,7 +677,7 @@ do_plink(stdata_t *upper_sh, int fd)
 		/* link rejected by driver, undo it */
 		str_exit(upper_sh);
 
-		str_enter(lower_sh, "do_plink nak undo");
+		str_enter(lower_sh, "do_link nak undo");
 		str_freeze(lower_sh);
 
 		if (lower_sh->rq->qinfo->qclose != NULL)
@@ -686,7 +690,7 @@ do_plink(stdata_t *upper_sh, int fd)
 		str_thaw(lower_sh);
 		str_exit(lower_sh);
 
-		str_enter(upper_sh, "do_plink nak cleanup");
+		str_enter(upper_sh, "do_link nak cleanup");
 		kmem_free(linkp, sizeof(*linkp));
 
 		r = -EINVAL;
@@ -702,7 +706,7 @@ do_plink(stdata_t *upper_sh, int fd)
 }
 
 static void
-plink_teardown(stdata_t *upper_sh, struct linkblk *linkp)
+link_teardown(stdata_t *upper_sh, struct linkblk *linkp)
 {
 	stdata_t *lower_sh;
 
@@ -710,7 +714,7 @@ plink_teardown(stdata_t *upper_sh, struct linkblk *linkp)
 	kassert(lower_sh != NULL);
 
 	/* freeze lower stream while we manipulate it */
-	str_enter(lower_sh, "plink_teardown");
+	str_enter(lower_sh, "link_teardown");
 	str_freeze(lower_sh);
 
 	/* close the mux side of the queue pair */
@@ -734,7 +738,7 @@ plink_teardown(stdata_t *upper_sh, struct linkblk *linkp)
 }
 
 static int
-do_punlink(stdata_t *upper_sh, int index)
+do_unlink(stdata_t *upper_sh, int index)
 {
 	struct linkblk *linkp;
 	struct strioctl *ioc;
@@ -744,7 +748,7 @@ do_punlink(stdata_t *upper_sh, int index)
 retry:
 	str_req_begin(upper_sh);
 
-	TAILQ_FOREACH(linkp, &upper_sh->plinks, link) {
+	TAILQ_FOREACH(linkp, &upper_sh->links, link) {
 		if (linkp->index == index)
 			break;
 	}
@@ -768,7 +772,7 @@ retry:
 		str_req_begin(lower_sh);
 		str_req_begin(upper_sh);
 
-		TAILQ_FOREACH(var, &upper_sh->plinks, link)
+		TAILQ_FOREACH(var, &upper_sh->links, link)
 			if (var->index == index && var->lowerfp == lowerfp)
 				break;
 
@@ -786,7 +790,7 @@ retry:
 	str_exit(upper_sh);
 	str_exit(lower_sh);
 
-	/* build the I_PUNLINK ioctl to notify the driver */
+	/* build the I_UNLINK ioctl to notify the driver */
 	iocmp = str_allocb(sizeof(struct strioctl));
 	if (iocmp == NULL) {
 		str_req_end_unheld(upper_sh);
@@ -796,33 +800,33 @@ retry:
 
 	iocmp->db->type = M_IOCTL;
 	ioc = (typeof(ioc))iocmp->rptr;
-	ioc->ic_cmd = I_PUNLINK;
+	ioc->ic_cmd = I_UNLINK;
 	ioc->ic_len = sizeof(*linkp);
 	ioc->ic_dp = linkp;
 	iocmp->wptr += sizeof(*ioc);
 
 	/* send the unlink ioctl down to the mux driver */
-	str_enter(upper_sh, "do_punlink ioctl");
+	str_enter(upper_sh, "do_unlink ioctl");
 	ke_event_set_signalled(&upper_sh->ioctl_done_ev, false);
 	str_putnext(upper_sh->wq, iocmp);
 	str_exit(upper_sh);
 
-	ke_wait1(&upper_sh->ioctl_done_ev, "do_punlink wait ioctl", true,
+	ke_wait1(&upper_sh->ioctl_done_ev, "do_unlink wait ioctl", true,
 	    ABSTIME_FOREVER);
 
-	str_enter(upper_sh, "do_punlink post-ioctl");
+	str_enter(upper_sh, "do_unlink post-ioctl");
 
 	if (iocmp->db->type == M_IOCNAK)
-		kfatal("driver tried to refuse a legitimate I_PUNLINK");
+		kfatal("driver tried to refuse a legitimate I_UNLINK");
 
 	kassert(iocmp->db->type == M_IOCACK);
 
-	TAILQ_REMOVE(&upper_sh->plinks, linkp, link);
+	TAILQ_REMOVE(&upper_sh->links, linkp, link);
 
 	str_exit(upper_sh);
 
 	/* tear down the mux qinit on the lower stream */
-	plink_teardown(upper_sh, linkp);
+	link_teardown(upper_sh, linkp);
 
 	str_freeb(iocmp);
 	str_req_end_unheld(upper_sh);
@@ -921,11 +925,11 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		in_size = sizeof(struct termios);
 		break;
 
-	case I_PLINK:
-		return do_plink(sh, (int)(intptr_t)arg);
+	case I_LINK:
+		return do_link(sh, (int)(intptr_t)arg);
 
-	case I_PUNLINK:
-		return do_punlink(sh, (int)(intptr_t)arg);
+	case I_UNLINK:
+		return do_unlink(sh, (int)(intptr_t)arg);
 
 #if 0
 	case SIOCADDRT:
