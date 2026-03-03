@@ -571,7 +571,7 @@ unmux(stdata_t *lower_sh)
 }
 
 static int
-do_link(stdata_t *upper_sh, int fd)
+do_link_common(stdata_t *upper_sh, int fd, int cmd)
 {
 	struct file *lowerfp;
 	stdata_t *lower_sh;
@@ -579,6 +579,8 @@ do_link(stdata_t *upper_sh, int fd)
 	struct strioctl *ioc;
 	mblk_t *iocmp;
 	int r;
+
+	kassert(cmd == I_LINK || cmd == I_PLINK);
 
 	lowerfp = uf_lookup(curproc()->finfo, fd);
 	if (lowerfp == NULL)
@@ -605,7 +607,7 @@ do_link(stdata_t *upper_sh, int fd)
 
 	iocmp->db->type = M_IOCTL;
 	ioc = (typeof(ioc))iocmp->rptr;
-	ioc->ic_cmd = I_LINK;
+	ioc->ic_cmd = cmd;
 	ioc->ic_len = sizeof(*linkp);
 	ioc->ic_dp = linkp;
 	iocmp->wptr += sizeof(*ioc);
@@ -637,6 +639,7 @@ do_link(stdata_t *upper_sh, int fd)
 	linkp->index = atomic_fetch_add(&next_link_index, 1);
 	linkp->qtop = upper_sh->rq_bottom->other;
 	linkp->qbot = lower_sh->wq;
+	linkp->tabtop = upper_sh->devtab;
 
 	r = qpair_open(lower_sh->rq, NULL);
 	if (r != 0) {
@@ -657,19 +660,28 @@ do_link(stdata_t *upper_sh, int fd)
 	str_exit(lower_sh);
 
 	/* now enter the upper stream and send ioctl down */
-	str_enter(upper_sh, "do_link ioctl");
+	str_enter(upper_sh, "do_link_common ioctl");
 	ke_event_set_signalled(&upper_sh->ioctl_done_ev, false);
 	str_putnext(upper_sh->wq, iocmp);
 	str_exit(upper_sh);
 
-	ke_wait1(&upper_sh->ioctl_done_ev, "do_link wait ioctl", true,
+	ke_wait1(&upper_sh->ioctl_done_ev, "do_link_common wait ioctl", true,
 	    ABSTIME_FOREVER);
 
-	str_enter(upper_sh, "do_link post-ioctl");
+	str_enter(upper_sh, "do_link_common post-ioctl");
 
 	if (iocmp->db->type == M_IOCACK) {
 		linkp->lowerfp = file_retain(lowerfp);
-		TAILQ_INSERT_TAIL(&upper_sh->links, linkp, link);
+
+		if (cmd == I_PLINK) {
+			ke_mutex_enter(&mux_links_lock,
+			    "do_link_common plink insert");
+			TAILQ_INSERT_TAIL(&mux_links, linkp, link);
+			ke_mutex_exit(&mux_links_lock);
+		} else {
+			TAILQ_INSERT_TAIL(&upper_sh->links, linkp, link);
+		}
+
 		r = linkp->index;
 	} else {
 		kassert(iocmp->db->type == M_IOCNAK);
@@ -677,7 +689,7 @@ do_link(stdata_t *upper_sh, int fd)
 		/* link rejected by driver, undo it */
 		str_exit(upper_sh);
 
-		str_enter(lower_sh, "do_link nak undo");
+		str_enter(lower_sh, "do_link_common nak undo");
 		str_freeze(lower_sh);
 
 		if (lower_sh->rq->qinfo->qclose != NULL)
@@ -690,7 +702,7 @@ do_link(stdata_t *upper_sh, int fd)
 		str_thaw(lower_sh);
 		str_exit(lower_sh);
 
-		str_enter(upper_sh, "do_link nak cleanup");
+		str_enter(upper_sh, "do_link_common nak cleanup");
 		kmem_free(linkp, sizeof(*linkp));
 
 		r = -EINVAL;
@@ -926,7 +938,8 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		break;
 
 	case I_LINK:
-		return do_link(sh, (int)(intptr_t)arg);
+	case I_PLINK:
+		return do_link_common(sh, (int)(intptr_t)arg, cmd);
 
 	case I_UNLINK:
 		return do_unlink(sh, (int)(intptr_t)arg);
