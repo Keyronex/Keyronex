@@ -34,6 +34,7 @@ devfs_create_node(enum dev_kind kind, dev_ops_t *ops, void *private,
 	node->kind = kind;
 	node->ops = ops;
 	node->open_count = 0;
+	node->is_anon_clone = false;
 	ke_rwlock_init(&node->open_lock);
 	node->vn = NULL;
 
@@ -131,17 +132,51 @@ dev_getattr(vnode_t *vn, vattr_t *attr)
  */
 
 static int
-dev_spec_inactive(vnode_t *vn)
-{
-	kfatal("dev_inactive");
-}
-
-static int
 dev_spec_open(vnode_t **vn, int)
 {
 	dev_node_t *dn = VTODN(*vn);
 
 	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_open");
+
+	switch (dn->kind) {
+	case DEV_KIND_STREAM_CLONE: {
+		dev_node_t *clone_dn = kmem_alloc(sizeof(*clone_dn));
+		vnode_t *clone_vn;
+
+		clone_dn->kind = DEV_KIND_STREAM;
+		clone_dn->is_anon_clone = true;
+		clone_dn->ops = dn->ops;
+		clone_dn->open_count = 1;
+		ke_rwlock_init(&clone_dn->open_lock);
+		clone_dn->devprivate = dn->devprivate;
+
+		ksnprintf(clone_dn->name, sizeof(clone_dn->name) - 1,
+		    "clone:%s", dn->name);
+
+		clone_dn->stdata = stropen(clone_dn->ops->streamtab,
+		    clone_dn->devprivate, STR_HEAD_KIND_NONE);
+
+		clone_vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
+		    (uintptr_t)clone_dn, 0);
+		clone_dn->vn = clone_vn;
+
+		ke_rwlock_exit_write(&dn->open_lock);
+
+		vn_release(*vn);
+		*vn = clone_vn;
+		return 0;
+	}
+
+	case DEV_KIND_CHAR_CLONE:
+		ktodo();
+		break;
+
+	default:
+		/* fall out */
+		break;
+	}
+
+	/* non-clone open handling */
 
 	dn->open_count++;
 	if (dn->open_count > 1) {
@@ -166,6 +201,45 @@ dev_spec_open(vnode_t **vn, int)
 		default:
 			kfatal("unsupported dev kind %d in %s\n",
 			    dn->kind, dn->name);
+	}
+
+	ke_rwlock_exit_write(&dn->open_lock);
+
+	return 0;
+}
+
+
+static int
+dev_spec_inactive(vnode_t *vn)
+{
+	kfatal("dev_inactive");
+}
+
+static int
+dev_spec_close(vnode_t *vn, int)
+{
+	dev_node_t *dn = VTODN(vn);
+
+	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_inactive");
+
+	kassert(dn->open_count > 0);
+	if (--dn->open_count == 0) {
+		kfatal("dev_spec_close\n");
+
+		switch (dn->kind) {
+		case DEV_KIND_CHAR:
+			kdprintf("todo: dev_spec_close for char\n");
+			break;
+
+		case DEV_KIND_STREAM:
+			strclose(dn->stdata);
+			dn->stdata = NULL;
+			break;
+
+		default:
+			kfatal("dev_spec_close unexpected kind %d (named %s)\n",
+			    dn->kind, dn->name);
+		}
 	}
 
 	ke_rwlock_exit_write(&dn->open_lock);
@@ -307,6 +381,7 @@ mount_devfs(void)
 static struct vnode_ops dev_spec_vnops = {
 	.inactive = dev_spec_inactive,
 	.open = dev_spec_open,
+	.close = dev_spec_close,
 	.getattr = dev_spec_getattr,
 	.read = dev_spec_read,
 	.write = dev_spec_write,

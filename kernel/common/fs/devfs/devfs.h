@@ -38,6 +38,7 @@ typedef struct dev_node {
 	} kind;
 	dev_ops_t *ops;
 	TAILQ_ENTRY(dev_node) hash_entry;
+	bool is_anon_clone;
 	uint32_t open_count;
 	krwlock_t open_lock; /* guarding open/close */
 	void *devprivate;
