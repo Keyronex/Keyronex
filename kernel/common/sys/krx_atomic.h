@@ -10,6 +10,7 @@
 #ifndef ECX_KEYRONEX_ATOMIC_H
 #define ECX_KEYRONEX_ATOMIC_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #if !defined(__OBJC__)
