@@ -11,16 +11,17 @@
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/krx_endian.h>
+#include <sys/libkern.h>
 
 #include <devicekit/pci/DKPCIDevice.h>
 #include <devicekit/virtio/DKVirtIOTransport.h>
 #include <devicekit/virtio/VirtIO9pPort.h>
+#include <devicekit/virtio/VirtIONIC.h>
 #include <devicekit/virtio/virtio_pcireg.h>
 #include <devicekit/virtio/virtioreg.h>
 #include <devicekit/DKAxis.h>
 #include <devicekit/DKPlatformRoot.h>
 
-#include <libkern/lib.h>
 
 @interface VirtIOPCITransport : DKVirtIOTransport <DKPCIDeviceMatching> {
     @public
@@ -217,7 +218,7 @@ static void dpc_handler(void *, void *);
 	int r;
 
 	r = queue->free_desc_index;
-	kassert(r != queue->length);
+	kassert(r < queue->length);
 	queue->free_desc_index = from_leu16(QUEUE_DESC_AT(queue, r).next);
 	queue->nfree_descs--;
 
@@ -372,7 +373,7 @@ static void dpc_handler(void *, void *);
 	switch ([m_pciDevice configRead16:kDeviceID]) {
 	case 0x1000:
 	case 0x1040 + VIRTIO_DEVICE_ID_NETWORK:
-		kdprintf("Nic (not implemented)\n");
+		m_delegate = [[VirtIONIC alloc] initWithTransport:self];
 		break;
 
 	case 0x1001:

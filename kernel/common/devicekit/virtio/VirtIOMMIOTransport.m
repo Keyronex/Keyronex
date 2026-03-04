@@ -10,21 +10,20 @@
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/krx_endian.h>
+#include <sys/libkern.h>
 
-#include <devicekit/DKAxis.h>
 #include <devicekit/virtio/VirtIO9pPort.h>
+#include <devicekit/virtio/VirtIONIC.h>
 #include <devicekit/virtio/VirtIOMMIOTransport.h>
 #include <devicekit/virtio/virtio_mmio.h>
 #include <devicekit/virtio/virtioreg.h>
-#include <libkern/lib.h>
-
-#include "devicekit/DKPlatformRoot.h"
+#include <devicekit/DKAxis.h>
+#include <devicekit/DKPlatformRoot.h>
 
 #define MMIO_READ32(BASE, REG) \
 	from_leu32(*(volatile leu32_t *)(BASE + REG))
 #define MMIO_WRITE32(BASE, REG, VAL) \
 	*(volatile leu32_t *)(BASE + REG) = to_leu32(VAL)
-
 
 @interface DKVirtIOMMIOTransport (Private)
 - (instancetype)initWithProvider:(DKDevice *)provider
@@ -80,11 +79,9 @@ device_name(uint32_t id)
 	device_id = MMIO_READ32(mmio, VIRTIO_MMIO_DEVICE_ID);
 
 	switch (device_id) {
-#if 0
 	case VIRTIO_DEVICE_ID_NETWORK:
-		m_delegate = [[VirtIONet alloc] initWithTransport:self];
+		m_delegate = [[VirtIONIC alloc] initWithTransport:self];
 		break;
-#endif
 
 	case VIRTIO_DEVICE_ID_9P:
 		m_delegate = [[VirtIO9pPort alloc] initWithTransport:self];
@@ -280,7 +277,6 @@ device_name(uint32_t id)
 	r = queue->free_desc_index;
 	kassert(r < queue->length);
 	queue->free_desc_index = from_leu16(QUEUE_DESC_AT(queue, r).next);
-	kassert(queue->free_desc_index < queue->length);
 	queue->nfree_descs--;
 
 	return r;
@@ -310,8 +306,13 @@ device_name(uint32_t id)
 
 - (void)notifyQueue:(struct virtio_queue *)queue
 {
+#if 0 /* FIXME: wrong? mmio_write32 turns whole thing LE */
 	MMIO_WRITE32(m_mmio, VIRTIO_MMIO_QUEUE_NOTIFY,
 	    native_to_le16(queue->index));
+#else
+	MMIO_WRITE32(m_mmio, VIRTIO_MMIO_QUEUE_NOTIFY,
+	    queue->index);
+#endif
 }
 
 - (void)deferredProcessing

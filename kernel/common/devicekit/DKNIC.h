@@ -21,6 +21,7 @@
 #include <devicekit/DKDevice.h>
 
 @interface DKNIC : DKDevice {
+	uint8_t m_mac_address[ETH_ALEN];
 }
 
 - (void)setupNIC;
