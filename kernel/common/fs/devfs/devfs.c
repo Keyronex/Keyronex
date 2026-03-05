@@ -236,8 +236,6 @@ dev_spec_close(vnode_t *vn, int)
 
 	kassert(dn->open_count > 0);
 	if (--dn->open_count == 0) {
-		kfatal("dev_spec_close\n");
-
 		switch (dn->kind) {
 		case DEV_KIND_CHAR:
 			kdprintf("todo: dev_spec_close for char\n");

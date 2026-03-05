@@ -14,6 +14,7 @@
 #include <sys/dlpi.h>
 #include <sys/errno.h>
 #include <sys/ioctl.h>
+#include <sys/k_thread.h>
 #include <sys/k_wait.h>
 #include <sys/kmem.h>
 #include <sys/libkern.h>
@@ -28,12 +29,22 @@
 
 #include <fs/devfs/devfs.h>
 #include <inet/util.h>
+#include "sys/k_intr.h"
 
 #define SIOCSIFADDR		0x8916
 #define SIOCSIFNETMASK		0x891C
 #define SIOCSIFNAMEBYMUXID	0x89A0
 
 typedef struct ip_intf {
+	LIST_ENTRY(ip_intf) if_list_link;
+	atomic_uint refcnt;
+	char name[IFNAMSIZ];
+	int muxid;	 /* mux id for DLPI lower stream */
+	queue_t *wq; /* write queue for DLPI lower stream */
+
+	struct in_addr addr;
+	struct in_addr netmask;
+
 	struct ether_addr mac;
 	uint16_t mtu;
 
@@ -41,9 +52,12 @@ typedef struct ip_intf {
 	kevent_t *sync_ack_ev;
 } ip_intf_t;
 
+static LIST_HEAD(, ip_intf) ip_intf_list = LIST_HEAD_INITIALIZER(ip_intf_list);
+static krwlock_t ip_intf_rwlock = KRWLOCK_INITIALISER;
+
 static void ip_uwput(queue_t *, mblk_t *);
 
-static int ip_lopen(queue_t *, void *);
+static int ip_lropen(queue_t *, void *);
 static void ip_lrput(queue_t *, mblk_t *);
 
 static struct qinit ip_urinit = {};
@@ -53,7 +67,7 @@ static struct qinit ip_uwinit = {
 };
 
 static struct qinit ip_lrinit = {
-	.qopen = ip_lopen,
+	.qopen = ip_lropen,
 	.putp = ip_lrput,
 };
 
@@ -72,13 +86,125 @@ static dev_ops_t ip_devops = {
 	.streamtab = &ip_streamtab,
 };
 
+static inline ip_intf_t *
+ip_intf_retain(ip_intf_t *intf)
+{
+	atomic_fetch_add_explicit(&intf->refcnt, 1, memory_order_relaxed);
+	return intf;
+}
+
+static inline void
+ip_intf_release(ip_intf_t *intf)
+{
+	if (atomic_fetch_sub_explicit(&intf->refcnt, 1, memory_order_relaxed) ==
+	    1) {
+		kfatal("ip_intf_release");
+	}
+}
+
+static inline ip_intf_t *
+ip_intf_lookup_by_muxid(int muxid)
+{
+	ip_intf_t *intf;
+
+	ke_rwlock_enter_read(&ip_intf_rwlock, "ip_intf_lookup_by_muxid");
+	LIST_FOREACH(intf, &ip_intf_list, if_list_link) {
+		if (intf->muxid == muxid) {
+			intf = ip_intf_retain(intf);
+			break;
+		}
+	}
+	ke_rwlock_exit_read(&ip_intf_rwlock);
+
+	return intf;
+}
+
+static inline ip_intf_t *
+ip_intf_lookup_by_name(const char *name)
+{
+	ip_intf_t *intf;
+
+	ke_rwlock_enter_read(&ip_intf_rwlock, "ip_intf_lookup_by_name");
+	LIST_FOREACH(intf, &ip_intf_list, if_list_link) {
+		if (strcmp(intf->name, name) == 0) {
+			intf = ip_intf_retain(intf);
+			break;
+		}
+	}
+	ke_rwlock_exit_read(&ip_intf_rwlock);
+
+	return intf;
+}
+
 static void
 ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 {
 	struct strioctl *ioc = (typeof(ioc))mp->rptr;
 	struct ifreq *ifr = (typeof(ifr))ioc->ic_dp;
+	ip_intf_t *intf = ip_intf_lookup_by_name(ifr->ifr_name);
 
-	kfatal("ip_uwput_ioctl_sgif (if name %s)", ifr->ifr_name);
+	if (intf == NULL) {
+		kdprintf("ip_uwput_ioctl_sgif: no such interface %s\n",
+		    ifr->ifr_name);
+		mp->db->type = M_IOCNAK;
+		ioc->rval = -ENOENT;
+		return str_qreply(wq, mp);
+	}
+
+	ke_rwlock_enter_write(&ip_intf_rwlock, "ip_uwput_ioctl_sgif");
+
+	switch (ioc->ic_cmd) {
+	case SIOCGIFFLAGS:
+		ifr->ifr_flags = IFF_UP | IFF_RUNNING;
+		break;
+
+	case SIOCSIFFLAGS:
+		/* ignore for now */
+		break;
+
+	case SIOCGIFADDR:
+		ifr->ifr_addr.sa_family = AF_INET;
+		((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr = intf->addr;
+		break;
+
+	case SIOCSIFADDR:
+#if 0
+		ip_route_if_down(ifp);
+#endif
+		intf->addr = ((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr;
+#if 0
+		ip_route_if_up(ifp, ifp->addr, ifp->netmask);
+#endif
+		break;
+
+	case SIOCGIFNETMASK:
+		ifr->ifr_netmask.sa_family = AF_INET;
+		((struct sockaddr_in *)&ifr->ifr_netmask)->sin_addr =
+		    intf->netmask;
+		break;
+
+	case SIOCSIFNETMASK:
+#if 0
+		ip_route_if_down(ifp);
+#endif
+		intf->netmask =
+		    ((struct sockaddr_in *)&ifr->ifr_netmask)->sin_addr;
+#if 0
+		ip_route_if_up(ifp, ifp->addr, ifp->netmask);
+#endif
+		break;
+
+	default:
+		kunreachable(); /* only called for above */
+	}
+
+	ke_rwlock_exit_write(&ip_intf_rwlock);
+
+	ip_intf_release(intf);
+
+	ioc->ic_len = sizeof(struct ifreq);
+	mp->db->type = M_IOCACK;
+	str_qreply(wq, mp);
 }
 
 static void
@@ -97,7 +223,40 @@ ip_uwput(queue_t *wq, mblk_t *mp)
 		case SIOCSIFNETMASK:
 			return ip_uwput_ioctl_sgif(wq, mp);
 
+		case SIOCSIFNAMEBYMUXID: {
+			struct ifreq *ifr = (typeof(ifr))ioc->ic_dp;
+			ip_intf_t *intf;
+
+			intf = ip_intf_lookup_by_muxid(ifr->ifr_ifindex);
+			if (intf == NULL) {
+				kdprintf("/dev/ip: no such muxid %d\n",
+				    ifr->ifr_ifindex);
+				mp->db->type = M_IOCNAK;
+				return str_qreply(wq, mp);
+			}
+
+			strncpy(intf->name, ifr->ifr_name, IFNAMSIZ);
+			ip_intf_release(intf);
+
+			kdprintf("/dev/ip: muxid %d now named <%s>\n",
+			    ifr->ifr_ifindex, ifr->ifr_name);
+
+			mp->db->type = M_IOCACK;
+			return str_qreply(wq, mp);
+		}
+
 		case I_PLINK: {
+			ip_intf_t *intf;
+			struct linkblk *linkp = (typeof(linkp))ioc->ic_dp;
+
+			kassert(linkp->qbot->qinfo == &ip_lwinit);
+
+			ke_rwlock_enter_write(&ip_intf_rwlock,
+			    "ip_uwput I_PLINK");
+			intf = linkp->qbot->ptr;
+			intf->muxid = linkp->index;
+			ke_rwlock_exit_write(&ip_intf_rwlock);
+
 			mp->db->type = M_IOCACK;
 			return str_qreply(wq, mp);
 		}
@@ -158,15 +317,27 @@ send_dlpi_bind(queue_t *rq)
 }
 
 static int
-ip_lopen(queue_t *q, void *)
+ip_lropen(queue_t *rq, void *)
 {
-	ip_intf_t *intf = kmem_alloc(sizeof(*intf));
-	q->ptr = intf;
+	ip_intf_t *intf;
 
-	send_dlpi_bind(q);
+	intf = kmem_alloc(sizeof(*intf));
+
+	intf->refcnt = 1;
+	intf->name[0] = '\0';
+	intf->muxid = -1;
+	intf->wq = rq->other->next;
+
+	rq->ptr = rq->other->ptr = intf;
+
+	send_dlpi_bind(rq);
 
 	kdprintf("ip_open: if bound, MAC " FMT_MAC ", MTU %d\n",
 	    ARG_MAC(intf->mac), intf->mtu);
+
+	ke_rwlock_enter_write(&ip_intf_rwlock, "ip_lopen");
+	LIST_INSERT_HEAD(&ip_intf_list, intf, if_list_link);
+	ke_rwlock_exit_write(&ip_intf_rwlock);
 
 	return 0;
 }
