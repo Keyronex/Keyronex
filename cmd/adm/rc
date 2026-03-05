@@ -4,5 +4,5 @@ rm -f /tmp/.tX0-lock
 
 echo "Setting up network interface net0"
 /sbin/ifconfig net0 plumb
-#/sbin/ifconfig net0 192.168.77.100 netmask ffffff00
-#/sbin/route add default 192.168.77.1
+/sbin/ifconfig net0 10.0.2.20 netmask ffffff00
+/sbin/route add default 10.0.2.2
