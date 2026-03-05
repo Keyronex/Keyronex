@@ -193,9 +193,8 @@ dev_spec_open(vnode_t **vn, int)
 			dn->stdata = stropen(dn->ops->streamtab,
 			    dn->devprivate, STR_HEAD_KIND_TTY);
 
-			/* FIXME: implement autopush instead */
-			extern struct streamtab ldterm_tab;
-			strpush(dn->stdata, &ldterm_tab);
+			if (dn->ops->autopush != NULL)
+				strpush(dn->stdata, dn->ops->autopush);
 			break;
 
 		default:
@@ -212,7 +211,20 @@ dev_spec_open(vnode_t **vn, int)
 static int
 dev_spec_inactive(vnode_t *vn)
 {
-	kfatal("dev_inactive");
+	dev_node_t *dn = VTODN(vn);
+
+	ke_rwlock_enter_write(&dn->open_lock, "dev_lookup node");
+	kassert(dn->vn != NULL);
+	if (vn->refcount != 1) {
+		ke_rwlock_exit_write(&dn->open_lock);
+		return -EAGAIN;
+	}
+
+	dn->vn = NULL;
+	vn->fsprivate_1 = 0;
+	ke_rwlock_exit_write(&dn->open_lock);
+
+	return 0;
 }
 
 static int

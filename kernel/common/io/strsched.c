@@ -198,6 +198,19 @@ str_thaw(stdata_t *st)
 }
 
 void
+str_qwait(queue_t *q, kevent_t *ev)
+{
+	kassert(atomic_load(&q->stdata->flags) & ST_FROZEN);
+
+	str_thaw(q->stdata);
+	str_exit(q->stdata);
+
+	ke_wait1(ev, "str_qwait ev", false, ABSTIME_FOREVER);
+
+	str_enter(q->stdata, "str_qwait reenter");
+}
+
+void
 str_qenable(queue_t *q)
 {
 	kassert(q->qinfo != NULL);

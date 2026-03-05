@@ -22,6 +22,7 @@
 
 @interface DKNIC : DKDevice {
 	uint8_t m_mac_address[ETH_ALEN];
+	queue_t *m_open_rq;
 }
 
 - (void)setupNIC;

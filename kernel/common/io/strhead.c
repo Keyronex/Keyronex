@@ -25,6 +25,8 @@
 #include <sys/strsubr.h>
 #include <sys/termios.h>
 
+#include <net/if.h>
+
 #include <fs/devfs/devfs.h>
 
 static int do_unlink(stdata_t *upper_sh, int index);
@@ -38,6 +40,10 @@ static struct streamtab sth_streamtab;
 static kmutex_t mux_links_lock = KMUTEX_INITIALISER;
 static TAILQ_HEAD(, linkblk) mux_links = TAILQ_HEAD_INITIALIZER(mux_links);
 static atomic_uint next_link_index = 0;
+
+#define SIOCSIFADDR 0x8916
+#define SIOCSIFNETMASK 0x891C
+#define SIOCSIFNAMEBYMUXID 0x89A0
 
 void
 str_enter(stdata_t *sh, const char *reason)
@@ -1029,6 +1035,7 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCADDRT:
 		in_size = sizeof(struct rtentry);
 		break;
+#endif
 
 	case SIOCGIFFLAGS:
 	case SIOCGIFADDR:
@@ -1046,7 +1053,6 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCSIFNAMEBYMUXID:
 		in_size = sizeof(struct ifreq);
 		break;
-#endif
 
 	default:
 		kfatal("str_ioctl: unhandled ioctl %lu/0x%x\n", cmd, cmd);

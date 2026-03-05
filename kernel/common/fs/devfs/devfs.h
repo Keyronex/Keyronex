@@ -27,6 +27,7 @@ typedef struct dev_ops {
 	iop_return_t (*iop_complete)(void *devprivate, struct iop *);
 
 	struct streamtab *streamtab;
+	struct streamtab *autopush;
 } dev_ops_t;
 
 typedef struct dev_node {

@@ -22,6 +22,8 @@ kernel_sources += [
     'fs/viewcache.c',
     'fs/vnode.c',
 
+    'inet/ip.c',
+
     'io/console.c',
     'io/epoll.c',
     'io/iop.c',

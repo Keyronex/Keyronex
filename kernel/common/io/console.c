@@ -19,6 +19,8 @@
 
 #include <fs/devfs/devfs.h>
 
+extern struct streamtab ldterm_streamtab;
+
 static stdata_t *console_stdata;
 static dev_ops_t console_ops;
 
@@ -137,4 +139,5 @@ static struct streamtab console_streamtab = {
 
 static struct dev_ops console_ops = {
 	.streamtab = &console_streamtab,
+	.autopush = &ldterm_streamtab,
 };

@@ -116,6 +116,8 @@ void str_put(queue_t *q, mblk_t *mp);
 void str_putnext(queue_t *, mblk_t *);
 void str_qreply(queue_t *, mblk_t *);
 
+void str_qwait(queue_t *, kevent_t *ev);
+
 void str_flushq(queue_t *, int flag);
 
 bool str_canput(queue_t *);

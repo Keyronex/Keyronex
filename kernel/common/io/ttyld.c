@@ -54,7 +54,7 @@ static struct qinit ldterm_winit = {
 	.putp = ldterm_wput,
 };
 
-struct streamtab ldterm_tab = {
+struct streamtab ldterm_streamtab = {
 	.rinit = &ldterm_rinit,
 	.winit = &ldterm_winit,
 };
