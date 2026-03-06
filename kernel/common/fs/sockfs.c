@@ -87,6 +87,7 @@ static int sock_ioctl(vnode_t *, unsigned long cmd, void *arg);
 static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
+extern struct streamtab nl_streamtab;
 
 static struct qinit sock_rinit = {
 	.qclose = sockmod_close,
@@ -140,17 +141,33 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		}
 		break;
 
+	case AF_NETLINK:
+		switch (type) {
+		case SOCK_RAW:
+		case SOCK_DGRAM:
+			streamtab = &nl_streamtab;
+			break;
+
+		default:
+			return -ESOCKTNOSUPPORT;
+		}
+		break;
+
 	default:
 		ktodo();
 	}
 
 	kassert(streamtab != NULL);
 
-	sh = stropen(streamtab, NULL, STR_HEAD_KIND_NONE);
+	sh = stropen(streamtab, (void *)(uintptr_t)protocol,
+	    STR_HEAD_KIND_NONE);
 	if (sh == NULL) {
 		r = -ENOMEM;
 		goto err;
 	}
+
+	if (type == SOCK_RAW || type == SOCK_DGRAM)
+		sh->read_mode = STR_RMSGD;
 
 	r = strpush(sh, &sock_streamtab);
 	if (r != 0) {
@@ -834,7 +851,8 @@ sock_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 		return r;
 	}
 
-	if ((sn->state & SS_ISCONNECTED) && !(sn->state & SS_CANTSENDMORE))
+	if (sn->type == SOCK_DGRAM || sn->type == SOCK_RAW ||
+	    ((sn->state & SS_ISCONNECTED) && !(sn->state & SS_CANTSENDMORE)))
 		r |= EPOLLOUT | EPOLLWRNORM;
 
 	if (sh->rq->count > 0)
@@ -965,7 +983,7 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 
 	sn = VTOSN(file->vnode);
 
-	kassert(msg->msg_iovlen == 1);
+	kassert(msg->msg_iovlen == 1 && msg->msg_controllen == 0);
 
 	if (flags & MSG_DONTWAIT)
 		readflags |= O_NONBLOCK;
@@ -985,5 +1003,26 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 int
 sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 {
-	ktodo();
+	file_t *file;
+	struct socknode *sn;
+	int writeflags = 0;
+	int r = lookup_sockfd(sockfd, &file);
+
+	/* TODO: this is not sendmsg! */
+
+	sn = VTOSN(file->vnode);
+
+	kassert(msg->msg_iovlen == 1 && msg->msg_controllen == 0);
+
+	if (flags & MSG_DONTWAIT)
+		writeflags |= O_NONBLOCK;
+	if (file->flags & O_NONBLOCK)
+		writeflags |= O_NONBLOCK;
+
+	r = strwrite(sn->stream, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len,
+	    writeflags);
+
+	file_release(file);
+
+	return r;
 }

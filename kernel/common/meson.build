@@ -23,10 +23,12 @@ kernel_sources += [
     'fs/vnode.c',
 
     'inet/ip.c',
+    'inet/rtnetlink.c',
 
     'io/console.c',
     'io/epoll.c',
     'io/iop.c',
+    'io/netlink.c',
     'io/strhead.c',
     'io/strsched.c',
     'io/strsubr.c',

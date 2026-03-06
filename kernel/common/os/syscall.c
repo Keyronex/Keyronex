@@ -313,6 +313,10 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_recvmsg:
 		return sys_recvmsg((int)arg1, (struct msghdr *)arg2, (int)arg3);
 
+	case SYS_sendmsg:
+		return sys_sendmsg((int)arg1, (const struct msghdr *)arg2,
+		    (int)arg3);
+
 	/*
 	 * linux affinity
 	 */

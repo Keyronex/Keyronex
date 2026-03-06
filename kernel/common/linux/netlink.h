@@ -37,12 +37,14 @@ struct nlmsghdr {
 };
 
 #define NLM_F_REQUEST		0x1
+#define NLM_F_MULTI		0x2
 #define NLM_F_ACK		0x4
 #define NLM_F_EXCL		0x200
 #define NLM_F_CREATE		0x400
 
 #define NLMSG_NOOP	0x1
 #define NLMSG_ERROR	0x2
+#define NLMSG_DONE	0x3
 
 struct nlmsgerr {
 	int	error;
@@ -55,9 +57,10 @@ struct nlmsgerr {
 #define NLMSG_HDRLEN \
     NLMSG_ALIGN(sizeof(struct nlmsghdr))
 #define NLMSG_LENGTH(len)	((len) + NLMSG_HDRLEN)
+#define NLMSG_SPACE(len)	NLMSG_ALIGN(NLMSG_LENGTH(len))
 #define NLMSG_DATA(nlh)	 \
     ((void *)((char *)(nlh) + NLMSG_HDRLEN))
-#define NLMSG_OK(nlh, remaining) \
+#define NLMSG_OK(nlh, len) \
     ((len) >= (int)sizeof(struct nlmsghdr) && \
 	(nlh)->nlmsg_len >= sizeof(struct nlmsghdr) && \
 	(nlh)->nlmsg_len <= (len))
