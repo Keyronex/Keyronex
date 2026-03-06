@@ -39,6 +39,12 @@ struct nlmsghdr {
 #define NLM_F_REQUEST		0x1
 #define NLM_F_MULTI		0x2
 #define NLM_F_ACK		0x4
+
+#define NLM_F_ROOT		0x100
+#define NLM_F_MATCH		0x200
+#define NLM_F_DUMP		(NLM_F_ROOT | NLM_F_MATCH)
+
+#define NLM_F_REPLACE		0x100
 #define NLM_F_EXCL		0x200
 #define NLM_F_CREATE		0x400
 
@@ -60,6 +66,7 @@ struct nlmsgerr {
 #define NLMSG_SPACE(len)	NLMSG_ALIGN(NLMSG_LENGTH(len))
 #define NLMSG_DATA(nlh)	 \
     ((void *)((char *)(nlh) + NLMSG_HDRLEN))
+#define NLMSG_PAYLOAD(nlh,len)	((int)((nlh)->nlmsg_len) - NLMSG_SPACE((len)))
 #define NLMSG_OK(nlh, len) \
     ((len) >= (int)sizeof(struct nlmsghdr) && \
 	(nlh)->nlmsg_len >= sizeof(struct nlmsghdr) && \

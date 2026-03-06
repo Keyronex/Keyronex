@@ -22,5 +22,5 @@ LoaderExit:
 .section .bss
 .align 16
 StackBase:
-.zero 0x4000
+.zero 0x8000
 StackTop:

@@ -370,5 +370,8 @@ ip_lrput(queue_t *q, mblk_t *mp)
 void
 ip_init(void)
 {
+	void rtnetlink_init(void);
+
 	devfs_create_node(DEV_KIND_STREAM, &ip_devops, NULL, "ip");
+	rtnetlink_init();
 }

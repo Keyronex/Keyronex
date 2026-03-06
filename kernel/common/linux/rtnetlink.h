@@ -18,6 +18,7 @@
 
 #define RTM_NEWROUTE		24
 
+#define RT_TABLE_UNSPEC		0
 #define RT_TABLE_MAIN		254
 
 #define RTPROT_BOOT		3
@@ -27,8 +28,14 @@
 
 #define RTN_UNICAST		1
 
+#define RTA_DST 		1
+#define RTA_SRC 		2
+#define RTA_IIF 		3
 #define RTA_OIF			4
 #define RTA_GATEWAY		5
+#define RTA_PRIORITY		6
+#define RTA_PREFSRC		7
+#define RTA_TABLE		15
 
 struct rtmsg {
 	unsigned char	rtm_family;
@@ -54,7 +61,12 @@ struct rtattr {
 	(rta)->rta_len >= sizeof(struct rtattr) && \
 	(rta)->rta_len <= (remaining))
 #define RTA_LENGTH(len)	(RTA_ALIGN(sizeof(struct rtattr)) + (len))
+#define RTA_SPACE(len)	RTA_ALIGN(RTA_LENGTH(len))
+#define RTA_PAYLOAD(rta) ((int)((rta)->rta_len) - RTA_LENGTH(0))
 #define RTA_DATA(rta)	\
     ((void *)((char *)(rta) + RTA_ALIGN(sizeof(struct rtattr))))
+#define RTA_NEXT(rta, remaining) \
+    ((remaining) -= RTA_ALIGN((rta)->rta_len), \
+     (struct rtattr *)((char *)(rta) + RTA_ALIGN((rta)->rta_len)))
 
 #endif /* ECX_LINUX_RTNETLINK_H */

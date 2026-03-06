@@ -307,6 +307,13 @@ map_ksegs(void)
 	for (uintptr_t vaddr = start; vaddr != limit; vaddr += PGSIZE)
 		boot_map(vaddr, vaddr - vbase + pbase, PMAP_L0,
 		    VM_READ | VM_WRITE, kCacheModeDefault);
+
+#if 0
+	kdprintf("Mapping kernel segments: text [%p, %p), rodata [%p, %p), data [%p, %p)\n",
+	    (void *)TEXT_SEGMENT_START, (void *)TEXT_SEGMENT_END,
+	    (void *)RODATA_SEGMENT_START, (void *)RODATA_SEGMENT_END,
+	    (void *)DATA_SEGMENT_START, (void *)KDATA_SEGMENT_END);
+#endif
 }
 
 #if defined(__amd64__)
