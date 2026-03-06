@@ -28,29 +28,13 @@
 #include <netinet/ip6.h>
 
 #include <fs/devfs/devfs.h>
+#include <inet/ip.h>
+#include <inet/ip_intf.h>
 #include <inet/util.h>
-#include "sys/k_intr.h"
 
 #define SIOCSIFADDR		0x8916
 #define SIOCSIFNETMASK		0x891C
 #define SIOCSIFNAMEBYMUXID	0x89A0
-
-typedef struct ip_intf {
-	LIST_ENTRY(ip_intf) if_list_link;
-	atomic_uint refcnt;
-	char name[IFNAMSIZ];
-	int muxid;	 /* mux id for DLPI lower stream */
-	queue_t *wq; /* write queue for DLPI lower stream */
-
-	struct in_addr addr;
-	struct in_addr netmask;
-
-	struct ether_addr mac;
-	uint16_t mtu;
-
-	mblk_t *sync_ack_mp;
-	kevent_t *sync_ack_ev;
-} ip_intf_t;
 
 static LIST_HEAD(, ip_intf) ip_intf_list = LIST_HEAD_INITIALIZER(ip_intf_list);
 static krwlock_t ip_intf_rwlock = KRWLOCK_INITIALISER;
@@ -86,14 +70,14 @@ static dev_ops_t ip_devops = {
 	.streamtab = &ip_streamtab,
 };
 
-static inline ip_intf_t *
+ip_intf_t *
 ip_intf_retain(ip_intf_t *intf)
 {
 	atomic_fetch_add_explicit(&intf->refcnt, 1, memory_order_relaxed);
 	return intf;
 }
 
-static inline void
+void
 ip_intf_release(ip_intf_t *intf)
 {
 	if (atomic_fetch_sub_explicit(&intf->refcnt, 1, memory_order_relaxed) ==
@@ -102,7 +86,7 @@ ip_intf_release(ip_intf_t *intf)
 	}
 }
 
-static inline ip_intf_t *
+ip_intf_t *
 ip_intf_lookup_by_muxid(int muxid)
 {
 	ip_intf_t *intf;
@@ -119,7 +103,7 @@ ip_intf_lookup_by_muxid(int muxid)
 	return intf;
 }
 
-static inline ip_intf_t *
+ip_intf_t *
 ip_intf_lookup_by_name(const char *name)
 {
 	ip_intf_t *intf;
@@ -168,13 +152,9 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		break;
 
 	case SIOCSIFADDR:
-#if 0
-		ip_route_if_down(ifp);
-#endif
+		ip_route_if_down(intf);
 		intf->addr = ((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr;
-#if 0
-		ip_route_if_up(ifp, ifp->addr, ifp->netmask);
-#endif
+		ip_route_if_up(intf);
 		break;
 
 	case SIOCGIFNETMASK:
@@ -184,14 +164,10 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		break;
 
 	case SIOCSIFNETMASK:
-#if 0
-		ip_route_if_down(ifp);
-#endif
+		ip_route_if_down(intf);
 		intf->netmask =
 		    ((struct sockaddr_in *)&ifr->ifr_netmask)->sin_addr;
-#if 0
-		ip_route_if_up(ifp, ifp->addr, ifp->netmask);
-#endif
+		ip_route_if_up(intf);
 		break;
 
 	default:

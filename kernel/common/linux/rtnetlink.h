@@ -17,16 +17,21 @@
 #include <stdint.h>
 
 #define RTM_NEWROUTE		24
+#define RTM_DELROUTE		25
 
 #define RT_TABLE_UNSPEC		0
 #define RT_TABLE_MAIN		254
 
+#define RTPROT_KERNEL		2
 #define RTPROT_BOOT		3
 #define RTPROT_STATIC		4
 
 #define RT_SCOPE_UNIVERSE	0
+#define RT_SCOPE_LINK		253
+#define RT_SCOPE_HOST		254
 
 #define RTN_UNICAST		1
+#define RTN_LOCAL		2
 
 #define RTA_DST 		1
 #define RTA_SRC 		2

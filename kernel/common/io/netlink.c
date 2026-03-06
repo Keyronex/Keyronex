@@ -204,7 +204,6 @@ nl_rput(queue_t *rq, mblk_t *mp)
 	str_putnext(rq, mp);
 }
 
-
 static void
 nl_wput_bind_req(queue_t *wq, mblk_t *mp)
 {
