@@ -35,6 +35,8 @@ struct ip_intf {
 
 	mblk_t *sync_ack_mp;
 	kevent_t *sync_ack_ev;
+
+	struct arp_state *arp_state;
 };
 
 #endif /* ECX_INET_IP_INTF_H */

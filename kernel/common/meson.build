@@ -22,9 +22,12 @@ kernel_sources += [
     'fs/viewcache.c',
     'fs/vnode.c',
 
+    'inet/arp.c',
+    'inet/icmp.c',
     'inet/ip.c',
     'inet/ip_route.c',
     'inet/rtnetlink.c',
+    'inet/tcp.c',
     'inet/util.c',
 
     'io/console.c',

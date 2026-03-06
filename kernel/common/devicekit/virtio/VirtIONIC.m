@@ -62,7 +62,6 @@ struct vionic_tx_req {
 
 - (void)handleReceivedPacket:(const uint8_t *)data length:(size_t)len
 {
-#if 0
 	mblk_t *mp = str_allocb(len);
 	if (mp == NULL)
 		return; /* drop */
@@ -71,24 +70,6 @@ struct vionic_tx_req {
 	mp->wptr += len;
 
 	[self didReceivePacket:mp];
-#else
-	const struct ether_header *hdr = (typeof(hdr))(data);
-
-	if (len < 14) {
-		DKDevLog(self, "packet too short for ethhdr\n");
-		return;
-	}
-
-	DKDevLog(self,
-	    "ethertype 0x%04x "
-	    "src %02x:%02x:%02x:%02x:%02x:%02x "
-	    "dst %02x:%02x:%02x:%02x:%02x:%02x\n",
-	    be16_to_native(hdr->ether_type), hdr->ether_shost[0],
-	    hdr->ether_shost[1], hdr->ether_shost[2], hdr->ether_shost[3],
-	    hdr->ether_shost[4], hdr->ether_shost[5], hdr->ether_dhost[0],
-	    hdr->ether_dhost[1], hdr->ether_dhost[2], hdr->ether_dhost[3],
-	    hdr->ether_dhost[4], hdr->ether_dhost[5]);
-#endif
 }
 
 /* Submit an RX buffer to the receive vq. */

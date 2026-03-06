@@ -19,6 +19,7 @@
 struct queue;
 
 typedef struct ip_intf ip_intf_t;
+typedef struct arp_state arp_state_t;
 
 ip_intf_t *ip_intf_retain(ip_intf_t *intf);
 void ip_intf_release(ip_intf_t *intf);

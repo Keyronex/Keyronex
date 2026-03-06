@@ -21,11 +21,13 @@
 
 static int nic_open(queue_t *, void *);
 static void nic_close(queue_t *);
+static void nic_rput(queue_t *, mblk_t *);
 static void nic_wput(queue_t *, mblk_t *);
 
 static struct qinit nic_rinit = {
 	.qopen = nic_open,
 	.qclose = nic_close,
+	.putp = nic_rput,
 };
 
 static struct qinit nic_winit = {
@@ -108,6 +110,12 @@ static void
 nic_close(queue_t *)
 {
 	ktodo();
+}
+
+static void
+nic_rput(queue_t *rq, mblk_t *mp)
+{
+	str_putnext(rq, mp);
 }
 
 static void

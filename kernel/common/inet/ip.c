@@ -36,8 +36,9 @@
 #define SIOCSIFNETMASK		0x891C
 #define SIOCSIFNAMEBYMUXID	0x89A0
 
-static LIST_HEAD(, ip_intf) ip_intf_list = LIST_HEAD_INITIALIZER(ip_intf_list);
-static krwlock_t ip_intf_rwlock = KRWLOCK_INITIALISER;
+void arp_input(ip_intf_t *, mblk_t *);
+void icmp_input(ip_intf_t *, mblk_t *);
+void ip_input(ip_intf_t *, mblk_t *);
 
 static void ip_uwput(queue_t *, mblk_t *);
 
@@ -304,6 +305,9 @@ ip_lropen(queue_t *rq, void *)
 	intf->muxid = -1;
 	intf->wq = rq->other->next;
 
+	intf->addr.s_addr = INADDR_ANY;
+	intf->netmask.s_addr = INADDR_ANY;
+
 	rq->ptr = rq->other->ptr = intf;
 
 	send_dlpi_bind(rq);
@@ -324,6 +328,20 @@ ip_lrput(queue_t *q, mblk_t *mp)
 	ip_intf_t *intf = q->ptr;
 
 	switch (mp->db->type) {
+	case M_DATA: {
+		struct ether_header *eh = (struct ether_header *)mp->rptr;
+		if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
+			ip_input(intf, mp);
+		} else if (ntohs(eh->ether_type) == ETHERTYPE_ARP) {
+			arp_input(intf, mp);
+		} else {
+			kdprintf("IP: unknown ethertype 0x%04x\n",
+			    ntohs(eh->ether_type));
+			str_freemsg(mp);
+		}
+		break;
+	}
+
 	case M_PROTO: {
 		union DL_primitives *dlp = (typeof(dlp))mp->rptr;
 
