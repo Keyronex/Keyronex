@@ -45,6 +45,8 @@ struct ip_route_result ip_route_lookup(struct in_addr dst);
 void ip_route_if_up(ip_intf_t *intf);
 void ip_route_if_down(ip_intf_t *intf);
 
+int ip_output(struct msgb *);
+
 void arp_output(ip_intf_t *ifp, in_addr_t dst, struct msgb *, bool ifp_locked);
 
 #endif /* ECX_INET_IP_H */

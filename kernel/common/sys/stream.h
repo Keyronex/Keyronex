@@ -112,11 +112,13 @@ void str_freeb(mblk_t *);
 void str_freemsg(mblk_t *);
 size_t str_msgsize(mblk_t *);
 
-void str_put(queue_t *q, mblk_t *mp);
+void str_put(queue_t *, mblk_t *);
 void str_putnext(queue_t *, mblk_t *);
 void str_qreply(queue_t *, mblk_t *);
 
-void str_qwait(queue_t *, kevent_t *ev);
+void str_putq(queue_t *, mblk_t *);
+
+void str_qwait(queue_t *, kevent_t *);
 
 void str_flushq(queue_t *, int flag);
 

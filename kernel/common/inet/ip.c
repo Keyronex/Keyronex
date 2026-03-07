@@ -313,9 +313,10 @@ ip_uwput(queue_t *wq, mblk_t *mp)
 }
 
 /*
- * Send and wait synchronously for the DLPI bind request to be returned.
- *
+ * lower multiplexor side
  */
+
+/* Send and wait synchronously for the DLPI bind request to be returned. */
 static void
 send_dlpi_bind(queue_t *rq)
 {
@@ -423,6 +424,33 @@ ip_lrput(queue_t *q, mblk_t *mp)
 		ktodo();
 	}
 }
+
+int
+ip_output(mblk_t *m)
+{
+	struct ether_header *eh = (struct ether_header *)m->rptr;
+	struct ip *ip = (struct ip *)(eh + 1);
+	struct ip_route_result rt;
+
+	rt =  ip_route_lookup(ip->ip_dst);
+	if (rt.intf == NULL) {
+		TRACE_IP("No route to " FMT_IP4 "\n",
+		    ARG_IP4(ip->ip_dst.s_addr));
+		str_freemsg(m);
+		return -EHOSTUNREACH;
+	}
+
+	eh->ether_type = htons(ETHERTYPE_IP);
+	ip->ip_sum = 0;
+	ip->ip_sum = ip_checksum(ip, ip->ip_hl << 2);
+
+	arp_output(rt.intf, rt.next_hop.s_addr, m, false);
+
+	ip_intf_release(rt.intf);
+
+	return 0;
+}
+
 
 void
 ip_init(void)
