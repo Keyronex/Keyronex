@@ -36,7 +36,7 @@ str_kick(stdata_t *st)
 
 	/* not for queuing if already queued, running now, frozen, or dead */
 	if (flags & (ST_QUEUED | ST_RUNNING | ST_FROZEN | ST_DEAD)) {
-		ke_spinlock_exit_nospl(&sc->lock);
+		ke_spinlock_exit(&sc->lock, ipl);
 		return;
 	}
 
@@ -50,10 +50,11 @@ str_kick(stdata_t *st)
 static inline void
 detach_ingress(stdata_t *st, mblk_q_t *mq)
 {
+	ipl_t ipl;
 	TAILQ_INIT(mq);
-	ke_spinlock_enter_nospl(&st->ingress_lock);
+	ipl = ke_spinlock_enter(&st->ingress_lock);
 	TAILQ_CONCAT(mq, &st->ingress_head, link);
-	ke_spinlock_exit_nospl(&st->ingress_lock);
+	ke_spinlock_exit(&st->ingress_lock, ipl);
 }
 
 static inline void
@@ -101,8 +102,9 @@ drain(struct str_per_cpu_scheduler *sc)
 	for (;;) {
 		stdata_t *st;
 		uint32_t flags;
+		ipl_t ipl;
 
-		ke_spinlock_enter_nospl(&sc->lock);
+		ipl = ke_spinlock_enter(&sc->lock);
 
 		while (!TAILQ_EMPTY(&sc->freeq)) {
 			st = TAILQ_FIRST(&sc->freeq);
@@ -112,14 +114,14 @@ drain(struct str_per_cpu_scheduler *sc)
 
 		st = TAILQ_FIRST(&sc->runq);
 		if (st == NULL) {
-			ke_spinlock_exit_nospl(&sc->lock);
+			ke_spinlock_exit(&sc->lock, ipl);
 			break;
 		}
 
 		TAILQ_REMOVE(&sc->runq, st, sched_link);
 		atomic_fetch_and(&st->flags, ~ST_QUEUED);
 
-		ke_spinlock_exit_nospl(&sc->lock);
+		ke_spinlock_exit(&sc->lock, ipl);
 
 		flags = atomic_load(&st->flags);
 
@@ -164,6 +166,7 @@ worker(void *arg)
 		    ABSTIME_FOREVER);
 		ke_event_set_signalled(&sc->event, false);
 		drain(sc);
+		kassert(ke_ipl() == 0);
 	}
 }
 

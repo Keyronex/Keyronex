@@ -71,6 +71,11 @@ static dev_ops_t ip_devops = {
 	.streamtab = &ip_streamtab,
 };
 
+static LIST_HEAD(, ip_intf) ip_intf_list = LIST_HEAD_INITIALIZER(ip_intf_list);
+static krwlock_t ip_intf_rwlock = KRWLOCK_INITIALISER;
+
+#define TRACE_IP(...) kdprintf("IP: " __VA_ARGS__)
+
 ip_intf_t *
 ip_intf_retain(ip_intf_t *intf)
 {
@@ -119,6 +124,62 @@ ip_intf_lookup_by_name(const char *name)
 	ke_rwlock_exit_read(&ip_intf_rwlock);
 
 	return intf;
+}
+
+void
+ip_input(ip_intf_t *ifp, mblk_t *mp)
+{
+	struct ip *ip;
+	size_t msgsize = mp->wptr - mp->rptr;
+	uint16_t hlen;
+
+	if (msgsize < sizeof(struct ether_header) + sizeof(struct ip)) {
+		TRACE_IP("Packet too small\n");
+		str_freemsg(mp);
+		return;
+	}
+
+	ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
+
+	hlen = ip->ip_hl << 2;
+	if (hlen < sizeof(struct ip)) {
+		TRACE_IP("Invalid IP header length\n");
+		str_freemsg(mp);
+		return;
+	}
+
+	if (msgsize < sizeof(struct ether_header) + hlen) {
+		TRACE_IP("Packet too small for IP header\n");
+		str_freemsg(mp);
+		return;
+	}
+
+	if (ip->ip_v != IPVERSION) {
+		TRACE_IP("Invalid version %d\n", ip->ip_v);
+		str_freemsg(mp);
+		return;
+	}
+
+	if ((ip->ip_sum = ip_checksum(ip, hlen)) != 0) {
+		TRACE_IP("Checksum error\n");
+		str_freemsg(mp);
+		return;
+	}
+
+	switch (ip->ip_p) {
+	case IPPROTO_TCP:
+		ktodo();
+		break;
+
+	case IPPROTO_ICMP:
+		icmp_input(ifp, mp);
+		break;
+
+	default:
+		TRACE_IP("Unknown IP protocol %d\n", ip->ip_p);
+		str_freemsg(mp);
+		break;
+	}
 }
 
 static void
@@ -307,6 +368,8 @@ ip_lropen(queue_t *rq, void *)
 
 	intf->addr.s_addr = INADDR_ANY;
 	intf->netmask.s_addr = INADDR_ANY;
+
+	arp_state_init(intf);
 
 	rq->ptr = rq->other->ptr = intf;
 

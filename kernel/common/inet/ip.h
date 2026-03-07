@@ -16,7 +16,10 @@
 
 #include <netinet/in.h>
 
+#include <stdbool.h>
+
 struct queue;
+struct msgb;
 
 typedef struct ip_intf ip_intf_t;
 typedef struct arp_state arp_state_t;
@@ -41,5 +44,7 @@ struct ip_route_result ip_route_lookup(struct in_addr dst);
 /* connected-network route management */
 void ip_route_if_up(ip_intf_t *intf);
 void ip_route_if_down(ip_intf_t *intf);
+
+void arp_output(ip_intf_t *ifp, in_addr_t dst, struct msgb *, bool ifp_locked);
 
 #endif /* ECX_INET_IP_H */

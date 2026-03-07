@@ -126,7 +126,10 @@ ip_route_lookup(struct in_addr dst)
 
 	if (best != NULL) {
 		ret.intf = ip_intf_retain(best->intf);
-		ret.next_hop = best->gateway;
+		if (best->gateway.s_addr != INADDR_ANY)
+			ret.next_hop = best->gateway;
+		else
+			ret.next_hop = dst;
 	}
 
 	ke_rwlock_exit_read(&ip_route_rwlock);

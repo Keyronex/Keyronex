@@ -11,8 +11,28 @@
  * @brief General utilities for the internet stack.
  */
 
-
 #include <arpa/inet.h>
+
+uint16_t
+ip_checksum(void *data, size_t len)
+{
+	uint16_t *buf = data;
+	uint32_t sum = 0;
+
+	while (len > 1) {
+		sum += *buf++;
+		len -= 2;
+	}
+
+	if (len > 0)
+		sum += *(uint8_t *)buf;
+
+	while (sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+
+	return ~sum;
+}
+
 
 uint32_t
 htonl(uint32_t x)

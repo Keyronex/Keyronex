@@ -39,4 +39,6 @@ struct ip_intf {
 	struct arp_state *arp_state;
 };
 
+void arp_state_init(struct ip_intf *);
+
 #endif /* ECX_INET_IP_INTF_H */

@@ -14,6 +14,8 @@
 #ifndef ECX_INET_UTIL_H
 #define ECX_INET_UTIL_H
 
+#include <stdint.h>
+
 #define FMT_MAC "%02x:%02x:%02x:%02x:%02x:%02x"
 #define ARG_MAC(mac)                                              \
 	(mac).ether_addr_octet[0], (mac).ether_addr_octet[1],     \
@@ -29,5 +31,7 @@
 	((ntohl(ip_net) >>  8) & 0xff), \
 	((ntohl(ip_net) >>  0) & 0xff)
 #define ARG_IP4_U8(ip) (ip)[0], (ip)[1], (ip)[2], (ip)[3]
+
+uint16_t ip_checksum(void *data, size_t len);
 
 #endif /* ECX_INET_UTIL_H */

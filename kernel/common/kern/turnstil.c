@@ -95,6 +95,8 @@ lend_priority(kthread_t *curthread, struct kturnstile_chain *root_chain)
 	struct kturnstile_chain *held_chain = NULL;
 	kthread_t *thread = curthread;
 
+	kassert(ke_ipl() == IPL_DISP);
+
 restart:
 	/* Only want curthread->lock and root_chain->lock. */
 	if (held_chain != NULL) {
@@ -183,6 +185,8 @@ revoke_priority(kturnstile_t *ts)
 	kthread_t *inheritor = ts->inheritor;
 	kpri_t new_ipri;
 	kturnstile_t *it;
+
+	kassert(ke_ipl() == IPL_DISP);
 
 	kassert(inheritor != NULL);
 	ke_spinlock_enter_nospl(&inheritor->lock);
