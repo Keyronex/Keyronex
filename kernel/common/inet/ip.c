@@ -426,7 +426,13 @@ ip_lrput(queue_t *q, mblk_t *mp)
 }
 
 int
-ip_output(mblk_t *m)
+ip_output(mblk_t *mp)
+{
+	return ip_output_intfheld(mp, NULL);
+}
+
+int
+ip_output_intfheld(mblk_t *m, ip_intf_t *ifp)
 {
 	struct ether_header *eh = (struct ether_header *)m->rptr;
 	struct ip *ip = (struct ip *)(eh + 1);
@@ -444,13 +450,15 @@ ip_output(mblk_t *m)
 	ip->ip_sum = 0;
 	ip->ip_sum = ip_checksum(ip, ip->ip_hl << 2);
 
-	arp_output(rt.intf, rt.next_hop.s_addr, m, false);
+	if (ifp != NULL && rt.intf != ifp)
+		kfatal("handle ip output from unheld interface");
+
+	arp_output(rt.intf, rt.next_hop.s_addr, m, true);
 
 	ip_intf_release(rt.intf);
 
 	return 0;
 }
-
 
 void
 ip_init(void)

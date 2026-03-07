@@ -728,6 +728,8 @@ packages:
         - '--disable-nls'
         - '--with-ssl=openssl'
         - '--with-openssl'
+        environ:
+          gl_cv_header_working_stdint_h: 'yes'
     build:
       - args: ['make', '-j@PARALLELISM@']
       - args: ['make', 'install']

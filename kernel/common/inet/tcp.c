@@ -23,6 +23,7 @@
 #include <sys/kmem.h>
 #include <sys/libkern.h>
 #include <sys/stream.h>
+#include <sys/strsubr.h>
 #include <sys/tihdr.h>
 
 #include <netinet/in.h>
@@ -75,7 +76,7 @@ enum tcp_timer_type {
 	TCP_TIMER_MAX
 };
 
-typedef struct tcp_endp {
+typedef struct tcp {
 	kmutex_t	mutex;
 	atomic_uint	refcnt;
 
@@ -84,18 +85,21 @@ typedef struct tcp_endp {
 
 	/* in detached state, our send queue */
 	mblk_q_t detached_snd_q;
-	size_t detached_snd_q_count;
+	uint32_t detached_snd_q_count;
 
 	/* in detached state, our receive queue */
 	/* TODO could merge with above? detached close = hard reset on recv */
 	mblk_q_t detached_rcv_q;
-	size_t detached_rcv_q_count;
+	uint32_t detached_rcv_q_count;
 
 	enum tcp_state state;	/* state of TCB */
 	int conn_id;		/* ID in the connections/binds table */
 
 	struct sockaddr_in laddr;	/* local address */
 	struct sockaddr_in faddr;	/* foreign address */
+
+	ip_intf_t *processing_ifp;	/* ifp context we are executing in
+					 * right now, if in it*/
 
 	struct {
 		kcallout_t	callout;
@@ -142,16 +146,21 @@ typedef struct tcp_endp {
 
 	/* mblk preallocated for TCBs created by passive opens */
 	mblk_t	*conn_ind_m;	/* preallocated T_CONN_IND */
-} tcp_endp_t;
+} tcp_t;
 
 static int tcp_open(queue_t *, void *dev);
 static void tcp_close(queue_t *);
 static void tcp_wput(queue_t *, mblk_t *);
 static void tcp_rput(queue_t *, mblk_t *);
 static void tcp_rsrv(queue_t *);
+static void tcp_rsrv(queue_t *);
+
+void tcp_set_timer(tcp_t *, enum tcp_timer_type, uint32_t timeout_ms);
+void tcp_cancel_timer(tcp_t *, enum tcp_timer_type);
+void tcp_cancel_all_timers(tcp_t *);
 static void tcp_timer_dpchandler(void *, void *);
 
-static int tcp_output(tcp_endp_t *);
+static int tcp_output(tcp_t *);
 
 struct qinit tcp_rinit = {
 	.qopen = tcp_open,
@@ -184,12 +193,21 @@ static const char *tcp_state_names[] = {
 	[TCPS_TIME_WAIT] = "TIME-WAIT",
 };
 
+#define TCP_CONN_TABLE_SIZE 256
+static tcp_t *tcp_conn_table[TCP_CONN_TABLE_SIZE];
+static krwlock_t tcp_conntab_lock;
+
+#define TCP_EPHEMERAL_LOW  49152
+#define TCP_EPHEMERAL_HIGH 65535
+static uint16_t tcp_next_ephemeral = TCP_EPHEMERAL_LOW;
+static krwlock_t tcp_bind_lock;
+
 #define TCP_TRACE(...) kdprintf("TCP: " __VA_ARGS__)
 
-static tcp_endp_t *
-tcb_new(queue_t *rq)
+static tcp_t *
+tcp_new(queue_t *rq)
 {
-	tcp_endp_t *tp = kmem_alloc(sizeof(*tp));
+	tcp_t *tp = kmem_alloc(sizeof(*tp));
 	if (tp == NULL)
 		return NULL;
 
@@ -202,6 +220,8 @@ tcb_new(queue_t *rq)
 	ke_spinlock_init(&tp->detach_lock);
 
 	tp->rq = rq;
+
+	tp->processing_ifp = NULL;
 
 	tp->mss = TCP_MSS;
 
@@ -249,10 +269,66 @@ tcb_new(queue_t *rq)
 	return tp;
 }
 
+
+static void
+tcp_retain(tcp_t *tp)
+{
+	atomic_fetch_add_explicit(&tp->refcnt, 1, memory_order_relaxed);
+}
+
+static void
+tcp_release(tcp_t *tp)
+{
+	if (atomic_fetch_sub_explicit(&tp->refcnt, 1, memory_order_acq_rel) ==
+	    1)
+		kfatal("do delete tcb\n");
+}
+
+static void
+tcp_change_state(tcp_t *tp, enum tcp_state newstate)
+{
+	TCP_TRACE("TCB %p state change %s -> %s\n", tp,
+	    tcp_state_names[tp->state], tcp_state_names[newstate]);
+	tp->state = newstate;
+}
+
+static void
+tcb_free_connstate(tcp_t *tp)
+{
+#if 0 /* old listening logic */
+	kassert(tp->listener == NULL);
+#endif
+
+	tcp_change_state(tp, TCPS_CLOSED);
+
+	tcp_cancel_all_timers(tp);
+
+	if (tp->conn_id != -1) {
+		ke_rwlock_enter_write(&tcp_conntab_lock, "tcp_free_connstate");
+		kassert(tcp_conn_table[tp->conn_id] == tp);
+		tcp_conn_table[tp->conn_id] = NULL;
+		ke_rwlock_exit_write(&tcp_conntab_lock);
+		tp->conn_id = -1;
+	}
+
+	str_mblk_q_free(&tp->reass_queue);
+
+	str_mblk_q_free(&tp->detached_snd_q);
+	tp->detached_snd_q_count = 0;
+
+	str_mblk_q_free(&tp->detached_rcv_q);
+	tp->detached_rcv_q_count = 0;
+
+	str_freeb(tp->conn_con_m);
+	str_freeb(tp->ordrel_ind_m);
+	str_freeb(tp->discon_ind_m);
+	str_freeb(tp->conn_ind_m);
+}
+
 static int
 tcp_open(queue_t *rq, void *)
 {
-	tcp_endp_t *tp = tcb_new(rq);
+	tcp_t *tp = tcp_new(rq);
 	if (tp == NULL)
 		return -ENOMEM;
 	rq->ptr = rq->other->ptr = tp;
@@ -265,17 +341,8 @@ tcp_close(queue_t *rq)
 	ktodo();
 }
 
-static void
-tcp_change_state(tcp_endp_t *tp, enum tcp_state newstate)
-{
-	TCP_TRACE("TCB %p state change %s -> %s\n", tp,
-	    tcp_state_names[tp->state], tcp_state_names[newstate]);
-	tp->state = newstate;
-}
-
-
 static size_t
-tcp_snd_q_count(tcp_endp_t *tp)
+tcp_snd_q_count(tcp_t *tp)
 {
 	if (tp->rq == NULL)
 		return tp->detached_snd_q_count;
@@ -287,20 +354,11 @@ tcp_snd_q_count(tcp_endp_t *tp)
  * connection/binding managmeent table
  */
 
-#define TCP_CONN_TABLE_SIZE 256
-static tcp_endp_t *tcp_conn_table[TCP_CONN_TABLE_SIZE];
-static krwlock_t tcp_conntab_lock;
-
-#define TCP_EPHEMERAL_LOW  49152
-#define TCP_EPHEMERAL_HIGH 65535
-static uint16_t tcp_next_ephemeral = TCP_EPHEMERAL_LOW;
-static krwlock_t tcp_bind_lock;
-
 static bool
 tcp_port_in_use(uint16_t port, in_addr_t addr)
 {
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
-		tcp_endp_t *t = tcp_conn_table[i];
+		tcp_t *t = tcp_conn_table[i];
 		if (t != NULL && t->laddr.sin_port == port &&
 		    (t->laddr.sin_addr.s_addr == INADDR_ANY ||
 			addr == INADDR_ANY || t->laddr.sin_addr.s_addr == addr))
@@ -328,7 +386,7 @@ tcp_alloc_ephemeral(in_addr_t addr)
 }
 
 static int
-tcp_conn_table_insert(tcp_endp_t *tp)
+tcp_conn_table_insert(tcp_t *tp)
 {
 	ke_rwlock_enter_write(&tcp_conntab_lock, "tcp_conn_table_insert");
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
@@ -343,38 +401,38 @@ tcp_conn_table_insert(tcp_endp_t *tp)
 	return -ENOSPC;
 }
 
-#if 0 /* ref it? */
-static tcp_endp_t *
+static tcp_t *
 tcp_conn_lookup(struct in_addr src, uint16_t sport, struct in_addr dst,
     uint16_t dport)
 {
-	ke_rwlock_enter_write(&tcp_conntab_lock);
+	ke_rwlock_enter_read(&tcp_conntab_lock, "tcp_conn_lookup");
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
-		tcp_endp_t *t = tcp_conn_table[i];
+		tcp_t *t = tcp_conn_table[i];
 		if (t != NULL && t->laddr.sin_addr.s_addr == dst.s_addr &&
 		    t->laddr.sin_port == dport &&
 		    t->faddr.sin_addr.s_addr == src.s_addr &&
 		    t->faddr.sin_port == sport) {
-			spinlock_unlock_nospl(&tcp_conntab_lock);
+			tcp_retain(t);
+			ke_rwlock_exit_read(&tcp_conntab_lock);
 			return t;
 		}
 	}
 
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
-		tcb_t *t = tcp_conn_table[i];
+		tcp_t *t = tcp_conn_table[i];
 		if (t != NULL && t->state == TCPS_LISTEN &&
 		    t->laddr.sin_port == dport &&
 		    (t->laddr.sin_addr.s_addr == INADDR_ANY ||
 			t->laddr.sin_addr.s_addr == dst.s_addr)) {
-			spinlock_unlock_nospl(&tcp_conntab_lock);
+			tcp_retain(t);
+			ke_rwlock_exit_read(&tcp_conntab_lock);
 			return t;
 		}
 	}
 
-	spinlock_unlock_nospl(&tcp_conntab_lock);
+	ke_rwlock_exit_read(&tcp_conntab_lock);
 	return NULL;
 }
-#endif
 
 /*
  * output processing
@@ -404,7 +462,7 @@ reply_error_ack(queue_t *wq, mblk_t *mp, enum T_prim error_prim,
 }
 
 static int
-tcp_do_bind(tcp_endp_t *tp, struct sockaddr_in *laddr)
+tcp_do_bind(tcp_t *tp, struct sockaddr_in *laddr)
 {
 	uint16_t port;
 	int r;
@@ -448,7 +506,7 @@ tcp_issgen(void)
 }
 
 static int
-tcp_setup_connection(tcp_endp_t *tp, struct sockaddr_in *faddr)
+tcp_setup_connection(tcp_t *tp, struct sockaddr_in *faddr)
 {
 	tp->faddr = *faddr;
 
@@ -491,7 +549,7 @@ tcp_wput_conn_req(queue_t *wq, mblk_t *mp)
 {
 	struct T_conn_req *cr = (struct T_conn_req *)mp->rptr;
 	struct sockaddr_in *dest = (struct sockaddr_in *)&cr->DEST;
-	tcp_endp_t *tp = wq->ptr;
+	tcp_t *tp = wq->ptr;
 	int r;
 
 	switch (tp->state) {
@@ -601,13 +659,13 @@ static uint8_t tcp_out_flags[] = {
 };
 
 static queue_t *
-tcp_wq(tcp_endp_t *tcb)
+tcp_wq(tcp_t *tcb)
 {
 	return tcb->rq != NULL ? tcb->rq->other : NULL;
 }
 
 static void
-copy_data(tcp_endp_t *tcb, size_t off, size_t len, uint8_t *dst)
+copy_data(tcp_t *tcb, size_t off, size_t len, uint8_t *dst)
 {
 	mblk_q_t *q;
 	mblk_t *mblk;
@@ -697,7 +755,7 @@ tcp_checksum(struct ip *ip, struct tcphdr *tcp, int tcp_len)
 }
 
 static int
-do_send(tcp_endp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
+do_send(tcp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 {
 	mblk_t *mp;
 	struct ether_header *eh;
@@ -745,7 +803,10 @@ do_send(tcp_endp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 
 	th->th_sum = tcp_checksum(ip, th, sizeof(struct tcphdr) + data_len);
 
-	ip_output(mp);
+	if (tp->processing_ifp != NULL)
+		ip_output_intfheld(mp, tp->processing_ifp);
+	else
+		ip_output(mp);
 
 	start = tp->snd_nxt;
 
@@ -778,7 +839,7 @@ do_send(tcp_endp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 }
 
 int
-tcp_output(tcp_endp_t *tp)
+tcp_output(tcp_t *tp)
 {
 	uint8_t flags;
 	int data_len, data_off;
@@ -870,6 +931,76 @@ send_more:
  */
 
 static void
+tcp_conn_con(tcp_t *tp, struct ip *ip, struct tcphdr *th, in_port_t sport)
+{
+	mblk_t *mp;
+	struct T_conn_con *con;
+	struct sockaddr_in *sin;
+
+	kassert(tp->rq != NULL)
+
+	kassert(tp->conn_con_m != NULL);
+	mp = tp->conn_con_m;
+	tp->conn_con_m = NULL;
+
+	con = (struct T_conn_con *)mp->rptr;
+	con->PRIM_type = T_CONN_CON;
+	con->RES_length = sizeof(struct sockaddr_in);
+	sin = (struct sockaddr_in *)&con->RES;
+	sin->sin_family = AF_INET;
+	sin->sin_port = sport;
+	sin->sin_addr = ip->ip_src;
+
+	str_putnext(tp->rq, mp);
+}
+
+static void
+tcp_discon_ind(tcp_t *tp, int reason)
+{
+	mblk_t *mp;
+	struct T_discon_ind *di;
+
+	kassert(tp->discon_ind_m != NULL);
+	mp = tp->discon_ind_m;
+	tp->discon_ind_m = NULL;
+
+	di = (struct T_discon_ind *)mp->rptr;
+	di->PRIM_type = T_DISCON_IND;
+	di->DISCON_reason = reason;
+#if 0 /* old listening code */
+	di->SEQ_number = (tp->listener == NULL) ? -1 : tp->conind_seq;
+#endif
+	di->SEQ_number = -1;
+
+#if 0
+	if (tp->listener != NULL)
+		str_putnext(tp->listener->rq, mp);
+	else
+#endif
+		str_putnext(tp->rq, mp);
+}
+
+static void
+tcp_ordrel_ind(tcp_t *tp)
+{
+	mblk_t *mp;
+	struct T_ordrel_ind *ord;
+
+	kassert(tp->ordrel_ind_m != NULL);
+	mp = tp->ordrel_ind_m;
+	tp->ordrel_ind_m = NULL;
+
+	ord = (struct T_ordrel_ind *)mp->rptr;
+	ord->PRIM_type = T_ORDREL_IND;
+
+	str_putnext(tp->rq, mp);
+}
+
+/* we reuse these fields for our convenience; they can be figured out again */
+#define th_1stdata th_sport
+#define th_datalen th_dport
+
+static void
 tcp_rput(queue_t *rq, mblk_t *mp)
 {
 	ktodo();
@@ -878,8 +1009,1221 @@ tcp_rput(queue_t *rq, mblk_t *mp)
 static void
 tcp_rsrv(queue_t *rq)
 {
-	ktodo();
+	mblk_t *mp;
+	tcp_t *tp = rq->ptr;
+
+	if (!str_canputnext(rq))
+		return;
+
+	while ((mp = str_getq(rq)) != NULL) {
+		if (str_canputnext(rq)) {
+			str_putnext(rq, mp);
+		} else {
+			str_putbq(rq, mp);
+			break;
+		}
+	}
+
+	if (str_canputnext(rq)) {
+		size_t wnd_opening;
+
+		kassert(TAILQ_EMPTY(&rq->msgq)); /* should be empty by now */
+
+		if (tp->ordrel_needed) {
+			tp->ordrel_needed = false;
+			tcp_ordrel_ind(tp);
+		}
+
+		/* reopen the window to its maximum */
+		wnd_opening = tp->rcv_wnd_max - tp->rcv_wnd;
+		tp->rcv_wnd = tp->rcv_wnd_max;
+
+		/*
+		 * only send a window update if SWS-avoidance conditions
+		 * met not quite RFC 9293 compliant but we aren't
+		 * vulnerable to silly windows anyway; we don't reopen
+		 * the window at all until we can push everything we've
+		 * got upstream.
+		 */
+		if (wnd_opening >= tp->mss * 2 ||
+		    wnd_opening >= tp->rcv_wnd_max / 2) {
+			tp->emit_ack = true;
+			tcp_output(tp);
+		}
+	}
 }
+
+static void
+tcp_abort(tcp_t *tp, int err)
+{
+#if 0
+	if (tp->listener == NULL) {
+#endif
+		if (tp->rq != NULL)
+			tcp_discon_ind(tp, err);
+
+		tcb_free_connstate(tp);
+
+		if (tp->rq == NULL)
+			tcp_release(tp);
+#if 0 /* old listening logic */
+	} else if (tp->conn_ind_m == NULL) {
+		/* if conn_ind_m was send up, we're on the estab_q */
+		kassert(tp->rq == NULL);
+		TAILQ_REMOVE(&tp->listener->estab_q, tp, listener_qentry);
+		tcp_discon_ind(tp, err);
+		tp->listener = NULL;
+		tcp_free_connstate(tp);
+		tcp_release(tp);
+	} else {
+		/* conn_ind_m not sent up, means we're on syn_rcvd_q */
+		kassert(tp->rq == NULL);
+		TAILQ_REMOVE(&tp->listener->syn_rcvd_q, tp, listener_qentry);
+		/* conn_ind wasn't sent up yet so above is all we need to do */
+		tp->listener = NULL;
+		tcb_free_connstate(tp);
+		tcb_free(tp);
+	}
+#endif
+}
+
+static void
+tcp_reply(ip_intf_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
+    tcp_seq_t seq, tcp_seq_t ack, uint8_t flags)
+{
+	struct in_addr tmp_addr;
+	uint16_t tmp_port;
+	size_t hlen = ip->ip_hl << 2;
+
+	tmp_addr = ip->ip_src;
+	ip->ip_src = ip->ip_dst;
+	ip->ip_dst = tmp_addr;
+
+	ip->ip_len = htons(hlen + sizeof(struct tcphdr));
+	ip->ip_sum = 0;
+
+	tmp_port = th->th_sport;
+	th->th_sport = th->th_dport;
+	th->th_dport = tmp_port;
+
+	th->th_seq = htonl(seq);
+	th->th_ack = htonl(ack);
+	th->th_off = sizeof(struct tcphdr) >> 2;
+	th->th_flags = flags;
+	th->th_win = 0;
+	th->th_sum = 0;
+	th->th_urp = 0;
+
+	m->wptr = m->rptr + sizeof(struct ether_header) + hlen +
+	    sizeof(struct tcphdr);
+
+	th->th_sum = tcp_checksum(ip, th, sizeof(struct tcphdr));
+
+	ip_output_intfheld(m, ifpheld);
+}
+
+static void
+tcp_reply_reset(ip_intf_t *ifp, mblk_t *m, struct ip *ip, struct tcphdr *th)
+{
+	if (th->th_flags & TH_ACK) {
+		tcp_reply(ifp, m, ip, th, ntohl(th->th_ack), 0, TH_RST);
+	} else {
+		size_t seg_len = ntohs(ip->ip_len) - (ip->ip_hl << 2) -
+		    (th->th_off << 2);
+		if (th->th_flags & TH_SYN)
+			seg_len++;
+		if (th->th_flags & TH_FIN)
+			seg_len++;
+		tcp_reply(ifp, m, ip, th, ntohl(th->th_seq),
+		    ntohl(th->th_ack) + seg_len, TH_RST);
+	}
+}
+
+void
+tcp_rtt_update(tcp_t *tp, tcp_seq_t ack_seq)
+{
+	kabstime_t now = ke_time();
+	uint32_t r; /* RTT in milloseconds*/
+
+	if (!tp->timing_rtt || !SEQ_GEQ(ack_seq, tp->rtseq))
+		return;
+
+	r = (uint32_t)((now - tp->rtstart) / 1000000ULL);
+
+	TCP_TRACE("Measured RTT = %u ms for seq %u\n", r, tp->rtseq);
+
+#define ALPHA_RTT_SHIFT	  3 /* 1/8 */
+#define BETA_RTTVAR_SHIFT 2 /* 1/4 */
+#define K_RTO_MULTIPLIER  4 /* 4/1 */
+
+	if (tp->srtt == 0) {
+		/*
+		 * First measurement:
+		 *
+		 * SRTT <- R
+		 * RTTVAR <- R/2
+		 * RTO <- SRTT + max (G, K*RTTVAR)
+		 */
+
+		tp->srtt = r;
+		tp->rttvar = r >> 1;
+
+		TCP_TRACE("First RTT measurement - "
+			"SRTT=%u ms, RTTVAR=%u ms\n",
+		    tp->srtt, tp->rttvar);
+	} else {
+		/*
+		 * Subsequent measurements:
+		 *
+		 * RTTVAR <- (1 - beta) * RTTVAR + beta * |SRTT - R'|
+		 * SRTT <- (1 - alpha) * SRTT + alpha * R'
+		 */
+
+		uint32_t delta = (tp->srtt > r) ? (tp->srtt - r) :
+						  (r - tp->srtt);
+
+		tp->rttvar = tp->rttvar - (tp->rttvar >> BETA_RTTVAR_SHIFT) +
+		    (delta >> BETA_RTTVAR_SHIFT);
+
+		tp->srtt = tp->srtt - (tp->srtt >> ALPHA_RTT_SHIFT) +
+		    (r >> ALPHA_RTT_SHIFT);
+
+		TCP_TRACE("Updated SRTT=%u ms, RTTVAR=%u ms "
+			"(measured RTT=%u ms)\n",
+		    tp->srtt, tp->rttvar, r);
+	}
+
+	/* RTO <- SRTT + max (G, K*RTTVAR) [G is 1ms] */
+	tp->rto = tp->srtt + MAX2(1, K_RTO_MULTIPLIER * tp->rttvar);
+	tp->rto = MIN2(MAX2(tp->rto, TCP_MIN_RTO_MS), TCP_MAX_RTO_MS);
+
+	TCP_TRACE("New RTO=%u ms\n", tp->rto);
+
+	tp->timing_rtt = false;
+	tp->n_rexmits = 0;
+}
+
+static void
+tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
+{
+	mblk_q_t *msgq;
+	uint32_t *countp;
+	mblk_t *m, *next;
+
+	if (tcp_wq(tp) == NULL) {
+		msgq = &tcp_wq(tp)->msgq;
+		countp = &tcp_wq(tp)->count;
+	} else {
+		msgq = &tp->detached_snd_q;
+		countp = &tp->detached_snd_q_count;
+	}
+
+	if (bytes_acked >= *countp) {
+		while ((m = TAILQ_FIRST(msgq)) != NULL) {
+			TAILQ_REMOVE(msgq, m, link);
+			kassert(m->cont == NULL);
+			str_freeb(m);
+		}
+		*countp = 0;
+		return;
+	}
+
+	m = TAILQ_FIRST(msgq);
+	while (m != NULL && bytes_acked > 0) {
+		size_t size = m->wptr - m->rptr;
+
+		kassert(m->cont == NULL);
+
+		next = TAILQ_NEXT(m, link);
+
+		if (bytes_acked >= size) {
+			/* drop an entire mblk */
+			bytes_acked -= size;
+			*countp -= size;
+			TAILQ_REMOVE(msgq, m, link);
+			str_freeb(m);
+		} else {
+			/* trim the front of mblk */
+			m->rptr += bytes_acked;
+			*countp -= bytes_acked;
+			return;
+		}
+
+		m = next;
+	}
+}
+
+
+struct tcphdr *
+mtoth(mblk_t *m)
+{
+	return (struct tcphdr *)(m->rptr + sizeof(struct ether_header) +
+	    sizeof(struct ip));
+}
+
+bool
+tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
+    bool *drop_mp)
+{
+#define SEG_LEN(th) ((th)->th_datalen + (((th)->th_flags & TH_FIN) ? 1 : 0))
+	mblk_t *mq, *next, *prev;
+	struct tcphdr *thq;
+	bool fin_reached = false;
+	tcp_seq_t seg_seq = ntohl(th->th_seq);
+	tcp_seq_t seg_end = seg_seq + SEG_LEN(th);
+	mblk_t *data_head = NULL, *data_tail = NULL;
+
+	TAILQ_FOREACH (mq, &tp->reass_queue, link) {
+		thq = mtoth(mq);
+		if (SEQ_GT(ntohl(thq->th_seq), seg_seq))
+			break;
+	}
+
+	prev = NULL;
+	if (mq != NULL)
+		prev = TAILQ_PREV(mq, msgb_q, link);
+	else
+		prev = TAILQ_LAST(&tp->reass_queue, msgb_q);
+
+	/*
+	 * Handle overlap wih preceding segments.
+	 * Trim from the new segment; if completely overlapped, drop.
+	 */
+	if (prev != NULL) {
+		struct tcphdr *thprev = mtoth(prev);
+		tcp_seq_t prev_seq = ntohl(thprev->th_seq);
+		tcp_seq_t prev_end = prev_seq + SEG_LEN(thprev);
+
+		if (SEQ_GT(prev_end, seg_seq)) {
+			uint32_t overlap = prev_end - seg_seq;
+			uint32_t datatrim = MIN2(overlap, th->th_datalen);
+
+			if (overlap >= SEG_LEN(th)) {
+				TCP_TRACE("Segment completely overlapped by "
+				    " previous segment, dropping\n");
+				return false;
+			}
+
+			th->th_seq = htonl(seg_seq + datatrim);
+			th->th_1stdata += datatrim;
+			th->th_datalen -= datatrim;
+			seg_seq += datatrim;
+
+			/* if overlap exceeds data, then FIN gets trimmed */
+			if (overlap > datatrim)
+				th->th_flags &= ~TH_FIN;
+
+			seg_end = seg_seq + SEG_LEN(th);
+
+			TCP_TRACE("Trimmed %u bytes%s from beginning of new "
+				  "segment\n",
+			    datatrim, (overlap > datatrim) ? " and FIN" : "");
+		}
+	}
+
+	/* this mblk is being kept - we now own it */
+	*drop_mp = false;
+
+	if (mq != NULL)
+		TAILQ_INSERT_BEFORE(mq, m, link);
+	else
+		TAILQ_INSERT_TAIL(&tp->reass_queue, m, link);
+
+
+	/*
+	 * Handle overlap wih succeeding segments.
+	 * Trim from the succeeding segment; if completely overlapped, drop.
+	 */
+	mq = TAILQ_NEXT(m, link);
+	while (mq != NULL) {
+		tcp_seq_t succ_seq;
+
+		thq = mtoth(mq);
+		succ_seq = ntohl(thq->th_seq);
+
+		if (SEQ_GT(seg_end, succ_seq)) {
+			uint32_t overlap = seg_end - succ_seq;
+
+			if (overlap >= SEG_LEN(thq)) {
+				TCP_TRACE("Succeeding segment completely "
+				    "overlapped, removing\n");
+				next = TAILQ_NEXT(mq, link);
+				TAILQ_REMOVE(&tp->reass_queue, mq, link);
+				str_freemsg(mq);
+				mq = next;
+				continue;
+			} else {
+				uint32_t datatrim = MIN2(overlap,
+				    thq->th_datalen);
+
+				thq->th_seq = htonl(succ_seq + datatrim);
+				thq->th_1stdata += datatrim;
+				thq->th_datalen -= datatrim;
+
+				if (overlap > datatrim)
+					thq->th_flags &= ~TH_FIN;
+
+				TCP_TRACE("Trimmed %u bytes%s from beginning "
+					  "of succeeding segment\n",
+				    overlap,
+				    (overlap > datatrim) ? " and FIN" : "");
+			}
+		} else {
+			/* no overlap */
+			break;
+		}
+
+		mq = TAILQ_NEXT(mq, link);
+	}
+
+	mq = TAILQ_FIRST(&tp->reass_queue);
+	while (mq != NULL) {
+		thq = mtoth(mq);
+		uint32_t cur_seq = ntohl(thq->th_seq);
+
+		if (cur_seq != tp->rcv_nxt)
+			break;
+
+		TCP_TRACE("Processing contiguous segment, seq=%u, len=%u\n",
+		    cur_seq, thq->th_datalen);
+
+		tp->rcv_nxt += thq->th_datalen;
+
+		if (thq->th_flags & TH_FIN) {
+			TCP_TRACE("FIN segment processed\n");
+			tp->rcv_nxt++;
+			fin_reached = true;
+		}
+
+		next = TAILQ_NEXT(mq, link);
+		TAILQ_REMOVE(&tp->reass_queue, mq, link);
+
+		/* strip headers ready for passing upstream */
+		if (thq->th_datalen > 0) {
+			mq->rptr = (char *)thq + thq->th_1stdata;
+			mq->wptr = mq->rptr + thq->th_datalen;
+			mq->db->type = M_DATA;
+			mq->cont = NULL;
+
+			if (data_head == NULL) {
+				data_head = data_tail = mq;
+			} else {
+				data_tail->cont = mq;
+				data_tail = mq;
+			}
+		} else {
+			str_freemsg(mq);
+		}
+
+		mq = next;
+	}
+
+	if (data_head != NULL) {
+		/*
+		 * We manage rcv_wnd like this: it stays constant until we can't
+		 * putnext() any further data and have to queue it; then, we
+		 * reduce rcv_wnd by as much as we receive. this continues until
+		 * we are free to putnext() again, at which point we reopen the
+		 * window to its full extent.
+		 */
+
+		if (tp->rq != NULL && str_canputnext(tp->rq)) {
+			if (!TAILQ_EMPTY(&tp->rq->msgq)) {
+				kassert(tp->rq->enabled);
+				tp->rcv_wnd -= str_msgsize(data_head);
+				str_putq(tp->rq, data_head);
+				tcp_rsrv(tp->rq);
+				tp->rq->enabled = false;
+			} else {
+				str_putnext(tp->rq, data_head);
+			}
+		} else if (tp->rq == NULL) {
+			TAILQ_INSERT_TAIL(&tp->detached_rcv_q, data_head, link);
+			tp->detached_rcv_q_count += str_msgsize(data_head);
+			tp->rcv_wnd -= str_msgsize(data_head);
+		} else {
+			str_putq(tp->rq, data_head);
+			tp->rcv_wnd -= str_msgsize(data_head);
+		}
+	}
+
+	return fin_reached;
+}
+
+/*
+ * entered with tp->mutex held
+ * if detached, ifp is the interface whose processing context we're in (for
+ * passing to IP)
+ * if not detached, then entered from stream processing context (so stream mutex
+ * also held).
+ */
+void
+tcp_conn_input(ip_intf_t *ifp, tcp_t *tp, mblk_t *mp)
+{
+	struct ip *ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
+	uint16_t hlen = ip->ip_hl << 2;
+	uint16_t tcp_len = ntohs(ip->ip_len) - hlen;
+	struct tcphdr *th = (struct tcphdr *)((char *)ip + hlen);
+	bool got_fin = false;
+	uint16_t sport, dport;
+	bool dropmp = true;
+
+	tp->processing_ifp = ifp;
+
+	sport = th->th_sport;
+	dport = th->th_dport;
+#define TCP_REPLY_RESET(ifp, mp, ip, th) \
+do { \
+	th->th_sport = sport; \
+	th->th_dport = dport; \
+	tcp_reply_reset(ifp, mp, ip, th); \
+	(mp) = NULL; \
+} while (0)
+
+	th->th_1stdata = (th->th_off << 2);
+	th->th_datalen = tcp_len - th->th_1stdata;
+
+	/* 3.10.7: SEGMENT ARRIVES */
+	switch (tp->state) {
+	case TCPS_CLOSED:
+		TCP_REPLY_RESET(ifp, mp, ip, th);
+		dropmp = false;
+		goto finish;
+
+	case TCPS_LISTEN:
+		/* 3.10.7.2: If the state is LISTEN, then... */
+
+		if (th->th_flags & TH_RST)
+			goto finish;
+
+		if (th->th_flags & TH_ACK) {
+			TCP_REPLY_RESET(ifp, mp, ip, th);
+			dropmp = false;
+			goto finish;
+		}
+
+		if (th->th_flags & TH_SYN) {
+#if 0
+			tcb_t *newtp;
+			int r;
+			ip_route_result_t route;
+
+			r = ip_route_lookup(ip->ip_src, &route);
+			if (r != 0)
+				goto finish;
+
+			/*
+			 * TODO: constrain route lookup to have source address
+			 * matching the destination address of the SYN we got.
+			 */
+			kassert(route.rr_src.s_addr == ip->ip_dst.s_addr);
+
+			newtp = tcb_new(NULL);
+			if (newtp == NULL) {
+				ip_route_result_release(&route);
+				goto finish;
+			}
+
+			newtp->mss = route.rr_mtu - sizeof(struct ip) -
+			    sizeof(struct tcphdr);
+			ip_route_result_release(&route);
+
+			newtp->laddr.sin_family = AF_INET;
+			newtp->laddr.sin_port = dport;
+			newtp->laddr.sin_addr = ip->ip_dst;
+
+			newtp->faddr.sin_family = AF_INET;
+			newtp->faddr.sin_port = sport;
+			newtp->faddr.sin_addr = ip->ip_src;
+
+			r = tcp_setup_connection(newtp, &newtp->faddr);
+			if (r < 0) {
+				tcb_free(newtp);
+				goto finish;
+			}
+
+			newtp->conn_ind_m =
+			    str_allocb(sizeof(struct T_conn_ind));
+			if (newtp->conn_ind_m == NULL) {
+				tcb_free(newtp);
+				goto finish;
+			}
+
+			newtp->conn_ind_m->db->type = STR_M_PROTO;
+			newtp->conn_ind_m->wptr += sizeof(struct T_conn_ind);
+
+			store_relaxed(&newtp->lockp, load_relaxed(&tp->lockp));
+
+			r = tcp_conn_table_insert(newtp);
+			if (r < 0) {
+				tcb_free(newtp);
+				goto finish;
+			}
+
+			newtp->listener = tp;
+			TAILQ_INSERT_TAIL(&tp->syn_rcvd_q, newtp,
+			    listener_qentry);
+
+			tcp_change_state(newtp, TCPS_SYN_RECEIVED);
+
+			newtp->rcv_nxt = ntohl(th->th_seq) + 1;
+			newtp->irs = ntohl(th->th_seq);
+
+			newtp->snd_wnd = ntohs(th->th_win);
+			newtp->snd_wl1 = ntohl(th->th_seq);
+
+			/* skip the SYN space & trim excess data if any */
+			th->th_seq = htonl(ntohl(th->th_seq) + 1);
+
+			if (th->th_datalen > 0 &&
+			    th->th_datalen > newtp->rcv_wnd) {
+				th->th_flags &= ~TH_FIN;
+				th->th_datalen = MIN2(th->th_datalen,
+				    tp->rcv_wnd);
+			}
+
+			tp = newtp;
+
+			goto step_6;
+#else
+			kfatal("todo: new connections\n");
+#endif
+		}
+
+		/* no valid case */
+		goto finish;
+
+	case TCPS_SYN_SENT:
+		/*
+		 * 3.10.7.3: If the state is SYN-SENT, then
+		 * First, check the ACK bit:
+		 */
+		if (th->th_flags & TH_ACK) {
+			if (SEQ_LEQ(ntohl(th->th_ack), tp->iss) ||
+			    SEQ_GT(ntohl(th->th_ack), tp->snd_max)) {
+				/*
+				 * If SEG.ACK =< ISS or SEG.ACK > SND.NXT, send
+				 * a reset (unless the RST bit is set, if so
+				 * drop the segment and return)
+				 */
+				TCP_REPLY_RESET(ifp, mp, ip, th);
+				dropmp = false;
+				goto finish;
+			}
+		}
+
+		if (th->th_flags & TH_RST) {
+			if (th->th_flags & TH_ACK) {
+				/*
+				 * If the ACK was acceptable, then signal to the
+				 * user "error: connection reset", drop the
+				 * segment, enter CLOSED state, delete TCB, and
+				 * return.
+				 */
+				tcp_abort(tp, ECONNRESET);
+				goto finish;
+			} else {
+				/* Otherwise, drop the segment and return. */
+				goto finish;
+			}
+		}
+
+		if (th->th_flags & TH_SYN) {
+			/*
+			 * If the SYN bit is on and the security/compartment is
+			 * acceptable, then RCV.NXT is set to SEG.SEQ+1, IRS is
+			 * set to SEG.SEQ...
+			 */
+
+			tp->irs = ntohl(th->th_seq);
+			tp->rcv_nxt = tp->irs + 1;
+
+			/* ...SND.UNA should be advanced to equal SEG.ACK (if
+			 * there is an ACK), and any segments on the
+			 * retransmission queue that are thereby acknowledged
+			 * should be removed.
+			 *
+			 * [we don't send any data with the SYN so no need.]
+			 */
+			if (th->th_flags & TH_ACK)
+				tp->snd_una = ntohl(th->th_ack);
+
+			if (SEQ_GT(tp->snd_una, tp->iss)) {
+				/*
+				 * If SND.UNA > ISS (our SYN has been ACKed),
+				 * change the connection state to ESTABLISHED,
+				 * form an ACK segment and send it.
+				 *
+				 * [this will happen next tcp_output()]
+				 */
+				tcp_change_state(tp, TCPS_ESTABLISHED);
+#if 0
+				kassert(tp->listener == NULL);
+#endif
+				tcp_conn_con(tp, ip, th, sport);
+				tp->emit_ack = true;
+			} else {
+				/*
+				 * Otherwise, enter SYN-RECEIVED, form a SYN,ACK
+				 * segment, and send it. Set the variables:
+				 */
+				tcp_change_state(tp, TCPS_SYN_RECEIVED);
+				tp->emit_ack = true;
+			}
+
+			tp->snd_wnd = ntohs(th->th_win);
+			tp->snd_wl1 = ntohl(th->th_seq);
+			tp->snd_wl2 = ntohl(th->th_ack);
+
+			/* Maybe update RTT based on the SYN we sent. */
+			tcp_cancel_timer(tp, TCP_TIMER_REXMT);
+			tcp_rtt_update(tp, ntohl(th->th_ack));
+
+			/* skip the SYN space & trim excess data if any */
+			th->th_seq = htonl(ntohl(th->th_seq) + 1);
+
+			if (th->th_datalen > 0 &&
+			    th->th_datalen > tp->rcv_wnd) {
+				th->th_flags &= ~TH_FIN;
+				th->th_datalen = MIN2(th->th_datalen,
+				    tp->rcv_wnd);
+			}
+
+			goto step_6;
+		}
+
+		/*
+		 * Fifth, if neither of the SYN or RST bits is set, then drop
+		 * the segment and return.
+		 */
+		if (!(th->th_flags & (TH_SYN | TH_RST)))
+			goto finish;
+
+	default:
+		break;
+	}
+
+	/* First, check sequence number: */
+
+	if (tp->rcv_wnd == 0) {
+		/*
+		 * If the RCV.WND is zero, no segments will be acceptable, but
+		 * special allowance should be made to accept valid ACKs, URGs,
+		 * and RSTs.
+		 * [SEG.SEQ = RCV.NXT - trim any data, FIN, PUSH]
+		 */
+
+		if (ntohl(th->th_seq) != tp->rcv_nxt) {
+			/*
+			 * If an incoming segment is not acceptable, an
+			 * acknowledgment should be sent in reply (unless the
+			 * RST bit is set, if so drop the segment and return)
+			 */
+			tp->emit_ack = true;
+			tcp_output(tp);
+			goto finish;
+		} else {
+			tcp_len = sizeof(struct tcphdr);
+			th->th_datalen = 0;
+			th->th_flags &= ~(TH_FIN | TH_PUSH);
+		}
+	} else {
+		int32_t trim_lead, trim_tail;
+
+		trim_lead = tp->rcv_nxt - ntohl(th->th_seq);
+		if (trim_lead > 0) {
+			if (th->th_flags & TH_SYN) {
+				/* trim logically leading syn */
+				trim_lead--;
+				th->th_seq = htonl(ntohl(th->th_seq) + 1);
+				th->th_flags &= ~TH_SYN;
+
+				if (th->th_urp != 0)
+					th->th_urp = htons(ntohs(th->th_urp) -
+					    1);
+				else
+					th->th_flags &= ~TH_URG;
+			}
+
+			if (trim_lead > th->th_datalen ||
+			    ((trim_lead == th->th_datalen) &&
+				(th->th_flags & TH_FIN))) {
+				tp->emit_ack = true;
+				tcp_output(tp);
+				goto finish;
+			}
+
+			th->th_seq = htonl(ntohl(th->th_seq) + trim_lead);
+			th->th_1stdata += trim_lead;
+			th->th_datalen -= trim_lead;
+
+			if (ntohs(th->th_urp) > trim_lead) {
+				th->th_urp = htons(
+				    ntohs(th->th_urp) - trim_lead);
+			} else {
+				th->th_flags &= ~TH_URG;
+				th->th_urp = 0;
+			}
+		}
+
+		trim_tail = (ntohl(th->th_seq) + th->th_datalen) -
+		    (tp->rcv_nxt + tp->rcv_wnd);
+		if (trim_tail > 0) {
+			if (trim_tail >= th->th_datalen) {
+				tp->emit_ack = true;
+				tcp_output(tp);
+				goto finish;
+			}
+
+			th->th_datalen -= trim_tail;
+			th->th_flags &= ~(TH_PUSH | TH_FIN);
+		}
+	}
+
+	/* Second, check the RST bit: */
+	if (th->th_flags & TH_RST) {
+		/*
+		 * If the RST bit is set and the sequence number is outside the
+		 * current receive window, silently drop the segment.
+		 */
+		if (SEQ_LT(ntohl(th->th_seq), tp->rcv_nxt) ||
+		    SEQ_GT(ntohl(th->th_seq), tp->rcv_nxt + tp->rcv_wnd)) {
+			goto finish;
+		} else if (ntohl(th->th_seq) == tp->rcv_nxt) {
+			/*
+			 * If the RST bit is set and the sequence number exactly
+			 * matches the next expected sequence number (RCV.NXT),
+			 * then TCP endpoints MUST reset the connection in the
+			 * manner prescribed below according to the connection
+			 * state.
+			 */
+			switch (tp->state) {
+			case TCPS_SYN_RECEIVED:
+				tcp_abort(tp, ECONNRESET);
+				goto finish;
+
+			case TCPS_ESTABLISHED:
+			case TCPS_FIN_WAIT_1:
+			case TCPS_FIN_WAIT_2:
+			case TCPS_CLOSE_WAIT:
+			/*
+			 * RFC specifies different handling for the below; all
+			 * these reflect detached TCBs, and tcp_abort() does the
+			 * needful in that case.
+			 */
+			case TCPS_CLOSING:
+			case TCPS_LAST_ACK:
+			case TCPS_TIME_WAIT:
+				tcp_abort(tp, ECONNRESET);
+				goto finish;
+
+			default:
+				kunreachable();
+			}
+		} else if (SEQ_LEQ(ntohl(th->th_seq),
+			       tp->rcv_nxt + tp->rcv_wnd)) {
+			/*
+			 * If the RST bit is set and the sequence number does
+			 * not exactly match the next expected sequence value,
+			 * yet is within the current receive window, TCP
+			 * endpoints MUST send an acknowledgment (challenge
+			 * ACK):
+			 *
+			 * <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>
+			 *
+			 * After sending the challenge ACK, TCP endpoints MUST
+			 * drop the unacceptable segment and stop processing the
+			 * incoming packet further. Note that RFC 5961 and
+			 * Errata ID 4772 [99] contain additional considerations
+			 * for ACK throttling in an implementation.
+			 */
+			th->th_sport = sport;
+			th->th_dport = dport;
+			tcp_reply(ifp, mp, ip, th, tp->snd_nxt, tp->rcv_nxt,
+			    TH_ACK);
+			dropmp = false;
+			goto finish;
+		}
+	}
+
+	/* Fourth, check the SYN bit: */
+	if (th->th_flags & TH_SYN) {
+		/*
+		 * If the SYN is in the window it is an error: send a reset, any
+		 * outstanding RECEIVEs and SEND should receive "reset"
+		 * responses, all segment queues should be flushed, the user
+		 * should also receive an unsolicited general "connection reset"
+		 * signal, enter the CLOSED state, delete the TCB, and return.
+		 */
+
+		tcp_abort(tp, ECONNRESET);
+		TCP_REPLY_RESET(ifp, mp, ip, th);
+		dropmp = false;
+		goto finish;
+	}
+
+	/* Fifth, check the ACK field: */
+	if (!(th->th_flags & TH_ACK)) {
+		/* if the ACK bit is off, drop the segment and return */
+		if (tp->emit_ack)
+			tcp_output(tp);
+		goto finish;
+	}
+
+	switch (tp->state) {
+	case TCPS_SYN_RECEIVED:
+		/*
+		 * If SND.UNA < SEG.ACK =< SND.NXT, then enter ESTABLISHED state
+		 * and continue processing with the variables below set to:
+		 */
+		if (SEQ_LT(tp->snd_una, ntohl(th->th_ack)) &&
+		    SEQ_LEQ(ntohl(th->th_ack), tp->snd_max)) {
+			/* advance for SYN bit */
+			tp->snd_una++;
+
+			if (SEQ_GT(tp->snd_una, tp->snd_nxt))
+#if 0 /* don't remember adding this - what is it good for? */
+				tp->snd_max = tp->snd_nxt;
+#else
+				kfatal("how?\n");
+#endif
+
+			tcp_change_state(tp, TCPS_ESTABLISHED);
+
+#if 0 /* old listening code */
+			if (tp->listener == NULL) {
+#endif
+				tcp_conn_con(tp, ip, th, sport);
+#if 0
+			} else {
+				TAILQ_REMOVE(&tp->listener->syn_rcvd_q, tp,
+				    listener_qentry);
+				TAILQ_INSERT_TAIL(&tp->listener->estab_q, tp,
+				    listener_qentry);
+				tcp_conn_ind(tp);
+			}
+#endif
+
+			tp->snd_wnd = ntohs(th->th_win);
+			tp->snd_wl1 = ntohl(th->th_seq);
+			tp->snd_wl2 = ntohl(th->th_ack);
+
+			goto acceptable_ack;
+		} else {
+			TCP_REPLY_RESET(ifp, mp, ip, th);
+			dropmp = false;
+			goto finish;
+		}
+
+	case TCPS_ESTABLISHED:
+	case TCPS_FIN_WAIT_1:
+	case TCPS_FIN_WAIT_2:
+	case TCPS_CLOSE_WAIT:
+	case TCPS_CLOSING:
+	case TCPS_LAST_ACK:
+	case TCPS_TIME_WAIT: {
+		int nseq_acked = 0;
+		bool our_fin_acked = false;
+
+		if (SEQ_LEQ(ntohl(th->th_ack), tp->snd_una)) {
+			/*
+			 * If the ACK is a duplicate (SEG.ACK =< SND.UNA), it
+			 * can be ignored.
+			 */
+		} else if (SEQ_GT(ntohl(th->th_ack), tp->snd_max)) {
+			/*
+			 * If the ACK acks something not yet sent (SEG.ACK >
+			 * SND.NXT), then send an ACK, drop the segment, and
+			 * return.
+			 * [snd_max in our case.]
+			 */
+			tp->emit_ack = true;
+			tcp_output(tp);
+			goto finish;
+		} else {
+		acceptable_ack:
+			nseq_acked = ntohl(th->th_ack) - tp->snd_una;
+
+			tp->snd_una = ntohl(th->th_ack);
+
+			/* if everything is ACKed, stop rexmt timer */
+			if (tp->snd_una == tp->snd_max)
+				tcp_cancel_timer(tp, TCP_TIMER_REXMT);
+
+			if (SEQ_LT(tp->snd_nxt, tp->snd_una))
+				tp->snd_nxt = tp->snd_una;
+
+			/* Maybe update RTT. */
+			tcp_rtt_update(tp, ntohl(th->th_ack));
+
+			/*
+			 * If SND.UNA =< SEG.ACK =< SND.NXT, the send window
+			 * should be updated.
+			 */
+
+			if (nseq_acked > tcp_snd_q_count(tp)) {
+				tp->snd_wnd -= tcp_snd_q_count(tp);
+				tcp_snd_q_consume(tp, tcp_snd_q_count(tp));
+				our_fin_acked = true;
+			} else {
+				tp->snd_wnd -= nseq_acked;
+				tcp_snd_q_consume(tp, nseq_acked);
+			}
+		}
+
+		/*
+		 * If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and
+		 * SND.WL2 =< SEG.ACK)), set SND.WND <- SEG.WND, set SND.WL1 <-
+		 * SEG.SEQ, and set SND.WL2 <- SEG.ACK.
+		 */
+		if (SEQ_LT(tp->snd_wl1, ntohl(th->th_seq)) ||
+		    (tp->snd_wl1 == ntohl(th->th_seq) &&
+			SEQ_LEQ(tp->snd_wl2, ntohl(th->th_ack)))) {
+			TCP_TRACE("snd_wnd now %d, wl1 now %u, wl2 now %u\n",
+			    ntohs(th->th_win), ntohl(th->th_seq),
+			    ntohl(th->th_ack));
+			tp->snd_wnd = ntohs(th->th_win);
+			tp->snd_wl1 = ntohl(th->th_seq);
+			tp->snd_wl2 = ntohl(th->th_ack);
+			if (tp->snd_wnd != 0)
+				tcp_cancel_timer(tp, TCP_TIMER_PERSIST);
+		}
+
+		switch (tp->state) {
+		case TCPS_FIN_WAIT_1:
+			if (our_fin_acked) {
+				tcp_change_state(tp, TCPS_FIN_WAIT_2);
+				if (tp->rq == NULL || tp->shutdown_rd) {
+					/*
+					 * Do the nonstandard BSD behaviour
+					 * here, whereby if there's no way to
+					 * further read from this connection
+					 * (due to shutdown SHUT_RD or the TCB
+					 * being detached), we set a 2MSL timer
+					 * and give up if we don't see FIN from
+					 * the remote in that time.
+					 */
+
+					tcp_set_timer(tp, TCP_TIMER_2MSL,
+					    TCP_2MSL_MS);
+				}
+			}
+			break;
+
+		case TCPS_CLOSING:
+			/*
+			 * If the ACK acknowledges our FIN, then enter the
+			 * TIME-WAIT state; otherwise, ignore the segment
+			 */
+			if (our_fin_acked) {
+				tcp_change_state(tp, TCPS_TIME_WAIT);
+				tcp_cancel_all_timers(tp);
+				tcp_set_timer(tp, TCP_TIMER_2MSL, TCP_2MSL_MS);
+			} else {
+				goto finish;
+			}
+			break;
+
+		case TCPS_LAST_ACK:
+			/*
+			 * The only thing that can arrive in this state is an
+			 * acknowledgment of our FIN. If our FIN is now
+			 * acknowledged, delete the TCB, enter the CLOSED state,
+			 * and return.
+			 */
+			if (our_fin_acked) {
+				tcb_free_connstate(tp);
+				tcp_release(tp);
+				goto finish;
+			}
+			break;
+
+		case TCPS_TIME_WAIT:
+			/*
+			 * The only thing that can arrive in this state is a
+			 * retransmission of the remote FIN. Acknowledge it and
+			 * restart the 2MSL timer.
+			 */
+			tcp_set_timer(tp, TCP_TIMER_2MSL, TCP_2MSL_MS);
+			tp->emit_ack = true;
+			tcp_output(tp);
+			goto finish;
+
+		default:
+			break;
+		}
+		break;
+
+	default:
+		kunreachable();
+	}
+	}
+
+step_6:
+	/* Sixth, check the URG bit: */
+	if (th->th_flags & TH_URG)
+		TCP_TRACE("TH_URG currently ignored!!");
+
+	/* Seventh, process the segment text: */
+	if (th->th_datalen > 0 || (th->th_flags & (TH_FIN))) {
+		TCP_TRACE("Processing data segment, seq=%d (rcv_nxt=%d)\n",
+		    ntohl(th->th_seq), tp->rcv_nxt);
+		got_fin = tcp_queue_for_reassembly(tp, mp, th, &dropmp);
+		tp->emit_ack = true;
+	}
+
+	/* Eighth, check the FIN bit: */
+	if (got_fin) {
+		if (tp->state <= TCPS_SYN_SENT) {
+			/*
+			 * Do not process the FIN if the state is CLOSED,
+			 * LISTEN, or SYN-SENT since the SEG.SEQ cannot be
+			 * validated; drop the segment and return.
+			 */
+			goto finish;
+		}
+
+		/*
+		 * If the FIN bit is set, signal the user "connection
+		 * closing" and return any pending RECEIVEs with same
+		 * message, advance RCV.NXT over the FIN, and send an
+		 * acknowledgment for the FIN. Note that FIN implies
+		 * PUSH for any segment text not yet delivered to the
+		 * user.
+		 *
+		 * [the RCV.NXT advancement was done in
+		 * tcp_queue_for_reassembly]
+		 */
+
+		switch (tp->state) {
+		case TCPS_SYN_RECEIVED:
+		case TCPS_ESTABLISHED:
+			tcp_change_state(tp, TCPS_CLOSE_WAIT);
+			tp->ordrel_needed = true;
+			break;
+
+		case TCPS_FIN_WAIT_1:
+			/*
+			 * If our FIN has been ACKed (perhaps in this segment),
+			 * then enter TIME-WAIT, start the time-wait timer, turn
+			 * off the other timers; otherwise, enter the CLOSING
+			 * state.
+			 *
+			 * [if our FIN was acked, it would have been processed
+			 * above in the ACK handling and we'd be in FIN-WAIT-2.
+			 * Therefore, it must be unACKed so we go to CLOSING.]
+			 */
+			tcp_change_state(tp, TCPS_CLOSING);
+			tp->ordrel_needed = true;
+			break;
+
+		case TCPS_FIN_WAIT_2:
+			tcp_change_state(tp, TCPS_TIME_WAIT);
+			tp->ordrel_needed = true;
+			tcp_cancel_all_timers(tp);
+			tcp_set_timer(tp, TCP_TIMER_2MSL, TCP_2MSL_MS);
+			break;
+
+		case TCPS_CLOSE_WAIT:
+		case TCPS_CLOSING:
+		case TCPS_LAST_ACK:
+			/* remain in these states */
+			break;
+
+		case TCPS_TIME_WAIT:
+			/*
+			 * Remain in the TIME-WAIT state. Restart the 2 MSL
+			 * time-wait timeout.
+			 */
+			tcp_set_timer(tp, TCP_TIMER_2MSL, TCP_2MSL_MS);
+			break;
+
+		default:
+			kunreachable();
+		}
+
+		if (tp->ordrel_needed && tp->rq != NULL &&
+		    TAILQ_EMPTY(&tp->rq->msgq))
+			tcp_ordrel_ind(tp);
+	}
+
+	tcp_output(tp);
+
+finish:
+	tp->processing_ifp = NULL;
+
+	if (dropmp)
+		str_freemsg(mp);
+}
+
+void
+tcp_input(ip_intf_t *ifp, mblk_t *mp)
+{
+	struct ip *ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
+	uint16_t hlen = ip->ip_hl << 2;
+	uint16_t tcp_len;
+	struct tcphdr *th = (struct tcphdr *)((char *)ip + hlen);
+	tcp_t *tp;
+
+	tcp_len = ntohs(ip->ip_len) - hlen;
+	if (tcp_len < sizeof(struct tcphdr)) {
+		TCP_TRACE("Header too small\n");
+		str_freemsg(mp);
+		return;
+	}
+
+	tp = tcp_conn_lookup(ip->ip_src, th->th_sport, ip->ip_dst,
+	    th->th_dport);
+
+	if (tp == NULL) {
+		TCP_TRACE("No matching connection found\n");
+		tcp_reply_reset(ifp, mp, ip, th);
+		return;
+	}
+
+	ke_mutex_enter(&tp->mutex, "tcp_input");
+	if (tp->rq != NULL)
+	 	str_ingress_putq(tp->rq->stdata, mp);
+	else
+		tcp_conn_input(ifp, tp, mp);
+	ke_mutex_exit(&tp->mutex);
+
+	tcp_release(tp);
+}
+
+/*
+ * timers
+ */
+void
+tcp_set_timer(tcp_t *tp, enum tcp_timer_type type, uint32_t timeout_ms)
+{
+#if 0
+	kabstime_t deadline;
+
+	deadline = ke_time() + (kabstime_t)timeout_ms * NS_PER_MS;
+	tcp_cancel_timer(tp, type);
+	tp->timers[type].deadline = deadline;
+	ke_callout_set(&tp->timers[type].callout, deadline);
+#endif
+}
+
+void
+tcp_cancel_timer(tcp_t *tp, enum tcp_timer_type type)
+{
+#if 0
+	tp->timers[type].deadline = ABSTIME_NEVER;
+	ke_callout_stop(&tp->timers[type].callout);
+#endif
+}
+
+void
+tcp_cancel_all_timers(tcp_t *tp)
+{
+	for (int i = 0; i < TCP_TIMER_MAX; i++)
+		tcp_cancel_timer(tp, i);
+}
+
+
 
 static void
 tcp_timer_dpchandler(void *, void *)

@@ -46,6 +46,7 @@ void ip_route_if_up(ip_intf_t *intf);
 void ip_route_if_down(ip_intf_t *intf);
 
 int ip_output(struct msgb *);
+int ip_output_intfheld(struct msgb *, ip_intf_t *heldintf);
 
 void arp_output(ip_intf_t *ifp, in_addr_t dst, struct msgb *, bool ifp_locked);
 

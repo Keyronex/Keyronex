@@ -219,3 +219,14 @@ str_flushq(queue_t *q, int flag)
 		str_freemsg(mp);
 	}
 }
+
+void
+str_mblk_q_free(mblk_q_t *q)
+{
+	mblk_t *mblk, *next;
+
+	TAILQ_FOREACH_SAFE(mblk, q, link, next) {
+		TAILQ_REMOVE(q, mblk, link);
+		str_freemsg(mblk);
+	}
+}

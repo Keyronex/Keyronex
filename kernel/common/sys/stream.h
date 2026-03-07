@@ -117,6 +117,8 @@ void str_putnext(queue_t *, mblk_t *);
 void str_qreply(queue_t *, mblk_t *);
 
 void str_putq(queue_t *, mblk_t *);
+void str_putbq(queue_t *, mblk_t *);
+mblk_t *str_getq(queue_t *);
 
 void str_qwait(queue_t *, kevent_t *);
 
@@ -124,5 +126,7 @@ void str_flushq(queue_t *, int flag);
 
 bool str_canput(queue_t *);
 bool str_canputnext(queue_t *);
+
+void str_mblk_q_free(mblk_q_t *);
 
 #endif /* ECX_SYS_STREAM_H */
