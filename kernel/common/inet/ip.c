@@ -39,6 +39,7 @@
 void arp_input(ip_intf_t *, mblk_t *);
 void icmp_input(ip_intf_t *, mblk_t *);
 void ip_input(ip_intf_t *, mblk_t *);
+void tcp_input(ip_intf_t *, mblk_t *);
 
 static void ip_uwput(queue_t *, mblk_t *);
 
@@ -168,7 +169,7 @@ ip_input(ip_intf_t *ifp, mblk_t *mp)
 
 	switch (ip->ip_p) {
 	case IPPROTO_TCP:
-		ktodo();
+		tcp_input(ifp, mp);
 		break;
 
 	case IPPROTO_ICMP:

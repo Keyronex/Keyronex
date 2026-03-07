@@ -155,12 +155,14 @@ static void tcp_rput(queue_t *, mblk_t *);
 static void tcp_rsrv(queue_t *);
 static void tcp_rsrv(queue_t *);
 
+static int tcp_output(tcp_t *);
+
+void tcp_conn_input(ip_intf_t *ifp, tcp_t *tp, mblk_t *mp);
+
 void tcp_set_timer(tcp_t *, enum tcp_timer_type, uint32_t timeout_ms);
 void tcp_cancel_timer(tcp_t *, enum tcp_timer_type);
 void tcp_cancel_all_timers(tcp_t *);
 static void tcp_timer_dpchandler(void *, void *);
-
-static int tcp_output(tcp_t *);
 
 struct qinit tcp_rinit = {
 	.qopen = tcp_open,
@@ -280,8 +282,12 @@ static void
 tcp_release(tcp_t *tp)
 {
 	if (atomic_fetch_sub_explicit(&tp->refcnt, 1, memory_order_acq_rel) ==
-	    1)
-		kfatal("do delete tcb\n");
+	    1) {
+		kdprintf("freeing TCB %p\n", tp);
+		kassert(tp->rq == NULL);
+		tcp_cancel_all_timers(tp);
+		kmem_free(tp, sizeof(*tp)); /* RCU free? for timers' sake? */
+	}
 }
 
 static void
@@ -325,6 +331,38 @@ tcb_free_connstate(tcp_t *tp)
 	str_freeb(tp->conn_ind_m);
 }
 
+static queue_t *
+tcp_wq(tcp_t *tcb)
+{
+	return tcb->rq != NULL ? tcb->rq->other : NULL;
+}
+
+static void
+tcp_detach(tcp_t *tp)
+{
+	ipl_t ipl;
+
+	/* steal the send queue */
+	TAILQ_CONCAT(&tp->detached_snd_q, &tcp_wq(tp)->msgq, link);
+	tp->detached_snd_q_count = tcp_wq(tp)->count;
+
+	tcp_wq(tp)->count = 0;
+	TAILQ_INIT(&tcp_wq(tp)->msgq);
+
+	ipl = ke_spinlock_enter(&tp->detach_lock);
+	tp->rq = NULL;
+	ke_spinlock_exit(&tp->detach_lock, ipl);
+
+	/*
+	 * FIXME: what if there are packets on the stream ingress queue?
+	 * we might legitimately NOT use the ingress queue at all even when
+	 * attached, but instead queue up packets on a queue in the TCB, and
+	 * have tcp_rsrv() deal with them.
+	 * Has flow control implications but the ingress queue doesn't deal
+	 * with those at all right now anyway.
+	 */
+}
+
 static int
 tcp_open(queue_t *rq, void *)
 {
@@ -338,7 +376,85 @@ tcp_open(queue_t *rq, void *)
 static void
 tcp_close(queue_t *rq)
 {
-	ktodo();
+	tcp_t *tp = rq->ptr;
+
+	ke_mutex_enter(&tp->mutex, "tcp_close");
+
+	TCP_TRACE("closing connection TCB %p state %s\n", tp,
+	    tcp_state_names[tp->state]);
+
+	switch (tp->state) {
+	case TCPS_LISTEN: {
+#if 0 /* old listening logic */
+		tcb_t *child, *next;
+
+		TAILQ_FOREACH_SAFE(child, &tp->syn_rcvd_q, listener_qentry,
+		    next) {
+			TAILQ_REMOVE(&tp->syn_rcvd_q, child, listener_qentry);
+			child->listener = NULL;
+			tcb_free_connstate(child);
+			tcb_free(child);
+		}
+		TAILQ_FOREACH_SAFE(child, &tp->estab_q, listener_qentry, next) {
+			TAILQ_REMOVE(&tp->estab_q, child, listener_qentry);
+			child->listener = NULL;
+			tcb_free_connstate(child);
+			tcb_free(child);
+		}
+#endif
+		ktodo();
+	}
+
+		/* fall through ... */
+
+	case TCPS_CLOSED:
+	case TCPS_BOUND:
+	case TCPS_SYN_SENT:
+		tcb_free_connstate(tp);
+		tcp_release(tp);
+		break;
+
+	case TCPS_SYN_RECEIVED:
+	case TCPS_ESTABLISHED: {
+
+		if (!TAILQ_EMPTY(&tp->reass_queue) ||
+		    !TAILQ_EMPTY(&tp->rq->msgq))
+			kfatal("TODO: tcp_close: unreceived data on close\n");
+
+		tcp_detach(tp);
+		tcp_change_state(tp, TCPS_FIN_WAIT_1);
+		tcp_output(tp);
+		ke_mutex_exit(&tp->mutex);
+		break;
+	}
+
+	case TCPS_CLOSE_WAIT: {
+		if (!TAILQ_EMPTY(&tp->reass_queue) ||
+		    !TAILQ_EMPTY(&tp->rq->msgq))
+			kfatal("TODO: tcp_close: unreceived data on close\n");
+
+		tcp_detach(tp);
+		tcp_change_state(tp, TCPS_LAST_ACK);
+		tcp_output(tp);
+		ke_mutex_exit(&tp->mutex);
+		break;
+	}
+
+	case TCPS_FIN_WAIT_1:
+	case TCPS_CLOSING:
+	case TCPS_LAST_ACK:
+	case TCPS_FIN_WAIT_2:
+	case TCPS_TIME_WAIT: {
+		/* let the state machine proceed. */
+
+		kassert(TAILQ_EMPTY(&tp->reass_queue) &&
+		    TAILQ_EMPTY(&tp->rq->msgq));
+
+		tcp_detach(tp);
+		ke_mutex_exit(&tp->mutex);
+		break;
+	}
+	}
 }
 
 static size_t
@@ -615,7 +731,8 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 {
 	switch (mp->db->type) {
 	case M_DATA:
-		kfatal("M_DATA\n");
+		str_putq(wq, mp);
+		tcp_output((tcp_t*)wq->ptr);
 		break;
 
 	case M_PROTO: {
@@ -657,12 +774,6 @@ static uint8_t tcp_out_flags[] = {
 	[TCPS_FIN_WAIT_2] = TH_ACK,
 	[TCPS_TIME_WAIT] = TH_ACK,
 };
-
-static queue_t *
-tcp_wq(tcp_t *tcb)
-{
-	return tcb->rq != NULL ? tcb->rq->other : NULL;
-}
 
 static void
 copy_data(tcp_t *tcb, size_t off, size_t len, uint8_t *dst)
@@ -1003,7 +1114,12 @@ tcp_ordrel_ind(tcp_t *tp)
 static void
 tcp_rput(queue_t *rq, mblk_t *mp)
 {
-	ktodo();
+	tcp_t *tp = rq->ptr;
+	/* tcp_rput is only used to push up data */
+	kassert(mp->db->type == M_DATA);
+	ke_mutex_enter(&tp->mutex, "tcp_rput");
+	tcp_conn_input(NULL, tp, mp);
+	ke_mutex_exit(&tp->mutex);
 }
 
 static void
@@ -1210,7 +1326,7 @@ tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
 	uint32_t *countp;
 	mblk_t *m, *next;
 
-	if (tcp_wq(tp) == NULL) {
+	if (tcp_wq(tp) != NULL) {
 		msgq = &tcp_wq(tp)->msgq;
 		countp = &tcp_wq(tp)->count;
 	} else {
@@ -2172,6 +2288,19 @@ tcp_input(ip_intf_t *ifp, mblk_t *mp)
 		return;
 	}
 
+	/* prettyprint key facts of packet */
+	TCP_TRACE(" -- Received TCP packet: src=" FMT_IP4 ":%u dst=" FMT_IP4 ":%u "
+	    "seq=%u ack=%u flags=%s%s%s%s%s%s\n",
+	    ARG_IP4(ip->ip_src.s_addr), ntohs(th->th_sport),
+	    ARG_IP4(ip->ip_dst.s_addr), ntohs(th->th_dport),
+	    ntohl(th->th_seq), ntohl(th->th_ack),
+	    (th->th_flags & TH_FIN) ? "FIN " : "",
+	    (th->th_flags & TH_SYN) ? "SYN " : "",
+	    (th->th_flags & TH_RST) ? "RST " : "",
+	    (th->th_flags & TH_PUSH) ? "PSH " : "",
+	    (th->th_flags & TH_ACK) ? "ACK " : "",
+	    (th->th_flags & TH_URG) ? "URG " : "");
+
 	tp = tcp_conn_lookup(ip->ip_src, th->th_sport, ip->ip_dst,
 	    th->th_dport);
 
@@ -2222,8 +2351,6 @@ tcp_cancel_all_timers(tcp_t *tp)
 	for (int i = 0; i < TCP_TIMER_MAX; i++)
 		tcp_cancel_timer(tp, i);
 }
-
-
 
 static void
 tcp_timer_dpchandler(void *, void *)
