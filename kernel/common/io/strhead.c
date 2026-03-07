@@ -65,11 +65,11 @@ str_req_begin(stdata_t *sh)
 
 	ke_event_init(&waiter.event, 0);
 	TAILQ_INSERT_TAIL(&sh->req_waiters, &waiter, link);
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	ke_wait1(&waiter.event, "str_req_begin", false, ABSTIME_FOREVER);
 
-	ke_mutex_enter(sh->mutex, "str_req_begin 2");
+	str_enter(sh, "str_req_begin 2");
 	return;
 }
 
@@ -83,7 +83,7 @@ str_req_trybegin(stdata_t *sh)
 		sh->req_locked = true;
 		return true;
 	} else {
-		ke_mutex_exit(sh->mutex);
+		str_exit(sh);
 		return false;
 	}
 }
@@ -99,7 +99,7 @@ str_req_end(stdata_t *sh)
 	} else {
 		sh->req_locked = false;
 	}
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 }
 
 void
@@ -331,7 +331,7 @@ void strclose(stdata_t *sh)
 
 	kassert(LIST_EMPTY(&sh->pollhead.pollers));
 
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	/* by this point, no one is left able to kick the stream */
 
@@ -498,7 +498,7 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 	}
 
 	str_req_begin(sh);
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	r = memcpy_from_user(mp->wptr, buf, len);
 	if (r < 0) {
@@ -509,7 +509,7 @@ strwrite(stdata_t *sh, const void *buf, size_t len, int)
 
 	mp->wptr += len;
 
-	ke_mutex_enter(sh->mutex, "str_write");
+	str_enter(sh, "str_write");
 
 	if (sh->kind == STR_HEAD_KIND_FIFO && sh->nreaders == 0) {
 		str_freeb(mp);
@@ -1088,7 +1088,7 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	str_req_begin(sh);
 	ke_event_set_signalled(&sh->ioctl_done_ev, false);
 	str_putnext(sh->wq, mp);
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	ke_wait1(&sh->ioctl_done_ev, "str_ioctl", true, ABSTIME_FOREVER);
 
@@ -1150,7 +1150,7 @@ strchpoll(stdata_t *sh, struct poll_entry *pe, enum chpoll_mode mode)
 	if (sh->hanged_up)
 		r |= EPOLLHUP;
 
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	return r;
 }

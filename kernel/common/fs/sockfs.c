@@ -329,9 +329,9 @@ sock_tpi_request(struct socknode *sn, mblk_t *mp)
 
 	str_putnext(sh->wq, mp);
 
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 	ke_wait1(&sn->tpi_ack_ev, "sock_tpi_request", false, ABSTIME_FOREVER);
-	ke_mutex_enter(sh->mutex, "sock_tpi_request done");
+	str_enter(sh, "sock_tpi_request done");
 
 	return sn->tpi_ack_mp;
 }
@@ -391,10 +391,10 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 			return -EAGAIN;
 		}
 
-		ke_mutex_exit(sh->mutex);
+		str_exit(sh);
 		ke_wait1(&sn->conn_ind_ev, "sock_accept4 wait connind", false,
 		    ABSTIME_FOREVER);
-		ke_mutex_enter(sh->mutex, "sock_accept4");
+		str_enter(sh, "sock_accept4");
 	}
 
 	cimp = TAILQ_FIRST(&sn->conn_indq);
@@ -402,14 +402,14 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	sn->conn_indq_len--;
 	if (TAILQ_EMPTY(&sn->conn_indq))
 		ke_event_set_signalled(&sn->conn_ind_ev, false);
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	ci = (typeof(ci))cimp->rptr;
 
 	r = so_create(&acceptor_fp, &acceptor_sn, sn->domain, sn->type | flags,
 	    sn->protocol);
 	if (r != 0) {
-		ke_mutex_enter(sh->mutex, "sock_accept4 requeue");
+		str_enter(sh, "sock_accept4 requeue");
 		sock_requeue_conn_ind_mp(sn, cimp);
 		str_req_end(sh);
 		return r;
@@ -620,7 +620,7 @@ so_listen(struct socknode *sn, int backlog)
 		str_req_end(sh);
 		return -EINVAL;
 	}
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	mp = str_allocb(sizeof(struct T_bind_req));
 	if (mp == NULL)
@@ -656,7 +656,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 	stdata_t *sh = sn->stream;
 	struct T_conn_req *br;
 	mblk_t *mp;
-	vnode_t *peervn;
+	vnode_t *peervn = NULL;
 	int r;
 
 	if (addrlen < sizeof(sa_family_t) ||
@@ -670,7 +670,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		str_req_end(sh);
 		return -EINVAL;
 	}
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 
 	mp = str_allocb(sizeof(struct T_conn_req));
@@ -776,7 +776,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 	if (r != 0) {
 		kfatal("so_connect failed");
 	}
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	ke_wait1(&sn->conn_con_ev, "so_connect wait", false, ABSTIME_FOREVER);
 
@@ -860,7 +860,7 @@ sock_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 	if (sn->state & SS_ISLISTENING) {
 		if (sn->conn_indq_len > 0)
 			r |= EPOLLIN | EPOLLRDNORM;
-		ke_mutex_exit(sh->mutex);
+		str_exit(sh);
 		return r;
 	}
 
@@ -874,7 +874,7 @@ sock_chpoll(vnode_t *vn, struct poll_entry *pe, enum chpoll_mode mode)
 	if (sh->hanged_up)
 		r |= EPOLLHUP | EPOLLIN | EPOLLRDNORM;
 
-	ke_mutex_exit(sh->mutex);
+	str_exit(sh);
 
 	return r;
 }
