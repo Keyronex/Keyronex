@@ -87,6 +87,7 @@ static int sock_ioctl(vnode_t *, unsigned long cmd, void *arg);
 static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
+extern struct streamtab tcp_streamtab;
 extern struct streamtab nl_streamtab;
 
 static struct qinit sock_rinit = {
@@ -137,6 +138,18 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 
 		default:
 			kfatal("unexpected AF_UNIX type %d (0x%x)\n", type,
+			    type);
+		}
+		break;
+
+	case AF_INET:
+		switch (type) {
+		case SOCK_STREAM:
+			streamtab = &tcp_streamtab;
+			break;
+
+		default:
+			kfatal("unexpected AF_INET type %d (0x%x)\n", type,
 			    type);
 		}
 		break;
