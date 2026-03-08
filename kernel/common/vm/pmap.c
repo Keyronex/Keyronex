@@ -245,7 +245,7 @@ vm_translate(vaddr_t addr)
 		kfatal("Address %p not valid\n", (void *)addr);
 	paddr = pmap_pte_hwleaf_paddr(pmap_load_pte(pte), PMAP_L0);
 	ke_spinlock_exit(&kernel_map.stealing_lock, ipl);
-	return paddr;
+	return paddr + (addr & (PGSIZE - 1));
 }
 
 void
