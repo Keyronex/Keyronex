@@ -174,7 +174,17 @@ uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int oflags)
 void
 uf_unreserve_fd(uf_info_t *info, int fd)
 {
-	ktodo();
+	uf_list_t *list;
+
+	ke_mutex_enter(&info->lock, "unreserve_fd");
+	list = info->list;
+
+	kassert(fd >= 0 && fd < list->capacity);
+	kassert(list->entries[fd].file == FD_RESERVED);
+
+	ke_rcu_assign_pointer(list->entries[fd].file, NULL);
+	list->entries[fd].flags = 0;
+	ke_mutex_exit(&info->lock);
 }
 
 void
