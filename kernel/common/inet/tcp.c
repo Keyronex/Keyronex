@@ -1239,14 +1239,8 @@ tcp_checksum(struct ip *ip, struct tcphdr *tcp, size_t tcp_len)
 	uint8_t pseudo[12];
 	uint32_t sum = 0;
 
-	pseudo[0] = (ip->ip_src.s_addr >> 24) & 0xff;
-	pseudo[1] = (ip->ip_src.s_addr >> 16) & 0xff;
-	pseudo[2] = (ip->ip_src.s_addr >> 8) & 0xff;
-	pseudo[3] = (ip->ip_src.s_addr >> 0) & 0xff;
-	pseudo[4] = (ip->ip_dst.s_addr >> 24) & 0xff;
-	pseudo[5] = (ip->ip_dst.s_addr >> 16) & 0xff;
-	pseudo[6] = (ip->ip_dst.s_addr >> 8) & 0xff;
-	pseudo[7] = (ip->ip_dst.s_addr >> 0) & 0xff;
+	memcpy(&pseudo[0], &ip->ip_src.s_addr, 4);
+	memcpy(&pseudo[4], &ip->ip_dst.s_addr, 4);
 	pseudo[8] = 0;
 	pseudo[9] = IPPROTO_TCP;
 	pseudo[10] = (tcp_len >> 8) & 0xff;
@@ -1300,13 +1294,13 @@ do_send(tcp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 	th->th_flags = flags;
 	th->th_win = htons(tp->rcv_wnd);
 	th->th_x2 = 0;
-	th->th_sum = 0;
 	th->th_urp = 0;
 
 	kassert(copy_data(tp, data_off, data_len, (uint8_t *)(th + 1)) ==
 	    data_len);
 
-	th->th_sum = tcp_checksum(ip, th, sizeof(struct tcphdr) + data_len);
+	th->th_sum = 0;
+	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr) + data_len));
 
 	if (tp->processing_ifp != NULL)
 		ip_output_intfheld(mp, tp->processing_ifp);
@@ -1726,7 +1720,7 @@ tcp_reply(ip_intf_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
 	m->wptr = m->rptr + sizeof(struct ether_header) + hlen +
 	    sizeof(struct tcphdr);
 
-	th->th_sum = tcp_checksum(ip, th, sizeof(struct tcphdr));
+	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr)));
 
 	ip_output_intfheld(m, ifpheld);
 }

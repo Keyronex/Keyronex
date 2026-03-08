@@ -167,7 +167,9 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		break;
 
 	default:
-		ktodo();
+		kdprintf("note: sockfs: unsupported socket domain %d\n",
+		    domain);
+		return -EAFNOSUPPORT;
 	}
 
 	kassert(streamtab != NULL);
