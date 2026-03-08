@@ -641,7 +641,7 @@ ux_wput_conn_req(queue_t *wq, mblk_t *mp)
 	ux_send_conn_ind(listenerep, ep, cimp);
 	ke_mutex_exit(&listenerep->lock);
 
-	ux_reply_ok_ack(wq, mp, T_CONN_RES); /* ack to ourselves */
+	ux_reply_ok_ack(wq, mp, T_CONN_REQ); /* ack to ourselves */
 }
 
 static void
@@ -744,6 +744,7 @@ ux_wput_conn_res(queue_t *wq, mblk_t *mp)
 			/* todo: send a discon to peer here? */
 			ux_reply_error_ack(wq, mp, T_CONN_RES,
 			    EINVAL); /* TLOOK? */
+			return;
 		}
 
 	} else if ((acceptorep->state != UX_BOUND &&
