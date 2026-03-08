@@ -465,7 +465,9 @@ void
 ip_init(void)
 {
 	void rtnetlink_init(void);
+	void tcp_init(void);
 
 	devfs_create_node(DEV_KIND_STREAM, &ip_devops, NULL, "ip");
 	rtnetlink_init();
+	tcp_init();
 }

@@ -22,6 +22,7 @@
 #include <sys/k_wait.h>
 #include <sys/kmem.h>
 #include <sys/libkern.h>
+#include <sys/proc.h>
 #include <sys/stream.h>
 #include <sys/strsubr.h>
 #include <sys/tihdr.h>
@@ -83,6 +84,9 @@ typedef struct tcp {
 	kspinlock_t	detach_lock;	/* involved in detaching */
 	queue_t		*rq;		/* stream read queue, if not detached */
 
+	TAILQ_ENTRY(tcp) detached_link; /* in tcp_detached_work_q */
+	bool	on_detached_work_q; /* is it currently on detached work q? */
+
 	/* in detached state, our send queue */
 	mblk_q_t detached_snd_q;
 	uint32_t detached_snd_q_count;
@@ -101,11 +105,12 @@ typedef struct tcp {
 	ip_intf_t *processing_ifp;	/* ifp context we are executing in
 					 * right now, if in it*/
 
-	struct {
+	struct tcp_timer {
 		kcallout_t	callout;
 		kdpc_t		dpc;
 		kabstime_t	deadline;
-	} timers[TCP_TIMER_MAX]; /* TCP timers */
+	} timers[TCP_TIMER_MAX];	/* TCP timers */
+	atomic_uint pending_timers;	/* TCP timers that fired */
 
 	bool	shutdown_rd:	1, /* can't receive any more. */
 		emit_ack: 	1, /* send ACK next tcp_output() */
@@ -146,18 +151,25 @@ typedef struct tcp {
 
 	/* mblk preallocated for TCBs created by passive opens */
 	mblk_t	*conn_ind_m;	/* preallocated T_CONN_IND */
+
+	krcu_entry_t rcu;		/* for RCU deferred free'ing */
 } tcp_t;
 
 static int tcp_open(queue_t *, void *dev);
 static void tcp_close(queue_t *);
 static void tcp_wput(queue_t *, mblk_t *);
+static void tcp_wsrv(queue_t *);
 static void tcp_rput(queue_t *, mblk_t *);
-static void tcp_rsrv(queue_t *);
 static void tcp_rsrv(queue_t *);
 
 static int tcp_output(tcp_t *);
 
 void tcp_conn_input(ip_intf_t *ifp, tcp_t *tp, mblk_t *mp);
+
+static void tcp_rexmt_timer(tcp_t *);
+static void tcp_2msl_timer(tcp_t *);
+static void tcp_keepalive_timer(tcp_t *);
+static void tcp_persist_timer(tcp_t *);
 
 void tcp_set_timer(tcp_t *, enum tcp_timer_type, uint32_t timeout_ms);
 void tcp_cancel_timer(tcp_t *, enum tcp_timer_type);
@@ -173,6 +185,7 @@ struct qinit tcp_rinit = {
 
 static struct qinit tcp_winit = {
 	.putp = tcp_wput,
+	.srvp = tcp_wsrv,
 };
 
 struct streamtab tcp_streamtab = {
@@ -204,6 +217,11 @@ static krwlock_t tcp_conntab_lock;
 static uint16_t tcp_next_ephemeral = TCP_EPHEMERAL_LOW;
 static krwlock_t tcp_bind_lock;
 
+static kspinlock_t tcp_detached_lock;
+static TAILQ_HEAD(, tcp) tcp_detached_work_q =
+    TAILQ_HEAD_INITIALIZER(tcp_detached_work_q);
+static kevent_t tcp_detached_event;
+
 #define TCP_TRACE(...) kdprintf("TCP: " __VA_ARGS__)
 
 static tcp_t *
@@ -215,6 +233,8 @@ tcp_new(queue_t *rq)
 
 	ke_mutex_init(&tp->mutex);
 	tp->refcnt = 1;
+
+	tp->on_detached_work_q = false;
 
 	tp->state = TCPS_CLOSED;
 	tp->conn_id = -1;
@@ -265,12 +285,12 @@ tcp_new(queue_t *rq)
 		    tcp_timer_dpchandler, tp, &tp->timers[i]);
 		tp->timers[i].deadline = ABSTIME_NEVER;
 	}
+	tp->pending_timers = 0;
 
 	TAILQ_INIT(&tp->reass_queue);
 
 	return tp;
 }
-
 
 static void
 tcp_retain(tcp_t *tp)
@@ -278,15 +298,42 @@ tcp_retain(tcp_t *tp)
 	atomic_fetch_add_explicit(&tp->refcnt, 1, memory_order_relaxed);
 }
 
+static bool
+tcp_tryretain(tcp_t *tp)
+{
+	ipl_t ipl = spldisp();
+	unsigned int current = atomic_load_explicit(&tp->refcnt,
+	    memory_order_acquire);
+	for (;;) {
+		if (current == 0) {
+			splx(ipl);
+			return false;
+		}
+		if (atomic_compare_exchange_weak_explicit(&tp->refcnt, &current,
+			current + 1, memory_order_acq_rel,
+			memory_order_acquire)) {
+			splx(ipl);
+			return true;
+		}
+	}
+}
+
+static void
+tcp_free_rcu(void *arg)
+{
+	tcp_t *tp = arg;
+	kmem_free(tp, sizeof(*tp));
+}
+
 static void
 tcp_release(tcp_t *tp)
 {
 	if (atomic_fetch_sub_explicit(&tp->refcnt, 1, memory_order_acq_rel) ==
 	    1) {
-		kdprintf("freeing TCB %p\n", tp);
 		kassert(tp->rq == NULL);
 		tcp_cancel_all_timers(tp);
-		kmem_free(tp, sizeof(*tp)); /* RCU free? for timers' sake? */
+		kdprintf("rcu-freeing TCB %p\n", tp);
+		ke_rcu_call(&tp->rcu, tcp_free_rcu, tp);
 	}
 }
 
@@ -341,6 +388,7 @@ static void
 tcp_detach(tcp_t *tp)
 {
 	ipl_t ipl;
+	uint32_t pending;
 
 	/* steal the send queue */
 	TAILQ_CONCAT(&tp->detached_snd_q, &tcp_wq(tp)->msgq, link);
@@ -353,8 +401,19 @@ tcp_detach(tcp_t *tp)
 	tp->rq = NULL;
 	ke_spinlock_exit(&tp->detach_lock, ipl);
 
+	pending = atomic_load(&tp->pending_timers);
+	if (pending != 0) {
+		tcp_retain(tp); /* safe, we are certainly alive */
+		ipl = ke_spinlock_enter(&tcp_detached_lock);
+		TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp, detached_link);
+		ke_event_set_signalled(&tcp_detached_event, true);
+		ke_spinlock_exit(&tcp_detached_lock, ipl);
+	}
+
 	/*
 	 * FIXME: what if there are packets on the stream ingress queue?
+	 * it is not big problem (they'll get retransmitted by remote) but not
+	 * desirable.
 	 * we might legitimately NOT use the ingress queue at all even when
 	 * attached, but instead queue up packets on a queue in the TCB, and
 	 * have tcp_rsrv() deal with them.
@@ -757,6 +816,25 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 
 	default:
 		kfatal("tcp_wput: unhandled mblk type %d\n", mp->db->type);
+	}
+}
+
+static void
+tcp_wsrv(queue_t *wq)
+{
+	tcp_t *tp = wq->ptr;
+	uint32_t pending = atomic_exchange(&tp->pending_timers, 0);
+	if (pending != 0) {
+		ke_mutex_enter(&tp->mutex, "tcp_rsrv_timers");
+		if (pending & (1 << TCP_TIMER_REXMT))
+			tcp_rexmt_timer(tp);
+		if (pending & (1 << TCP_TIMER_2MSL))
+			tcp_2msl_timer(tp);
+		if (pending & (1 << TCP_TIMER_KEEPALIVE))
+			tcp_keepalive_timer(tp);
+		if (pending & (1 << TCP_TIMER_PERSIST))
+			tcp_persist_timer(tp);
+		ke_mutex_exit(&tp->mutex);
 	}
 }
 
@@ -2326,23 +2404,19 @@ tcp_input(ip_intf_t *ifp, mblk_t *mp)
 void
 tcp_set_timer(tcp_t *tp, enum tcp_timer_type type, uint32_t timeout_ms)
 {
-#if 0
 	kabstime_t deadline;
 
 	deadline = ke_time() + (kabstime_t)timeout_ms * NS_PER_MS;
 	tcp_cancel_timer(tp, type);
 	tp->timers[type].deadline = deadline;
 	ke_callout_set(&tp->timers[type].callout, deadline);
-#endif
 }
 
 void
 tcp_cancel_timer(tcp_t *tp, enum tcp_timer_type type)
 {
-#if 0
 	tp->timers[type].deadline = ABSTIME_NEVER;
 	ke_callout_stop(&tp->timers[type].callout);
-#endif
 }
 
 void
@@ -2353,7 +2427,147 @@ tcp_cancel_all_timers(tcp_t *tp)
 }
 
 static void
-tcp_timer_dpchandler(void *, void *)
+tcp_timer_dpchandler(void *arg, void *timer_arg)
 {
-	ktodo();
+	tcp_t *tp = arg;
+	struct tcp_timer *timer = timer_arg;
+	int timer_type = timer - tp->timers;
+	ipl_t ipl;
+
+	if (!tcp_tryretain(tp))
+		return;
+
+	atomic_fetch_or(&tp->pending_timers, (1 << timer_type));
+
+	ipl = ke_spinlock_enter(&tp->detach_lock);
+
+	if (tp->rq != NULL) {
+		/* current attached. Wsrv routine handles pending timers. */
+		str_qenable(tcp_wq(tp));
+		str_kick(tp->rq->stdata);
+		ke_spinlock_exit(&tp->detach_lock, ipl);
+		tcp_release(tp); /* Release our local DPC ref */
+	} else {
+		/* currently detached. Put to a TCP worker thread. */
+		ke_spinlock_exit(&tp->detach_lock, ipl);
+
+		ipl = ke_spinlock_enter(&tcp_detached_lock);
+		if (!tp->on_detached_work_q) {
+			tp->on_detached_work_q = true;
+			TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp, detached_link);
+			ke_event_set_signalled(&tcp_detached_event, true);
+		}
+		ke_spinlock_exit(&tcp_detached_lock, ipl);
+		/* no tcp_release(); the reference is the worker thread's now */
+	}
+}
+
+static void
+tcp_rexmt_timer(tcp_t *tp)
+{
+	TCP_TRACE("TCP retransmit timer expired\n");
+
+	if (tp->timers[TCP_TIMER_REXMT].deadline > ke_time())
+		return;
+
+	if (tp->n_rexmits++ == TCP_MAXRETRIES) {
+		TCP_TRACE("Too many rexmit attempts, giving up\n");
+		tcp_abort(tp, ETIMEDOUT);
+		return;
+	}
+
+	/*
+	 * Retransmit timer expired - stop timing RTT, backoff RTO, and let the
+	 * next sequence to be sent be the first unacknowledged one.
+	 */
+
+	tp->timing_rtt = false;
+	tp->rto = MIN2(tp->rto * 2, TCP_MAX_RTO_MS);
+	tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
+
+	tp->snd_nxt = tp->snd_una;
+	tcp_output(tp);
+}
+
+static void
+tcp_persist_timer(tcp_t *)
+{
+	TCP_TRACE("TODO: TCP persist timer expired\n");
+}
+
+static void
+tcp_keepalive_timer(tcp_t *)
+{
+	TCP_TRACE("TODO: TCP keepalive timer expire\n");
+}
+
+static void
+tcp_2msl_timer(tcp_t *tp)
+{
+	TCP_TRACE("TCP 2MSL timer expired\n");
+
+	if (tp->timers[TCP_TIMER_2MSL].deadline > ke_time())
+		return;
+
+	tcb_free_connstate(tp);
+	tcp_release(tp);
+}
+
+static void
+tcp_detached_worker(void *arg)
+{
+	for (;;) {
+		ke_wait1(&tcp_detached_event, "tcp detached wait", false,
+		    ABSTIME_FOREVER);
+		ke_event_set_signalled(&tcp_detached_event, false);
+
+		for (;;) {
+			tcp_t *tp;
+			uint32_t pending;
+			ipl_t ipl;
+
+			ipl = ke_spinlock_enter(&tcp_detached_lock);
+			tp = TAILQ_FIRST(&tcp_detached_work_q);
+			if (tp == NULL) {
+				ke_spinlock_exit(&tcp_detached_lock, ipl);
+				break;
+			}
+			TAILQ_REMOVE(&tcp_detached_work_q, tp, detached_link);
+			tp->on_detached_work_q = false;
+			ke_spinlock_exit(&tcp_detached_lock, ipl);
+
+			pending = atomic_exchange(&tp->pending_timers, 0);
+
+			ke_mutex_enter(&tp->mutex, "tcp_detached_timers");
+			if (tp->rq != NULL) {
+				/* reattached while pending. wsrv will handle */
+				ke_mutex_exit(&tp->mutex);
+				tcp_release(tp);
+				continue;
+			}
+
+			if (pending & (1 << TCP_TIMER_REXMT))
+				tcp_rexmt_timer(tp);
+			if (pending & (1 << TCP_TIMER_2MSL))
+				tcp_2msl_timer(tp);
+			if (pending & (1 << TCP_TIMER_PERSIST))
+				tcp_persist_timer(tp);
+			if (pending & (1 << TCP_TIMER_KEEPALIVE))
+				tcp_keepalive_timer(tp);
+			ke_mutex_exit(&tp->mutex);
+
+			tcp_release(tp); /* tp was retained in dpc handler */
+		}
+	}
+}
+
+void
+tcp_init(void)
+{
+	static thread_t *tcp_timer_thread;
+
+	TAILQ_INIT(&tcp_detached_work_q);
+	ke_event_init(&tcp_detached_event, false);
+	tcp_timer_thread = proc_new_system_thread(tcp_detached_worker, NULL);
+	ke_thread_resume(&tcp_timer_thread->kthread, false);
 }
