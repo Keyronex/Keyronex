@@ -461,6 +461,9 @@ tcp_detach(tcp_t *tp)
 	uint32_t pending;
 
 	/* steal the send queue */
+	kassert(TAILQ_EMPTY(&tp->detached_snd_q));
+	kassert(tp->detached_snd_q_count == 0);
+
 	TAILQ_CONCAT(&tp->detached_snd_q, &tcp_wq(tp)->msgq, link);
 	tp->detached_snd_q_count = tcp_wq(tp)->count;
 
@@ -1139,55 +1142,70 @@ static uint8_t tcp_out_flags[] = {
 	[TCPS_TIME_WAIT] = TH_ACK,
 };
 
-static void
-copy_data(tcp_t *tcb, size_t off, size_t len, uint8_t *dst)
+static size_t
+copy_from_mpchain(mblk_t *m, size_t off, size_t len, uint8_t *dst)
 {
-	mblk_q_t *q;
-	mblk_t *mblk;
-	size_t current_offset = 0;
-	size_t bytes_copied = 0;
+	size_t copied = 0;
 
-	if (len == 0 || dst == NULL)
-		return;
+	for (; m != NULL && len != 0; m = m->cont) {
+		size_t blen = (size_t)(m->wptr - m->rptr);
 
-	if (tcp_wq(tcb) != NULL)
-		q = &tcp_wq(tcb)->msgq;
-	else
-		q = &tcb->detached_snd_q;
-
-	TAILQ_FOREACH(mblk, q, link) {
-		size_t msgsize = mblk->wptr - mblk->rptr;
-
-		if (current_offset + msgsize > off) {
-			size_t block_offset = off - current_offset;
-			size_t available = msgsize - block_offset;
-			size_t to_copy = MIN2(available, len);
-
-			memcpy(dst, mblk->rptr + block_offset,
-			    to_copy);
-			bytes_copied += to_copy;
-
-			if (bytes_copied == len)
-				return;
-
-			mblk = TAILQ_NEXT(mblk, link);
-			break;
+		if (off >= blen) {
+			off -= blen;
+			continue;
 		}
 
-		current_offset += msgsize;
+		size_t avail = blen - off;
+		size_t take = MIN2(avail, len);
+
+		memcpy(dst + copied, m->rptr + off, take);
+		copied += take;
+		len -= take;
+		off = 0;
 	}
 
-	/* offset out of range, or queue exhausted */
-	if (mblk == NULL)
-		return;
+	return copied;
+}
 
-	while (mblk != NULL && bytes_copied < len) {
-		size_t msgsize = mblk->wptr - mblk->rptr;
-		size_t to_copy = MIN2(msgsize, len - bytes_copied);
-		memcpy(dst + bytes_copied, mblk->rptr, to_copy);
-		bytes_copied += to_copy;
-		mblk = TAILQ_NEXT(mblk, link);
+static size_t
+copy_data(tcp_t *tp, size_t off, size_t len, uint8_t *dst)
+{
+	mblk_q_t *q;
+	mblk_t *m;
+	size_t copied = 0;
+
+	if (len == 0)
+		return 0;
+
+	if (tcp_wq(tp) != NULL)
+		q = &tcp_wq(tp)->msgq;
+	else
+		q = &tp->detached_snd_q;
+
+	TAILQ_FOREACH(m, q, link) {
+		size_t msglen = str_msgsize(m);
+		size_t take;
+		size_t n;
+
+		if (off >= msglen) {
+			off -= msglen;
+			continue;
+		}
+
+		take = MIN2(msglen - off, len);
+		n = copy_from_mpchain(m, off, take, dst + copied);
+
+		kassert(n == take);
+
+		copied += n;
+		len -= n;
+		off = 0;
+
+		if (len == 0)
+			break;
 	}
+
+	return copied;
 }
 
 static uint32_t
@@ -1285,7 +1303,8 @@ do_send(tcp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 	th->th_sum = 0;
 	th->th_urp = 0;
 
-	copy_data(tp, data_off, data_len, (uint8_t *)(th + 1));
+	kassert(copy_data(tp, data_off, data_len, (uint8_t *)(th + 1)) ==
+	    data_len);
 
 	th->th_sum = tcp_checksum(ip, th, sizeof(struct tcphdr) + data_len);
 
@@ -2573,7 +2592,7 @@ do { \
 				tcp_snd_q_consume(tp, tcp_snd_q_count(tp));
 				our_fin_acked = true;
 			} else {
-#if 0 /* why did I add this? */
+#if 1 /* why did I add this? verify this is sound */
 				tp->snd_wnd -= nseq_acked;
 #endif
 				tcp_snd_q_consume(tp, nseq_acked);

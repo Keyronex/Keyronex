@@ -302,13 +302,13 @@ void strclose(stdata_t *sh)
 
 		nextwq = wq->next;
 
-		str_flushq(rq, FLUSHALL);
-		str_flushq(wq, FLUSHALL);
-
 		if (wq->qinfo->qclose != NULL)
 			wq->qinfo->qclose(wq);
 		if (rq->qinfo->qclose != NULL)
 			rq->qinfo->qclose(rq);
+
+		str_flushq(rq, FLUSHALL);
+		str_flushq(wq, FLUSHALL);
 
 		qpair_free(rq);
 	}
@@ -330,6 +330,10 @@ void strclose(stdata_t *sh)
 	}
 
 	kassert(LIST_EMPTY(&sh->pollhead.pollers));
+
+	ipl = ke_spinlock_enter(&sh->ingress_lock);
+	str_mblk_q_free(&sh->ingress_head);
+	ke_spinlock_exit(&sh->ingress_lock, ipl);
 
 	str_exit(sh);
 

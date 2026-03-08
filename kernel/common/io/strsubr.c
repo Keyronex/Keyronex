@@ -218,6 +218,7 @@ str_flushq(queue_t *q, int flag)
 		TAILQ_REMOVE(&q->msgq, mp, link);
 		str_freemsg(mp);
 	}
+	q->count = 0;
 }
 
 void
