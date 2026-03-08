@@ -113,6 +113,8 @@ void str_thaw(stdata_t *);
 
 void str_qenable(queue_t *);
 
+void str_backenable(queue_t *q);
+
 void str_ingress_putq(stdata_t *, mblk_t *);
 
 void str_kick(stdata_t *st);

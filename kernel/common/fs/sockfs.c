@@ -488,7 +488,7 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 		str_req_end(sn->stream);
 		return -EINVAL;
 	}
-	ke_mutex_exit(sn->stream->mutex);
+	str_exit(sn->stream);
 
 	mp = str_allocb(sizeof(struct T_bind_req));
 	if (mp == NULL) {

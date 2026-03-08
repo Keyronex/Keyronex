@@ -453,11 +453,8 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 				if (sh->rq->full &&
 				    sh->rq->count <= sh->rq->lowat) {
 					sh->rq->full = false;
-					if (sh->rq->wantw) {
-#if 0 /* implement me */
+					if (sh->rq->wantw)
 						str_backenable(sh->rq);
-#endif
-					}
 				}
 			}
 		}
