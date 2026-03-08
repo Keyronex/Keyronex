@@ -263,6 +263,7 @@ sockmod_rput(queue_t *rq, mblk_t *mp)
 
 	switch (prim->type) {
 	case T_BIND_ACK:
+	case T_ADDR_ACK:
 	case T_OK_ACK:
 	case T_ERROR_ACK:
 		kassert(sn->tpi_ack_mp == NULL);
@@ -347,6 +348,7 @@ sock_tpi_errno(mblk_t *mp)
 	union T_primitives *prim = (typeof(prim))mp->rptr;
 	switch (prim->type) {
 	case T_BIND_ACK:
+	case T_ADDR_ACK:
 	case T_OK_ACK:
 		return 0;
 
@@ -792,6 +794,123 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 	return 0;
 }
 
+static int
+so_addr_query(struct socknode *sn, struct sockaddr_storage *laddr,
+    socklen_t *llen, struct sockaddr_storage *raddr, socklen_t *rlen)
+{
+	stdata_t *sh = sn->stream;
+	mblk_t *mp;
+	struct T_addr_ack *aa;
+	int r;
+
+	mp = str_allocb(sizeof(struct T_addr_req));
+	if (mp == NULL)
+		return -ENOMEM;
+
+	mp->db->type = M_PROTO;
+	((struct T_addr_req *)mp->wptr)->PRIM_type = T_ADDR_REQ;
+	mp->wptr += sizeof(struct T_addr_req);
+
+	str_req_begin(sh);
+	mp = sock_tpi_request(sn, mp);
+	r = sock_tpi_errno(mp);
+	str_req_end(sh);
+
+	if (r != 0) {
+		str_freemsg(mp);
+		return -r;
+	}
+
+	aa = (struct T_addr_ack *)mp->rptr;
+
+	*llen = aa->LOCADDR_length;
+	if (aa->LOCADDR_length > 0 && aa->LOCADDR_length <= sizeof(*laddr))
+		memcpy(laddr, &aa->LOCADDR, aa->LOCADDR_length);
+
+	*rlen = aa->REMADDR_length;
+	if (aa->REMADDR_length > 0 && aa->REMADDR_length <= sizeof(*raddr))
+		memcpy(raddr, &aa->REMADDR, aa->REMADDR_length);
+
+	str_freemsg(mp);
+	return 0;
+}
+
+static int
+copyout_sockaddr(const void *addr, socklen_t addrlen,
+    struct sockaddr *uaddr, socklen_t *uaddrlen)
+{
+	socklen_t ulen, copylen;
+	int r;
+
+	r = memcpy_from_user(&ulen, uaddrlen, sizeof(socklen_t));
+	if (r != 0)
+		return -EFAULT;
+
+	copylen = ulen < addrlen ? ulen : addrlen;
+
+	if (copylen > 0) {
+		r = memcpy_to_user(uaddr, addr, copylen);
+		if (r != 0)
+			return -EFAULT;
+	}
+
+	r = memcpy_to_user(uaddrlen, &addrlen, sizeof(socklen_t));
+	if (r != 0)
+		return -EFAULT;
+
+	return 0;
+}
+
+static int
+so_getsockname(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
+{
+	struct sockaddr_storage laddr, raddr;
+	socklen_t llen, rlen;
+	int r;
+
+	if (sn->domain != AF_INET) {
+		/* TODO: use the local version for AF_UNIX? */
+		return -EOPNOTSUPP;
+	}
+
+	r = so_addr_query(sn, &laddr, &llen, &raddr, &rlen);
+	if (r != 0)
+		return r;
+
+	if (llen > 0) {
+		return copyout_sockaddr(&laddr, llen, addr, addrlen);
+	} else {
+		struct sockaddr zero = { .sa_family = AF_INET };
+		return copyout_sockaddr(&zero, sizeof(zero), addr, addrlen);
+	}
+}
+
+static int
+so_getpeername(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
+{
+	struct sockaddr_storage laddr, raddr;
+	socklen_t llen, rlen;
+	int r;
+
+	if (!(sn->state & SS_ISCONNECTED))
+		return -ENOTCONN;
+
+	if (sn->domain != AF_INET) {
+		/* TODO: AF_UNIX peer address support */
+		return -EOPNOTSUPP;
+	}
+
+	r = so_addr_query(sn, &laddr, &llen, &raddr, &rlen);
+	if (r != 0)
+		return r;
+
+	if (rlen == 0)
+		return -ENOTCONN;
+
+	return copyout_sockaddr(&raddr, rlen, addr, addrlen);
+}
+
+
 /*
  * vnode ops
  */
@@ -1039,5 +1158,29 @@ sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 
 	file_release(file);
 
+	return r;
+}
+
+int
+sys_getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+	file_t *fp;
+	int r = lookup_sockfd(sockfd, &fp);
+	if (r < 0)
+		return r;
+	r = so_getsockname(VTOSN(fp->vnode), addr, addrlen);
+	file_release(fp);
+	return r;
+}
+
+int
+sys_getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+	file_t *fp;
+	int r = lookup_sockfd(sockfd, &fp);
+	if (r < 0)
+		return r;
+	r = so_getpeername(VTOSN(fp->vnode), addr, addrlen);
+	file_release(fp);
 	return r;
 }

@@ -41,6 +41,9 @@ enum T_prim {
 	T_OK_ACK = 19,		/* success acknowledge */
 
 	T_ORDREL_IND = 23,	/* orderly-release indication */
+
+	T_ADDR_REQ = 24,	/* get local/peer address request */
+	T_ADDR_ACK = 25,	/* get local/peer address acknowledgment */
 };
 
 /*
@@ -101,6 +104,15 @@ struct T_conn_con {
 	struct sockaddr_storage RES;
 };
 
+
+/* @brief Address Request
+ *
+ * User-originated. Requests the local and peer address of a socket.
+ */
+struct T_addr_req {
+	enum T_prim	PRIM_type;
+};
+
 /*
  * @brief Disconnect Indication
  *
@@ -140,6 +152,20 @@ struct T_bind_ack {
 };
 
 /*
+ * @brief Address Acknowledgement
+ *
+ * Provider-originated. Acknowledges an address request, returning the local
+ * and peer address of the socket.
+ */
+struct T_addr_ack {
+	enum T_prim PRIM_type;
+	int LOCADDR_length;
+	struct sockaddr_storage LOCADDR;
+	int REMADDR_length;
+	struct sockaddr_storage REMADDR;
+};
+
+/*
  * @brief Error Acknowledgement
  *
  * Provider-originated. Indicates an error in response to a user request.
@@ -160,21 +186,6 @@ struct T_ok_ack {
 	enum T_prim CORRECT_prim;
 };
 
-/*
- * Keyronex TPI extensions.
- */
-
-/*
- * @brief Listen Request
- *
- * User-originated. Requests the provider to listen for incoming connections.
- * The provider must have already been bound (via T_BIND_REQ) with
- * CONIND_number of 0.
- */
-struct T_listen_req {
-	enum T_prim PRIM_type;
-	size_t CONIND_number;
-};
 
 /* @brief Union of all TI primitives */
 union T_primitives {
@@ -182,13 +193,13 @@ union T_primitives {
 	struct T_bind_req bind_req;
 	struct T_conn_req conn_req;
 	struct T_conn_res conn_res;
+	struct T_addr_req addr_req;
 	struct T_conn_ind conn_ind;
 	struct T_conn_con conn_con;
+	struct T_addr_ack addr_ack;
 	struct T_bind_ack bind_ack;
 	struct T_error_ack error_ack;
 	struct T_ok_ack ok_ack;
-
-	struct T_listen_req listen_req;
 };
 
 

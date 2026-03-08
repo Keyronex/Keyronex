@@ -1073,6 +1073,51 @@ out:
 }
 
 static void
+tcp_wput_addr_req(queue_t *wq, mblk_t *mp)
+{
+	tcp_t *tp = wq->ptr;
+	struct T_addr_ack *aa;
+	struct sockaddr_in *sin;
+	mblk_t *ackmp;
+
+	ackmp = str_allocb(sizeof(struct T_addr_ack));
+	if (ackmp == NULL) {
+		reply_error_ack(wq, mp, T_ADDR_REQ, ENOMEM);
+		return;
+	}
+
+	str_freemsg(mp);
+
+	ackmp->db->type = M_PCPROTO;
+	aa = (struct T_addr_ack *)ackmp->rptr;
+	aa->PRIM_type = T_ADDR_ACK;
+
+	ke_mutex_enter(&tp->mutex, "tcp_wput_addr_req");
+
+	if (tp->state >= TCPS_BOUND) {
+		aa->LOCADDR_length = sizeof(struct sockaddr_in);
+		sin = (struct sockaddr_in *)&aa->LOCADDR;
+		*sin = tp->laddr;
+	} else {
+		aa->LOCADDR_length = 0;
+	}
+
+	if (tp->state >= TCPS_SYN_SENT) {
+		aa->REMADDR_length = sizeof(struct sockaddr_in);
+		sin = (struct sockaddr_in *)&aa->REMADDR;
+		*sin = tp->faddr;
+	} else {
+		aa->REMADDR_length = 0;
+	}
+
+	ke_mutex_exit(&tp->mutex);
+
+	ackmp->wptr = ackmp->rptr + sizeof(struct T_addr_ack);
+	str_qreply(wq, ackmp);
+}
+
+
+static void
 tcp_wput(queue_t *wq, mblk_t *mp)
 {
 	switch (mp->db->type) {
@@ -1094,6 +1139,10 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 
 		case T_BIND_REQ:
 			tcp_wput_bind_req(wq, mp);
+			break;
+
+		case T_ADDR_REQ:
+			tcp_wput_addr_req(wq, mp);
 			break;
 
 		default:
