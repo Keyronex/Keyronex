@@ -231,6 +231,23 @@ pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr)
 	}
 }
 
+paddr_t
+vm_translate(vaddr_t addr)
+{
+	pte_t *pte;
+	ipl_t ipl;
+	paddr_t paddr;
+	ipl = ke_spinlock_enter(&kernel_map.stealing_lock);
+	pte = pmap_fetch_pte(&kernel_map, NULL, addr);
+	if (pte == NULL)
+		kfatal("Address %p not mapped\n", (void *)addr);
+	if (!pmap_pte_is_hw(pmap_load_pte(pte)))
+		kfatal("Address %p not valid\n", (void *)addr);
+	paddr = pmap_pte_hwleaf_paddr(pmap_load_pte(pte), PMAP_L0);
+	ke_spinlock_exit(&kernel_map.stealing_lock, ipl);
+	return paddr;
+}
+
 void
 pmap_new_leaf_valid_ptes_created(vm_rs_t *rs, struct pte_cursor *cursor,
     size_t n)

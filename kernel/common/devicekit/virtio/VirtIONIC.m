@@ -20,6 +20,7 @@
 #include <devicekit/virtio/VirtIONIC.h>
 #include <devicekit/virtio/virtio_net.h>
 #include <devicekit/virtio/virtioreg.h>
+#include <stdint.h>
 
 #define VIRTIO_NET_Q_RX 0
 #define VIRTIO_NET_Q_TX 1
@@ -262,18 +263,27 @@ struct vionic_tx_req {
 	for (m = mp; m != NULL; m = m->cont) {
 		size_t seg_len = m->wptr - m->rptr;
 		volatile struct vring_desc *desc;
+		paddr_t paddr;
 
 		if (seg_len == 0)
 			continue;
 
 		desc = &m_tx_vq.desc[descs[i]];
 
-		kassert(m->rptr >= (char *)HHDM_BASE &&
-		    m->rptr < (char *)HHDM_BASE + HHDM_SIZE);
 		kassert((uintptr_t)m->rptr / PGSIZE ==
 		    (uintptr_t)(m->rptr + seg_len - 1) / PGSIZE);
 
-		desc->addr = to_leu64(v2p((vaddr_t)m->rptr));
+		if ((uintptr_t)m->rptr >= HHDM_BASE &&
+		    (uintptr_t)m->rptr < HHDM_BASE + HHDM_SIZE) {
+			paddr = v2p((vaddr_t)m->rptr);
+		} else if ((uintptr_t)m->rptr >= PIN_HEAP_BASE &&
+		    (uintptr_t)m->rptr < PIN_HEAP_BASE + PIN_HEAP_SIZE) {
+			paddr = vm_translate((vaddr_t)m->rptr);
+		} else {
+			kfatal("TX buffer not in pinned heap nor HHDM\n");
+		}
+
+		desc->addr = to_leu64(paddr);
 		desc->len = to_leu32(seg_len);
 
 		if (i < nsegs) {
