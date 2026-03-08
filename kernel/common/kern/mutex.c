@@ -51,7 +51,7 @@ ke_mutex_enter(kmutex_t *mtx, const char *)
 
 		val = __atomic_load_n(&mtx->val, __ATOMIC_RELAXED);
 		if (val == 0) {
-			ke_turnstile_exit(ts, ipl);
+			ke_turnstile_exit(mtx, ipl);
 			continue;
 		}
 
@@ -61,7 +61,7 @@ ke_mutex_enter(kmutex_t *mtx, const char *)
 			    false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 				break;
 			if (val == 0) {
-				ke_turnstile_exit(ts, ipl);
+				ke_turnstile_exit(mtx, ipl);
 				goto retry;
 			}
 		}

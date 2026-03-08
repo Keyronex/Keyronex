@@ -50,7 +50,7 @@ ke_rwlock_enter_read(krwlock_t *rw, const char *reason)
 
 		val = __atomic_load_n(&rw->val, __ATOMIC_RELAXED);
 		if ((val & RW_WLOCKED) == 0) {
-			ke_turnstile_exit(ts, ipl);
+			ke_turnstile_exit(rw, ipl);
 			continue;
 		}
 
@@ -60,7 +60,7 @@ ke_rwlock_enter_read(krwlock_t *rw, const char *reason)
 			    false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 				break;
 			if ((val & RW_WLOCKED) == 0) {
-				ke_turnstile_exit(ts, ipl);
+				ke_turnstile_exit(rw, ipl);
 				goto retry;
 			}
 		}
@@ -95,7 +95,7 @@ ke_rwlock_enter_write(krwlock_t *rw, const char *reason)
 
 		val = __atomic_load_n(&rw->val, __ATOMIC_RELAXED);
 		if (val == 0) {
-			ke_turnstile_exit(ts, ipl);
+			ke_turnstile_exit(rw, ipl);
 			continue;
 		}
 
@@ -105,7 +105,7 @@ ke_rwlock_enter_write(krwlock_t *rw, const char *reason)
 			    false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 				break;
 			if (val == 0) {
-				ke_turnstile_exit(ts, ipl);
+				ke_turnstile_exit(rw, ipl);
 				goto retry;
 			}
 		}
@@ -157,7 +157,7 @@ ke_rwlock_exit_read(krwlock_t *rw)
 			return;
 		}
 
-		ke_turnstile_exit(ts, ipl);
+		ke_turnstile_exit(rw, ipl);
 	}
 }
 
@@ -242,7 +242,7 @@ ke_rwlock_downgrade(krwlock_t *rw)
 		 */
 		new = RW_1READER | RW_WAITERS;
 		__atomic_store_n(&rw->val, new, __ATOMIC_RELEASE);
-		ke_turnstile_exit(ts, ipl);
+		ke_turnstile_exit(rw, ipl);
 	}
 }
 
