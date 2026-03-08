@@ -1118,12 +1118,24 @@ tcp_wput_addr_req(queue_t *wq, mblk_t *mp)
 
 
 static void
+tcp_wput_data(queue_t *wq, mblk_t *mp)
+{
+	tcp_t *tp = wq->ptr;
+
+	ke_mutex_enter(&tp->mutex, "tcp_wput_data");
+
+	str_putq(wq, mp);
+	tcp_output(tp);
+
+	ke_mutex_exit(&tp->mutex);
+}
+
+static void
 tcp_wput(queue_t *wq, mblk_t *mp)
 {
 	switch (mp->db->type) {
 	case M_DATA:
-		str_putq(wq, mp);
-		tcp_output((tcp_t*)wq->ptr);
+		tcp_wput_data(wq, mp);
 		break;
 
 	case M_PROTO: {
@@ -1393,6 +1405,8 @@ tcp_output(tcp_t *tp)
 	bool can_send_more;
 	int r;
 
+	kassert(ke_mutex_held(&tp->mutex));
+
 	/*
 	 * These are the reasons to send a packet:
 	 * 1. There are SYN, RST, or FIN flags to be sent.
@@ -1656,13 +1670,9 @@ tcp_rput(queue_t *rq, mblk_t *mp)
 }
 
 static void
-tcp_rsrv(queue_t *rq)
+tcp_rsrv_locked(tcp_t *tp, queue_t *rq)
 {
 	mblk_t *mp;
-	tcp_t *tp = rq->ptr;
-
-	if (!str_canputnext(rq))
-		return;
 
 	while ((mp = str_getq(rq)) != NULL) {
 		if (str_canputnext(rq)) {
@@ -1700,6 +1710,19 @@ tcp_rsrv(queue_t *rq)
 			tcp_output(tp);
 		}
 	}
+}
+
+static void
+tcp_rsrv(queue_t *rq)
+{
+	tcp_t *tp = rq->ptr;
+
+	if (!str_canputnext(rq))
+		return;
+
+	ke_mutex_enter(&tp->mutex, "tcp_rsrv");
+	tcp_rsrv_locked(tp, rq);
+	ke_mutex_exit(&tp->mutex);
 }
 
 static void
@@ -1861,6 +1884,8 @@ tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
 	mblk_q_t *msgq;
 	uint32_t *countp;
 	mblk_t *m, *next;
+
+	kassert(ke_mutex_held(&tp->mutex));
 
 	if (tcp_wq(tp) != NULL) {
 		msgq = &tcp_wq(tp)->msgq;
@@ -2081,10 +2106,13 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 
 		if (tp->rq != NULL && str_canputnext(tp->rq)) {
 			if (!TAILQ_EMPTY(&tp->rq->msgq)) {
+#if 0 /* FIXME: what is this here for? */
 				kassert(tp->rq->enabled);
+#endif
 				tp->rcv_wnd -= str_msgsize(data_head);
 				str_putq(tp->rq, data_head);
-				tcp_rsrv(tp->rq);
+				if (str_canputnext(tp->rq))
+					tcp_rsrv_locked(tp, tp->rq);
 				tp->rq->enabled = false;
 			} else {
 				str_putnext(tp->rq, data_head);
@@ -2845,10 +2873,10 @@ tcp_input(ip_intf_t *ifp, mblk_t *mp)
 
 	/* prettyprint key facts of packet */
 	TCP_TRACE(" -- Received TCP packet: src=" FMT_IP4 ":%u dst=" FMT_IP4 ":%u "
-	    "seq=%u ack=%u flags=%s%s%s%s%s%s\n",
+	    "seq=%u ack=%u len=%u flags=%s%s%s%s%s%s\n",
 	    ARG_IP4(ip->ip_src.s_addr), ntohs(th->th_sport),
 	    ARG_IP4(ip->ip_dst.s_addr), ntohs(th->th_dport),
-	    ntohl(th->th_seq), ntohl(th->th_ack),
+	    ntohl(th->th_seq), ntohl(th->th_ack), tcp_len,
 	    (th->th_flags & TH_FIN) ? "FIN " : "",
 	    (th->th_flags & TH_SYN) ? "SYN " : "",
 	    (th->th_flags & TH_RST) ? "RST " : "",

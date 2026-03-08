@@ -145,6 +145,8 @@ str_putq(queue_t *q, mblk_t *mp)
 	bool was_empty = TAILQ_EMPTY(&q->msgq);
 	size_t size = str_msgsize(mp);
 
+	kassert(ke_mutex_held(q->stdata->mutex));
+
 	if (mp->db->type >= M_SETOPTS) /* first hi-priority */
 		TAILQ_INSERT_HEAD(&q->msgq, mp, link);
 	else
@@ -164,6 +166,8 @@ str_putbq(queue_t *q, mblk_t *mp)
 {
 	bool was_empty = TAILQ_EMPTY(&q->msgq);
 	size_t size = str_msgsize(mp);
+
+	kassert(ke_mutex_held(q->stdata->mutex));
 
 	TAILQ_INSERT_HEAD(&q->msgq, mp, link);
 
@@ -194,6 +198,8 @@ str_getq(queue_t *q)
 	mblk_t *mp = TAILQ_FIRST(&q->msgq);
 	if (mp == NULL)
 		return NULL;
+
+	kassert(ke_mutex_held(q->stdata->mutex));
 
 	TAILQ_REMOVE(&q->msgq, mp, link);
 	q->count -= str_msgsize(mp);
