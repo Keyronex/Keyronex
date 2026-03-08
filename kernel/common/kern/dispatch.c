@@ -397,6 +397,8 @@ ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
 #endif
 }
 
+void kep_rcu_per_cpu_init(struct kep_rcu_per_cpu_data *data);
+
 void
 ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data,
     struct limine_mp_info *info, kthread_t *idle)
@@ -416,6 +418,8 @@ ke_cpu_init(kcpunum_t cpunum, struct kcpu_data *data,
 	void kep_callout_expiry_dpc(void *, void *);
 	ke_dpc_init(&data->callout.expiry_dpc, kep_callout_expiry_dpc,
 	    &data->callout, NULL);
+
+	kep_rcu_per_cpu_init(&data->rcu_cpustate);
 
 	memset((void *)data->xcalls_pending.mask, 0,
 	    sizeof(data->xcalls_pending));

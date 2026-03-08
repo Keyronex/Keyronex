@@ -123,8 +123,6 @@ smp_init(void)
 		ke_cpu_data[i] = data;
 
 		ke_cpu_init(i, data, info, &idle->kthread);
-
-		// rcu_per_cpu_init(&data->rcu_cpustate);
 	}
 }
 

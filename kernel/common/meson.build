@@ -51,6 +51,7 @@ kernel_sources += [
     'kern/intr.c',
     'kern/kwait.c',
     'kern/mutex.c',
+    'kern/rcu.c',
     'kern/rwlock.c',
     'kern/thread.c',
     'kern/turnstil.c',
