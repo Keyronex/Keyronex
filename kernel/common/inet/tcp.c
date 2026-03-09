@@ -313,7 +313,8 @@ tcp_new(queue_t *rq)
 static void
 tcp_retain(tcp_t *tp)
 {
-	atomic_fetch_add_explicit(&tp->refcnt, 1, memory_order_relaxed);
+	kassert(atomic_fetch_add_explicit(&tp->refcnt, 1,
+	    memory_order_relaxed) > 0);
 }
 
 static bool
@@ -476,17 +477,21 @@ tcp_detach(tcp_t *tp)
 
 	pending = atomic_load(&tp->pending_timers);
 	if (pending != 0) {
-		tcp_retain(tp); /* safe, we are certainly alive */
 		ipl = ke_spinlock_enter(&tcp_detached_lock);
-		TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp, detached_link);
-		ke_event_set_signalled(&tcp_detached_event, true);
+		if (!tp->on_detached_work_q) {
+			tcp_retain(tp); /* safe, we are certainly alive */
+			TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp,
+			    detached_link);
+			tp->on_detached_work_q = true;
+			ke_event_set_signalled(&tcp_detached_event, true);
+		}
 		ke_spinlock_exit(&tcp_detached_lock, ipl);
 	}
 
 	/*
-	 * FIXME: what if there are packets on the stream ingress queue?
+	 * TODO: what if there are packets on the stream ingress queue?
 	 * it is not big problem (they'll get retransmitted by remote) but not
-	 * desirable.
+	 * desirable to just get rid of them.
 	 * we might legitimately NOT use the ingress queue at all even when
 	 * attached, but instead queue up packets on a queue in the TCB, and
 	 * have tcp_rsrv() deal with them.
@@ -982,16 +987,20 @@ tcp_wput_conn_req(queue_t *wq, mblk_t *mp)
 			return;
 		}
 
+		ke_mutex_exit(&tp->mutex);
+
 		reply_ok_ack(wq, mp, T_CONN_REQ);
 		break;
 
 	default:
 		TCP_TRACE("tcp_connect: invalid state %d\n", tp->state);
+		ke_mutex_exit(&tp->mutex);
 		reply_error_ack(wq, mp, T_CONN_REQ, EISCONN);
 		return;
 	}
 }
 
+/* FIXME: failure handling - get rid of the eager and the connind! */
 static void
 tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 {
@@ -1001,6 +1010,7 @@ tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 	tcp_t *child = NULL, *acceptor;
 	bool ok = false;
 
+	/* sockfs guarantees continued existence of the acceptor stream */
 	acceptorrq = (queue_t *)cres->ACCEPTOR_id;
 	kassert(acceptorrq->qinfo == &tcp_rinit);
 
@@ -1064,7 +1074,7 @@ out:
 
 	if (ok) {
 		tcp_release(acceptor); /* drop old acceptor ref from q->ptr */
-		tcp_release(child);    /* drop local ref from search */
+		tcp_release(child);	/* drop local ref from search */
 		reply_ok_ack(wq, mp, T_CONN_RES);
 	} else {
 		tcp_release(child);
@@ -1794,7 +1804,10 @@ tcp_reply(ip_intf_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
 
 	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr)));
 
-	ip_output_intfheld(m, ifpheld);
+	if (ifpheld != NULL)
+		ip_output_intfheld(m, ifpheld);
+	else
+	 	ip_output(m);
 }
 
 static void
@@ -1809,8 +1822,8 @@ tcp_reply_reset(ip_intf_t *ifp, mblk_t *m, struct ip *ip, struct tcphdr *th)
 			seg_len++;
 		if (th->th_flags & TH_FIN)
 			seg_len++;
-		tcp_reply(ifp, m, ip, th, ntohl(th->th_seq),
-		    ntohl(th->th_ack) + seg_len, TH_RST);
+		tcp_reply(ifp, m, ip, th, 0, ntohl(th->th_seq) + seg_len,
+		    TH_RST);
 	}
 }
 
@@ -2587,13 +2600,6 @@ do { \
 			/* advance for SYN bit */
 			tp->snd_una++;
 
-			if (SEQ_GT(tp->snd_una, tp->snd_nxt))
-#if 0 /* don't remember adding this - what is it good for? */
-				tp->snd_max = tp->snd_nxt;
-#else
-				kfatal("how?\n");
-#endif
-
 			tcp_change_state(tp, TCPS_ESTABLISHED);
 
 			if (tp->passive_listener == NULL)
@@ -2663,9 +2669,7 @@ do { \
 				tcp_snd_q_consume(tp, tcp_snd_q_count(tp));
 				our_fin_acked = true;
 			} else {
-#if 1 /* why did I add this? verify this is sound */
 				tp->snd_wnd -= nseq_acked;
-#endif
 				tcp_snd_q_consume(tp, nseq_acked);
 			}
 		}
@@ -2941,6 +2945,7 @@ tcp_timer_dpchandler(void *arg, void *timer_arg)
 	int timer_type = timer - tp->timers;
 	ipl_t ipl;
 
+	/* could have refcnt 0 & on way to RCU free by now, take a local ref */
 	if (!tcp_tryretain(tp))
 		return;
 
@@ -2953,7 +2958,7 @@ tcp_timer_dpchandler(void *arg, void *timer_arg)
 		str_qenable(tcp_wq(tp));
 		str_kick(tp->rq->stdata);
 		ke_spinlock_exit(&tp->detach_lock, ipl);
-		tcp_release(tp); /* Release our local DPC ref */
+		tcp_release(tp); /* drop local ref */
 	} else {
 		/* currently detached. Put to a TCP worker thread. */
 		ke_spinlock_exit(&tp->detach_lock, ipl);
@@ -2963,9 +2968,12 @@ tcp_timer_dpchandler(void *arg, void *timer_arg)
 			tp->on_detached_work_q = true;
 			TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp, detached_link);
 			ke_event_set_signalled(&tcp_detached_event, true);
+			/* workq takes ownership of the local ref. */
+		} else {
+			/* can safely do this here; workq holds a ref */
+			tcp_release(tp);
 		}
 		ke_spinlock_exit(&tcp_detached_lock, ipl);
-		/* no tcp_release(); the reference is the worker thread's now */
 	}
 }
 
