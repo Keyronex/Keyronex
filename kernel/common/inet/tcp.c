@@ -3024,6 +3024,8 @@ tcp_2msl_timer(tcp_t *tp)
 	if (tp->timers[TCP_TIMER_2MSL].deadline > ke_time())
 		return;
 
+	/* the 2msl timer should only ever run on a detached tcp */
+	kassert(tp->rq == NULL);
 	tcb_free_connstate(tp);
 	tcp_release(tp);
 }
