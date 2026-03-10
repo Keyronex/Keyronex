@@ -123,6 +123,7 @@ typedef struct tcp {
 	atomic_uint pending_timers;	/* TCP timers that fired */
 
 	bool	shutdown_rd:	1, /* can't receive any more. */
+		shutdown_wr:	1, /* can't send any more */
 		emit_ack: 	1, /* send ACK next tcp_output() */
 		ordrel_needed:	1; /* need to put up T_ORDREL_IND after data */
 
@@ -289,6 +290,7 @@ tcp_new(queue_t *rq)
 	tp->conn_ind_m = NULL;
 
 	tp->shutdown_rd = 0;
+	tp->shutdown_wr = 1;
 	tp->emit_ack = 0;
 	tp->ordrel_needed = 0;
 
@@ -1126,6 +1128,47 @@ tcp_wput_addr_req(queue_t *wq, mblk_t *mp)
 	str_qreply(wq, ackmp);
 }
 
+static void
+tcp_wput_ordrel_req(queue_t *wq, mblk_t *mp)
+{
+	tcp_t *tp = wq->ptr;
+	int err = 0;
+
+	ke_mutex_enter(&tp->mutex, "tcp_wput_ordrel_req");
+
+	switch (tp->state) {
+	case TCPS_ESTABLISHED:
+		if (tp->shutdown_wr) {
+			err = EINVAL;
+			break;
+		}
+		tp->shutdown_wr = true;
+		tcp_change_state(tp, TCPS_FIN_WAIT_1);
+		tcp_output(tp);
+		break;
+
+	case TCPS_CLOSE_WAIT:
+		if (tp->shutdown_wr) {
+			err = EINVAL;
+			break;
+		}
+		tp->shutdown_wr = true;
+		tcp_change_state(tp, TCPS_LAST_ACK);
+		tcp_output(tp);
+		break;
+
+	default:
+		err = EINVAL;
+		break;
+	}
+
+	ke_mutex_exit(&tp->mutex);
+
+	if (err != 0)
+		reply_error_ack(wq, mp, T_ORDREL_REQ, err);
+	else
+		reply_ok_ack(wq, mp, T_ORDREL_REQ);
+}
 
 static void
 tcp_wput_data(queue_t *wq, mblk_t *mp)
@@ -1133,6 +1176,12 @@ tcp_wput_data(queue_t *wq, mblk_t *mp)
 	tcp_t *tp = wq->ptr;
 
 	ke_mutex_enter(&tp->mutex, "tcp_wput_data");
+
+	if (tp->shutdown_wr) {
+		ke_mutex_exit(&tp->mutex);
+		str_freemsg(mp);
+		return;
+	}
 
 	str_putq(wq, mp);
 	tcp_output(tp);
@@ -1166,6 +1215,9 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 		case T_ADDR_REQ:
 			tcp_wput_addr_req(wq, mp);
 			break;
+
+		case T_ORDREL_REQ:
+			tcp_wput_ordrel_req(wq, mp);
 
 		default:
 			kfatal("tcp_wput: unhandled proto type %d\n",
