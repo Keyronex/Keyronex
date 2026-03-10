@@ -1180,20 +1180,33 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 }
 
 static void
+tcp_dispatch_pending_timers(tcp_t *tp, uint32_t pending)
+{
+	/*
+	 * Note some timer handlers here release a reference on the tcp if it is
+	 * detached. But either we are called from within the STREAMS service
+	 * routine (in which case the stream owns a reference on tp) or from the
+	 * detached timer handler (in which case that handler has taken a local
+	 * reference on the tcp.) So it should be safe.
+	 */
+	if (pending & (1 << TCP_TIMER_REXMT))
+		tcp_rexmt_timer(tp);
+	if (pending & (1 << TCP_TIMER_2MSL))
+		tcp_2msl_timer(tp);
+	if (pending & (1 << TCP_TIMER_KEEPALIVE))
+		tcp_keepalive_timer(tp);
+	if (pending & (1 << TCP_TIMER_PERSIST))
+		tcp_persist_timer(tp);
+}
+
+static void
 tcp_wsrv(queue_t *wq)
 {
 	tcp_t *tp = wq->ptr;
 	uint32_t pending = atomic_exchange(&tp->pending_timers, 0);
 	if (pending != 0) {
 		ke_mutex_enter(&tp->mutex, "tcp_rsrv_timers");
-		if (pending & (1 << TCP_TIMER_REXMT))
-			tcp_rexmt_timer(tp);
-		if (pending & (1 << TCP_TIMER_2MSL))
-			tcp_2msl_timer(tp);
-		if (pending & (1 << TCP_TIMER_KEEPALIVE))
-			tcp_keepalive_timer(tp);
-		if (pending & (1 << TCP_TIMER_PERSIST))
-			tcp_persist_timer(tp);
+		tcp_dispatch_pending_timers(tp, pending);
 		ke_mutex_exit(&tp->mutex);
 	}
 }
@@ -3024,10 +3037,16 @@ tcp_2msl_timer(tcp_t *tp)
 	if (tp->timers[TCP_TIMER_2MSL].deadline > ke_time())
 		return;
 
-	/* the 2msl timer should only ever run on a detached tcp */
-	kassert(tp->rq == NULL);
+	kassert(tp->state == TCPS_FIN_WAIT_2 || tp->state == TCPS_TIME_WAIT);
+
 	tcb_free_connstate(tp);
-	tcp_release(tp);
+
+	/*
+	 * If detached, then we own the last reference to the TCP, and are
+	 * responsible to free it.
+	 */
+	if (tp->rq == NULL)
+		tcp_release(tp);
 }
 
 static void
@@ -3063,14 +3082,7 @@ tcp_detached_worker(void *arg)
 				continue;
 			}
 
-			if (pending & (1 << TCP_TIMER_REXMT))
-				tcp_rexmt_timer(tp);
-			if (pending & (1 << TCP_TIMER_2MSL))
-				tcp_2msl_timer(tp);
-			if (pending & (1 << TCP_TIMER_PERSIST))
-				tcp_persist_timer(tp);
-			if (pending & (1 << TCP_TIMER_KEEPALIVE))
-				tcp_keepalive_timer(tp);
+			tcp_dispatch_pending_timers(tp, pending);
 			ke_mutex_exit(&tp->mutex);
 
 			tcp_release(tp); /* tp was retained in dpc handler */
