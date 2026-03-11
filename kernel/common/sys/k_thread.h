@@ -152,7 +152,7 @@ void kep_turnstile_init(void);
 ipl_t ke_turnstile_lookup(void *obj, kturnstile_t **out);
 kthread_t *ke_turnstile_waiter(kturnstile_t *, bool writer);
 void ke_turnstile_block(kturnstile_t *, bool writer, void *obj,
-    kthread_t *owner, ipl_t);
+    kthread_t *owner, ipl_t, const char *reason);
 void ke_turnstile_wakeup(kturnstile_t *, bool writer, int count,
     kthread_t *newowner, ipl_t);
 void ke_turnstile_exit(void *obj, ipl_t);

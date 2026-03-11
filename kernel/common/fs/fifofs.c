@@ -83,6 +83,8 @@ fifo_close(vnode_t *vn, int flags)
 
 	str_req_begin(sh);
 
+	flags &= ~(O_NONBLOCK);
+
 	if (flags == O_RDONLY) {
 		kassert(sh->nreaders > 0);
 		sh->nreaders--;

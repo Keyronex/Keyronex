@@ -416,6 +416,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 		str_enter(sh, "sock_accept4 requeue");
 		sock_requeue_conn_ind_mp(sn, cimp);
 		str_req_end(sh);
+		kdprintf("so_accept4: so_create failed: %d\n", r);
 		return r;
 	}
 
@@ -463,6 +464,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 		str_req_end(sh);
 		file_release(acceptor_fp);
 		uf_unreserve_fd(curproc()->finfo, fd);
+		kdprintf("so_accept4: conn_res failed: %d\n", r);
 		return -r;
 	} else {
 		str_freemsg(cimp);
@@ -472,6 +474,7 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	acceptor_sn->state |= SS_ISCONNECTED;
 
 	uf_install_reserved(curproc()->finfo, fd, acceptor_fp);
+
 	return fd;
 }
 
@@ -1031,8 +1034,10 @@ lookup_sockfd(int sockfd, file_t **fpp)
 	file_t *fp = uf_lookup(curproc()->finfo, sockfd);
 	if (fp == NULL)
 		return -EBADF;
-	if (fp->vnode->ops != &sock_vnops)
+	if (fp->vnode->ops != &sock_vnops) {
+		file_release(fp);
 		return -ENOTSOCK;
+	}
 	*fpp = fp;
 	return 0;
 }
@@ -1181,6 +1186,19 @@ sys_getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 	if (r < 0)
 		return r;
 	r = so_getpeername(VTOSN(fp->vnode), addr, addrlen);
+	file_release(fp);
+	return r;
+}
+
+int
+sys_shutdown(int sockfd, int how)
+{
+	file_t *fp;
+	int r = lookup_sockfd(sockfd, &fp);
+	if (r < 0)
+		return r;
+	kdprintf("sys_shutdown: how=%d, sockfile=%p, socknode=%p\n", how, fp,
+	    VTOSN(fp->vnode));
 	file_release(fp);
 	return r;
 }

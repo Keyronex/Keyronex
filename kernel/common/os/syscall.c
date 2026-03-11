@@ -44,6 +44,7 @@ int sys_recvmsg(int sockfd, struct msghdr *msg, int flags);
 int sys_sendmsg(int sockfd, const struct msghdr *msg, int flags);
 int sys_getsockname(int sockfd, struct sockaddr *, socklen_t *);
 int sys_getpeername(int sockfd, struct sockaddr *, socklen_t *);
+int sys_shutdown(int sockfd, int how);
 
 int
 sys_clock_gettime(int clock_id, struct timespec *tp)
@@ -326,6 +327,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_getpeername:
 		return sys_getpeername((int)arg1, (struct sockaddr *)arg2,
 		    (socklen_t *)arg3);
+
+	case SYS_shutdown:
+		return sys_shutdown((int)arg1, (int)arg2);
 
 	/*
 	 * linux affinity

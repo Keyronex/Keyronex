@@ -1149,7 +1149,7 @@ strchpoll(stdata_t *sh, struct poll_entry *pe, enum chpoll_mode mode)
 		r |= EPOLLIN | EPOLLRDNORM; /* canon tty, zero msg for EOF */
 
 	if (sh->hanged_up)
-		r |= EPOLLHUP;
+		r |= EPOLLHUP | EPOLLIN | EPOLLRDNORM;
 
 	str_exit(sh);
 
