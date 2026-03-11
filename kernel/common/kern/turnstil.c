@@ -207,7 +207,7 @@ revoke_priority(kturnstile_t *ts)
 
 void
 ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
-	ipl_t ipl)
+	ipl_t ipl, const char *reason)
 {
 	kthread_t *thread = ke_curthread();
 	struct kturnstile_waiter wb;
@@ -241,7 +241,7 @@ ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 	ke_spinlock_exit_nospl(&chain->lock);
 	ke_spinlock_exit_nospl(&thread->lock);
 	splx(ipl);
-	ke_wait1(&wb.event, "turnstile_block", false, ABSTIME_FOREVER);
+	ke_wait1(&wb.event, reason, false, ABSTIME_FOREVER);
 }
 
 static void

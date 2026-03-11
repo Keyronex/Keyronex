@@ -28,7 +28,7 @@ ke_mutex_init(kmutex_t *mtx)
 }
 
 void
-ke_mutex_enter(kmutex_t *mtx, const char *)
+ke_mutex_enter(kmutex_t *mtx, const char *reason)
 {
 	kthread_t *self = ke_curthread();
 	kturnstile_t *ts;
@@ -66,7 +66,7 @@ ke_mutex_enter(kmutex_t *mtx, const char *)
 			}
 		}
 
-		ke_turnstile_block(ts, true, mtx, MTX_OWNER(val), ipl);
+		ke_turnstile_block(ts, true, mtx, MTX_OWNER(val), ipl, reason);
 		/* note: no ownership handoff */
 	}
 }

@@ -65,7 +65,7 @@ ke_rwlock_enter_read(krwlock_t *rw, const char *reason)
 			}
 		}
 
-		ke_turnstile_block(ts, false, rw, RW_OWNER(val), ipl);
+		ke_turnstile_block(ts, false, rw, RW_OWNER(val), ipl, reason);
 		return;
 	}
 }
@@ -110,7 +110,7 @@ ke_rwlock_enter_write(krwlock_t *rw, const char *reason)
 			}
 		}
 
-		ke_turnstile_block(ts, true, rw, RW_OWNER(val), ipl);
+		ke_turnstile_block(ts, true, rw, RW_OWNER(val), ipl, reason);
 		return;
 	}
 }
