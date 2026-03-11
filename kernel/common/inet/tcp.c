@@ -155,6 +155,15 @@ typedef struct tcp {
 
 	mblk_q_t	reass_queue;	/* segment reassembly queue */
 
+	/* congestion control */
+	uint32_t	snd_cwnd;	/* congestion window */
+	uint32_t	snd_ssthresh;	/* slow-start threshold */
+	uint32_t	bytes_acked;
+
+	uint8_t		dupacks;
+	tcp_seq_t	snd_recover;	/* after acked, fast recovery ends */
+	bool		fast_recovery;
+
 	/* mblks preallocated for connected TCBs. */
 	mblk_t	*conn_con_m;	/* preallocated T_CONN_CON */
 	mblk_t	*ordrel_ind_m;	/* preallocated T_ORDREL_IND */
@@ -290,7 +299,7 @@ tcp_new(queue_t *rq)
 	tp->conn_ind_m = NULL;
 
 	tp->shutdown_rd = 0;
-	tp->shutdown_wr = 1;
+	tp->shutdown_wr = 0;
 	tp->emit_ack = 0;
 	tp->ordrel_needed = 0;
 
@@ -854,6 +863,19 @@ tcp_setup_connection(tcp_t *tp, struct sockaddr_in *faddr)
 	tp->snd_wl1 = 0;
 	tp->snd_wl2 = 0;
 
+	if (tp->mss > 2190)
+		tp->snd_cwnd  = 2 * tp->mss;
+	else if (tp->mss > 1095)
+		tp->snd_cwnd = 3 * tp->mss;
+	else
+		tp->snd_cwnd = 4 * tp->mss;
+	tp->snd_ssthresh = INT32_MAX; /* "arbitrarily high" */
+	tp->snd_recover = tp->iss;
+
+	tp->bytes_acked = 0;
+	tp->dupacks = 0;
+	tp->fast_recovery = false;
+
 	tp->emit_ack = false;
 
 	tp->conn_con_m = str_allocb(sizeof(struct T_conn_con));
@@ -1218,6 +1240,7 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 
 		case T_ORDREL_REQ:
 			tcp_wput_ordrel_req(wq, mp);
+			break;
 
 		default:
 			kfatal("tcp_wput: unhandled proto type %d\n",
@@ -1389,13 +1412,13 @@ tcp_checksum(struct ip *ip, struct tcphdr *tcp, size_t tcp_len)
 }
 
 static int
-do_send(tcp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
+do_send(tcp_t *tp, tcp_seq_t seq, uint8_t flags, size_t data_len,
+    size_t data_off)
 {
 	mblk_t *mp;
 	struct ether_header *eh;
 	struct ip *ip;
 	struct tcphdr *th;
-	tcp_seq_t start;
 
 	mp = str_allocb(sizeof(struct ether_header) + sizeof(struct ip) +
 	    sizeof(struct tcphdr) + data_len);
@@ -1424,7 +1447,7 @@ do_send(tcp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 
 	th->th_sport = tp->laddr.sin_port;
 	th->th_dport = tp->faddr.sin_port;
-	th->th_seq = htonl(tp->snd_nxt);
+	th->th_seq = htonl(seq);
 	th->th_ack = htonl(tp->rcv_nxt);
 	th->th_off = sizeof(struct tcphdr) >> 2;
 	th->th_flags = flags;
@@ -1443,31 +1466,6 @@ do_send(tcp_t *tp, uint8_t flags, size_t data_len, size_t data_off)
 	else
 		ip_output(mp);
 
-	start = tp->snd_nxt;
-
-	tp->snd_nxt += data_len;
-	if (flags & (TH_SYN))
-		tp->snd_nxt++;
-	if (flags & (TH_FIN))
-		tp->snd_nxt++;
-
-	if (SEQ_GT(tp->snd_nxt, tp->snd_max)) {
-		/* new data, not a retransmission */
-
-		tp->snd_max = tp->snd_nxt;
-
-		if (!tp->timing_rtt) {
-			tp->timing_rtt = true;
-			tp->rtstart = ke_time();
-			tp->rtseq = start;
-		}
-	}
-
-	/* if sending anything other than pure ACK,  ensure rexmt timer is on */
-	if ((data_len != 0 || (flags & (TH_SYN | TH_FIN))) &&
-	    (tp->timers[TCP_TIMER_REXMT].deadline == ABSTIME_NEVER))
-		tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
-
 	return 0;
 }
 
@@ -1477,7 +1475,9 @@ tcp_output(tcp_t *tp)
 	uint8_t flags;
 	int data_len, data_off;
 	int swnd;
+	uint32_t flight;
 	bool can_send_more;
+	tcp_seq_t old_nxt;
 	int r;
 
 	kassert(ke_mutex_held(&tp->mutex));
@@ -1492,6 +1492,7 @@ tcp_output(tcp_t *tp)
 send_more:
 	flags = tcp_out_flags[tp->state];
 	can_send_more = false;
+	old_nxt = tp->snd_nxt;
 
 	/*
 	 * wq->q_q begins at snd_una. Therefore: snd_nxt - snd_una = the offset
@@ -1504,10 +1505,11 @@ send_more:
 	 * And FIN, being the last thing sent, doesn't affect the offset.
 	 */
 
+	flight = tp->snd_max - tp->snd_una;
 	data_len = tcp_snd_q_count(tp);
 	data_off = tp->snd_nxt - tp->snd_una;
 	data_len -= data_off;
-	swnd = tp->snd_wnd - data_off;
+	swnd = MIN2(tp->snd_wnd, tp->snd_cwnd) - flight;
 
 	if (data_len < 0)
 		data_len = 0;
@@ -1526,19 +1528,16 @@ send_more:
 	 * Nagle's algorithm.
 	 * Permit sending data if window size >= MSS and available data >= MSS,
 	 * or if there's no remaining unacknowledged data.
-	 *
-	 * Retransmission is also allowed (snd_nxt < snd_max).
 	 * Also sending FIN.
 	 */
 	if (data_len != 0 && (flags & TH_FIN) == 0) {
 		if (tp->snd_wnd < tp->mss || data_len < tp->mss) {
-			if (tp->snd_una != tp->snd_max &&
-			    !SEQ_LT(tp->snd_nxt, tp->snd_max)) {
+			if (tp->snd_una != tp->snd_max) {
 				TCP_TRACE("nagle delaying send\n"
 					"snd_una=%u snd_nxt=%u snd_max=%u\n"
-					"snd_wnd=%u mss=%u data_len=%d\n",
+					"snd_wnd=%u snd_cwnd=%u mss=%u data_len=%d\n",
 				    tp->snd_una, tp->snd_nxt, tp->snd_max,
-				    tp->snd_wnd, tp->mss, data_len);
+				    tp->snd_wnd, tp->snd_cwnd, tp->mss, data_len);
 				data_len = 0;
 			    }
 		}
@@ -1547,25 +1546,81 @@ send_more:
 	/* If we're not sending everything in the queue, clear FIN. */
 	if (data_off + data_len < tcp_snd_q_count(tp))
 		flags &= ~TH_FIN;
-	/* Don't resend FIN (unless snd_una was reset for a retransmission) */
+	/* and if we already sent FIN, don't resend it */
 	else if (SEQ_GT(tp->snd_nxt, tp->snd_una + tcp_snd_q_count(tp)))
 		flags &= ~TH_FIN;
 	else if (data_len != 0)
 		flags |= TH_PUSH;
 
+
 	if (tp->emit_ack) {
 		tp->emit_ack = false;
-		r = do_send(tp, flags, data_len, data_off);
+		r = do_send(tp, tp->snd_nxt, flags, data_len, data_off);
 	} else if ((flags & (TH_SYN | TH_RST | TH_FIN)) || data_len != 0) {
-		r = do_send(tp, flags, data_len, data_off);
+		r = do_send(tp, tp->snd_nxt, flags, data_len, data_off);
 	} else {
 		return 0;
 	}
+
+	tp->snd_nxt += data_len;
+	if (flags & TH_SYN)
+		tp->snd_nxt++;
+	if (flags & TH_FIN)
+		tp->snd_nxt++;
+
+	if (SEQ_GT(tp->snd_nxt, tp->snd_max)) {
+		/* newly-sent data/control */
+		tp->snd_max = tp->snd_nxt;
+
+		if (!tp->timing_rtt) {
+			tp->timing_rtt = true;
+			tp->rtstart = ke_time();
+			tp->rtseq = old_nxt;
+		}
+	}
+
+	/* if sending other than a pure ACK, ensure rexmt timer is on */
+	if ((data_len != 0 || (flags & (TH_SYN | TH_FIN))) &&
+	    (tp->timers[TCP_TIMER_REXMT].deadline == ABSTIME_NEVER))
+		tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
 
 	if (r == 0 && can_send_more)
 		goto send_more;
 
 	return r;
+}
+
+
+static int
+tcp_rexmit(tcp_t *tp)
+{
+	uint8_t flags;
+	uint32_t outstanding, data_out;
+	size_t rexmit_len;
+
+	kassert(ke_mutex_held(&tp->mutex));
+
+	outstanding = tp->snd_max - tp->snd_una;
+	if (outstanding == 0)
+		return 0;
+
+	flags = tcp_out_flags[tp->state];
+
+	data_out = MIN2(outstanding, (uint32_t)tcp_snd_q_count(tp));
+	rexmit_len = MIN2((size_t)data_out, (size_t)tp->mss);
+
+	/*
+	 * only retransmit fin if it is unacknowledged, AND this rexmit includes
+	 * all queued data preceding it
+	 */
+	if (SEQ_LEQ(tp->snd_max, tp->snd_una + tcp_snd_q_count(tp)) ||
+	    rexmit_len < data_out)
+		flags &= ~TH_FIN;
+
+	if ((flags & (TH_SYN | TH_FIN)) == 0 && rexmit_len == 0)
+		return 0;
+
+	return do_send(tp, tp->snd_una, flags, rexmit_len, 0);
 }
 
 /*
@@ -2278,6 +2333,73 @@ fail:
 	return NULL;
 }
 
+static void
+tcp_cc_on_dup_ack(tcp_t *tp)
+{
+	if (tp->dupacks != UINT8_MAX)
+		tp->dupacks++;
+
+	if (tp->fast_recovery) {
+		tp->snd_cwnd += tp->mss;
+		tcp_output(tp);
+		return;
+	}
+
+	if (tp->dupacks != 3)
+		return;
+
+	/* RFC 6582: only enter fast retransmit if ACK covers > recover */
+	if (!SEQ_GT(tp->snd_una, tp->snd_recover))
+		return;
+
+	tp->snd_ssthresh = MAX2((tp->snd_max - tp->snd_una) / 2,
+	    2 * (uint32_t)tp->mss);
+	tp->snd_recover = tp->snd_max;
+	tp->snd_cwnd = tp->snd_ssthresh + 3 * tp->mss;
+	tp->fast_recovery = true;
+
+	tp->timing_rtt = false; /* Karn */
+
+	tcp_rexmit(tp);
+}
+
+static void
+tcp_cc_on_new_ack(tcp_t *tp, uint32_t acked_data, tcp_seq_t ack)
+{
+	tp->dupacks = 0;
+	tp->n_rexmits = 0;
+
+	if (tp->fast_recovery) {
+		if (SEQ_GEQ(ack, tp->snd_recover)) {
+			/* full ACK, fast recovery ends */
+			tp->snd_cwnd = tp->snd_ssthresh;
+			tp->fast_recovery = false;
+			return;
+		} else {
+			/* partial ACK */
+			tp->snd_cwnd -= MIN2(tp->snd_cwnd, acked_data);
+			if (acked_data >= tp->mss)
+				tp->snd_cwnd += tp->mss;
+			tp->snd_cwnd = MAX2(tp->snd_cwnd, (uint32_t)tp->mss);
+
+			tp->timing_rtt = false;		/* Karn */
+			tcp_rexmit(tp);
+			tcp_output(tp);
+			return;
+		}
+	}
+
+	if (tp->snd_cwnd < tp->snd_ssthresh) {
+		tp->snd_cwnd += MIN2((uint32_t)acked_data, tp->mss);
+	} else {
+		tp->bytes_acked += acked_data;
+		if (tp->bytes_acked >= tp->snd_cwnd) {
+			tp->bytes_acked -= tp->snd_cwnd;
+			tp->snd_cwnd += tp->mss;
+		}
+	}
+}
+
 /*
  * entered with tp->mutex held
  * if detached, ifp is the interface whose processing context we're in (for
@@ -2690,45 +2812,49 @@ do { \
 	case TCPS_CLOSING:
 	case TCPS_LAST_ACK:
 	case TCPS_TIME_WAIT: {
-		int nseq_acked = 0;
 		bool our_fin_acked = false;
 
 		if (SEQ_LEQ(ntohl(th->th_ack), tp->snd_una)) {
 			/*
-			 * If the ACK is a duplicate (SEG.ACK =< SND.UNA), it
-			 * can be ignored.
+			 * RFC 5685 defines a duplicate ACK as one where there
+			 * is outstanding data, there is no data carried,
+			 * SYN/FIN are both unset, the ACK equals SND.UNA, and
+			 * the window size is unchanged.
 			 */
+			if (tp->snd_una != tp->snd_max && /* outstanding data */
+			    th->th_datalen == 0 &&
+			    (th->th_flags & (TH_SYN | TH_FIN)) == 0 &&
+			    ntohl(th->th_ack) == tp->snd_una &&
+			    ntohs(th->th_win) == tp->snd_wnd) {
+				tcp_cc_on_dup_ack(tp);
+				goto finish;
+			}
+
 		} else if (SEQ_GT(ntohl(th->th_ack), tp->snd_max)) {
 			/*
-			 * If the ACK acks something not yet sent (SEG.ACK >
+			 * "If the ACK acks something not yet sent (SEG.ACK >
 			 * SND.NXT), then send an ACK, drop the segment, and
-			 * return.
+			 * return.""
 			 * [snd_max in our case.]
 			 */
 			tp->emit_ack = true;
 			tcp_output(tp);
 			goto finish;
 		} else {
+			uint32_t nseq_acked, bytes_acked;
+
 		acceptable_ack:
 			nseq_acked = ntohl(th->th_ack) - tp->snd_una;
+			bytes_acked = MIN2(nseq_acked, tcp_snd_q_count(tp));
 
 			tp->snd_una = ntohl(th->th_ack);
-
-			/* if everything is ACKed, stop rexmt timer */
-			if (tp->snd_una == tp->snd_max)
-				tcp_cancel_timer(tp, TCP_TIMER_REXMT);
-
 			if (SEQ_LT(tp->snd_nxt, tp->snd_una))
 				tp->snd_nxt = tp->snd_una;
-
-			/* Maybe update RTT. */
-			tcp_rtt_update(tp, ntohl(th->th_ack));
 
 			/*
 			 * If SND.UNA =< SEG.ACK =< SND.NXT, the send window
 			 * should be updated.
 			 */
-
 			if (nseq_acked > tcp_snd_q_count(tp)) {
 				tp->snd_wnd -= tcp_snd_q_count(tp);
 				tcp_snd_q_consume(tp, tcp_snd_q_count(tp));
@@ -2737,6 +2863,17 @@ do { \
 				tp->snd_wnd -= nseq_acked;
 				tcp_snd_q_consume(tp, nseq_acked);
 			}
+
+			tcp_cc_on_new_ack(tp, bytes_acked, ntohl(th->th_ack));
+
+			/* RFC 6298 5.2: turn off timer if all data ACKed */
+			if (tp->snd_una == tp->snd_max)
+				tcp_cancel_timer(tp, TCP_TIMER_REXMT);
+			else /* RFC 6298 5.3: reset to RTO if some data ACK'd */
+			 	tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
+
+			/* Maybe update RTT. */
+			tcp_rtt_update(tp, ntohl(th->th_ack));
 		}
 
 		/*
@@ -2757,6 +2894,7 @@ do { \
 				tcp_cancel_timer(tp, TCP_TIMER_PERSIST);
 		}
 
+after_ack_window_update:
 		switch (tp->state) {
 		case TCPS_FIN_WAIT_1:
 			if (our_fin_acked) {
@@ -3050,11 +3188,26 @@ tcp_rexmt_timer(tcp_t *tp)
 	if (tp->timers[TCP_TIMER_REXMT].deadline > ke_time())
 		return;
 
-	if (tp->n_rexmits++ == TCP_MAXRETRIES) {
+	if (tp->n_rexmits >= TCP_MAXRETRIES) {
 		TCP_TRACE("Too many rexmit attempts, giving up\n");
 		tcp_abort(tp, ETIMEDOUT);
 		return;
 	}
+
+	/*
+	 * RFC 5681 3.1 / RFC 6298 5.4: Only on first timeout for a given flight
+	 * reduce ssthresh and reset cwnd to 1 MSS.
+	 */
+	if (tp->n_rexmits == 0) {
+		tp->snd_ssthresh = MAX2((tp->snd_max - tp->snd_una) / 2,
+		    2 * (uint32_t)tp->mss);
+		tp->snd_recover = tp->snd_max; /* RFC 5682 3 */
+	}
+
+	tp->n_rexmits++;
+	tp->snd_cwnd = tp->mss;		/* restart slow start */
+	tp->fast_recovery = false;
+	tp->dupacks = 0;
 
 	/*
 	 * Retransmit timer expired - stop timing RTT, backoff RTO, and let the
@@ -3065,8 +3218,8 @@ tcp_rexmt_timer(tcp_t *tp)
 	tp->rto = MIN2(tp->rto * 2, TCP_MAX_RTO_MS);
 	tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
 
-	tp->snd_nxt = tp->snd_una;
-	tcp_output(tp);
+	/* snd_cwnd == mss by here */
+	tcp_rexmit(tp);
 }
 
 static void

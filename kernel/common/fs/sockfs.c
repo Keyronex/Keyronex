@@ -1117,7 +1117,7 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 
 	sn = VTOSN(file->vnode);
 
-	kassert(msg->msg_iovlen == 1 && msg->msg_controllen == 0);
+	kassert(msg->msg_iovlen == 1 /* && msg->msg_controllen == 0 */);
 
 	if (flags & MSG_DONTWAIT)
 		readflags |= O_NONBLOCK;
