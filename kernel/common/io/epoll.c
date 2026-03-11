@@ -311,7 +311,7 @@ poll_watched_file_did_close(file_t *file)
 	    "epoll_watched_file_did_close:epoll_teardown_mutex");
 
 
-	for  (!LIST_EMPTY(&file->epoll_watches)) {
+	for  (;;) {
 		struct epoll *ep;
 		struct poll_entry *entry;
 
@@ -398,6 +398,11 @@ sys_epoll_ctl(int epdesc, int op, int desc,
 		file_release(watch_file);
 		break;
 	}
+
+	default:
+		file_release(watch_file);
+		r = -EINVAL;
+		break;
 	}
 
 	file_release(ep_file);

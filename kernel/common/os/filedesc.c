@@ -444,6 +444,7 @@ sys_fcntl(int fd, int cmd, unsigned long arg)
 
 		/* FIXME: lock flags? atomic? */
 		f->flags = (int)arg & (O_APPEND | O_NONBLOCK);
+		file_release(f);
 		return 0;
 
 	default:
