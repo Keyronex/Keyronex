@@ -310,10 +310,17 @@ poll_watched_file_did_close(file_t *file)
 	ke_mutex_enter(&epoll_teardown_mutex,
 	    "epoll_watched_file_did_close:epoll_teardown_mutex");
 
-	ipl = ke_spinlock_enter(&file->epoll_lock);
-	while (!LIST_EMPTY(&file->epoll_watches)) {
+
+	for  (!LIST_EMPTY(&file->epoll_watches)) {
 		struct epoll *ep;
 		struct poll_entry *entry;
+
+		ipl = ke_spinlock_enter(&file->epoll_lock);
+
+		if (LIST_EMPTY(&file->epoll_watches)) {
+			ke_spinlock_exit(&file->epoll_lock, ipl);
+			break;
+		}
 
 		entry = LIST_FIRST(&file->epoll_watches);
 		ke_spinlock_exit(&file->epoll_lock, ipl);
@@ -325,7 +332,10 @@ poll_watched_file_did_close(file_t *file)
 		watch_del(ep, entry);
 		ke_mutex_exit(&ep->mutex);
 	}
-	ke_spinlock_exit(&file->epoll_lock, ipl);
+
+	ke_mutex_exit(&epoll_teardown_mutex);
+
+
 }
 
 int
@@ -350,8 +360,10 @@ sys_epoll_ctl(int epdesc, int op, int desc,
 		return r;
 
 	watch_file = uf_lookup(curproc()->finfo, desc);
-	if (watch_file == NULL)
+	if (watch_file == NULL) {
+		file_release(ep_file);
 		return -EBADF;
+	}
 
 	switch (op) {
 	case EPOLL_CTL_ADD:
