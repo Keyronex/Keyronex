@@ -1590,7 +1590,12 @@ send_more:
 	return r;
 }
 
-
+/*
+ * TODO: what if the peer retracts window? this does not respect that case.
+ * Need to respect effective window here (and congestion window too!)
+ * If we get a zero-window then retransmits pending or not, switch to
+ * persistence, and proceed to retransmission only after window reopens.
+ */
 static int
 tcp_rexmit(tcp_t *tp)
 {
