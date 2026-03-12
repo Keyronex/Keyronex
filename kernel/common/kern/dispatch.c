@@ -121,11 +121,11 @@ should_preempt(struct kcpu_dispatcher *disp, kthread_t *thread)
 	    thread->sched_class == SCHED_RR) {
 		if (cur->sched_class == SCHED_OTHER)
 			return true;
-		else if (thread->prio > cur->prio)
+		else if (thread->effective_prio > cur->effective_prio)
 			return true;
 		else
 			return false;
-	} else if (thread->prio >= cur->prio) {
+	} else if (thread->effective_prio >= cur->effective_prio) {
 		return true;
 	} else {
 		return false;
@@ -154,21 +154,23 @@ pick_cpu(kthread_t *thread)
 static void
 runq_insert(struct kcpu_dispatcher *dp, kthread_t *thread)
 {
+	kpri_t epri = thread->effective_prio;
+
 	if (thread->sched_class == SCHED_FIFO ||
 	    thread->sched_class == SCHED_RR) {
-		kassert(thread->prio >= PRIO_MIN_RT &&
-		    thread->prio < PRIO_LIMIT, "invalid real-time priority");
+		kassert(epri >= PRIO_MIN_RT &&
+		    epri < PRIO_LIMIT, "invalid real-time effective priority");
 
 		ke_spinlock_enter_nospl(&rt_lock);
-		TAILQ_INSERT_TAIL(&global_rt_rq[thread->prio - PRIO_MIN_RT],
+		TAILQ_INSERT_TAIL(&global_rt_rq[epri - PRIO_MIN_RT],
 		    thread, tqlink);
 		atomic_fetch_or_explicit(&rt_bitmap,
-		    1U << (thread->prio - PRIO_MIN_RT), memory_order_relaxed);
+		    1U << (epri - PRIO_MIN_RT), memory_order_relaxed);
 
 		ke_spinlock_exit_nospl(&rt_lock);
 	} else {
-		TAILQ_INSERT_TAIL(&dp->rq[thread->prio], thread, tqlink);
-		dp->bitmap[thread->prio / 32] |= 1U << (thread->prio % 32);
+		TAILQ_INSERT_TAIL(&dp->rq[epri], thread, tqlink);
+		dp->bitmap[epri / 32] |= 1U << (epri % 32);
 	}
 }
 
@@ -362,7 +364,32 @@ ke_thread_epri_locked(kthread_t *thread)
 void
 ke_thread_set_ipri_locked(kthread_t *thread, kpri_t pri)
 {
-	/* todo */
+	kpri_t old_epri = thread->effective_prio;
+	kpri_t new_epri;
+
+	kassert(ke_spinlock_held(&thread->lock));
+
+	thread->inherited_prio = pri;
+	new_epri = thread->base_prio > pri ? thread->base_prio : pri;
+	thread->effective_prio = new_epri;
+
+	if (new_epri == old_epri || thread->state != TS_READY)
+		return;
+
+	/*
+	 * TODO: Thread is TS_READY, move it to the correct run queue.
+	 * Tryenter the required CPU's dispatcher lock. If we can acquire it,
+	 * then revalidate the thread is still TS_READY and on the same CPU; if
+	 * not, then start over.
+	 * Move the thread into the correct runqueue and update the bitmap.
+	 * If trylock fails, then mark the thread as needing requeued and by
+	 * some means make the target dispatcher notice and deal with this case.
+	 * (Or we could even queue the thread into some local pending queue
+	 * a pointer to which is passed into this function, and after releasing
+	 * the thread's lock, process that list. Could use RCU to existence
+	 * guarantee the thread.)
+	 */
+
 }
 
 void
@@ -380,7 +407,10 @@ ke_idle_thread_init(kcpunum_t cpunum, kthread_t *thread)
 
 	thread->state = TS_RUNNING;
 	thread->sched_class = SCHED_OTHER;
-	thread->prio = 0;
+	thread->base_prio = 0;
+	thread->inherited_prio = 0;
+	thread->effective_prio = 0;
+	SLIST_INIT(&thread->pi_head);
 	thread->last_cpu_num = cpunum;
 	thread->bound_cpu = cpunum;
 

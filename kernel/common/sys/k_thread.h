@@ -104,7 +104,7 @@ typedef struct kthread {
 	kcpunum_t	last_cpu_num;	/* CPU running on/last ran on */
 	uint8_t		sched_class;	/* scheduling class (SCHED_*) */
 	uint8_t		nice;		/* nice value (currently unused) */
-	uint16_t	prio;		/* prio determined by scheduler */
+	uint16_t	base_prio;	/* prio determined by scheduler */
 	uint16_t 	inherited_prio;	/* prio inherited from turnstile */
 	uint16_t	effective_prio;	/* max of prio and inherited_prio */
 	SLIST_HEAD(, kturnstile) pi_head; /* l: turnstiles donating priority */

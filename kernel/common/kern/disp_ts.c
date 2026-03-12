@@ -95,23 +95,27 @@ static struct ts_prio_info ts_prio_info[TS_PRIO_N] = {
 static void
 ts_did_preempt_thread(kthread_t *t, bool quantum_expired)
 {
-	kassert(t->prio <= PRIO_MAX_TS, "bad TS prio");
+	kassert(t->base_prio <= PRIO_MAX_TS, "bad TS base prio");
 	if (quantum_expired)
-		t->prio = ts_prio_info[t->prio].quantum_expiry_prio;
+		t->base_prio = ts_prio_info[t->base_prio].quantum_expiry_prio;
+	t->effective_prio = t->base_prio > t->inherited_prio ?
+	    t->base_prio : t->inherited_prio;
 }
 
 static void
 ts_io_completed(kthread_t *t)
 {
-	kassert(t->prio <= PRIO_MAX_TS, "bad TS prio");
-	t->prio = ts_prio_info[t->prio].prio_after_io;
+	kassert(t->base_prio <= PRIO_MAX_TS, "bad TS base prio");
+	t->base_prio = ts_prio_info[t->base_prio].prio_after_io;
+	t->effective_prio = t->base_prio > t->inherited_prio ?
+	    t->base_prio : t->inherited_prio;
 }
 
 static uint16_t
 ts_quantum(kthread_t *t)
 {
-	kassert(t->prio <= PRIO_MAX_TS, "bad TS prio");
-	return ts_prio_info[t->prio].quantum;
+	kassert(t->base_prio <= PRIO_MAX_TS, "bad TS base prio");
+	return ts_prio_info[t->base_prio].quantum;
 }
 
 struct ksched_class kep_ts_class = {

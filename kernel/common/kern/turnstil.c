@@ -235,8 +235,8 @@ ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 	TAILQ_INSERT_TAIL(&ts->waiters[writer], &wb, qentry);
 	ts->nwaiters[writer]++;
 
-	thread->waiting_on = obj;
 	ke_spinlock_enter_nospl(&thread->lock);
+	thread->waiting_on = obj;
 	lend_priority(thread, chain);
 	ke_spinlock_exit_nospl(&chain->lock);
 	ke_spinlock_exit_nospl(&thread->lock);

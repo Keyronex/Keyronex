@@ -36,7 +36,11 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 
 	thread->state = TS_CREATED;
 	thread->sched_class = SCHED_OTHER;
-	thread->prio = 0;
+	thread->base_prio = 0;
+	thread->inherited_prio = 0;
+	thread->effective_prio = 0;
+	SLIST_INIT(&thread->pi_head);
+
 	thread->last_cpu_num = KCPUNUM_NULL;
 	thread->bound_cpu = KCPUNUM_NULL;
 #if 0
@@ -50,9 +54,6 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	(*(uint32_t *)(thread->pcb.fpu + 24)) = 0x1f80;
 #endif
 
-	thread ->inherited_prio = 0;
-	thread->effective_prio = 0;
-	SLIST_INIT(&thread->pi_head);
 
 	thread->wait_reason = NULL;
 
