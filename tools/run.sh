@@ -44,6 +44,11 @@ if [ "$virtio_9p" = "1" ]; then
 	qemu_args="${qemu_args} ${virtio_9p_arg}"
 fi
 
+rm -f ${v9p_root}/var/log/Xorg.0.log* \
+  ${v9p_root}/tmp/.X0-lock \
+  ${v9p_root}/tmp/.tX0-lock \
+  ${v9p_root}/tmp/.X11-unix/X0
+
 if [ -z "${cores}" ]; then
 	cores=4
 fi
@@ -68,6 +73,7 @@ fi
 iso="build/${ARCH}/barebones.iso"
 
 qemu_args="${qemu_args} -s"
+
 
 # qemu_args="${qemu_args} -monitor telnet:127.0.0.1:5555,server,nowait"
 # qemu_args="${qemu_args} -S"
