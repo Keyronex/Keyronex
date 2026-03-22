@@ -109,6 +109,20 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		return str_qreply(wq, mp);
 	}
 
+	case SIOCGIFFLAGS: {
+		ip_if_t *intf = ip_if_lookup_by_name(ifr->ifr_name);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
+
+		/* todo flags */
+		ifr->ifr_flags = 0;
+
+		mp->db->type = M_IOCACK;
+		return str_qreply(wq, mp);
+	}
+
 	default:
 		mp->db->type = M_IOCNAK;
 		return str_qreply(wq, mp);
@@ -138,6 +152,7 @@ ip_uwput(queue_t *wq, mblk_t *mp)
 		case SIOCGIFINDEX:
 		case SIOCGIFNAME:
 		case SIOCSIFNAMEBYMUXID:
+		case SIOCGIFFLAGS:
 			return ip_uwput_ioctl_sgif(wq, mp);
 
 		default:

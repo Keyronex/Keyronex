@@ -9,6 +9,11 @@
 /*!
  * @file ip.h
  * @brief IP stack header.
+ *
+ * TODO
+ * ----
+ *
+ * ip_ifaddr should be tied into RCU readable lists.
  */
 
 #ifndef ECX_INET_IP_H
@@ -26,12 +31,25 @@
 struct queue;
 struct msgb;
 
+union sockaddr_union {
+	struct sockaddr sa;
+	struct sockaddr_in in;
+	struct sockaddr_in6 in6;
+};
+
+typedef struct ip_ifaddr {
+	TAILQ_ENTRY(ip_ifaddr) tqentry; /* should be RCU-friendly list */
+	union sockaddr_union addr;
+	uint8_t prefixlen;
+} ip_ifaddr_t;
+
 typedef struct ip_if {
 	TAILQ_ENTRY(ip_if) tqentry;
 	atomic_uint refcnt;
 	char name[IFNAMSIZ];
 	uint8_t mac[ETH_ALEN];
 	int muxid; /* ifindex */
+	TAILQ_HEAD(, ip_ifaddr) addrs; /* should be RCU-friendly list */
 } ip_if_t;
 
 ip_if_t *ip_if_new(uint8_t *mac);
@@ -40,6 +58,8 @@ ip_if_t *ip_if_lookup_by_muxid(int);
 ip_if_t *ip_if_lookup_by_name(const char *);
 ip_if_t *ip_if_retain(ip_if_t *ifp);
 void ip_if_release(ip_if_t *);
+
+void ip_if_addr_iterate(ip_if_t *, void (*)(ip_ifaddr_t *, void *), void *ctx);
 
 struct ip_route_result {
 	ip_if_t *intf;

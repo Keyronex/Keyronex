@@ -26,6 +26,9 @@
 #include <linux/rtnetlink.h>
 #include <stdatomic.h>
 
+extern TAILQ_HEAD(, ip_if) ip_allif;
+extern kspinlock_t ip_allif_lock;
+
 #if 0
 
 struct rt_attrs {
@@ -134,6 +137,181 @@ rtnl_newroute(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 }
 #endif
 
+static void
+rtnl_emit_newaddr(queue_t *wq, ip_if_t *ifp, ip_ifaddr_t *ifa,
+    uint32_t seq, uint32_t pid)
+{
+	sa_family_t family = ifa->addr->sa.sa_family;
+	size_t alen;
+	const void *addr_ptr;
+	mblk_t *mp;
+	struct nlmsghdr *nlh;
+	struct ifaddrmsg *ifam;
+	struct rtattr *rta;
+	size_t total;
+
+	if (family == AF_INET) {
+		alen = sizeof(struct in_addr);
+		addr_ptr = &ifa->addr.in.sin_addr;
+	} else if (family == AF_INET6) {
+		alen = sizeof(struct in6_addr);
+		addr_ptr = &ifa->addr.in6.sin6_addr;
+	} else {
+		return;
+	}
+
+	total = NLMSG_SPACE(sizeof(struct ifaddrmsg)) + 2 * RTA_SPACE(alen);
+
+	mp = str_allocb(total);
+	memset(mp->rptr, 0, total);
+	mp->db->type = M_DATA;
+
+	nlh = (struct nlmsghdr *)mp->rptr;
+	nlh->nlmsg_len = (uint32_t)total;
+	nlh->nlmsg_type = RTM_NEWADDR;
+	nlh->nlmsg_flags = NLM_F_MULTI;
+	nlh->nlmsg_seq = seq;
+	nlh->nlmsg_pid = pid;
+
+	ifam = (struct ifaddrmsg *)NLMSG_DATA(nlh);
+	ifam->ifa_family = family;
+	ifam->ifa_prefixlen = ifa->prefixlen;
+	ifam->ifa_flags = 0;
+	ifam->ifa_scope = 0;
+	ifam->ifa_index = (unsigned)ifp->muxid;
+
+	/* IFA_ADDRESS */
+	rta = IFA_RTA(ifam);
+	rta->rta_type = IFA_ADDRESS;
+	rta->rta_len = (unsigned short)RTA_LENGTH(alen);
+	memcpy(RTA_DATA(rta), addr_ptr, alen);
+
+	/* IFA_LOCAL */
+	rta = (struct rtattr *)((char *)rta + RTA_SPACE(alen));
+	rta->rta_type = IFA_LOCAL;
+	rta->rta_len = (unsigned short)RTA_LENGTH(alen);
+	memcpy(RTA_DATA(rta), addr_ptr, alen);
+
+	mp->wptr = mp->rptr + total;
+	str_qreply(wq, mp);
+}
+
+static int
+rtnl_getaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
+{
+	struct ifaddrmsg *req_ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
+	sa_family_t family = req_ifa->ifa_family;
+	ip_if_t *ifp;
+	ip_ifaddr_t *ifa;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&ip_allif_lock);
+
+	TAILQ_FOREACH(ifp, &ip_allif, tqentry) {
+		TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
+			if (family != AF_UNSPEC &&
+			    ifa->addr.sa.sa_family != family)
+				continue;
+			rtnl_emit_newaddr(wq, ifp, ifa,
+			    nlh->nlmsg_seq, nlh->nlmsg_pid);
+		}
+	}
+
+	ke_spinlock_exit(&ip_allif_lock, ipl);
+
+	nl_send_done(wq, nlh->nlmsg_seq, nlh->nlmsg_pid);
+	return 0;
+}
+
+struct ifa_attrs {
+	void *ifa_address;	/* IFA_ADDRESS */
+	void *ifa_local;	/* IFA_LOCAL */
+};
+
+static void
+rtnl_parse_ifa_attrs(struct nlmsghdr *nlh, struct ifa_attrs *out)
+{
+	struct ifaddrmsg *ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
+	struct rtattr *rta = IFA_RTA(ifa);
+	int len = (int)IFA_PAYLOAD(nlh);
+
+	memset(out, 0, sizeof(*out));
+
+	while (RTA_OK(rta, len)) {
+		switch (rta->rta_type) {
+		case IFA_ADDRESS:
+			out->ifa_address = RTA_DATA(rta);
+			break;
+		case IFA_LOCAL:
+			out->ifa_local = RTA_DATA(rta);
+			break;
+		default:
+			break;
+		}
+		rta = RTA_NEXT(rta, len);
+	}
+}
+
+static int
+rtnl_newaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
+{
+	struct ifaddrmsg *req_ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
+	struct ifa_attrs attrs;
+	ip_if_t *ifp;
+	ip_ifaddr_t *ifa;
+	const void *addr_src;
+	size_t alen;
+	ipl_t ipl;
+
+	if (req_ifa->ifa_family != AF_INET &&
+	    req_ifa->ifa_family != AF_INET6) {
+		nl_send_error(wq, nlh, EAFNOSUPPORT);
+		return -EAFNOSUPPORT;
+	}
+
+	rtnl_parse_ifa_attrs(nlh, &attrs);
+
+	/* prefer IFA_LOCAL, fall back to IFA_ADDRESS */
+	addr_src = attrs.ifa_local != NULL ? attrs.ifa_local :
+	    attrs.ifa_address;
+	if (addr_src == NULL) {
+		nl_send_error(wq, nlh, EINVAL);
+		return -EINVAL;
+	}
+
+	ifp = ip_if_lookup_by_muxid((int)req_ifa->ifa_index);
+	if (ifp == NULL) {
+		nl_send_error(wq, nlh, ENODEV);
+		return -ENODEV;
+	}
+
+	alen = (req_ifa->ifa_family == AF_INET) ?
+	    sizeof(struct in_addr) : sizeof(struct in6_addr);
+
+	/* new ifaddr */
+	ifa = kmem_alloc(sizeof(ip_ifaddr_t));
+	memset(ifa, 0, sizeof(*ifa));
+	ifa->prefixlen = req_ifa->ifa_prefixlen;
+	ifa->addr.sa.sa_family = req_ifa->ifa_family;
+
+	if (req_ifa->ifa_family == AF_INET) {
+		memcpy(&ifa->addr.in.sin_addr, addr_src, alen);
+	} else {
+		memcpy(&ifa->addr.in6.sin6_addr, addr_src, alen);
+		ifa->addr.in6.sin6_flowinfo = 0;
+		ifa->addr.in6.sin6_scope_id = req_ifa->ifa_index;
+	}
+
+	ipl = ke_spinlock_enter(&ip_allif_lock);
+	TAILQ_INSERT_TAIL(&ifp->addrs, ifa, tqentry);
+	ke_spinlock_exit(&ip_allif_lock, ipl);
+
+	ip_if_release(ifp);
+
+	nl_send_error(wq, nlh, 0);
+	return 0;
+}
+
 static int
 rtnl_handler(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 {
@@ -142,6 +320,15 @@ rtnl_handler(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	case RTM_NEWROUTE:
 		return rtnl_newroute(wq, mp, nlh);
 #endif
+
+	case RTM_NEWADDR:
+		return rtnl_newaddr(wq, mp, nlh);
+
+	case RTM_DELADDR:
+		kfatal("rtnl_handler: RTM_DELADDR not implemented");
+
+	case RTM_GETADDR:
+		return rtnl_getaddr(wq, mp, nlh);
 
 	default:
 		kdprintf("rtnl_handler: unknown type %d\n", nlh->nlmsg_type);

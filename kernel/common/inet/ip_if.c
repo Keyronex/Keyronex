@@ -28,6 +28,7 @@ ip_if_new(uint8_t *mac)
 	ifp->refcnt = 1;
 	ifp->muxid = -1;
 	memcpy(ifp->mac, mac, ETH_ALEN);
+	TAILQ_INIT(&ifp->addrs);
 	return ifp;
 }
 
@@ -85,4 +86,15 @@ ip_if_release(ip_if_t *ifp)
 	    1) {
 		kdprintf("ip_if_release: todo free if %s\n", ifp->name);
 	}
+}
+
+void
+ip_if_addr_iterate(ip_if_t *ifp, void (*cb)(ip_ifaddr_t *, void *), void *ctx)
+{
+	ip_ifaddr_t *ifa;
+	ipl_t ipl;
+	ipl = ke_spinlock_enter(&ip_allif_lock);
+	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry)
+		cb(ifa, ctx);
+	ke_spinlock_exit(&ip_allif_lock, ipl);
 }
