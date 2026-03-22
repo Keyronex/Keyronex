@@ -16,22 +16,50 @@
 
 #include <stdint.h>
 
-#define RTM_NEWROUTE		24
-#define RTM_DELROUTE		25
+enum rtm_type_id {
+	RTM_NEWLINK = 16,
+	RTM_DELLINK = 17,
+	RTM_GETLINK = 18,
+	RTM_SETLINK = 19,
 
-#define RT_TABLE_UNSPEC		0
-#define RT_TABLE_MAIN		254
+	RTM_NEWADDR = 20,
+	RTM_DELADDR = 21,
+	RTM_GETADDR = 22,
 
-#define RTPROT_KERNEL		2
-#define RTPROT_BOOT		3
-#define RTPROT_STATIC		4
+	RTM_NEWROUTE = 24,
+	RTM_DELROUTE = 25,
+	RTM_GETROUTE = 26,
 
-#define RT_SCOPE_UNIVERSE	0
-#define RT_SCOPE_LINK		253
-#define RT_SCOPE_HOST		254
+	RTM_NEWNEIGH = 28,
+	RTM_DELNEIGH = 29,
+	RTM_GETNEIGH = 30,
+};
 
-#define RTN_UNICAST		1
-#define RTN_LOCAL		2
+enum rt_class_t {
+	RT_TABLE_UNSPEC = 0,
+	RT_TABLE_MAIN = 254,
+};
+
+enum rt_prot {
+	RTPROT_UNSPEC = 0,
+	RTPROT_REDIRECT = 1,
+	RTPROT_KERNEL = 2,
+	RTPROT_BOOT = 3,
+	RTPROT_STATIC = 4,
+};
+
+enum rt_scope_t {
+	RT_SCOPE_UNIVERSE = 0,
+	RT_SCOPE_LINK = 253,
+	RT_SCOPE_HOST = 254,
+	RT_SCOPE_NOWHERE = 255,
+};
+
+enum rt_type_t {
+	RTN_UNSPEC = 0,
+	RTN_UNICAST = 1,
+	RTN_LOCAL = 2,
+};
 
 #define RTA_DST 		1
 #define RTA_SRC 		2
@@ -59,6 +87,24 @@ struct rtattr {
 	uint16_t	rta_type;
 };
 
+struct ifaddrmsg {
+	uint8_t		ifa_family;
+	uint8_t		ifa_prefixlen;
+	uint8_t		ifa_flags;
+	uint8_t		ifa_scope;
+	uint32_t	ifa_index;
+};
+
+enum ifa_type {
+	IFA_UNSPEC,
+	IFA_ADDRESS,
+	IFA_LOCAL,
+	__IFA_MAX,
+};
+
+#define IFA_MAX ((enum ifa_type)(__IFA_MAX - 1))
+
+
 #define RTA_ALIGNTO	4
 #define RTA_ALIGN(len)	(((len) + RTA_ALIGNTO - 1) & ~(RTA_ALIGNTO - 1))
 #define RTA_OK(rta, remaining)	\
@@ -73,5 +119,9 @@ struct rtattr {
 #define RTA_NEXT(rta, remaining) \
     ((remaining) -= RTA_ALIGN((rta)->rta_len), \
      (struct rtattr *)((char *)(rta) + RTA_ALIGN((rta)->rta_len)))
+
+#define IFA_RTA(i) \
+    ((struct rtattr *)(((char *)(i)) + NLMSG_ALIGN(sizeof(struct ifaddrmsg))))
+#define IFA_PAYLOAD(n) NLMSG_PAYLOAD((n), sizeof(struct ifaddrmsg))
 
 #endif /* ECX_LINUX_RTNETLINK_H */
