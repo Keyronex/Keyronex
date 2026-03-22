@@ -47,18 +47,18 @@ static unsigned int counter = 0;
 
 - (void)setupNIC
 {
-	m_open_rq = NULL;
+	m_put = NULL;
+	m_data = NULL;
 	devfs_create_node(DEV_KIND_STREAM_CLONE, &dknic_devops, self, "net%u",
 	    counter++);
 }
 
 - (void)didReceivePacket:(mblk_t *)mp
 {
-	if (m_open_rq == NULL) {
+	if (m_put == NULL)
 		str_freemsg(mp);
-	} else {
-		str_ingress_putq(m_open_rq->stdata, mp);
-	}
+	else
+		m_put(m_data, mp);
 }
 
 - (void)transmitPacket:(mblk_t *)mp
@@ -66,12 +66,7 @@ static unsigned int counter = 0;
 	kfatal("transmitPacket: subclass responsibility");
 }
 
-- (void)setOpenRQ:(queue_t *)rq
-{
-	kassert(m_open_rq == NULL);
-	m_open_rq = rq;
-}
-
+#if 0
 - (void)wput:(queue_t *)wq bindReq:(mblk_t *)mp
 {
 	mblk_t *bamp;
@@ -93,6 +88,27 @@ static unsigned int counter = 0;
 	str_freeb(mp);
 	str_qreply(wq, bamp);
 }
+#endif
+
+- (void)wput:(queue_t *)wq keyronexBindReq:(mblk_t *)mp
+{
+	mblk_t *bamp;
+	dl_keyronex_bind_req_t *br = (typeof(br))mp->rptr;
+	dl_keyronex_bind_ack_t *ba;
+
+	bamp = str_allocb(sizeof(dl_keyronex_bind_ack_t));
+	bamp->db->type = M_PROTO;
+	ba = (typeof(ba))bamp->wptr;
+	ba->dl_primitive = DL_KEYRONEX_BIND_ACK;
+	ba->pdata = &m_data;
+	ba->pput = &m_put;
+
+	memcpy(&ba->dl_mac, self->m_mac_address, ETH_ALEN);
+	bamp->wptr += sizeof(dl_keyronex_bind_ack_t);
+
+	str_freeb(mp);
+	str_qreply(wq, bamp);
+}
 
 @end
 
@@ -102,7 +118,6 @@ nic_open(queue_t *rq, void *arg)
 	DKNIC *self = (DKNIC *)arg;
 	kassert(self != nil);
 	rq->ptr = rq->other->ptr = self;
-	[self setOpenRQ:rq];
 	return 0;
 }
 
@@ -130,8 +145,14 @@ nic_wput(queue_t *wq, mblk_t *mp)
 	case M_PROTO: {
 		union DL_primitives *dlp = (typeof(dlp))mp->rptr;
 		switch (dlp->dl_primitive) {
+#if 0
 		case DL_BIND_REQ:
 			[self wput:wq bindReq:mp];
+			break;
+#endif
+
+		case DL_KEYRONEX_BIND_REQ:
+			[self wput:wq keyronexBindReq:mp];
 			break;
 
 		default:

@@ -39,7 +39,7 @@ static struct streamtab sth_streamtab;
 
 static kmutex_t mux_links_lock = KMUTEX_INITIALISER;
 static TAILQ_HEAD(, linkblk) mux_links = TAILQ_HEAD_INITIALIZER(mux_links);
-static atomic_uint next_link_index = 0;
+static atomic_uint next_link_index = 1;
 
 #define SIOCSIFADDR 0x8916
 #define SIOCSIFNETMASK 0x891C
@@ -1041,6 +1041,8 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCGIFFLAGS:
 	case SIOCGIFADDR:
 	case SIOCGIFNETMASK:
+	case SIOCGIFNAME:
+	case SIOCGIFINDEX:
 		in_size = sizeof(struct ifreq);
 		out_size = sizeof(struct ifreq);
 		break;

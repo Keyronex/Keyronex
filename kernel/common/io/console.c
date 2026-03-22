@@ -86,12 +86,14 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 
 		memcpy(ioc->ic_dp, &ws, sizeof(struct winsize));
 		mp->db->type = M_IOCACK;
+		ioc->rval = 0;
 		str_putnext(wq->other, mp);
 		break;
 	}
 
 	case TIOCSWINSZ:
 		mp->db->type = M_IOCACK;
+		ioc->rval = 0;
 		str_putnext(wq->other, mp);
 		break;
 

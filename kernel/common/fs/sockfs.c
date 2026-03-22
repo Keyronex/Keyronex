@@ -133,7 +133,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			break;
 
 		case SOCK_DGRAM:
-			ktodo();
+			return -EPROTONOSUPPORT;
 			break;
 
 		default:

@@ -30,8 +30,11 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 
+struct streamtab tcp_streamtab;
+
+#if 0
 #include <inet/ip.h>
-#include <inet/ip_intf.h>
+#include <inet/ip_if.h>
 #include <inet/tcphdr.h>
 #include <inet/util.h>
 
@@ -112,7 +115,7 @@ typedef struct tcp {
 	struct sockaddr_in laddr;	/* local address */
 	struct sockaddr_in faddr;	/* foreign address */
 
-	ip_intf_t *processing_ifp;	/* ifp context we are executing in
+	ip_if_t *processing_ifp;	/* ifp context we are executing in
 					 * right now, if in it*/
 
 	struct tcp_timer {
@@ -185,7 +188,7 @@ static void tcp_rsrv(queue_t *);
 static int tcp_output(tcp_t *);
 
 static void tcp_ordrel_ind(tcp_t *tp);
-void tcp_conn_input(ip_intf_t *ifp, tcp_t **tpp, mblk_t *);
+void tcp_conn_input(ip_if_t *ifp, tcp_t **tpp, mblk_t *);
 
 static void tcp_rexmt_timer(tcp_t *);
 static void tcp_2msl_timer(tcp_t *);
@@ -992,7 +995,7 @@ tcp_wput_conn_req(queue_t *wq, mblk_t *mp)
 			tp->laddr.sin_addr = rt.intf->addr;
 			tp->mss = rt.intf->mtu - sizeof(struct ip) -
 			    sizeof(struct tcphdr);
-			ip_intf_release(rt.intf);
+			ip_if_release(rt.intf);
 		}
 
 		r = tcp_setup_connection(tp, dest);
@@ -1904,7 +1907,7 @@ tcp_abort(tcp_t *tp, int err)
 }
 
 static void
-tcp_reply(ip_intf_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
+tcp_reply(ip_if_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
     tcp_seq_t seq, tcp_seq_t ack, uint8_t flags)
 {
 	struct in_addr tmp_addr;
@@ -1942,7 +1945,7 @@ tcp_reply(ip_intf_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
 }
 
 static void
-tcp_reply_reset(ip_intf_t *ifp, mblk_t *m, struct ip *ip, struct tcphdr *th)
+tcp_reply_reset(ip_if_t *ifp, mblk_t *m, struct ip *ip, struct tcphdr *th)
 {
 	if (th->th_flags & TH_ACK) {
 		tcp_reply(ifp, m, ip, th, ntohl(th->th_ack), 0, TH_RST);
@@ -2289,14 +2292,14 @@ tcp_passive_open(tcp_t *listener, struct ip *ip, struct tcphdr *th,
 
 	child = tcp_new(NULL);
 	if (child == NULL) {
-		ip_intf_release(rt.intf);
+		ip_if_release(rt.intf);
 		return NULL;
 	}
 
 	ke_mutex_enter(&child->mutex, "tcp_passive_open child");
 
 	child->mss = rt.intf->mtu - sizeof(struct ip) - sizeof(struct tcphdr);
-	ip_intf_release(rt.intf);
+	ip_if_release(rt.intf);
 
 	child->laddr.sin_family = AF_INET;
 	child->laddr.sin_port = dport;
@@ -2419,7 +2422,7 @@ tcp_cc_on_new_ack(tcp_t *tp, uint32_t acked_data, tcp_seq_t ack)
  * also held).
  */
 void
-tcp_conn_input(ip_intf_t *ifp, tcp_t **tpp, mblk_t *mp)
+tcp_conn_input(ip_if_t *ifp, tcp_t **tpp, mblk_t *mp)
 {
 	struct ip *ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
 	uint16_t hlen = ip->ip_hl << 2;
@@ -3074,7 +3077,7 @@ finish:
 }
 
 void
-tcp_input(ip_intf_t *ifp, mblk_t *mp)
+tcp_input(ip_if_t *ifp, mblk_t *mp)
 {
 	struct ip *ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
 	uint16_t hlen = ip->ip_hl << 2;
@@ -3316,3 +3319,4 @@ tcp_init(void)
 	tcp_timer_thread = proc_new_system_thread(tcp_detached_worker, NULL);
 	ke_thread_resume(&tcp_timer_thread->kthread, false);
 }
+#endif

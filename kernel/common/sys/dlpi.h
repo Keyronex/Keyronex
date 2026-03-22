@@ -16,11 +16,16 @@
 
 #include <stdint.h>
 
+struct msgb;
+
 typedef uintptr_t t_uscalar_t;
 typedef intptr_t t_scalar_t;
 
 #define DL_BIND_REQ 0x01
 #define DL_BIND_ACK 0x04
+
+#define DL_KEYRONEX_BIND_REQ 0x1001
+#define DL_KEYRONEX_BIND_ACK 0x1002
 
 #define DL_CLDLS 0x0200 /* connectionless data link service */
 
@@ -42,10 +47,25 @@ typedef struct dl_bind_ack {
 	t_uscalar_t dl_xidtest_flg;
 } dl_bind_ack_t;
 
+typedef struct dl_keyronex_bind_req {
+	t_uscalar_t dl_primitive;
+} dl_keyronex_bind_req_t;
+
+typedef struct dl_keyronex_bind_ack {
+	t_uscalar_t dl_primitive;
+	uint8_t dl_mac[6];
+	void (**pput)(void *arg, struct msgb *mp);
+	void **pdata;
+	/* interface entry points will go here... */
+} dl_keyronex_bind_ack_t;
+
 union DL_primitives {
 	t_uscalar_t dl_primitive;
 	dl_bind_req_t bind_req;
 	dl_bind_ack_t bind_ack;
+
+	dl_keyronex_bind_req_t keyronex_bind_req;
+	dl_keyronex_bind_ack_t keyronex_bind_ack;
 };
 
 #endif /* ECX_SYS_DLPI_H */

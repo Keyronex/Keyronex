@@ -26,6 +26,8 @@
 #include <linux/rtnetlink.h>
 #include <stdatomic.h>
 
+#if 0
+
 struct rt_attrs {
 	struct in_addr	*dst;		/* RTA_DST */
 	struct in_addr	*gateway;	/* RTA_GATEWAY */
@@ -75,11 +77,11 @@ rtnl_parse_attrs(struct nlmsghdr *nlh, struct rt_attrs *out)
 }
 
 
-static ip_intf_t *
+static ip_if_t *
 rtnl_resolve_intf(struct rt_attrs *attrs)
 {
 	if (attrs->oif != NULL)
-		return ip_intf_lookup_by_muxid(*attrs->oif);
+		return ip_if_lookup_by_muxid(*attrs->oif);
 
 
 	if (attrs->gateway != NULL) {
@@ -99,7 +101,7 @@ rtnl_newroute(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	struct rt_attrs attrs;
 	struct in_addr dst = { .s_addr = INADDR_ANY };
 	struct in_addr gw = { .s_addr = INADDR_ANY };
-	ip_intf_t *intf;
+	ip_if_t *intf;
 	uint32_t metric = 0;
 	int r;
 
@@ -124,19 +126,22 @@ rtnl_newroute(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	r = ip_route_add(dst, rtm->rtm_dst_len, gw, intf,
 	    rtm->rtm_protocol, rtm->rtm_scope, rtm->rtm_type, metric);
 
-	ip_intf_release(intf);
+	ip_if_release(intf);
 
 	nl_send_error(wq, nlh, 0);
 
 	return r;
 }
+#endif
 
 static int
 rtnl_handler(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 {
 	switch (nlh->nlmsg_type) {
+#if 0
 	case RTM_NEWROUTE:
 		return rtnl_newroute(wq, mp, nlh);
+#endif
 
 	default:
 		kdprintf("rtnl_handler: unknown type %d\n", nlh->nlmsg_type);

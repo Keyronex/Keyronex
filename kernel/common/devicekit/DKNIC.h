@@ -20,9 +20,13 @@
 
 #include <devicekit/DKDevice.h>
 
+#if defined(__OBJC__)
+
 @interface DKNIC : DKDevice {
 	uint8_t m_mac_address[ETH_ALEN];
-	queue_t *m_open_rq;
+
+	void (*m_put)(void *arg, struct msgb *mp);
+	void *m_data;
 }
 
 - (void)setupNIC;
@@ -33,5 +37,6 @@
 - (void)transmitPacket:(mblk_t *)mp;
 
 @end
+#endif
 
 #endif /* ECX_DEVICEKIT_DKNIC_H */

@@ -14,6 +14,11 @@
 #ifndef ECX_INET_IP_H
 #define ECX_INET_IP_H
 
+#include <sys/krx_atomic.h>
+#include <sys/queue.h>
+
+#include <net/if.h>
+#include <netinet/if_ether.h>
 #include <netinet/in.h>
 
 #include <stdbool.h>
@@ -21,33 +26,24 @@
 struct queue;
 struct msgb;
 
-typedef struct ip_intf ip_intf_t;
-typedef struct arp_state arp_state_t;
+typedef struct ip_if {
+	TAILQ_ENTRY(ip_if) tqentry;
+	atomic_uint refcnt;
+	char name[IFNAMSIZ];
+	uint8_t mac[ETH_ALEN];
+	int muxid; /* ifindex */
+} ip_if_t;
 
-ip_intf_t *ip_intf_retain(ip_intf_t *intf);
-void ip_intf_release(ip_intf_t *intf);
-
-ip_intf_t *ip_intf_lookup_by_muxid(int muxid);
-ip_intf_t *ip_intf_lookup_by_name(const char *name);
+ip_if_t *ip_if_new(uint8_t *mac);
+void ip_if_publish(ip_if_t *, int muxid);
+ip_if_t *ip_if_lookup_by_muxid(int);
+ip_if_t *ip_if_lookup_by_name(const char *);
+ip_if_t *ip_if_retain(ip_if_t *ifp);
+void ip_if_release(ip_if_t *);
 
 struct ip_route_result {
-	ip_intf_t *intf;
+	ip_if_t *intf;
 	struct in_addr next_hop;
 };
-
-int ip_route_add(struct in_addr dst, uint8_t dst_len, struct in_addr gateway,
-    ip_intf_t *intf, uint8_t protocol, uint8_t scope, uint8_t type,
-    uint32_t metric);
-
-struct ip_route_result ip_route_lookup(struct in_addr dst);
-
-/* connected-network route management */
-void ip_route_if_up(ip_intf_t *intf);
-void ip_route_if_down(ip_intf_t *intf);
-
-int ip_output(struct msgb *);
-int ip_output_intfheld(struct msgb *, ip_intf_t *heldintf);
-
-void arp_output(ip_intf_t *ifp, in_addr_t dst, struct msgb *, bool ifp_locked);
 
 #endif /* ECX_INET_IP_H */
