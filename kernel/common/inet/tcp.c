@@ -1595,6 +1595,12 @@ send_more:
  * Need to respect effective window here (and congestion window too!)
  * If we get a zero-window then retransmits pending or not, switch to
  * persistence, and proceed to retransmission only after window reopens.
+ *
+ * (actually, RFC 9293 3.8.6 says: "The sender MAY also retransmit old data
+ * beyond SND.UNA+SND.WND (MAY-7), but SHOULD NOT time out the connection if
+ * data beyond the right window edge is not acknowledged (SHLD-17).
+ * If the window shrinks to zero, the TCP implementation MUST probe it in the
+ * standard way (described below) (MUST-35)")
  */
 static int
 tcp_rexmit(tcp_t *tp)
