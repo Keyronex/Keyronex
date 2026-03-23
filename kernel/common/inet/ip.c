@@ -169,21 +169,29 @@ ip_uwput(queue_t *wq, mblk_t *mp)
 	}
 }
 
-static void ip_input(void *ptr, mblk_t *mp)
+void arp_input(ip_if_t *, mblk_t *);
+void ipv4_input(ip_if_t *, mblk_t *);
+void ipv6_input(ip_if_t *, mblk_t *);
+
+static void
+ip_input(void *ptr, mblk_t *mp)
 {
 	ip_if_t *ifp = ptr;
 	struct ether_header *eh = (struct ether_header *)mp->rptr;
+	uint16_t ethertype = ntohs(eh->ether_type);
 
-	switch(ntohs(eh->ether_type)) {
+	mp->rptr += sizeof(struct ether_header);
+
+	switch(ethertype) {
+	case ETHERTYPE_ARP:
+		return (void)kdprintf("ARP input unhandled yet\n");
+
 	case ETHERTYPE_IP:
-	break;
-	}
+		return (void)kdprintf("IPv4 input unhandled yet\n");
 
-	kdprintf("ip_rput_data: from " FMT_MAC " to " FMT_MAC "\n",
-	    eh->ether_shost[0], eh->ether_shost[1], eh->ether_shost[2],
-	    eh->ether_shost[3], eh->ether_shost[4], eh->ether_shost[5],
-	    eh->ether_dhost[0], eh->ether_dhost[1], eh->ether_dhost[2],
-	    eh->ether_dhost[3], eh->ether_dhost[4], eh->ether_dhost[5]);
+	case ETHERTYPE_IPV6:
+		return ipv6_input(ifp, mp);
+	}
 }
 
 struct attach_result {

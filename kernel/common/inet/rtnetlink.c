@@ -141,7 +141,7 @@ static void
 rtnl_emit_newaddr(queue_t *wq, ip_if_t *ifp, ip_ifaddr_t *ifa,
     uint32_t seq, uint32_t pid)
 {
-	sa_family_t family = ifa->addr->sa.sa_family;
+	sa_family_t family = ifa->addr.sa.sa_family;
 	size_t alen;
 	const void *addr_ptr;
 	mblk_t *mp;
