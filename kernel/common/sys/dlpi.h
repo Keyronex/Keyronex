@@ -54,9 +54,11 @@ typedef struct dl_keyronex_bind_req {
 typedef struct dl_keyronex_bind_ack {
 	t_uscalar_t dl_primitive;
 	uint8_t dl_mac[6];
-	void (**pput)(void *arg, struct msgb *mp);
 	void **pdata;
+	void (**pput)(void *data, struct msgb *);
 	/* interface entry points will go here... */
+	void *nic_data;
+	int (*nic_wput)(void *data, struct msgb *);
 } dl_keyronex_bind_ack_t;
 
 union DL_primitives {

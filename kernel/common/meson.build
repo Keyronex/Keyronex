@@ -22,11 +22,13 @@ kernel_sources += [
     'fs/viewcache.c',
     'fs/vnode.c',
 
+    'inet/arp.c',
     'inet/icmpv6.c',
     'inet/ip_if.c',
     'inet/ip.c',
     'inet/ipv6_input.c',
     'inet/ndp.c',
+    'inet/neighbour.c',
     'inet/rtnetlink.c',
     'inet/tcp.c',
     'inet/util.c',

@@ -11,10 +11,12 @@
  * @brief IP interface management.
  */
 
+#include <sys/errno.h>
 #include <sys/k_intr.h>
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/libkern.h>
+#include <sys/stream.h>
 
 #include <inet/ip.h>
 
@@ -29,6 +31,10 @@ ip_if_new(uint8_t *mac)
 	ifp->muxid = -1;
 	memcpy(ifp->mac, mac, ETH_ALEN);
 	TAILQ_INIT(&ifp->addrs);
+
+	ifp->neighbours_ipv4 = neighbour_cache_new(ifp, AF_INET);
+	ifp->neighbours_ipv6 = neighbour_cache_new(ifp, AF_INET6);
+
 	return ifp;
 }
 
@@ -97,4 +103,34 @@ ip_if_addr_iterate(ip_if_t *ifp, void (*cb)(ip_ifaddr_t *, void *), void *ctx)
 	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry)
 		cb(ifa, ctx);
 	ke_spinlock_exit(&ip_allif_lock, ipl);
+}
+
+int
+ip_if_output(ip_if_t *ifp, mblk_t *mp, uint16_t ethertype,
+    const struct ether_addr *l2addr)
+{
+	mblk_t *ehmp = mp;
+	struct ether_header *eh;
+
+	if (STR_MBLKHEAD(ehmp) >= sizeof(struct ether_header) &&
+	    ehmp->db->refcnt == 1) {
+		ehmp->rptr -= sizeof(struct ether_header);
+	} else {
+		ehmp = str_allocb(sizeof(struct ether_header));
+		if (ehmp == NULL) {
+			str_freemsg(mp);
+			return -ENOMEM;
+		}
+		ehmp->rptr += sizeof(struct ether_header);
+		ehmp->cont = mp;
+	}
+
+	eh = (typeof(eh))ehmp->rptr;
+	memcpy(eh->ether_dhost, l2addr, sizeof(struct ether_addr));
+	memcpy(eh->ether_shost, ifp->mac, sizeof(struct ether_addr));
+	eh->ether_type = htons(ethertype);
+
+	ifp->nic_wput(ifp->nic_data, ehmp);
+
+	return 0;
 }

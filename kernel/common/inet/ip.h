@@ -31,11 +31,18 @@
 struct queue;
 struct msgb;
 
+union in_addr_union {
+	struct in_addr in;
+	struct in6_addr in6;
+};
+
 union sockaddr_union {
 	struct sockaddr sa;
 	struct sockaddr_in in;
 	struct sockaddr_in6 in6;
 };
+
+typedef struct neighbour_cache neighbour_cache_t;
 
 typedef struct ip_ifaddr {
 	TAILQ_ENTRY(ip_ifaddr) tqentry; /* should be RCU-friendly list */
@@ -50,6 +57,12 @@ typedef struct ip_if {
 	uint8_t mac[ETH_ALEN];
 	int muxid; /* ifindex */
 	TAILQ_HEAD(, ip_ifaddr) addrs; /* should be RCU-friendly list */
+
+	neighbour_cache_t *neighbours_ipv4;
+	neighbour_cache_t *neighbours_ipv6;
+
+	void *nic_data;
+	void (*nic_wput)(void *, struct msgb *);
 } ip_if_t;
 
 ip_if_t *ip_if_new(uint8_t *mac);
@@ -59,11 +72,24 @@ ip_if_t *ip_if_lookup_by_name(const char *);
 ip_if_t *ip_if_retain(ip_if_t *ifp);
 void ip_if_release(ip_if_t *);
 
+int ip_if_output(ip_if_t *, struct msgb *, uint16_t ethertype,
+    const struct ether_addr *);
+
 void ip_if_addr_iterate(ip_if_t *, void (*)(ip_ifaddr_t *, void *), void *ctx);
+
+neighbour_cache_t *neighbour_cache_new(ip_if_t *, sa_family_t);
+void neighbour_cache_learn(neighbour_cache_t *, const union in_addr_union *,
+    const struct ether_addr *);
 
 struct ip_route_result {
 	ip_if_t *intf;
 	struct in_addr next_hop;
 };
+
+/* currently missing from mlibc */
+#define ip6_flow  ip6_ctlun.ip6_un1.ip6_un1_flow
+#define ip6_plen  ip6_ctlun.ip6_un1.ip6_un1_plen
+#define ip6_hlim  ip6_ctlun.ip6_un1.ip6_un1_hlim
+#define ip6_hops  ip6_ctlun.ip6_un1.ip6_un1_hlim
 
 #endif /* ECX_INET_IP_H */

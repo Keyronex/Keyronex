@@ -10,3 +10,13 @@
  * @file arp.c
  * @brief ARP handling.
  */
+
+#include <sys/k_log.h>
+
+#include <inet/ip.h>
+
+void
+arp_solicit(ip_if_t *ifp, const struct in_addr *target)
+{
+	kfatal("Implement me\n");
+}

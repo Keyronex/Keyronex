@@ -90,6 +90,14 @@ static unsigned int counter = 0;
 }
 #endif
 
+static int
+nic_wput_data(void *data, mblk_t *mp)
+{
+	DKNIC *self = data;
+	[self transmitPacket:mp];
+	return 0;
+}
+
 - (void)wput:(queue_t *)wq keyronexBindReq:(mblk_t *)mp
 {
 	mblk_t *bamp;
@@ -102,6 +110,8 @@ static unsigned int counter = 0;
 	ba->dl_primitive = DL_KEYRONEX_BIND_ACK;
 	ba->pdata = &m_data;
 	ba->pput = &m_put;
+	ba->nic_data = (void*)self;
+	ba->nic_wput = nic_wput_data;
 
 	memcpy(&ba->dl_mac, self->m_mac_address, ETH_ALEN);
 	bamp->wptr += sizeof(dl_keyronex_bind_ack_t);
@@ -138,9 +148,11 @@ nic_wput(queue_t *wq, mblk_t *mp)
 {
 	DKNIC *self = (DKNIC *)wq->ptr;
 	switch (mp->db->type) {
+#if 0
 	case M_DATA:
 		[self transmitPacket:mp];
 		break;
+#endif
 
 	case M_PROTO: {
 		union DL_primitives *dlp = (typeof(dlp))mp->rptr;

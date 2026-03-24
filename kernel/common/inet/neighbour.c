@@ -46,11 +46,6 @@ typedef enum ndm_state {
 	NUD_REACHABLE,
 } ndm_state_t;
 
-union in_addr_union {
-	struct in_addr in;
-	struct in6_addr in6;
-};
-
 typedef struct neighbour {
 	TAILQ_ENTRY(neighbour) tqentry;
 	atomic_uint	refcnt;
@@ -66,6 +61,9 @@ typedef struct neighbour_cache {
 	sa_family_t	family;
 	TAILQ_HEAD(, neighbour) entries;	/* TODO RCU-friendly hash */
 } neighbour_cache_t;
+
+void arp_solicit(ip_if_t *, const struct in_addr *);
+void ndp_solicit(ip_if_t *, const struct in6_addr *);
 
 neighbour_cache_t *
 neighbour_cache_new(ip_if_t *ifp, sa_family_t family)
@@ -83,39 +81,72 @@ neighbour_cache_new(ip_if_t *ifp, sa_family_t family)
 }
 
 int
-if_output(ip_if_t *ifp, mblk_t *mp, uint16_t ethertype, struct ether_addr *l2addr)
+neighbour_output(ip_if_t *ifp, neighbour_cache_t *nc, mblk_t *mp)
 {
-	mblk_t *ehmp = mp;
-	struct ether_header *eh;
+	ipl_t ipl;
+	union in_addr_union l3addr;
+	struct ether_addr l2addr;
+	neighbour_t *n;
+	uint16_t ethertype = nc->family == AF_INET ? ETHERTYPE_IP : ETHERTYPE_IPV6;
 
-	if (STR_MBLKHEAD(ehmp) >= sizeof(struct ether_header) &&
-	    ehmp->db->refcnt == 1) {
-		ehmp->rptr -= sizeof(struct ether_header);
+	ipl = ke_spinlock_enter(&nc->lock);
+	TAILQ_FOREACH(n, &nc->entries, tqentry) {
+		if (memcmp(&n->l3addr, &l3addr, sizeof(union in_addr_union)) ==
+		    0)
+			break;
+	}
+
+	if (n != NULL) {
+		if (n->state == NUD_REACHABLE) {
+			memcpy(&l2addr, &n->l2addr, sizeof(struct ether_addr));
+			ke_spinlock_exit(&nc->lock, ipl);
+			return ip_if_output(ifp, mp, ethertype, &l2addr);
+		} else {
+			if (n->pending != NULL) {
+				str_freemsg(n->pending);
+				n->pending = NULL;
+			}
+			n->pending = mp;
+			ke_spinlock_exit(&nc->lock, ipl);
+			return 0;
+		}
 	} else {
-		ehmp = str_allocb(sizeof(struct ether_header));
-		if (ehmp == NULL) {
+		n = kmem_alloc(sizeof(neighbour_t));
+		if (n == NULL) {
+			ke_spinlock_exit(&nc->lock, ipl);
 			str_freemsg(mp);
 			return -ENOMEM;
 		}
-		ehmp->rptr += sizeof(struct ether_header);
-		ehmp->cont = mp;
+		n->refcnt = 1;
+		n->state = NUD_INCOMPLETE;
+		memcpy(&n->l3addr, &l3addr, sizeof(union in_addr_union));
+		n->pending = mp;
+		TAILQ_INSERT_HEAD(&nc->entries, n, tqentry);
+		ke_spinlock_exit(&nc->lock, ipl);
+		if (nc->family == AF_INET)
+			arp_solicit(ifp, &l3addr.in);
+		else
+			ndp_solicit(ifp, &l3addr.in6);
+		return 0;
 	}
-
-	eh = (typeof(eh))ehmp->rptr;
-	memcpy(eh->ether_dhost, l2addr, sizeof(struct ether_addr));
-	memcpy(eh->ether_shost, ifp->mac, sizeof(struct ether_addr));
-	eh->ether_type = htons(ethertype);
-
-	return 0;
 }
 
 void
-neighbour_cache_learn(neighbour_cache_t *nc, union in_addr_union *l3addr,
-    struct ether_addr *l2addr)
+neighbour_cache_learn(neighbour_cache_t *nc, const union in_addr_union *l3addr,
+    const struct ether_addr *l2addr)
 {
 	neighbour_t *n;
 	mblk_t *mp = NULL;
 	ipl_t ipl;
+	char l3addr_str[INET6_ADDRSTRLEN];
+
+	inet_ntop(nc->family, l3addr, l3addr_str, sizeof(l3addr_str));
+
+	kdprintf("neighbour: learned %s is at %02x:%02x:%02x:%02x:%02x:%02x\n",
+	    l3addr_str,
+	    l2addr->ether_addr_octet[0], l2addr->ether_addr_octet[1],
+	    l2addr->ether_addr_octet[2], l2addr->ether_addr_octet[3],
+	    l2addr->ether_addr_octet[4], l2addr->ether_addr_octet[5]);
 
 	ipl = ke_spinlock_enter(&nc->lock);
 	TAILQ_FOREACH(n, &nc->entries, tqentry) {
@@ -128,9 +159,10 @@ neighbour_cache_learn(neighbour_cache_t *nc, union in_addr_union *l3addr,
 				n->pending = NULL;
 			}
 			ke_spinlock_exit(&nc->lock, ipl);
-			if_output(nc->ifp, mp,
-			    nc->family == AF_INET ? ETHERTYPE_IP :
-			        ETHERTYPE_IPV6, l2addr);
+			if (mp != NULL)
+				ip_if_output(nc->ifp, mp,
+				    nc->family == AF_INET ? ETHERTYPE_IP :
+				        ETHERTYPE_IPV6, l2addr);
 			return;
 		}
 	}
