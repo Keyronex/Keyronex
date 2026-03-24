@@ -17,10 +17,10 @@
 
 #include <inet/ip.h>
 
-void ndp_input(ip_if_t *, mblk_t *);
+void ndp_input(ip_if_t *, mblk_t *, ip_rxattr_t *);
 
 void
-icmpv6_input(ip_if_t *ifp, mblk_t *mp)
+icmpv6_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 {
 	const struct icmp6_hdr *icmp6;
 	size_t avail = mp->wptr - mp->rptr;
@@ -43,7 +43,7 @@ icmpv6_input(ip_if_t *ifp, mblk_t *mp)
 
 	case ND_NEIGHBOR_SOLICIT:
 	case ND_NEIGHBOR_ADVERT:
-		return ndp_input(ifp, mp);
+		return ndp_input(ifp, mp, attr);
 
 	default:
 		kdprintf("icmpv6_input: unsupported ICMPv6 type %u\n",

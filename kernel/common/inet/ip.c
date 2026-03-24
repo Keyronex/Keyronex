@@ -230,6 +230,9 @@ ip_lropen(queue_t *rq, void *)
 	*ack->pdata = ifp;
 	*ack->pput = ip_input;
 
+	ifp->nic_data = ack->nic_data;
+	ifp->nic_wput = ack->nic_wput;
+
 	return 0;
 }
 

@@ -35,7 +35,7 @@ ipv6_addr_equal(const struct in6_addr *a, const struct in6_addr *b)
 	return memcmp(a, b, sizeof(*a)) == 0;
 }
 
-static struct in6_addr
+struct in6_addr
 ipv6_solicited_node_mc(const struct in6_addr *addr)
 {
 	struct in6_addr mc;
@@ -44,8 +44,7 @@ ipv6_solicited_node_mc(const struct in6_addr *addr)
 	memset(&mc.s6_addr[2], 0, 9);
 	mc.s6_addr[11] = 0x01;
 	mc.s6_addr[12] = 0xff;
-	memcpy(&mc.s6_addr[13], &addr->s6_addr[13],
-	    3);
+	memcpy(&mc.s6_addr[13], &addr->s6_addr[13], 3);
 	return mc;
 }
 
@@ -82,12 +81,14 @@ ipv6_input_is_for_us(ip_if_t *ifp, const struct in6_addr *dst)
 	return false;
 }
 
-void icmpv6_input(ip_if_t *, mblk_t *);
+void icmpv6_input(ip_if_t *, mblk_t *, ip_rxattr_t *);
 
 void
 ipv6_input(ip_if_t *ifp, mblk_t *mp)
 {
 	const struct ip6_hdr *ip6;
+	ip_rxattr_t attr;
+
 	size_t avail = mp->wptr - mp->rptr;
 
 	if (avail < sizeof(*ip6)) {
@@ -114,10 +115,12 @@ ipv6_input(ip_if_t *ifp, mblk_t *mp)
 	}
 
 	mp->rptr += sizeof(*ip6);
+	attr.src.in6 = &ip6->ip6_src;
+	attr.dst.in6 = &ip6->ip6_dst;
 
 	switch(ip6->ip6_nxt) {
 	case IPPROTO_ICMPV6:
-		icmpv6_input(ifp, mp);
+		icmpv6_input(ifp, mp, &attr);
 		break;
 
 	default:

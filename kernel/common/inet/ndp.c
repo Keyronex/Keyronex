@@ -11,6 +11,7 @@
  * @brief Neighbour Discovery Protocol (NDP) handling.
  */
 
+#include <sys/errno.h>
 #include <sys/libkern.h>
 #include <sys/stream.h>
 
@@ -18,6 +19,7 @@
 #include <netinet/ip6.h>
 
 #include <inet/ip.h>
+#include <inet/util.h>
 
 /* TODO: more intelligent selection, and move to maybe ipv6_output.c */
 ip_ifaddr_t *
@@ -34,8 +36,25 @@ ip_if_ipv6_source_select(ip_if_t *ifp)
 	return ifa;
 }
 
+bool
+ip_if_has_v6addr(ip_if_t *ifp, const struct in6_addr *addr)
+{
+	ip_ifaddr_t *ifa;
+
+	kassert(ke_ipl() == IPL_DISP); /* i.e. an RCU read section */
+
+	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
+		if (ifa->addr.in6.sin6_family == AF_INET6 &&
+		    memcmp(&ifa->addr.in6.sin6_addr, addr,
+			sizeof(struct in6_addr)) == 0)
+			return true;
+	}
+
+	return false;
+}
+
 /*
- * TODO: do like FreeBSD; require an mblk to be passed in with rptr at start of
+ * TODO: do like FreeBSD for checksums: require an mblk to be passed in with rptr at start of
  * IPv6 header, offset of L4/ICMPv6 header, and write an str_mapply() to deal
  * with chains.
  */
@@ -106,16 +125,16 @@ ndp_solicit(ip_if_t *ifp, const struct in6_addr *target)
 	struct ether_addr dst_l2addr;
 	mblk_t *mp;
 
+	ifa = ip_if_ipv6_source_select(ifp);
+	if (ifa == NULL)
+		return;
+
 	mp = str_allocb(sizeof(pkt) + sizeof(struct ether_header));
 	if (mp == NULL)
 		return;
 
 	mp->rptr += sizeof(struct ether_header);
 	mp->wptr = mp->rptr + sizeof(pkt);
-
-	ifa = ip_if_ipv6_source_select(ifp);
-	if (ifa == NULL)
-		return;
 
 	memset(&pkt, 0, sizeof(pkt));
 	pkt.ip6.ip6_flow = htonl((uint32_t)6 << 28);
@@ -125,13 +144,7 @@ ndp_solicit(ip_if_t *ifp, const struct in6_addr *target)
 	pkt.ip6.ip6_src = ifa->addr.in6.sin6_addr;
 
 	/* maybe use ipv6_solicited_node_mc() */
-	pkt.ip6.ip6_dst.s6_addr[0] = 0xff;
-	pkt.ip6.ip6_dst.s6_addr[1] = 0x02;
-	pkt.ip6.ip6_dst.s6_addr[11] = 0x01;
-	pkt.ip6.ip6_dst.s6_addr[12] = 0xff;
-	pkt.ip6.ip6_dst.s6_addr[13] = target->s6_addr[13];
-	pkt.ip6.ip6_dst.s6_addr[14] = target->s6_addr[14];
-	pkt.ip6.ip6_dst.s6_addr[15] = target->s6_addr[15];
+	pkt.ip6.ip6_dst = ipv6_solicited_node_mc(target);
 
 	pkt.ns.nd_ns_type = ND_NEIGHBOR_SOLICIT;
 	pkt.ns.nd_ns_code = 0;
@@ -141,6 +154,8 @@ ndp_solicit(ip_if_t *ifp, const struct in6_addr *target)
 	memcpy(&pkt.opt.lladdr, ifp->mac, sizeof(struct ether_addr));
 	pkt.ns.nd_ns_hdr.icmp6_cksum = htons(ip_icmp6_checksum(&pkt.ip6.ip6_src,
 	    &pkt.ip6.ip6_dst, &pkt.ns, sizeof(pkt.ns) + sizeof(pkt.opt)));
+
+	memcpy(mp->rptr, &pkt, sizeof(pkt));
 
 	dst_l2addr = (struct ether_addr) { {
 	    0x33,
@@ -154,31 +169,73 @@ ndp_solicit(ip_if_t *ifp, const struct in6_addr *target)
 	ip_if_output(ifp, mp, ETHERTYPE_IPV6, &dst_l2addr);
 }
 
-bool
-ip_if_has_v6addr(ip_if_t *ifp, const struct in6_addr *addr)
+static int
+ndp_advertise(ip_if_t *ifp, mblk_t *mp, const struct in6_addr *target,
+    const struct in6_addr *dst, const struct ether_addr *dst_l2)
 {
-	ip_ifaddr_t *ifa;
+	struct {
+		struct ip6_hdr ip6;
+		struct nd_neighbor_advert na;
+		struct {
+			struct nd_opt_hdr hdr;
+			struct ether_addr lladdr;
+		} opt;
+	} pkt;
+	size_t needed = sizeof(struct ether_header) + sizeof(pkt);
 
-	kassert(ke_ipl() == IPL_DISP); /* i.e. an RCU read section */
-
-	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
-		if (ifa->addr.in6.sin6_family == AF_INET6 &&
-		    memcmp(&ifa->addr.in6.sin6_addr, addr,
-			sizeof(struct in6_addr)) == 0)
-			return true;
+	if (mp == NULL || (mp->db->lim - mp->db->base) < needed ||
+	    mp->db->refcnt != 1) {
+		if (mp != NULL)
+			str_freemsg(mp);
+		mp = str_allocb(needed);
+		if (mp == NULL)
+			return -ENOMEM;
 	}
 
-	return false;
+	mp->rptr = mp->db->base + sizeof(struct ether_header);
+	mp->wptr = mp->rptr + sizeof(pkt);
+	if (mp->cont)
+		str_freemsg(mp->cont);
+	mp->cont = NULL;
+
+	memset(&pkt, 0, sizeof(pkt));
+	pkt.ip6.ip6_flow = htonl((uint32_t)6 << 28);
+	pkt.ip6.ip6_hlim = 255;
+	pkt.ip6.ip6_nxt = IPPROTO_ICMPV6;
+	pkt.ip6.ip6_plen = htons(sizeof(pkt.na) + sizeof(pkt.opt));
+	pkt.ip6.ip6_src = *target;
+	pkt.ip6.ip6_dst = *dst;
+
+	pkt.na.nd_na_type = ND_NEIGHBOR_ADVERT;
+	pkt.na.nd_na_code = 0;
+	pkt.na.nd_na_target = *target;
+	pkt.na.nd_na_flags_reserved = ND_NA_FLAG_OVERRIDE |
+	    (IN6_IS_ADDR_MULTICAST(dst) ? 0 : ND_NA_FLAG_SOLICITED);
+
+	pkt.opt.hdr.nd_opt_type = ND_OPT_TARGET_LINKADDR;
+	pkt.opt.hdr.nd_opt_len = 1; /* units of 8 bytes */
+	memcpy(&pkt.opt.lladdr, ifp->mac, sizeof(struct ether_addr));
+
+	pkt.na.nd_na_hdr.icmp6_cksum = htons(ip_icmp6_checksum(
+	    &pkt.ip6.ip6_src, &pkt.ip6.ip6_dst,
+	    &pkt.na, sizeof(pkt.na) + sizeof(pkt.opt)));
+
+	memcpy(mp->rptr, &pkt, sizeof(pkt));
+
+	return ip_if_output(ifp, mp, ETHERTYPE_IPV6, dst_l2);
 }
 
 void
-ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp,
+ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
     const struct icmp6_hdr *icmp6)
 {
 	size_t len;
 	const struct nd_neighbor_solicit *ns;
 	const uint8_t *optp;
 	size_t optlen;
+	const struct ether_addr *src_l2addr = NULL;
+	struct ether_addr dst_l2;
+	struct in6_addr dst;
 
 	len = mp->wptr - mp->rptr;
 
@@ -199,27 +256,47 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp,
 
 	if (optlen >= sizeof(struct nd_opt_hdr) + ETHER_ADDR_LEN &&
 	    optp[0] == ND_OPT_SOURCE_LINKADDR && optp[1] == 1) {
-		neighbour_cache_learn(ifp->neighbours_ipv6,
-		    (const union in_addr_union *)&ns->nd_ns_target,
-		    (const struct ether_addr *)(optp +
-			sizeof(struct nd_opt_hdr)));
+		src_l2addr = (const struct ether_addr *)(optp +
+		    sizeof(struct nd_opt_hdr));
+		if (!IN6_IS_ADDR_UNSPECIFIED(attr->src.in6))
+			neighbour_cache_learn(ifp->neighbours_ipv6,
+			    (const union in_addr_union *)attr->src.in6,
+			    src_l2addr);
 	}
 
-	/*
-	 * call a function that advertises neighbour here, passing it our mp so
-	 * that it can reuse it if it's big enough (it usuall will be)
-	 */
+	if (IN6_IS_ADDR_UNSPECIFIED(attr->src.in6)) {
+		/* DAD, unsolicited advert to all-nodes multicast */
+		dst = (struct in6_addr) { { { 0xff, 0x02, 0, 0, 0, 0, 0, 0, 0,
+		    0, 0, 0, 0, 0, 0, 1 } } };
+		dst_l2 = (struct ether_addr){ { 0x33, 0x33, 0, 0, 0, 0x01 } };
+	} else {
+		dst = *attr->src.in6;
+		if (src_l2addr != NULL) {
+			dst_l2 = *src_l2addr;
+		} else {
+			/*
+			 * TODO: if attr->src_l2 is set and fine, use it?
+			 * alternatively we might even put the reply out through
+			 * neighbour_output() and let it resolve L2?
+			 */
+			str_freemsg(mp);
+			return;
+		}
+	}
 
+	ndp_advertise(ifp, mp, &ns->nd_ns_target, &dst, &dst_l2);
 }
 
 void
-ndp_input(ip_if_t *ifp, mblk_t *mp)
+ndp_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 {
 	const struct icmp6_hdr *icmp6 = (typeof(icmp6))mp->rptr;
 
+	/* icmpv6_input has already validated icmp header length */
+
 	switch (icmp6->icmp6_type) {
 	case ND_NEIGHBOR_SOLICIT:
-		return ndp_input_neighbor_solicit(ifp, mp, icmp6);
+		return ndp_input_neighbor_solicit(ifp, mp, attr, icmp6);
 
 	case ND_NEIGHBOR_ADVERT:
 		kdprintf("ndp_input: received neighbor advertisement\n");

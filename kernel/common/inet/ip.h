@@ -62,8 +62,20 @@ typedef struct ip_if {
 	neighbour_cache_t *neighbours_ipv6;
 
 	void *nic_data;
-	void (*nic_wput)(void *, struct msgb *);
+	int (*nic_wput)(void *, struct msgb *);
 } ip_if_t;
+
+typedef struct ip_rxattr {
+	struct ether_addr *src_l2;
+	union {
+		const struct in_addr *in;
+		const struct in6_addr *in6;
+	} src;
+	union {
+		const struct in_addr *in;
+		const struct in6_addr *in6;
+	} dst;
+} ip_rxattr_t;
 
 ip_if_t *ip_if_new(uint8_t *mac);
 void ip_if_publish(ip_if_t *, int muxid);
@@ -80,6 +92,9 @@ void ip_if_addr_iterate(ip_if_t *, void (*)(ip_ifaddr_t *, void *), void *ctx);
 neighbour_cache_t *neighbour_cache_new(ip_if_t *, sa_family_t);
 void neighbour_cache_learn(neighbour_cache_t *, const union in_addr_union *,
     const struct ether_addr *);
+
+void icmpv6_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+void ndp_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
 
 struct ip_route_result {
 	ip_if_t *intf;
