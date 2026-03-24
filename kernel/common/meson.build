@@ -29,6 +29,8 @@ kernel_sources += [
     'inet/ipv6_input.c',
     'inet/ndp.c',
     'inet/neighbour.c',
+    'inet/radix.c',
+    'inet/route.c',
     'inet/rtnetlink.c',
     'inet/tcp.c',
     'inet/util.c',
