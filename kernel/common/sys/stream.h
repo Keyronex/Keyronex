@@ -112,6 +112,8 @@ void str_freeb(mblk_t *);
 void str_freemsg(mblk_t *);
 size_t str_msgsize(mblk_t *);
 
+#define STR_MBLKHEAD(MP) ((MP)->rptr - (MP)->db->base)
+
 void str_put(queue_t *, mblk_t *);
 void str_putnext(queue_t *, mblk_t *);
 void str_qreply(queue_t *, mblk_t *);

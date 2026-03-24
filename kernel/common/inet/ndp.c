@@ -13,12 +13,14 @@
 
 #include <sys/libkern.h>
 #include <sys/stream.h>
+
 #include <netinet/icmp6.h>
 #include <netinet/ip6.h>
 
 #include <inet/ip.h>
 
-void ndp_input(ip_if_t *ifp, mblk_t *mp)
+void
+ndp_input(ip_if_t *ifp, mblk_t *mp)
 {
 	const struct icmp6_hdr *icmp6 = (typeof(icmp6))mp->rptr;
 
