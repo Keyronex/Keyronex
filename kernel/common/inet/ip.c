@@ -269,9 +269,11 @@ ip_init(void)
 {
 	void rtnetlink_init(void);
 	void tcp_init(void);
+	void route_init(void);
 
-	devfs_create_node(DEV_KIND_STREAM, &ip_devops, NULL, "ip");
+	route_init();
 	rtnetlink_init();
+	devfs_create_node(DEV_KIND_STREAM, &ip_devops, NULL, "ip");
 #if 0
 	tcp_init();
 #endif
