@@ -81,18 +81,19 @@ neighbour_cache_new(ip_if_t *ifp, sa_family_t family)
 }
 
 int
-neighbour_output(ip_if_t *ifp, neighbour_cache_t *nc, mblk_t *mp)
+neighbour_output(ip_if_t *ifp, neighbour_cache_t *nc, mblk_t *mp,
+    const union in_addr_union *l3addr)
 {
 	ipl_t ipl;
-	union in_addr_union l3addr;
 	struct ether_addr l2addr;
 	neighbour_t *n;
 	uint16_t ethertype = nc->family == AF_INET ? ETHERTYPE_IP : ETHERTYPE_IPV6;
+	size_t addr_len = nc->family == AF_INET ? sizeof(struct in_addr) :
+	    sizeof(struct in6_addr);
 
 	ipl = ke_spinlock_enter(&nc->lock);
 	TAILQ_FOREACH(n, &nc->entries, tqentry) {
-		if (memcmp(&n->l3addr, &l3addr, sizeof(union in_addr_union)) ==
-		    0)
+		if (memcmp(&n->l3addr, l3addr, addr_len) == 0)
 			break;
 	}
 
@@ -119,14 +120,15 @@ neighbour_output(ip_if_t *ifp, neighbour_cache_t *nc, mblk_t *mp)
 		}
 		n->refcnt = 1;
 		n->state = NUD_INCOMPLETE;
-		memcpy(&n->l3addr, &l3addr, sizeof(union in_addr_union));
+		memset(&n->l3addr, 0, sizeof(n->l3addr));
+		memcpy(&n->l3addr, l3addr, addr_len);
 		n->pending = mp;
 		TAILQ_INSERT_HEAD(&nc->entries, n, tqentry);
 		ke_spinlock_exit(&nc->lock, ipl);
 		if (nc->family == AF_INET)
-			arp_solicit(ifp, &l3addr.in);
+			arp_solicit(ifp, &l3addr->in);
 		else
-			ndp_solicit(ifp, &l3addr.in6);
+			ndp_solicit(ifp, &l3addr->in6);
 		return 0;
 	}
 }

@@ -1,8 +1,7 @@
 echo "Keyronex RC"
 
-rm -f /tmp/.tX0-lock
-
 echo "Setting up network interface net0"
 /sbin/ifconfig net0 plumb
 /sbin/ifconfig net0 10.0.2.20 netmask ffffff00
-/sbin/route add default 10.0.2.2
+/sbin/ifconfig net0 inet6 fd00::2/64
+#/sbin/route add default 10.0.2.2

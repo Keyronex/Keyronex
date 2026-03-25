@@ -135,6 +135,8 @@ void ip_if_addr_iterate(ip_if_t *, void (*)(ip_ifaddr_t *, void *), void *ctx);
 neighbour_cache_t *neighbour_cache_new(ip_if_t *, sa_family_t);
 void neighbour_cache_learn(neighbour_cache_t *, const union in_addr_union *,
     const struct ether_addr *);
+int neighbour_output(ip_if_t *, neighbour_cache_t *, struct msgb *,
+    const union in_addr_union *);
 
 void route_info_init(route_info_t *, const union sockaddr_union *,
     uint8_t prefixlen);

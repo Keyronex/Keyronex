@@ -42,6 +42,7 @@ icmpv6_input_echo_request(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 	icmp6->icmp6_cksum = htons(ip_icmp6_checksum(&ip6->ip6_src,
 	    &ip6->ip6_dst, icmp6, mp->wptr - mp->rptr));
 
+	mp->rptr = (uint8_t *)ip6;
 	ipv6_output(mp);
 }
 

@@ -118,6 +118,7 @@ proc_create(proc_t *parent, bool fork)
 	proc->parent = parent;
 	TAILQ_INIT(&proc->children);
 	proc->exited = false;
+	proc->exiting = false;
 
 	proc->wait_ev = NULL;
 	proc->procdesc = NULL;
