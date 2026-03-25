@@ -302,9 +302,16 @@ rtnl_newaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 		ifa->addr.in6.sin6_scope_id = req_ifa->ifa_index;
 	}
 
+	/*
+	 * want to extract some of this logic since we'll do it for link local
+	 * addresses too
+	 */
+
 	ipl = ke_spinlock_enter(&ip_allif_lock);
 	TAILQ_INSERT_TAIL(&ifp->addrs, ifa, tqentry);
 	ke_spinlock_exit(&ip_allif_lock, ipl);
+
+	route_add_connected(&ifa->addr, ifa->prefixlen, ifp);
 
 	ip_if_release(ifp);
 

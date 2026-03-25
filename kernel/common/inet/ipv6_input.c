@@ -115,8 +115,7 @@ ipv6_input(ip_if_t *ifp, mblk_t *mp)
 	}
 
 	mp->rptr += sizeof(*ip6);
-	attr.src.in6 = &ip6->ip6_src;
-	attr.dst.in6 = &ip6->ip6_dst;
+	attr.l3hdr.ip6 = ip6;
 
 	switch(ip6->ip6_nxt) {
 	case IPPROTO_ICMPV6:

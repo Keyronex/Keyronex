@@ -235,6 +235,7 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	size_t optlen;
 	const struct ether_addr *src_l2addr = NULL;
 	struct ether_addr dst_l2;
+	struct in6_addr src;
 	struct in6_addr dst;
 
 	len = mp->wptr - mp->rptr;
@@ -251,6 +252,8 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 		return;
 	}
 
+	src = attr->l3hdr.ip6->ip6_src;
+
 	optp = (const uint8_t *)(ns + 1);
 	optlen = len - sizeof(*ns);
 
@@ -258,19 +261,19 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	    optp[0] == ND_OPT_SOURCE_LINKADDR && optp[1] == 1) {
 		src_l2addr = (const struct ether_addr *)(optp +
 		    sizeof(struct nd_opt_hdr));
-		if (!IN6_IS_ADDR_UNSPECIFIED(attr->src.in6))
+		if (!IN6_IS_ADDR_UNSPECIFIED(&src))
 			neighbour_cache_learn(ifp->neighbours_ipv6,
-			    (const union in_addr_union *)attr->src.in6,
+			    (const union in_addr_union *)&src,
 			    src_l2addr);
 	}
 
-	if (IN6_IS_ADDR_UNSPECIFIED(attr->src.in6)) {
+	if (IN6_IS_ADDR_UNSPECIFIED(&src)) {
 		/* DAD, unsolicited advert to all-nodes multicast */
 		dst = (struct in6_addr) { { { 0xff, 0x02, 0, 0, 0, 0, 0, 0, 0,
 		    0, 0, 0, 0, 0, 0, 1 } } };
 		dst_l2 = (struct ether_addr){ { 0x33, 0x33, 0, 0, 0, 0x01 } };
 	} else {
-		dst = *attr->src.in6;
+		dst = src;
 		if (src_l2addr != NULL) {
 			dst_l2 = *src_l2addr;
 		} else {

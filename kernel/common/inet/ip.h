@@ -105,7 +105,7 @@ typedef struct route_info {
  * Result of performing a route lookup.
  */
 typedef struct route_result {
-	union sockaddr_union next_hop;
+	union sockaddr_union nexthop;
 	uint32_t	rtm_flags;
 	uint32_t	mtu;
 	uint32_t	generation;
@@ -115,13 +115,9 @@ typedef struct route_result {
 typedef struct ip_rxattr {
 	struct ether_addr *src_l2;
 	union {
-		const struct in_addr *in;
-		const struct in6_addr *in6;
-	} src;
-	union {
-		const struct in_addr *in;
-		const struct in6_addr *in6;
-	} dst;
+		const struct ip6_hdr *ip6;
+		const struct ip *ip4;
+	} l3hdr;
 } ip_rxattr_t;
 
 ip_if_t *ip_if_new(uint8_t *mac);
@@ -152,16 +148,18 @@ void route_info_set_ifp(route_info_t *, struct ip_if *);
 void route_info_set_tos(route_info_t *, uint8_t);
 void route_info_set_type(route_info_t *, enum rt_type_t);
 
+int route_add_connected(const union sockaddr_union *prefix, uint8_t prefixlen,
+    ip_if_t *ifp);
 int route_lookup(const union sockaddr_union *dst, route_result_t *out,
     bool retain_ifp);
 
 void icmpv6_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
 void ndp_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
 
-struct ip_route_result {
-	ip_if_t *intf;
-	struct in_addr next_hop;
-};
+int ipv6_output(struct msgb *);
+
+uint16_t ip_icmp6_checksum(const struct in6_addr *src,
+    const struct in6_addr *dst, const void *payload, size_t payload_len);
 
 /* currently missing from mlibc */
 #define ip6_flow  ip6_ctlun.ip6_un1.ip6_un1_flow

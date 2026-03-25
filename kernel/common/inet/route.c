@@ -75,6 +75,21 @@ route_table_inc_generation(route_table_t *table)
 	    memory_order_acq_rel) + 1;
 }
 
+static uint8_t *
+addr_bytes(const union sockaddr_union *addr)
+{
+	switch(addr->sa.sa_family) {
+		case AF_INET:
+			return (uint8_t *)&addr->in.sin_addr;
+
+		case AF_INET6:
+			return (uint8_t *)&addr->in6.sin6_addr;
+
+		default:
+			kfatal("unsupported family %u", addr->sa.sa_family);
+	}
+}
+
 static const uint8_t *
 addr_cbytes(const union sockaddr_union *addr)
 {
@@ -88,6 +103,32 @@ addr_cbytes(const union sockaddr_union *addr)
 		default:
 			kfatal("unsupported family %u", addr->sa.sa_family);
 	}
+}
+
+static void
+addr_mask_prefix(union sockaddr_union *addr, uint8_t prefixlen)
+{
+	uint8_t *bytes;
+	size_t nbytes, full_bytes, rem_bits, i;
+	uint8_t mask;
+
+	kassert(addr->sa.sa_family < AF_MAX);
+	nbytes = family_bytes[addr->sa.sa_family];
+	bytes = addr_bytes(addr);
+
+	kassert(prefixlen <= nbytes * 8);
+
+	full_bytes = prefixlen / 8;
+	rem_bits = prefixlen % 8;
+
+	if (rem_bits != 0) {
+		mask = (uint8_t)(0xff << (8 - rem_bits));
+		bytes[full_bytes] &= mask;
+		full_bytes++;
+	}
+
+	for (i = full_bytes; i < nbytes; i++)
+		bytes[i] = 0;
 }
 
 /*
@@ -128,6 +169,10 @@ route_lookup(const union sockaddr_union *dst, route_result_t *out,
 	result.mtu = best->mtu;
 	result.generation = atomic_load_explicit(&table->generation,
 	    memory_order_acquire);
+	if (best->gateway.sa.sa_family != AF_UNSPEC)
+		result.nexthop = best->gateway;
+	else
+		result.nexthop = *dst;
 out:
 	ke_spinlock_exit(&table->lock, ipl);
 
@@ -161,6 +206,7 @@ route_add(route_info_t *spec)
 	atomic_init(&rt->refcnt, 1);
 	rt->family = spec->prefix.sa.sa_family;
 	rt->prefix = spec->prefix;
+	addr_mask_prefix(&rt->prefix, spec->prefixlen);
 	rt->prefixlen = spec->prefixlen;
 	rt->gateway = spec->gateway;
 	rt->priority = spec->priority;
@@ -174,7 +220,7 @@ route_add(route_info_t *spec)
 
 	ipl = ke_spinlock_enter(&table->lock);
 
-	node = radix_insert(&table->tree, addr_cbytes(&spec->prefix),
+	node = radix_insert(&table->tree, addr_cbytes(&rt->prefix),
 	    spec->prefixlen);
 	if (node->data != NULL) {
 		/* only support one route per prefix for now */
@@ -192,6 +238,20 @@ out:
 	ke_spinlock_exit(&table->lock, ipl);
 
 	return r;
+}
+
+int
+route_add_connected(const union sockaddr_union *addr, uint8_t prefixlen,
+    ip_if_t *ifp)
+{
+	route_info_t info;
+	route_info_init(&info, addr, prefixlen);
+	addr_mask_prefix(&info.prefix, prefixlen);
+	info.ifp = ifp;
+	info.protocol = RTPROT_KERNEL;
+	info.scope = RT_SCOPE_LINK;
+	info.type = RTN_UNICAST;
+	return route_add(&info);
 }
 
 /*
