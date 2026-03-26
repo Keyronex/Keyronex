@@ -83,6 +83,8 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		}
 
 		ifr->ifr_ifindex = intf->muxid;
+		ip_if_release(intf);
+
 		mp->db->type = M_IOCACK;
 		return str_qreply(wq, mp);
 	}
@@ -95,6 +97,8 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		}
 
 		strncpy(ifr->ifr_name, intf->name, IF_NAMESIZE);
+		ip_if_release(intf);
+
 		mp->db->type = M_IOCACK;
 		return str_qreply(wq, mp);
 	}
@@ -125,7 +129,8 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		}
 
 		/* todo flags */
-		ifr->ifr_flags = 0;
+		ifr->ifr_flags = IFF_UP | IFF_RUNNING;
+		ip_if_release(intf);
 
 		mp->db->type = M_IOCACK;
 		return str_qreply(wq, mp);

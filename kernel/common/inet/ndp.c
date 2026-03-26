@@ -111,6 +111,54 @@ ip_icmp6_checksum(const struct in6_addr *src, const struct in6_addr *dst,
 }
 
 void
+ndp_solicit_unicast(ip_if_t *ifp, const struct in6_addr *target,
+    const struct ether_addr *dst_l2)
+{
+	struct {
+		struct ip6_hdr ip6;
+		struct nd_neighbor_solicit ns;
+		struct {
+			struct nd_opt_hdr hdr;
+			struct ether_addr lladdr;
+		} opt;
+	} pkt;
+	ip_ifaddr_t *ifa;
+	mblk_t *mp;
+
+	ifa = ip_if_ipv6_source_select(ifp);
+	if (ifa == NULL)
+		return;
+
+	mp = str_allocb(sizeof(pkt) + sizeof(struct ether_header));
+	if (mp == NULL)
+		return;
+
+	mp->rptr += sizeof(struct ether_header);
+	mp->wptr = mp->rptr + sizeof(pkt);
+
+	memset(&pkt, 0, sizeof(pkt));
+	pkt.ip6.ip6_flow = htonl((uint32_t)6 << 28);
+	pkt.ip6.ip6_hlim = 255;
+	pkt.ip6.ip6_nxt = IPPROTO_ICMPV6;
+	pkt.ip6.ip6_plen = htons(sizeof(pkt.ns) + sizeof(pkt.opt));
+	pkt.ip6.ip6_src = ifa->addr.in6.sin6_addr;
+	pkt.ip6.ip6_dst = *target; /* unicast to the neighbour */
+
+	pkt.ns.nd_ns_type = ND_NEIGHBOR_SOLICIT;
+	pkt.ns.nd_ns_code = 0;
+	pkt.ns.nd_ns_target = *target;
+	pkt.opt.hdr.nd_opt_type = ND_OPT_SOURCE_LINKADDR;
+	pkt.opt.hdr.nd_opt_len = 1; /* 8-byte units */
+	memcpy(&pkt.opt.lladdr, ifp->mac, sizeof(struct ether_addr));
+	pkt.ns.nd_ns_hdr.icmp6_cksum = htons(ip_icmp6_checksum(&pkt.ip6.ip6_src,
+	    &pkt.ip6.ip6_dst, &pkt.ns, sizeof(pkt.ns) + sizeof(pkt.opt)));
+
+	memcpy(mp->rptr, &pkt, sizeof(pkt));
+
+	ip_if_output(ifp, mp, ETHERTYPE_IPV6, dst_l2);
+}
+
+void
 ndp_solicit(ip_if_t *ifp, const struct in6_addr *target)
 {
 	struct {
@@ -143,7 +191,6 @@ ndp_solicit(ip_if_t *ifp, const struct in6_addr *target)
 	pkt.ip6.ip6_plen = htons(sizeof(pkt.ns) + sizeof(pkt.opt));
 	pkt.ip6.ip6_src = ifa->addr.in6.sin6_addr;
 
-	/* maybe use ipv6_solicited_node_mc() */
 	pkt.ip6.ip6_dst = ipv6_solicited_node_mc(target);
 
 	pkt.ns.nd_ns_type = ND_NEIGHBOR_SOLICIT;
@@ -264,7 +311,7 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 		if (!IN6_IS_ADDR_UNSPECIFIED(&src))
 			neighbour_cache_learn(ifp->neighbours_ipv6,
 			    (const union in_addr_union *)&src,
-			    src_l2addr);
+			    src_l2addr, false);
 	}
 
 	if (IN6_IS_ADDR_UNSPECIFIED(&src)) {
@@ -298,6 +345,7 @@ ndp_input_neighbor_advert(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	const uint8_t *optp;
 	size_t len, optlen;
 	const struct ether_addr *tgt_l2addr = NULL;
+	bool solicited;
 
 	len = mp->wptr - mp->rptr;
 
@@ -332,6 +380,8 @@ ndp_input_neighbor_advert(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 		optlen -= opt_bytes;
 	}
 
+	solicited = (na->nd_na_flags_reserved & ND_NA_FLAG_SOLICITED) != 0;
+
 	/*
 	 * TODO: fully conform with RFC 4861 s7.2.5. some of this logic belongs
 	 * in neighbour cache?
@@ -350,11 +400,16 @@ ndp_input_neighbor_advert(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	 *   - update NCE.IsRouter. If it became false, remove router from
 	 *     Default Router list & update Destination Cache.
 	 */
-	if (tgt_l2addr != NULL)
+	if (tgt_l2addr != NULL) {
 		neighbour_cache_learn(ifp->neighbours_ipv6,
-		    (const union in_addr_union *)&na->nd_na_target, tgt_l2addr);
-	else
+		    (const union in_addr_union *)&na->nd_na_target, tgt_l2addr,
+		    solicited);
+	} else if (solicited) {
+		neighbour_cache_confirm(ifp->neighbours_ipv6,
+		    (const union in_addr_union *)&na->nd_na_target);
+	} else {
 		kdprintf("ndp_input: NA without target link-layer address\n");
+	}
 
 	str_freemsg(mp);
 }

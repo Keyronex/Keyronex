@@ -134,7 +134,8 @@ void ip_if_addr_iterate(ip_if_t *, void (*)(ip_ifaddr_t *, void *), void *ctx);
 
 neighbour_cache_t *neighbour_cache_new(ip_if_t *, sa_family_t);
 void neighbour_cache_learn(neighbour_cache_t *, const union in_addr_union *,
-    const struct ether_addr *);
+    const struct ether_addr *, bool solicited);
+void neighbour_cache_confirm(neighbour_cache_t *, const union in_addr_union *);
 int neighbour_output(ip_if_t *, neighbour_cache_t *, struct msgb *,
     const union in_addr_union *);
 
