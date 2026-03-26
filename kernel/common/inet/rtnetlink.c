@@ -332,13 +332,14 @@ rtnl_handler(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 		return rtnl_newaddr(wq, mp, nlh);
 
 	case RTM_DELADDR:
-		kfatal("rtnl_handler: RTM_DELADDR not implemented");
+		kdprintf("rtnetlink: RTM_DELADDR not yet supported\n");
+		return -EOPNOTSUPP;
 
 	case RTM_GETADDR:
 		return rtnl_getaddr(wq, mp, nlh);
 
 	default:
-		kdprintf("rtnl_handler: unknown type %d\n", nlh->nlmsg_type);
+		kdprintf("rtnetlink: unknown type %d\n", nlh->nlmsg_type);
 		return -EOPNOTSUPP;
 	}
 }

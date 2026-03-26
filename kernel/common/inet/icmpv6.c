@@ -60,7 +60,12 @@ icmpv6_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 
 	icmp6 = (typeof(icmp6))mp->rptr;
 
-	/* todo: checksum */
+	if (ip_icmp6_checksum(&attr->l3hdr.ip6->ip6_src,
+	    &attr->l3hdr.ip6->ip6_dst, icmp6, avail) != 0) {
+		kdprintf("icmpv6_input: checksum error, dropping\n");
+		str_freemsg(mp);
+		return;
+	}
 
 	switch(icmp6->icmp6_type) {
 	case ICMP6_ECHO_REQUEST:

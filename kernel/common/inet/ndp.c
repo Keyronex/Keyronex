@@ -290,6 +290,75 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	ndp_advertise(ifp, mp, &ns->nd_ns_target, &dst, &dst_l2);
 }
 
+static void
+ndp_input_neighbor_advert(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
+    const struct icmp6_hdr *icmp6)
+{
+	const struct nd_neighbor_advert *na;
+	const uint8_t *optp;
+	size_t len, optlen;
+	const struct ether_addr *tgt_l2addr = NULL;
+
+	len = mp->wptr - mp->rptr;
+
+	if (len < sizeof(struct nd_neighbor_advert)) {
+		kdprintf("ndp_input: neighbor advertisement too short\n");
+		str_freemsg(mp);
+		return;
+	}
+
+	na = (typeof(na))icmp6;
+
+	optp = (const uint8_t *)(na + 1);
+	optlen = len - sizeof(*na);
+
+	while (optlen >= sizeof(struct nd_opt_hdr)) {
+		uint8_t opt_type = optp[0];
+		uint8_t opt_len8 = optp[1]; /* in units of 8 bytes */
+		size_t opt_bytes;
+
+		if (opt_len8 == 0)
+			break;
+		opt_bytes = (size_t)opt_len8 * 8;
+		if (opt_bytes > optlen)
+			break;
+
+		if (opt_type == ND_OPT_TARGET_LINKADDR &&
+		    opt_bytes >= sizeof(struct nd_opt_hdr) + ETHER_ADDR_LEN)
+			tgt_l2addr = (const struct ether_addr *)(optp +
+			    sizeof(struct nd_opt_hdr));
+
+		optp += opt_bytes;
+		optlen -= opt_bytes;
+	}
+
+	/*
+	 * TODO: fully conform with RFC 4861 s7.2.5. some of this logic belongs
+	 * in neighbour cache?
+	 *
+	 * if NCE is INCOMPLETE:
+	 * - if no TLLA, silently discard
+	 * - else record l2 addr in NCE. if Solicited flag set, set state to
+	 *   REACHABLE, otherwise STALE. set NCE.IsRouter and send pendings.
+	 *
+	 * if NCE is other than INCOMPLETE
+	 * - if Override flag unset or l2 addr is same as in NCE, or no TLLA:
+	 *   - update NCE.l2addr if TLLA included & differs
+	 *   - if Solicited, set NCE to REACHABLE. if not Solicited and l2addr
+	 *     was updated to another addr, set NCE to STALE. otherwise no
+	 *     change to NCE state.
+	 *   - update NCE.IsRouter. If it became false, remove router from
+	 *     Default Router list & update Destination Cache.
+	 */
+	if (tgt_l2addr != NULL)
+		neighbour_cache_learn(ifp->neighbours_ipv6,
+		    (const union in_addr_union *)&na->nd_na_target, tgt_l2addr);
+	else
+		kdprintf("ndp_input: NA without target link-layer address\n");
+
+	str_freemsg(mp);
+}
+
 void
 ndp_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 {
@@ -302,9 +371,7 @@ ndp_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 		return ndp_input_neighbor_solicit(ifp, mp, attr, icmp6);
 
 	case ND_NEIGHBOR_ADVERT:
-		kdprintf("ndp_input: received neighbor advertisement\n");
-		str_freemsg(mp);
-		break;
+		return ndp_input_neighbor_advert(ifp, mp, attr, icmp6);
 
 	default:
 		kdprintf("ndp_input: unsupported NDP message type %u\n",

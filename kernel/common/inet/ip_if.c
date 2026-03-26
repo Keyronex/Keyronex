@@ -29,6 +29,7 @@ ip_if_new(uint8_t *mac)
 	ip_if_t *ifp = kmem_alloc(sizeof(ip_if_t));
 	ifp->refcnt = 1;
 	ifp->muxid = -1;
+	ifp->name[0] = '\0';
 	memcpy(ifp->mac, mac, ETH_ALEN);
 	TAILQ_INIT(&ifp->addrs);
 
@@ -88,8 +89,9 @@ ip_if_retain(ip_if_t *ifp)
 void
 ip_if_release(ip_if_t *ifp)
 {
-	if (atomic_fetch_sub_explicit(&ifp->refcnt, 1, memory_order_relaxed) ==
+	if (atomic_fetch_sub_explicit(&ifp->refcnt, 1, memory_order_release) ==
 	    1) {
+		atomic_thread_fence(memory_order_acquire);
 		kdprintf("ip_if_release: todo free if %s\n", ifp->name);
 	}
 }

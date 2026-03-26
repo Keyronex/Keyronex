@@ -88,12 +88,12 @@ neighbour_output(ip_if_t *ifp, neighbour_cache_t *nc, mblk_t *mp,
 	struct ether_addr l2addr;
 	neighbour_t *n;
 	uint16_t ethertype = nc->family == AF_INET ? ETHERTYPE_IP : ETHERTYPE_IPV6;
-	size_t addr_len = nc->family == AF_INET ? sizeof(struct in_addr) :
+	size_t l3addr_len = nc->family == AF_INET ? sizeof(struct in_addr) :
 	    sizeof(struct in6_addr);
 
 	ipl = ke_spinlock_enter(&nc->lock);
 	TAILQ_FOREACH(n, &nc->entries, tqentry) {
-		if (memcmp(&n->l3addr, l3addr, addr_len) == 0)
+		if (memcmp(&n->l3addr, l3addr, l3addr_len) == 0)
 			break;
 	}
 
@@ -121,7 +121,7 @@ neighbour_output(ip_if_t *ifp, neighbour_cache_t *nc, mblk_t *mp,
 		n->refcnt = 1;
 		n->state = NUD_INCOMPLETE;
 		memset(&n->l3addr, 0, sizeof(n->l3addr));
-		memcpy(&n->l3addr, l3addr, addr_len);
+		memcpy(&n->l3addr, l3addr, l3addr_len);
 		n->pending = mp;
 		TAILQ_INSERT_HEAD(&nc->entries, n, tqentry);
 		ke_spinlock_exit(&nc->lock, ipl);
@@ -141,6 +141,8 @@ neighbour_cache_learn(neighbour_cache_t *nc, const union in_addr_union *l3addr,
 	mblk_t *mp = NULL;
 	ipl_t ipl;
 	char l3addr_str[INET6_ADDRSTRLEN];
+	size_t l3addr_len = nc->family == AF_INET ? sizeof(struct in_addr) :
+	    sizeof(struct in6_addr);
 
 	inet_ntop(nc->family, l3addr, l3addr_str, sizeof(l3addr_str));
 
@@ -152,8 +154,7 @@ neighbour_cache_learn(neighbour_cache_t *nc, const union in_addr_union *l3addr,
 
 	ipl = ke_spinlock_enter(&nc->lock);
 	TAILQ_FOREACH(n, &nc->entries, tqentry) {
-		if (memcmp(&n->l3addr, l3addr, sizeof(union in_addr_union)) ==
-		    0) {
+		if (memcmp(&n->l3addr, l3addr, l3addr_len) == 0) {
 			memcpy(&n->l2addr, l2addr, sizeof(struct ether_addr));
 			n->state = NUD_REACHABLE;
 			if (n->pending) {
@@ -176,7 +177,8 @@ neighbour_cache_learn(neighbour_cache_t *nc, const union in_addr_union *l3addr,
 		}
 		n->refcnt = 1;
 		n->state = NUD_REACHABLE;
-		memcpy(&n->l3addr, l3addr, sizeof(union in_addr_union));
+		memset(&n->l3addr, 0, sizeof(n->l3addr));
+		memcpy(&n->l3addr, l3addr, l3addr_len);
 		memcpy(&n->l2addr, l2addr, sizeof(struct ether_addr));
 		n->pending = NULL;
 		TAILQ_INSERT_HEAD(&nc->entries, n, tqentry);

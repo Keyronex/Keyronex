@@ -14,6 +14,7 @@
 #include <sys/dlpi.h>
 #include <sys/errno.h>
 #include <sys/ioctl.h>
+#include <sys/k_intr.h>
 #include <sys/k_thread.h>
 #include <sys/k_wait.h>
 #include <sys/kmem.h>
@@ -31,6 +32,8 @@
 #include <fs/devfs/devfs.h>
 #include <inet/ip.h>
 #include <inet/util.h>
+
+extern kspinlock_t ip_allif_lock;
 
 #define SIOCSIFNAMEBYMUXID 0x89A0
 
@@ -97,14 +100,19 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 	}
 
 	case SIOCSIFNAMEBYMUXID: {
+		ipl_t ipl;
 		ip_if_t *intf = ip_if_lookup_by_muxid(ifr->ifr_ifindex);
 		if (intf == NULL) {
 			mp->db->type = M_IOCNAK;
 			return str_qreply(wq, mp);
 		}
 
-		/* todo needs under allif_lock */
-		strncpy(intf->name, ifr->ifr_name, IF_NAMESIZE);
+		ipl = ke_spinlock_enter(&ip_allif_lock);
+		strncpy(intf->name, ifr->ifr_name, IF_NAMESIZE - 1);
+		intf->name[IF_NAMESIZE - 1] = '\0';
+		ke_spinlock_exit(&ip_allif_lock, ipl);
+		ip_if_release(intf);
+
 		mp->db->type = M_IOCACK;
 		return str_qreply(wq, mp);
 	}
@@ -184,10 +192,14 @@ ip_input(void *ptr, mblk_t *mp)
 
 	switch(ethertype) {
 	case ETHERTYPE_ARP:
-		return (void)kdprintf("ARP input unhandled yet\n");
+		kdprintf("ARP input unhandled yet\n");
+		str_freemsg(mp);
+		return;
 
 	case ETHERTYPE_IP:
-		return (void)kdprintf("IPv4 input unhandled yet\n");
+		kdprintf("IPv4 input unhandled yet\n");
+		str_freemsg(mp);
+		return;
 
 	case ETHERTYPE_IPV6:
 		return ipv6_input(ifp, mp);
