@@ -208,7 +208,7 @@ rtnl_getaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	ipl = ke_spinlock_enter(&ip_allif_lock);
 
 	TAILQ_FOREACH(ifp, &ip_allif, tqentry) {
-		TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
+		RCULIST_FOREACH(ifa, &ifp->addrs, rlentry) {
 			if (family != AF_UNSPEC &&
 			    ifa->addr.sa.sa_family != family)
 				continue;

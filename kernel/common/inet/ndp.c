@@ -29,7 +29,7 @@ ip_if_ipv6_source_select(ip_if_t *ifp)
 
 	kassert(ke_ipl() == IPL_DISP); /* i.e. an RCU read section */
 
-	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
+	RCULIST_FOREACH(ifa, &ifp->addrs, rlentry) {
 		if (ifa->addr.in6.sin6_family == AF_INET6) {
 			if (ifa->ipv6_state == IFADDR_TENTATIVE ||
 			    ifa->ipv6_state == IFADDR_DUPLICATED)
@@ -49,7 +49,7 @@ ip_if_lookup_v6addr_noretain(ip_if_t *ifp, const struct in6_addr *addr)
 
 	kassert(ke_ipl() == IPL_DISP); /* i.e. an RCU read section */
 
-	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
+	RCULIST_FOREACH(ifa, &ifp->addrs, rlentry) {
 		if (ifa->addr.sa.sa_family != AF_INET6)
 			continue;
 		if (memcmp(&ifa->addr.in6.sin6_addr, addr, sizeof(*addr)) == 0)

@@ -23,6 +23,7 @@
 #include <sys/k_wait.h>
 #include <sys/krx_atomic.h>
 #include <sys/queue.h>
+#include <sys/rcu_queue.h>
 
 #include <net/if.h>
 #include <netinet/if_ether.h>
@@ -55,7 +56,7 @@ typedef enum ipv6_ifaddr_state {
 } ipv6_ifaddr_state_t;
 
 typedef struct ip_ifaddr {
-	TAILQ_ENTRY(ip_ifaddr) tqentry;	/* should be RCU-friendly list */
+	RCULIST_ENTRY(ip_ifaddr) rlentry;
 	union sockaddr_union addr;
 	uint8_t prefixlen;
 
@@ -73,7 +74,7 @@ typedef struct ip_if {
 	char name[IFNAMSIZ];
 	uint8_t mac[ETH_ALEN];
 	int muxid; /* ifindex */
-	TAILQ_HEAD(, ip_ifaddr) addrs; /* should be RCU-friendly list */
+	RCULIST_HEAD(, ip_ifaddr) addrs;
 
 	neighbour_cache_t *neighbours_ipv4;
 	neighbour_cache_t *neighbours_ipv6;
@@ -81,7 +82,6 @@ typedef struct ip_if {
 	void *nic_data;
 	int (*nic_wput)(void *, struct msgb *);
 } ip_if_t;
-
 
 enum route_match {
 	ROUTE_MATCH_GATEWAY = 1U << 0,
@@ -148,8 +148,6 @@ void ip_if_release(ip_if_t *);
 
 int ip_if_output(ip_if_t *, struct msgb *, uint16_t ethertype,
     const struct ether_addr *);
-
-void ip_if_addr_iterate(ip_if_t *, void (*)(ip_ifaddr_t *, void *), void *ctx);
 
 neighbour_cache_t *neighbour_cache_new(ip_if_t *, sa_family_t);
 void neighbour_cache_learn(neighbour_cache_t *, const union in_addr_union *,

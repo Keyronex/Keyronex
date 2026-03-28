@@ -31,7 +31,7 @@ ip_if_new(uint8_t *mac)
 	ifp->muxid = -1;
 	ifp->name[0] = '\0';
 	memcpy(ifp->mac, mac, ETH_ALEN);
-	TAILQ_INIT(&ifp->addrs);
+	RCULIST_INIT(&ifp->addrs);
 
 	ifp->neighbours_ipv4 = neighbour_cache_new(ifp, AF_INET);
 	ifp->neighbours_ipv6 = neighbour_cache_new(ifp, AF_INET6);
@@ -94,17 +94,6 @@ ip_if_release(ip_if_t *ifp)
 		atomic_thread_fence(memory_order_acquire);
 		kdprintf("ip_if_release: todo free if %s\n", ifp->name);
 	}
-}
-
-void
-ip_if_addr_iterate(ip_if_t *ifp, void (*cb)(ip_ifaddr_t *, void *), void *ctx)
-{
-	ip_ifaddr_t *ifa;
-	ipl_t ipl;
-	ipl = ke_spinlock_enter(&ip_allif_lock);
-	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry)
-		cb(ifa, ctx);
-	ke_spinlock_exit(&ip_allif_lock, ipl);
 }
 
 int

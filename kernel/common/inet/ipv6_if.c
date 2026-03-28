@@ -60,7 +60,7 @@ ipv6_if_newaddr(ip_if_t *ifp, const struct in6_addr *addr, uint8_t prefixlen)
 	ifa->dad_probes_nsent = 0;
 
 	ipl = ke_spinlock_enter(&ip_allif_lock);
-	TAILQ_INSERT_TAIL(&ifp->addrs, ifa, tqentry);
+	RCULIST_INSERT_HEAD(&ifp->addrs, ifa, rlentry);
 	ke_spinlock_exit(&ip_allif_lock, ipl);
 
 	route_add_connected(&ifa->addr, ifa->prefixlen, ifp);

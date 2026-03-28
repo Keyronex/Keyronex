@@ -60,7 +60,7 @@ ipv6_input_is_for_us(ip_if_t *ifp, const struct in6_addr *dst)
 		return true;
 
 	/* all input processing is an RCU grace period */
-	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) { /* TODO RCU-friendly queue */
+	RCULIST_FOREACH(ifa, &ifp->addrs, rlentry) {
 		struct in6_addr solicited;
 
 		if (ifa->addr.sa.sa_family != AF_INET6)
