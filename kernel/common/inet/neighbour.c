@@ -96,7 +96,7 @@ neighbour_timer_dpc(void *arg1, void *arg2)
 
 	ke_spinlock_enter_nospl(&nc->lock);
 
-	if (n->callout.deadline >= ke_time()) {
+	if (n->callout.deadline > ke_time()) {
 		ke_spinlock_exit_nospl(&nc->lock);
 		return;	/* stale */
 	}

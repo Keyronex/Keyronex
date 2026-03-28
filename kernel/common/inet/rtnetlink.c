@@ -258,10 +258,8 @@ rtnl_newaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	struct ifaddrmsg *req_ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
 	struct ifa_attrs attrs;
 	ip_if_t *ifp;
-	ip_ifaddr_t *ifa;
 	const void *addr_src;
-	size_t alen;
-	ipl_t ipl;
+	int r;
 
 	if (req_ifa->ifa_family != AF_INET &&
 	    req_ifa->ifa_family != AF_INET6) {
@@ -285,37 +283,18 @@ rtnl_newaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 		return -ENODEV;
 	}
 
-	alen = (req_ifa->ifa_family == AF_INET) ?
-	    sizeof(struct in_addr) : sizeof(struct in6_addr);
-
-	/* new ifaddr */
-	ifa = kmem_alloc(sizeof(ip_ifaddr_t));
-	memset(ifa, 0, sizeof(*ifa));
-	ifa->prefixlen = req_ifa->ifa_prefixlen;
-	ifa->addr.sa.sa_family = req_ifa->ifa_family;
-
 	if (req_ifa->ifa_family == AF_INET) {
-		memcpy(&ifa->addr.in.sin_addr, addr_src, alen);
+		kdprintf("add IPv4 addr...");
+		r = 0;
+	} else if (req_ifa->ifa_family == AF_INET6) {
+		r = ipv6_if_newaddr(ifp, addr_src, req_ifa->ifa_prefixlen);
 	} else {
-		memcpy(&ifa->addr.in6.sin6_addr, addr_src, alen);
-		ifa->addr.in6.sin6_flowinfo = 0;
-		ifa->addr.in6.sin6_scope_id = req_ifa->ifa_index;
+		ktodo();
 	}
-
-	/*
-	 * want to extract some of this logic since we'll do it for link local
-	 * addresses too
-	 */
-
-	ipl = ke_spinlock_enter(&ip_allif_lock);
-	TAILQ_INSERT_TAIL(&ifp->addrs, ifa, tqentry);
-	ke_spinlock_exit(&ip_allif_lock, ipl);
-
-	route_add_connected(&ifa->addr, ifa->prefixlen, ifp);
 
 	ip_if_release(ifp);
 
-	nl_send_error(wq, nlh, 0);
+	nl_send_error(wq, nlh, r);
 	return 0;
 }
 

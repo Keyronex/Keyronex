@@ -66,9 +66,11 @@ ipv6_input_is_for_us(ip_if_t *ifp, const struct in6_addr *dst)
 		if (ifa->addr.sa.sa_family != AF_INET6)
 			continue;
 
-		/* TODO: ignore deprecated, tentative? */
+		if (ifa->ipv6_state == IFADDR_DUPLICATED)
+			continue;
 
-		if (ipv6_addr_equal(&ifa->addr.in6.sin6_addr, dst))
+		if (ifa->ipv6_state != IFADDR_TENTATIVE &&
+		    ipv6_addr_equal(&ifa->addr.in6.sin6_addr, dst))
 			return true;
 
 		solicited = ipv6_solicited_node_mc(&ifa->addr.in6.sin6_addr);

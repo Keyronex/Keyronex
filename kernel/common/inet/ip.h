@@ -19,6 +19,8 @@
 #ifndef ECX_INET_IP_H
 #define ECX_INET_IP_H
 
+#include <sys/k_intr.h>
+#include <sys/k_wait.h>
 #include <sys/krx_atomic.h>
 #include <sys/queue.h>
 
@@ -45,10 +47,24 @@ union sockaddr_union {
 
 typedef struct neighbour_cache neighbour_cache_t;
 
+typedef enum ipv6_ifaddr_state {
+	IFADDR_TENTATIVE,
+	IFADDR_PREFERRED,
+	IFADDR_DEPRECATED,
+	IFADDR_DUPLICATED
+} ipv6_ifaddr_state_t;
+
 typedef struct ip_ifaddr {
-	TAILQ_ENTRY(ip_ifaddr) tqentry; /* should be RCU-friendly list */
+	TAILQ_ENTRY(ip_ifaddr) tqentry;	/* should be RCU-friendly list */
 	union sockaddr_union addr;
 	uint8_t prefixlen;
+
+	/* these may be worth extracting into an ifaddr_ipv6 */
+	ipv6_ifaddr_state_t ipv6_state;
+	kcallout_t dad_callout;
+	kdpc_t dad_dpc;
+	uint8_t dad_probes_nsent;
+	/* linkage in a global list of IPv6 addresses could go here? */
 } ip_ifaddr_t;
 
 typedef struct ip_if {
@@ -118,6 +134,9 @@ typedef struct ip_rxattr {
 		const struct ip6_hdr *ip6;
 		const struct ip *ip4;
 	} l3hdr;
+	union {
+		ip_ifaddr_t *ifa;
+	} ifa;
 } ip_rxattr_t;
 
 ip_if_t *ip_if_new(uint8_t *mac);
@@ -157,7 +176,12 @@ int route_lookup(const union sockaddr_union *dst, route_result_t *out,
     bool retain_ifp);
 
 void icmpv6_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+
 void ndp_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+void ndp_solicit_dad(ip_if_t *, const struct in6_addr *);
+
+int ipv6_if_newaddr(ip_if_t *, const struct in6_addr *, uint8_t prefixlen);
+void ipv6_ifaddr_dad_fail(ip_ifaddr_t *);
 
 int ipv6_output(struct msgb *);
 
@@ -165,9 +189,9 @@ uint16_t ip_icmp6_checksum(const struct in6_addr *src,
     const struct in6_addr *dst, const void *payload, size_t payload_len);
 
 /* currently missing from mlibc */
-#define ip6_flow  ip6_ctlun.ip6_un1.ip6_un1_flow
-#define ip6_plen  ip6_ctlun.ip6_un1.ip6_un1_plen
-#define ip6_hlim  ip6_ctlun.ip6_un1.ip6_un1_hlim
-#define ip6_hops  ip6_ctlun.ip6_un1.ip6_un1_hlim
+#define ip6_flow	ip6_ctlun.ip6_un1.ip6_un1_flow
+#define ip6_plen	ip6_ctlun.ip6_un1.ip6_un1_plen
+#define ip6_hlim	ip6_ctlun.ip6_un1.ip6_un1_hlim
+#define ip6_hops	ip6_ctlun.ip6_un1.ip6_un1_hlim
 
 #endif /* ECX_INET_IP_H */

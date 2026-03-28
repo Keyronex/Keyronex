@@ -29,28 +29,34 @@ ip_if_ipv6_source_select(ip_if_t *ifp)
 
 	kassert(ke_ipl() == IPL_DISP); /* i.e. an RCU read section */
 
-	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry)
-		if (ifa->addr.in6.sin6_family == AF_INET6)
+	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
+		if (ifa->addr.in6.sin6_family == AF_INET6) {
+			if (ifa->ipv6_state == IFADDR_TENTATIVE ||
+			    ifa->ipv6_state == IFADDR_DUPLICATED)
+				continue;
+
 			break;
+		}
+	}
 
 	return ifa;
 }
 
-bool
-ip_if_has_v6addr(ip_if_t *ifp, const struct in6_addr *addr)
+static ip_ifaddr_t *
+ip_if_lookup_v6addr_noretain(ip_if_t *ifp, const struct in6_addr *addr)
 {
 	ip_ifaddr_t *ifa;
 
 	kassert(ke_ipl() == IPL_DISP); /* i.e. an RCU read section */
 
 	TAILQ_FOREACH(ifa, &ifp->addrs, tqentry) {
-		if (ifa->addr.in6.sin6_family == AF_INET6 &&
-		    memcmp(&ifa->addr.in6.sin6_addr, addr,
-			sizeof(struct in6_addr)) == 0)
-			return true;
+		if (ifa->addr.sa.sa_family != AF_INET6)
+			continue;
+		if (memcmp(&ifa->addr.in6.sin6_addr, addr, sizeof(*addr)) == 0)
+			return ifa;
 	}
 
-	return false;
+	return NULL;
 }
 
 /*
@@ -108,6 +114,38 @@ ip_icmp6_checksum(const struct in6_addr *src, const struct in6_addr *dst,
 	if ((payload_len & 1U) != 0)
 		sum += (uint32_t)bytes[payload_len - 1] << 8;
 	return checksum_fold(sum);
+}
+
+void
+ndp_solicit_dad(ip_if_t *ifp, const struct in6_addr *tentative)
+{
+	struct {
+		struct ip6_hdr ip6;
+		struct nd_neighbor_solicit ns;
+	} pkt;
+	struct ether_addr dst_l2 = { { 0x33, 0x33, 0xff, tentative->s6_addr[13],
+	    tentative->s6_addr[14], tentative->s6_addr[15] } };
+	mblk_t *mp;
+
+	mp = str_allocb(sizeof(pkt) + sizeof(struct ether_header));
+	mp->rptr += sizeof(struct ether_header);
+	mp->wptr = mp->rptr + sizeof(pkt);
+
+	memset(&pkt, 0, sizeof(pkt));
+	pkt.ip6.ip6_flow = htonl((uint32_t)6 << 28);
+	pkt.ip6.ip6_hlim = 255;
+	pkt.ip6.ip6_nxt = IPPROTO_ICMPV6;
+	pkt.ip6.ip6_plen = htons(sizeof(pkt.ns));
+	pkt.ip6.ip6_dst = ipv6_solicited_node_mc(tentative);
+	/* no src assignment, stays 0s [::] */
+	pkt.ns.nd_ns_type = ND_NEIGHBOR_SOLICIT;
+	pkt.ns.nd_ns_target = *tentative;
+	pkt.ns.nd_ns_hdr.icmp6_cksum = htons(ip_icmp6_checksum(&pkt.ip6.ip6_src,
+	    &pkt.ip6.ip6_dst, &pkt.ns, sizeof(pkt.ns)));
+
+	memcpy(mp->rptr, &pkt, sizeof(pkt));
+
+	ip_if_output(ifp, mp, ETHERTYPE_IPV6, &dst_l2);
 }
 
 void
@@ -284,6 +322,7 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	struct ether_addr dst_l2;
 	struct in6_addr src;
 	struct in6_addr dst;
+	ip_ifaddr_t *ifa;
 
 	len = mp->wptr - mp->rptr;
 
@@ -294,12 +333,34 @@ ndp_input_neighbor_solicit(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	}
 
 	ns = (typeof(ns))icmp6;
-	if (!ip_if_has_v6addr(ifp, &ns->nd_ns_target)) {
+
+	ifa = ip_if_lookup_v6addr_noretain(ifp, &ns->nd_ns_target);
+	if (ifa == NULL) {
 		str_freemsg(mp);
 		return;
 	}
 
 	src = attr->l3hdr.ip6->ip6_src;
+
+	/*
+	 * c.f. RFC 4862 5.4.3:
+	 * - if target address is not tentative, do as RFC 4861
+	 * - if target address tentative, and source address unicast; silently
+	 *   ignore.
+	 * - if source address is unspecified, and from another node, then
+	 *   DAD fails (unless from ourselves - loopback for instance)
+	 * -
+	 */
+	if (ifa->ipv6_state == IFADDR_TENTATIVE) {
+		if (!IN6_IS_ADDR_UNSPECIFIED(&src)) {
+			str_freemsg(mp);
+			return;
+		}
+
+		ipv6_ifaddr_dad_fail(ifa);
+		str_freemsg(mp);
+		return;
+	}
 
 	optp = (const uint8_t *)(ns + 1);
 	optlen = len - sizeof(*ns);
@@ -345,6 +406,7 @@ ndp_input_neighbor_advert(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	const uint8_t *optp;
 	size_t len, optlen;
 	const struct ether_addr *tgt_l2addr = NULL;
+	ip_ifaddr_t *ifa;
 	bool solicited;
 
 	len = mp->wptr - mp->rptr;
@@ -356,6 +418,13 @@ ndp_input_neighbor_advert(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr,
 	}
 
 	na = (typeof(na))icmp6;
+
+	ifa = ip_if_lookup_v6addr_noretain(ifp, &na->nd_na_target);
+	if (ifa != NULL && ifa->ipv6_state == IFADDR_TENTATIVE) {
+		ipv6_ifaddr_dad_fail(ifa);
+		str_freemsg(mp);
+		return;
+	}
 
 	optp = (const uint8_t *)(na + 1);
 	optlen = len - sizeof(*na);
