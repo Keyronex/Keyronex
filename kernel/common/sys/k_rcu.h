@@ -32,13 +32,13 @@ void ke_rcu_synchronise(void);
 
 /*! void ke_rcu_assign_pointer(T KRX_RCU *ptr, T value) */
 #define ke_rcu_assign_pointer(PTR, VAL) \
-	__atomic_store_n(&(PTR), VAL, __ATOMIC_RELEASE);
+	__atomic_store_n(PTR, VAL, __ATOMIC_RELEASE);
 
 /*! T *ke_rcu_dereference(T KRX_RCU *ptr) */
-#define ke_rcu_dereference(PTR) __atomic_load_n(&(PTR), __ATOMIC_CONSUME);
+#define ke_rcu_dereference(PTR) __atomic_load_n(PTR, __ATOMIC_CONSUME);
 
 /*! T ke_rcu_exchange_pointer(T KRX_RCU *ptr, T value) */
 #define ke_rcu_exchange_pointer(PTR, VAL) \
-	__atomic_exchange_n(&(PTR), VAL, __ATOMIC_ACQ_REL);
+	__atomic_exchange_n(PTR, VAL, __ATOMIC_ACQ_REL);
 
 #endif /* ECX_SYS_RCU_H */
