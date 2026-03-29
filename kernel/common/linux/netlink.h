@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #define NETLINK_ROUTE 0
+#define NETLINK_GENERIC 16
 
 struct sockaddr_nl {
 	uint8_t		nl_len;
@@ -57,7 +58,7 @@ struct nlmsgerr {
 	struct	nlmsghdr msg;
 };
 
-#define NLMSG_ALIGNTO		4
+#define NLMSG_ALIGNTO		4U
 #define NLMSG_ALIGN(len) \
     (((len) + NLMSG_ALIGNTO - 1) & ~(NLMSG_ALIGNTO - 1))
 #define NLMSG_HDRLEN \
