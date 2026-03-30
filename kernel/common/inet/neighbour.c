@@ -47,19 +47,12 @@
 #define NUD_MAX_MCAST_SOLICIT	3		/* MAX_MULTICAST_SOLICIT */
 #define NUD_MAX_UCAST_SOLICIT	3		/* MAX_UNICAST_SOLICIT */
 
-typedef enum ndm_state {
-	NUD_INCOMPLETE,	/* resolving in progress, await NA */
-	NUD_REACHABLE,	/* confirmed reachable recently */
-	NUD_STALE,	/* possibly stale, but no traffic sent since */
-	NUD_DELAY,	/* wait before probing */
-	NUD_PROBE,	/* unicast NS sent to verify reachability */
-	NUD_FAILED,	/* unreachable; drop outgoing traffic */
-} ndm_state_t;
+typedef enum nud_state nud_state_t;
 
 typedef struct neighbour {
 	TAILQ_ENTRY(neighbour) tqentry;
 	atomic_uint	refcnt;
-	ndm_state_t	state;
+	nud_state_t	state;
 	struct ether_addr l2addr;
 	union in_addr_union l3addr;
 	mblk_t		*pending;   /* as BSD, one queued packet */

@@ -16,8 +16,6 @@
 #ifndef ECX_SYS_RCU_QUEUE_H
 #define ECX_SYS_RCU_QUEUE_H
 
-#include <stdatomic.h>
-
 #include <sys/k_rcu.h>
 
 #define _RCU(type) type

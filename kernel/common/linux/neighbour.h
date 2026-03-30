@@ -18,6 +18,7 @@ enum nud_state {
 	NUD_REACHABLE = 0x02,
 	NUD_STALE = 0x04,
 	NUD_DELAY = 0x08,
+	NUD_PROBE = 0x10,
 	NUD_FAILED = 0x20,
 };
 

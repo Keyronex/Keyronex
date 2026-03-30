@@ -62,6 +62,7 @@ void ke_arch_enable(bool);
 
 void ke_dpc_init(kdpc_t *, void (*)(void *, void *), void *arg1, void *arg2);
 void ke_dpc_schedule(kdpc_t *);
+void ke_dpc_cancel(kdpc_t *);
 
 void ke_raise_disp_int(void);
 

@@ -173,6 +173,10 @@ int route_add_connected(const union sockaddr_union *prefix, uint8_t prefixlen,
 int route_lookup(const union sockaddr_union *dst, route_result_t *out,
     bool retain_ifp);
 
+void arp_input(ip_if_t *, struct msgb *);
+
+int ipv4_if_newaddr(ip_if_t *, const struct in_addr *, uint8_t prefixlen);
+
 void icmpv6_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
 
 void ndp_input(ip_if_t *, struct msgb *, ip_rxattr_t *);

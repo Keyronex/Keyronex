@@ -284,8 +284,7 @@ rtnl_newaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	}
 
 	if (req_ifa->ifa_family == AF_INET) {
-		kdprintf("add IPv4 addr...");
-		r = 0;
+		r = ipv4_if_newaddr(ifp, addr_src, req_ifa->ifa_prefixlen);
 	} else if (req_ifa->ifa_family == AF_INET6) {
 		r = ipv6_if_newaddr(ifp, addr_src, req_ifa->ifa_prefixlen);
 	} else {

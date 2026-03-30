@@ -33,6 +33,10 @@ struct ninep_node {
 	vnode_t *vnode;
 	krwlock_t rwlock, paging_rwlock;
 	vattr_t vattr;
+
+#if 1
+	char *name;
+#endif
 };
 
 struct ninepfs_state {
@@ -178,8 +182,6 @@ fid_clone(struct ninepfs_state *fs, ninep_fid_t fid, ninep_fid_t new_fid)
 	case k9pLerror + 1: {
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
-		kdprintf("Failed to clone node id: %d\n", err);
-		kassert(err != 0);
 		r = -err;
 		break;
 	}
@@ -211,7 +213,8 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	new_fid = fid_allocate(fs);
 
 	r = fid_clone(fs, node->fid, new_fid);
-	kassert(r == 0);
+	if (r != 0)
+		kfatal("Failed to clone fid (%s) for paging: %d\n", node->name, r);
 
 	/* size[4] Tlopen tag[2] fid[4] flags[4] */
 	buf_in = ninep_buf_alloc("Fd");
@@ -413,6 +416,8 @@ ninep_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 		if (r == 1) {
 			/* todo: clunk the new_fid - don't need it!! */
 			r = 0;
+		} else if (r == 0) {
+			node->name = kmem_strdup(name);
 		} else if (r < 0) {
 			kfatal("node_for_qid failed?\n");
 		}
@@ -1050,7 +1055,9 @@ ninep_dispatch_iop(vnode_t *, iop_t *iop)
 
 	if (node->paging_fid == 0) {
 		int r = node_make_paging_fid(m_state, node);
-		kassert(r == 0);
+		if (r != 0)
+			kfatal("9pfs: (%s) failed to make paging FID: %d\n",
+			    node->name, r);
 	}
 
 	/* size[4] Tread tag[2] fid[4] offset[8] count[4] */
