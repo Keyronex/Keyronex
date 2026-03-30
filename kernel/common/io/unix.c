@@ -1002,3 +1002,41 @@ ux_wput(queue_t *wq, mblk_t *mp)
 		ktodo();
 	}
 }
+
+int
+ux_socketpair_connect(queue_t *rq1, queue_t *rq2)
+{
+	ux_endp_t *ep1 = rq1->ptr;
+	ux_endp_t *ep2 = rq2->ptr;
+	int r;
+
+	r = ux_preallocate_conn_mps(ep1);
+	if (r < 0)
+		return r;
+	r = ux_preallocate_conn_mps(ep2);
+	if (r < 0)
+		return r;
+
+	ux_lock_two_eps(ep1, ep2, "ux_socketpair_connect");
+
+	if (ep1->state != UX_UNBOUND || ep2->state != UX_UNBOUND) {
+		ke_mutex_exit(&ep1->lock);
+		ke_mutex_exit(&ep2->lock);
+		return -EINVAL;
+	}
+
+	/* manually peer them */
+	ep_retain(ep1); /* ep2's ref on ep1 */
+	ep_retain(ep2); /* ep1's ref on ep2 */
+
+	ep1->peer = ep2;
+	ep2->peer = ep1;
+
+	ep1->state = UX_CONNECTED;
+	ep2->state = UX_CONNECTED;
+
+	ke_mutex_exit(&ep1->lock);
+	ke_mutex_exit(&ep2->lock);
+
+	return 0;
+}

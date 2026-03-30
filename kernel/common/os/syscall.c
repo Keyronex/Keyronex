@@ -31,6 +31,7 @@ int sys_futex_wait(int *u_pointer, int expected,
 int sys_futex_wake(int *u_pointer, int count);
 
 int sys_socket(int domain, int type, int protocol);
+int sys_socketpair(int domain, int type, int protocol, int sv[2]);
 int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
     int flags);
 int sys_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
@@ -289,6 +290,10 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 
 	case SYS_socket:
 		return sys_socket((int)arg1, (int)arg2, (int)arg3);
+
+	case SYS_socketpair:
+		return sys_socketpair((int)arg1, (int)arg2, (int)arg3,
+		    (int *)arg4);
 
 	case SYS_accept4:
 		return sys_accept4((int)arg1, (struct sockaddr *)arg2,

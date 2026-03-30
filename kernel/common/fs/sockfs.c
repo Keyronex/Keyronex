@@ -86,6 +86,8 @@ static int sock_write(vnode_t *, const void *buf, size_t buflen, off_t,
 static int sock_ioctl(vnode_t *, unsigned long cmd, void *arg);
 static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 
+int ux_socketpair_connect(queue_t *rq1, queue_t *rq2);
+
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
 extern struct streamtab tcp_streamtab;
 extern struct streamtab udp_ipv4_streamtab, udp_ipv6_streamtab,
@@ -136,7 +138,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			break;
 
 		case SOCK_DGRAM:
-			return -EPROTONOSUPPORT;
+			streamtab = &ux_clts_streamtab;
 			break;
 
 		default:
@@ -1102,6 +1104,11 @@ sys_socket(int domain, int type, int protocol)
 	file_t *fp;
 	int fd, r;
 
+	/* only socketpair()'d SOCK_DGRAM is supported yet */
+	if (domain == AF_UNIX &&
+	    (type & (SOCK_STREAM | SOCK_SEQPACKET | SOCK_DGRAM)) != SOCK_STREAM)
+		return -ESOCKTNOSUPPORT;
+
 	fd = uf_reserve_fd(curproc()->finfo, 0,
 	    (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0);
 	if (fd < 0)
@@ -1306,4 +1313,67 @@ sys_shutdown(int sockfd, int how)
 	    VTOSN(fp->vnode));
 	file_release(fp);
 	return r;
+}
+
+int
+sys_socketpair(int domain, int type, int protocol, int sv[2])
+{
+	file_t *fp1 = NULL, *fp2 = NULL;
+	struct socknode *sn1, *sn2;
+	int fd[2], r;
+
+	if (domain != AF_UNIX)
+		return -EOPNOTSUPP;
+
+	r = so_create(&fp1, &sn1, domain, type, protocol);
+	if (r < 0)
+		return r;
+
+	r = so_create(&fp2, &sn2, domain, type, protocol);
+	if (r < 0) {
+		file_release(fp1);
+		return r;
+	}
+
+	r = ux_socketpair_connect(sn1->stream->rq_bottom,
+	    sn2->stream->rq_bottom);
+	if (r < 0) {
+		file_release(fp2);
+		file_release(fp1);
+		return r;
+	}
+
+	sn1->state = SS_ISCONNECTED;
+	sn2->state = SS_ISCONNECTED;
+
+	fd[0] = uf_reserve_fd(curproc()->finfo, 0,
+	    (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0);
+	if (fd[0] < 0) {
+		file_release(fp2);
+		file_release(fp1);
+		return fd[0];
+	}
+
+	fd[1] = uf_reserve_fd(curproc()->finfo, 0,
+	    (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0);
+	if (fd[1] < 0) {
+		uf_unreserve_fd(curproc()->finfo, fd[0]);
+		file_release(fp2);
+		file_release(fp1);
+		return fd[1];
+	}
+
+	r = memcpy_to_user(sv, fd, sizeof(fd));
+	if (r != 0) {
+		uf_unreserve_fd(curproc()->finfo, fd[0]);
+		uf_unreserve_fd(curproc()->finfo, fd[1]);
+		file_release(fp1);
+		file_release(fp2);
+		return -EFAULT;
+	}
+
+	uf_install_reserved(curproc()->finfo, fd[0], fp1);
+	uf_install_reserved(curproc()->finfo, fd[1], fp2);
+
+	return 0;
 }
