@@ -30,7 +30,8 @@ enum T_prim {
 	T_CONN_REQ = 0,		/* connection request */
 	T_CONN_RES = 1,		/* connection response*/
 	T_BIND_REQ = 6,		/* bind request */
-	T_UNITDATA_REQ = 9,	/* unit data request */
+	T_UNITDATA_REQ = 8,	/* unit data request */
+	T_OPTMGMT_REQ = 9,
 	T_ORDREL_REQ = 10,	/* orderly-release request */
 
 	T_CONN_IND = 11,	/* connection indication */
@@ -41,12 +42,12 @@ enum T_prim {
 	T_ERROR_ACK = 18,	/* error acknowledgement */
 	T_OK_ACK = 19,		/* success acknowledge */
 	T_UNITDATA_IND = 20,	/* unit data indication */
-
-
+	T_OPTMGMT_ACK = 22,
 	T_ORDREL_IND = 23,	/* orderly-release indication */
 
 	T_ADDR_REQ = 24,	/* get local/peer address request */
 	T_ADDR_ACK = 25,	/* get local/peer address acknowledgment */
+
 };
 
 /*
@@ -151,6 +152,18 @@ struct T_ordrel_ind {
 };
 
 /*
+ * @brief Options Management Request
+ *
+ * User-originated. Sets or gets socket options.
+ */
+struct T_optmgmt_req {
+	enum T_prim  PRIM_type;
+	size_t OPT_length;
+	size_t OPT_offset;
+	size_t MGMT_flags;
+};
+
+/*
  * provider-originated
  */
 
@@ -213,6 +226,18 @@ struct T_unitdata_ind {
 	struct sockaddr_storage SRC;
 };
 
+/*
+ * @brief Options Management Acknowledgement
+ *
+ * Provider-originated. Acknowledges an options management request.
+ */
+struct T_optmgmt_ack {
+	enum T_prim  PRIM_type;
+	size_t OPT_length;
+	size_t OPT_offset;
+	size_t MGMT_flags;
+};
+
 
 /* @brief Union of all TI primitives */
 union T_primitives {
@@ -222,6 +247,7 @@ union T_primitives {
 	struct T_conn_res conn_res;
 	struct T_addr_req addr_req;
 	struct T_unitdata_req unitdata_req;
+	struct T_optmgmt_req optmgmt_req;
 	struct T_conn_ind conn_ind;
 	struct T_conn_con conn_con;
 	struct T_addr_ack addr_ack;
@@ -229,7 +255,21 @@ union T_primitives {
 	struct T_error_ack error_ack;
 	struct T_ok_ack ok_ack;
 	struct T_unitdata_ind unitdata_ind;
+	struct T_optmgmt_ack optmgmt_ack;
 };
+
+#define T_NEGOTIATE 0x004
+#define T_CHECK 0x008
+
+struct opthdr {
+	size_t level;
+	size_t name;
+	size_t len;
+};
+
+#define OPTLEN(x) ((((x) + sizeof(size_t) - 1) / \
+    sizeof(size_t)) * sizeof(size_t))
+#define OPTVAL(opt) ((char *)(opt + 1))
 
 
 #endif /* ECX_SYS_TIHDR_H */

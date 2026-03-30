@@ -309,6 +309,7 @@ sockmod_rput(queue_t *rq, mblk_t *mp)
 	case T_ADDR_ACK:
 	case T_OK_ACK:
 	case T_ERROR_ACK:
+	case T_OPTMGMT_ACK:
 		kassert(sn->tpi_ack_mp == NULL);
 		sn->tpi_ack_mp = mp;
 		ke_event_set_signalled(&sn->tpi_ack_ev, true);
@@ -393,6 +394,7 @@ sock_tpi_errno(mblk_t *mp)
 	case T_BIND_ACK:
 	case T_ADDR_ACK:
 	case T_OK_ACK:
+	case T_OPTMGMT_ACK:
 		return 0;
 
 	case T_ERROR_ACK:
@@ -951,6 +953,54 @@ so_getpeername(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	return copyout_sockaddr(&raddr, rlen, addr, addrlen);
 }
 
+static int
+so_setsockopt(struct socknode *sn, int level, int optname, const void *optval,
+    socklen_t optlen)
+{
+	mblk_t *mp;
+	struct T_optmgmt_req *req;
+	struct opthdr *opt;
+	int r, total_len;
+
+	total_len = sizeof(struct T_optmgmt_req) + sizeof(struct opthdr) + OPTLEN(optlen);
+	mp = str_allocb(total_len);
+	if (mp == NULL)
+		return -ENOMEM;
+
+	mp->db->type = M_PROTO;
+	req = (struct T_optmgmt_req *)mp->wptr;
+	req->PRIM_type = T_OPTMGMT_REQ;
+	req->OPT_length = sizeof(struct opthdr) + OPTLEN(optlen);
+	req->OPT_offset = sizeof(struct T_optmgmt_req);
+	req->MGMT_flags = T_NEGOTIATE;
+
+	opt = (struct opthdr *)(mp->wptr + req->OPT_offset);
+	opt->level = level;
+	opt->name = optname;
+	opt->len = optlen;
+
+	/*
+	 * TODO: more sophisticated memcpy_from_user neded!
+	 * what about, for instance, bpf where there's a second order pointer?
+	 */
+
+	r = memcpy_from_user(OPTVAL(opt), optval, optlen);
+	if (r != 0) {
+		str_freemsg(mp);
+		return -EFAULT;
+	}
+
+	mp->wptr += total_len;
+
+	str_req_begin(sn->stream);
+	mp = sock_tpi_request(sn, mp);
+	r = sock_tpi_errno(mp);
+	str_req_end(sn->stream);
+
+	str_freemsg(mp);
+
+	return r ? -r : 0;
+}
 
 /*
  * vnode ops
@@ -1143,10 +1193,16 @@ int
 sys_setsockopt(int sockfd, int level, int optname, const void *optval,
     socklen_t optlen)
 {
+	file_t *fp;
+	int r = lookup_sockfd(sockfd, &fp);
+	if (r < 0)
+		return r;
 	kdprintf("sys_setsockopt(sockfd=%d, level=0x%d, optname=0x%d, "
 	    " optval=%p, optlen=0x%u)\n", sockfd, level, optname, optval,
 	    optlen);
-	return -ENOSYS;
+	r = so_setsockopt(VTOSN(fp->vnode), level, optname, optval, optlen);
+	file_release(fp);
+	return r;
 }
 
 int

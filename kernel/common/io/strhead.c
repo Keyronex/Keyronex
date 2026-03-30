@@ -28,6 +28,7 @@
 #include <net/if.h>
 
 #include <fs/devfs/devfs.h>
+#include <linux/filter.h>
 #include <linux/sockios.h>
 
 static int do_unlink(stdata_t *upper_sh, int index);
@@ -1064,6 +1065,13 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCSIFNAMEBYMUXID:
 		in_size = sizeof(struct ifreq);
 		break;
+
+	case SO_ATTACH_FILTER:
+		in_size = sizeof(struct sock_fprog);
+		break;
+
+	case SO_LOCK_FILTER:
+		return 0;
 
 	default:
 		kfatal("str_ioctl: unhandled ioctl %lu/0x%x\n", cmd, cmd);
