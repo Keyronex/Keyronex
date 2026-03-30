@@ -28,6 +28,7 @@
 #include <net/if.h>
 
 #include <fs/devfs/devfs.h>
+#include <linux/sockios.h>
 
 static int do_unlink(stdata_t *upper_sh, int index);
 
@@ -1046,9 +1047,13 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCGIFNETMASK:
 	case SIOCGIFNAME:
 	case SIOCGIFINDEX:
+	case SIOCGIFMTU:
 		in_size = sizeof(struct ifreq);
 		out_size = sizeof(struct ifreq);
 		break;
+
+	case SIOCGIFVLAN:
+		return -EINVAL;
 
 	case SIOCSIFFLAGS:
 	case SIOCSIFADDR:

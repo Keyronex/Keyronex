@@ -33,6 +33,8 @@ ip_if_new(uint8_t *mac)
 	memcpy(ifp->mac, mac, ETH_ALEN);
 	RCULIST_INIT(&ifp->addrs);
 
+	RCULIST_INIT(&ifp->bpf_listeners);
+
 	ifp->neighbours_ipv4 = neighbour_cache_new(ifp, AF_INET);
 	ifp->neighbours_ipv6 = neighbour_cache_new(ifp, AF_INET6);
 
@@ -94,6 +96,15 @@ ip_if_release(ip_if_t *ifp)
 		atomic_thread_fence(memory_order_acquire);
 		kdprintf("ip_if_release: todo free if %s\n", ifp->name);
 	}
+}
+
+int
+ip_if_bpf_attach(ip_if_t *ifp, bpf_listener_t *listener)
+{
+	ipl_t ipl = ke_spinlock_enter(&ip_allif_lock);
+	RCULIST_INSERT_HEAD(&ifp->bpf_listeners, listener, rlentry);
+	ke_spinlock_exit(&ip_allif_lock, ipl);
+	return 0;
 }
 
 int

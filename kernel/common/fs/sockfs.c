@@ -88,7 +88,9 @@ static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
 extern struct streamtab tcp_streamtab;
-extern struct streamtab udp_ipv4_streamtab, udp_ipv6_streamtab;
+extern struct streamtab udp_ipv4_streamtab, udp_ipv6_streamtab,
+    raw_ipv4_streamtab, raw_ipv6_streamtab;
+extern struct streamtab packet_streamtab;
 extern struct streamtab nl_streamtab;
 
 static struct qinit sock_rinit = {
@@ -153,6 +155,10 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			streamtab = &udp_ipv4_streamtab;
 			break;
 
+		case SOCK_RAW:
+			streamtab = &raw_ipv4_streamtab;
+			break;
+
 		default:
 			kfatal("unexpected AF_INET type %d (0x%x)\n", type,
 			    type);
@@ -163,6 +169,10 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		switch (type) {
 		case SOCK_DGRAM:
 			streamtab = &udp_ipv6_streamtab;
+			break;
+
+		case SOCK_RAW:
+			streamtab = &raw_ipv6_streamtab;
 			break;
 
 		default:
@@ -180,6 +190,22 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 
 		default:
 			return -ESOCKTNOSUPPORT;
+		}
+		break;
+
+	case AF_PACKET:
+		switch(type) {
+			case SOCK_STREAM:
+				return -ESOCKTNOSUPPORT;
+
+			case SOCK_DGRAM:
+				kdprintf("note: AF_PACKET/SOCK_DGRAM "
+				    "not yet supported\n");
+				return -ESOCKTNOSUPPORT;
+
+			case SOCK_RAW:
+				streamtab = &packet_streamtab;
+				break;
 		}
 		break;
 
@@ -968,9 +994,10 @@ sock_write(vnode_t *vn, const void *buf, size_t buflen, off_t, int flags)
 }
 
 static int
-sock_ioctl(vnode_t *, unsigned long cmd, void *arg)
+sock_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 {
-	ktodo();
+	struct socknode *sn = VTOSN(vn);
+	return strioctl(vn, sn->stream, cmd, arg);
 }
 
 static int

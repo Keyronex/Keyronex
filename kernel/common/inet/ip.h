@@ -55,6 +55,11 @@ typedef enum ipv6_ifaddr_state {
 	IFADDR_DUPLICATED
 } ipv6_ifaddr_state_t;
 
+typedef struct bpf_listener {
+	RCULIST_ENTRY(bpf_listener) rlentry;
+	kspinlock_t lock;
+} bpf_listener_t;
+
 typedef struct ip_ifaddr {
 	RCULIST_ENTRY(ip_ifaddr) rlentry;
 	union sockaddr_union addr;
@@ -75,6 +80,8 @@ typedef struct ip_if {
 	uint8_t mac[ETH_ALEN];
 	int muxid; /* ifindex */
 	RCULIST_HEAD(, ip_ifaddr) addrs;
+
+	RCULIST_HEAD(, bpf_listener) bpf_listeners;
 
 	neighbour_cache_t *neighbours_ipv4;
 	neighbour_cache_t *neighbours_ipv6;
@@ -146,6 +153,8 @@ ip_if_t *ip_if_lookup_by_name(const char *);
 ip_if_t *ip_if_retain(ip_if_t *ifp);
 void ip_if_release(ip_if_t *);
 
+int ip_if_bpf_attach(ip_if_t *, bpf_listener_t *);
+
 int ip_if_output(ip_if_t *, struct msgb *, uint16_t ethertype,
     const struct ether_addr *);
 
@@ -173,6 +182,8 @@ int route_add_connected(const union sockaddr_union *prefix, uint8_t prefixlen,
 int route_lookup(const union sockaddr_union *dst, route_result_t *out,
     bool retain_ifp);
 
+void bpf_input(bpf_listener_t *, struct msgb *);
+
 void arp_input(ip_if_t *, struct msgb *);
 
 int ipv4_if_newaddr(ip_if_t *, const struct in_addr *, uint8_t prefixlen);
@@ -189,6 +200,8 @@ int ipv6_output(struct msgb *);
 
 uint16_t ip_icmp6_checksum(const struct in6_addr *src,
     const struct in6_addr *dst, const void *payload, size_t payload_len);
+
+void ip_uwput_ioctl_sgif(struct queue *, struct msgb *);
 
 /* currently missing from mlibc */
 #define ip6_flow	ip6_ctlun.ip6_un1.ip6_un1_flow

@@ -150,11 +150,16 @@ enum ifa_type {
 	IFA_UNSPEC,
 	IFA_ADDRESS = 1,
 	IFA_LOCAL = 2,
-	IFA_BROADCAST = 3,
+	IFA_LABEL = 3,
+	IFA_BROADCAST = 4,
 	IFA_CACHEINFO = 6,
 	__IFA_MAX,
 };
 #define IFA_MAX ((enum ifa_type)(__IFA_MAX - 1))
+
+#define IFA_RTA(i) \
+    ((struct rtattr *)(((char *)(i)) + NLMSG_ALIGN(sizeof(struct ifaddrmsg))))
+#define IFA_PAYLOAD(n) NLMSG_PAYLOAD((n), sizeof(struct ifaddrmsg))
 
 struct ifinfomsg {
 	unsigned char	ifi_family;	/* unused */
@@ -167,14 +172,19 @@ struct ifinfomsg {
 
 enum {
 	IFLA_ADDRESS = 1,
+	IFLA_BROADCAST = 2,
 	IFLA_IFNAME = 3,
 	IFLA_MASTER = 10,
 	__IFLA_MAX,
 };
 #define IFLA_MAX (__IFLA_MAX - 1)
 
-#define IFA_RTA(i) \
-    ((struct rtattr *)(((char *)(i)) + NLMSG_ALIGN(sizeof(struct ifaddrmsg))))
-#define IFA_PAYLOAD(n) NLMSG_PAYLOAD((n), sizeof(struct ifaddrmsg))
+#define IFLA_RTA(i) \
+    ((struct rtattr *)(((char *)(i)) + NLMSG_ALIGN(sizeof(struct ifinfomsg))))
+#define IFLA_PAYLOAD(n) NLMSG_PAYLOAD((n), sizeof(struct ifinfomsg))
+
+struct rtgenmsg {
+	unsigned char	rtgen_family;
+};
 
 #endif /* ECX_LINUX_RTNETLINK_H */

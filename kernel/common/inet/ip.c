@@ -68,7 +68,7 @@ static dev_ops_t ip_devops = {
 	.streamtab = &ip_streamtab,
 };
 
-static void
+void
 ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 {
 	struct strioctl *ioc = (typeof(ioc))mp->rptr;
@@ -136,6 +136,20 @@ ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 		return str_qreply(wq, mp);
 	}
 
+	case SIOCGIFMTU: {
+		ip_if_t *intf = ip_if_lookup_by_name(ifr->ifr_name);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
+
+		ifr->ifr_mtu = 1500; /* todo mtu */
+		ip_if_release(intf);
+
+		mp->db->type = M_IOCACK;
+		return str_qreply(wq, mp);
+	}
+
 	default:
 		mp->db->type = M_IOCNAK;
 		return str_qreply(wq, mp);
@@ -187,11 +201,21 @@ void ipv4_input(ip_if_t *, mblk_t *);
 void ipv6_input(ip_if_t *, mblk_t *);
 
 static void
+bpf_deliver(ip_if_t *ifp, mblk_t *mp)
+{
+	bpf_listener_t *listener;
+	RCULIST_FOREACH(listener, &ifp->bpf_listeners, rlentry)
+		bpf_input(listener, mp);
+}
+
+static void
 ip_input(void *ptr, mblk_t *mp)
 {
 	ip_if_t *ifp = ptr;
 	struct ether_header *eh = (struct ether_header *)mp->rptr;
 	uint16_t ethertype = ntohs(eh->ether_type);
+
+	bpf_deliver(ifp, mp);
 
 	mp->rptr += sizeof(struct ether_header);
 

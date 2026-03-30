@@ -29,10 +29,8 @@ ipv6_ifaddr_dad_dpc(void *arg1, void *arg2)
 
 	ke_spinlock_enter_nospl(&ip_allif_lock);
 
-	if (ifa->ipv6_state == IFADDR_TENTATIVE) {
-		kdprintf("DAD timer elapsed, making PREFERRED\n");
+	if (ifa->ipv6_state == IFADDR_TENTATIVE)
 		ifa->ipv6_state = IFADDR_PREFERRED;
-	}
 
 	/* if not, then this was already handled */
 

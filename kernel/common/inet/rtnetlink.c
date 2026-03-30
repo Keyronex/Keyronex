@@ -137,6 +137,75 @@ rtnl_newroute(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 }
 #endif
 
+
+static void
+rtnl_emit_newlink(queue_t *wq, ip_if_t *ifp, uint32_t seq, uint32_t pid)
+{
+	mblk_t *mp;
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	struct rtattr *rta;
+	size_t namelen = strlen(ifp->name) + 1;
+	size_t total;
+
+	total = NLMSG_SPACE(sizeof(struct ifinfomsg)) + RTA_SPACE(namelen) +
+	    RTA_SPACE(ETH_ALEN);
+
+	mp = str_allocb(total);
+	if (mp == NULL)
+		return;
+
+	memset(mp->rptr, 0, total);
+	mp->db->type = M_DATA;
+
+	nlh = (struct nlmsghdr *)mp->rptr;
+	nlh->nlmsg_len = (uint32_t)total;
+	nlh->nlmsg_type = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_MULTI;
+	nlh->nlmsg_seq = seq;
+	nlh->nlmsg_pid = pid;
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_type = ARPHRD_ETHER;
+	ifi->ifi_index = ifp->muxid;
+	ifi->ifi_flags = IFF_UP | IFF_RUNNING; /* todo: real flags */
+	ifi->ifi_change = ifi->ifi_flags;
+
+	/* IFLA_IFNAME */
+	rta = IFLA_RTA(ifi);
+	rta->rta_type = IFLA_IFNAME;
+	rta->rta_len = (unsigned short)RTA_LENGTH(namelen);
+	memcpy(RTA_DATA(rta), ifp->name, namelen);
+
+	/* IFLA_ADDRESS (LL addr) */
+	rta = (struct rtattr *)((char *)rta + RTA_SPACE(namelen));
+	rta->rta_type = IFLA_ADDRESS;
+	rta->rta_len = (unsigned short)RTA_LENGTH(ETH_ALEN);
+	memcpy(RTA_DATA(rta), ifp->mac, ETH_ALEN);
+
+	mp->wptr = mp->rptr + total;
+	str_qreply(wq, mp);
+}
+
+static int
+rtnl_getlink(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
+{
+	ip_if_t *ifp;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&ip_allif_lock);
+
+	TAILQ_FOREACH(ifp, &ip_allif, tqentry) {
+		rtnl_emit_newlink(wq, ifp, nlh->nlmsg_seq, nlh->nlmsg_pid);
+	}
+
+	ke_spinlock_exit(&ip_allif_lock, ipl);
+
+	nl_send_done(wq, nlh->nlmsg_seq, nlh->nlmsg_pid);
+	return 0;
+}
+
 static void
 rtnl_emit_newaddr(queue_t *wq, ip_if_t *ifp, ip_ifaddr_t *ifa,
     uint32_t seq, uint32_t pid)
@@ -301,6 +370,9 @@ static int
 rtnl_handler(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 {
 	switch (nlh->nlmsg_type) {
+	case RTM_GETLINK:
+		return rtnl_getlink(wq, mp, nlh);
+
 #if 0
 	case RTM_NEWROUTE:
 		return rtnl_newroute(wq, mp, nlh);

@@ -12,9 +12,13 @@
  */
 
 #include <sys/errno.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stream.h>
+#include <sys/stropts.h>
 #include <sys/tihdr.h>
+
+#include <inet/ip.h>
 
 static int udp_ipv4_ropen(queue_t *, void *devp);
 static int udp_ipv6_ropen(queue_t *, void *devp);
@@ -61,5 +65,19 @@ udp_ipv6_ropen(queue_t *rq, void *devp)
 static void
 udp_wput(queue_t *wq, mblk_t *mp)
 {
-	ktodo();
+	switch (mp->db->type) {
+	case M_IOCTL: {
+		struct strioctl *ioc = (typeof(ioc))mp->rptr;
+
+		switch (ioc->ic_cmd) {
+		case SIOCGIFMTU:
+			return ip_uwput_ioctl_sgif(wq, mp);
+		}
+
+		break;
+	}
+
+	default:
+		ktodo();
+	}
 }
