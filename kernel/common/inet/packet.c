@@ -88,8 +88,8 @@ packet_wput_bind_req(queue_t *wq, mblk_t *mp, struct T_bind_req *br)
 	str_qreply(wq, mp);
 }
 
-static void
-packet_error_ack(queue_t *wq, mblk_t *mp, int err_prim, int unix_error)
+void
+reply_error_ack(queue_t *wq, mblk_t *mp, int err_prim, int unix_error)
 {
 	struct T_error_ack *ack;
 
@@ -117,32 +117,32 @@ packet_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 
 	if (req->OPT_length < sizeof(struct opthdr) ||
 	    req->OPT_offset + req->OPT_length > msg_len)
-		return packet_error_ack(wq, mp, req->PRIM_type, EINVAL);
+		return reply_error_ack(wq, mp, req->PRIM_type, EINVAL);
 
 	if (req->MGMT_flags != T_NEGOTIATE)
-		return packet_error_ack(wq, mp, req->PRIM_type, EOPNOTSUPP);
+		return reply_error_ack(wq, mp, req->PRIM_type, EOPNOTSUPP);
 
 	opt = (struct opthdr *)(mp->rptr + req->OPT_offset);
 
 	if (opt->level != SOL_SOCKET)
-		return packet_error_ack(wq, mp, req->PRIM_type, ENOPROTOOPT);
+		return reply_error_ack(wq, mp, req->PRIM_type, ENOPROTOOPT);
 
 	switch (opt->name) {
 	case SO_ATTACH_FILTER:
 		if (opt->len != sizeof(struct sock_fprog))
-			return packet_error_ack(wq, mp, req->PRIM_type, EINVAL);
+			return reply_error_ack(wq, mp, req->PRIM_type, EINVAL);
 		kdprintf("packet: attached SO_ATTACH_FILTER\n");
 		break;
 
 	case SO_LOCK_FILTER:
 		if (opt->len != sizeof(int))
-			return packet_error_ack(wq, mp, req->PRIM_type, EINVAL);
+			return reply_error_ack(wq, mp, req->PRIM_type, EINVAL);
 		kdprintf("packet: SO_LOCK_FILTER set to %d\n",
 		    *(int *)OPTVAL(opt));
 		break;
 
 	default:
-		return packet_error_ack(wq, mp, req->PRIM_type, ENOPROTOOPT);
+		return reply_error_ack(wq, mp, req->PRIM_type, ENOPROTOOPT);
 	}
 
 	mp->db->type = M_PCPROTO;

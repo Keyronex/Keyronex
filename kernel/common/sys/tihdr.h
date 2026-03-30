@@ -258,6 +258,8 @@ union T_primitives {
 	struct T_optmgmt_ack optmgmt_ack;
 };
 
+/* option header used in optmgmt */
+
 #define T_NEGOTIATE 0x004
 #define T_CHECK 0x008
 
@@ -270,6 +272,38 @@ struct opthdr {
 #define OPTLEN(x) ((((x) + sizeof(size_t) - 1) / \
     sizeof(size_t)) * sizeof(size_t))
 #define OPTVAL(opt) ((char *)(opt + 1))
+
+/* option header used in unitdata etc. */
+
+struct T_opthdr {
+	size_t	len;	/* total length of option (incl. T_opthdr) */
+	size_t	level;	/* protocol level */
+	size_t	name;	/* option name	*/
+	size_t	status;	/* status value	*/
+};
+
+#define TI_OPT_ALIGN(len) (roundup2(len, sizeof(uintptr_t)))
+
+/* size_t TI_OPT_LEN(size_t len) - calc value that to be put in len */
+#define TI_OPT_LEN(s) (sizeof(struct T_opthdr) + (s))
+/* size_t TI_OPT_SPACE(size_t len) - calc total length incl. padding of option */
+#define TI_OPT_SPACE(s) (sizeof(struct T_opthdr) + TI_OPT_ALIGN(s))
+
+#define __TI_OPT_NEXT(opt) ((char *)(opt) + TI_OPT_ALIGN((opt)->len))
+#define __TI_OPTBUF_LIMIT(buf, buflen) ((char *)(buf) + (buflen))
+
+#define TI_OPT_FIRSTHDR(buf, buflen) \
+	((buflen) < sizeof(struct T_opthdr) ? \
+	    (struct T_opthdr *)0 : (struct T_opthdr *)(buf))
+
+#define TI_OPT_NXTHDR(buf, buflen, opt) \
+	(((opt)->len < sizeof(struct T_opthdr) || \
+	    (ptrdiff_t)(sizeof(struct T_opthdr) + TI_OPT_ALIGN((opt)->len)) \
+		>= (__TI_OPTBUF_LIMIT((buf), (buflen)) - (char *)(opt))) \
+	    ? (struct T_opthdr *)0 : (struct T_opthdr *)__TI_OPT_NEXT(opt))
+
+#define TI_OPT_DATA_LEN(opt) ((opt)->len - sizeof(struct T_opthdr))
+#define TI_OPT_DATA(opt) ((char *)(opt) + sizeof(struct T_opthdr))
 
 
 #endif /* ECX_SYS_TIHDR_H */

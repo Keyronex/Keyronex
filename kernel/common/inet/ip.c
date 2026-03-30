@@ -221,14 +221,10 @@ ip_input(void *ptr, mblk_t *mp)
 
 	switch(ethertype) {
 	case ETHERTYPE_ARP:
-		kdprintf("ARP input unhandled yet\n");
-		str_freemsg(mp);
-		return;
+		return arp_input(ifp, mp);
 
 	case ETHERTYPE_IP:
-		kdprintf("IPv4 input unhandled yet\n");
-		str_freemsg(mp);
-		return;
+		return ipv4_input(ifp, mp);
 
 	case ETHERTYPE_IPV6:
 		return ipv6_input(ifp, mp);

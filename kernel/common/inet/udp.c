@@ -13,23 +13,36 @@
 
 #include <sys/errno.h>
 #include <sys/ioctl.h>
+#include <sys/kmem.h>
+#include <sys/libkern.h>
+#include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
+#include <sys/strsubr.h>
 #include <sys/tihdr.h>
+
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
 
 #include <inet/ip.h>
 
+void reply_error_ack(queue_t *, mblk_t *, int err_prim, int unix_error);
+
 static int udp_ipv4_ropen(queue_t *, void *devp);
 static int udp_ipv6_ropen(queue_t *, void *devp);
+static void udp_rclose(queue_t *);
 static void udp_wput(queue_t *, mblk_t *);
 
 struct qinit udp_ipv4_rinit = {
 	.qopen = udp_ipv4_ropen,
+	.qclose = udp_rclose,
 };
 
 struct qinit udp_ipv6_rinit = {
 	.qopen = udp_ipv6_ropen,
+	.qclose = udp_rclose,
 };
 
 struct qinit udp_winit = {
@@ -47,19 +60,236 @@ struct streamtab udp_ipv6_streamtab = {
 };
 
 typedef struct udp {
+	RCULIST_ENTRY(udp) pcb_entry;
+	krcu_entry_t rcu_entry;
 	kspinlock_t lock;
+	bool	ipv6: 1,
+		reuseattr: 1,
+		recvpktinfo: 1,
+		bound: 1;
+	union {
+		struct sockaddr_in laddr_in4;
+		struct sockaddr_in6 laddr_in6;
+	};
+	queue_t *rq;
 } udp_t;
+
+
+static kspinlock_t udp_bind_lock = KSPINLOCK_INITIALISER;
+static RCULIST_HEAD(, udp) udp_ipv4_pcb_list;
+
+static uint16_t udp_ephemeral_rotor = 49152;
+
+static in_port_t
+udp_alloc_ephemeral_locked(void)
+{
+	uint16_t start;
+
+	kassert(ke_spinlock_held(&udp_bind_lock));
+
+	start = udp_ephemeral_rotor;
+
+	do {
+		udp_t *u;
+		bool in_use = false;
+		in_port_t candidate;
+
+		candidate = htons(udp_ephemeral_rotor);
+
+		if (udp_ephemeral_rotor == 65535)
+			udp_ephemeral_rotor = 49152;
+		else
+		 	udp_ephemeral_rotor++;
+
+		RCULIST_FOREACH(u, &udp_ipv4_pcb_list, pcb_entry) {
+			if (u->laddr_in4.sin_port == candidate) {
+				in_use = true;
+				break;
+			}
+		}
+
+		if (!in_use)
+			return candidate;
+
+	} while (udp_ephemeral_rotor != start);
+
+	return 0;
+}
 
 static int
 udp_ipv4_ropen(queue_t *rq, void *devp)
 {
+	udp_t *udp = kmem_zalloc(sizeof(udp_t));
+	udp->rq = rq;
+	rq->ptr = rq->other->ptr = udp;
 	return 0;
 }
 
 static int
 udp_ipv6_ropen(queue_t *rq, void *devp)
 {
+	udp_t *udp = kmem_zalloc(sizeof(udp_t));
+	udp->ipv6 = true;
+	udp->rq = rq;
+	rq->ptr = rq->other->ptr = udp;
 	return 0;
+}
+
+static void
+udp_rcu_free(void *ptr)
+{
+	udp_t *udp = ptr;
+	kmem_free(udp, sizeof(*udp));
+}
+
+static void
+udp_rclose(queue_t *rq)
+{
+	udp_t *udp = rq->ptr;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&udp_bind_lock);
+	if (udp->bound)
+		RCULIST_REMOVE(udp, pcb_entry);
+	ke_spinlock_exit(&udp_bind_lock, ipl);
+
+	ke_rcu_call(&udp->rcu_entry, udp_rcu_free, udp);
+}
+
+static void
+udp_wput_bind_req(queue_t *wq, mblk_t *mp, struct T_bind_req *br)
+{
+	udp_t *udp = wq->ptr;
+	struct sockaddr_in *sin;
+	struct T_bind_ack *ack;
+	struct in_addr laddr;
+	ipl_t ipl;
+
+	if (br->ADDR_length < (int)sizeof(struct sockaddr_in))
+		return reply_error_ack(wq, mp, T_BIND_REQ, EINVAL);
+
+	sin = (struct sockaddr_in *)&br->ADDR;
+
+	if (sin->sin_family != AF_INET)
+		return reply_error_ack(wq, mp, T_BIND_REQ, EAFNOSUPPORT);
+
+	laddr = sin->sin_addr;
+
+	ipl = ke_spinlock_enter(&udp_bind_lock);
+
+	if (sin->sin_port == 0) {
+		sin->sin_port = udp_alloc_ephemeral_locked();
+		if (sin->sin_port == 0) {
+			ke_spinlock_exit(&udp_bind_lock, ipl);
+			return reply_error_ack(wq, mp, T_BIND_REQ, EADDRINUSE);
+		}
+	} else {
+		udp_t *u;
+
+		RCULIST_FOREACH(u, &udp_ipv4_pcb_list, pcb_entry) {
+			if (u->laddr_in4.sin_port != sin->sin_port)
+				continue;
+
+			if (u->laddr_in4.sin_addr.s_addr == laddr.s_addr) {
+				ke_spinlock_exit(&udp_bind_lock, ipl);
+				return reply_error_ack(wq, mp, T_BIND_REQ,
+				    EADDRINUSE);
+			}
+
+			if ((u->laddr_in4.sin_addr.s_addr == INADDR_ANY ||
+			    laddr.s_addr == INADDR_ANY) &&
+			    (!u->reuseattr || !udp->reuseattr)) {
+				ke_spinlock_exit(&udp_bind_lock, ipl);
+				return reply_error_ack(wq, mp, T_BIND_REQ,
+				    EADDRINUSE);
+			}
+		}
+	}
+
+	udp->laddr_in4 = *sin;
+	udp->bound = true;
+	RCULIST_INSERT_HEAD(&udp_ipv4_pcb_list, udp, pcb_entry);
+
+	ke_spinlock_exit(&udp_bind_lock, ipl);
+
+	mp->db->type = M_PCPROTO;
+	ack = (struct T_bind_ack *)mp->rptr;
+	ack->PRIM_type = T_BIND_ACK;
+	str_qreply(wq, mp);
+}
+
+static void
+udp_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
+{
+	struct T_optmgmt_ack *ack;
+	udp_t *udp = wq->ptr;
+	struct opthdr *opt;
+	ipl_t ipl;
+	size_t msg_len = (size_t)(mp->wptr - mp->rptr);
+	int r = 0;
+
+	(void)udp;
+	(void)r;
+
+	if (req->OPT_length < sizeof(struct opthdr) ||
+	    req->OPT_offset + req->OPT_length > msg_len)
+		return reply_error_ack(wq, mp, req->PRIM_type, EINVAL);
+
+	if (req->MGMT_flags != T_NEGOTIATE)
+		return reply_error_ack(wq, mp, req->PRIM_type, EOPNOTSUPP);
+
+	opt = (struct opthdr *)(mp->rptr + req->OPT_offset);
+
+	switch (opt->level) {
+	case SOL_SOCKET:
+		switch (opt->name) {
+		case SO_REUSEADDR:
+			if (opt->len != sizeof(int))
+				return reply_error_ack(wq, mp, req->PRIM_type,
+				    EINVAL);
+			ipl = ke_spinlock_enter(&udp->lock);
+			udp->reuseattr = *(int *)OPTVAL(opt) != 0;
+			ke_spinlock_exit(&udp->lock, ipl);
+			break;
+
+		default:
+			kdprintf("udp: SOL_SOCKET unhandled option %zu\n",
+			    opt->name);
+			return reply_error_ack(wq, mp, req->PRIM_type,
+			    ENOPROTOOPT);
+		}
+
+		break;
+
+	case IPPROTO_IP: {
+		switch (opt->name) {
+		case IP_PKTINFO:
+			if (opt->len != sizeof(int))
+				return reply_error_ack(wq, mp, req->PRIM_type,
+				    EINVAL);
+			ipl = ke_spinlock_enter(&udp->lock);
+			udp->recvpktinfo = *(int *)OPTVAL(opt) != 0;
+			ke_spinlock_exit(&udp->lock, ipl);
+			break;
+
+		default:
+			kdprintf("udp: IPPROTO_IP unhandled option %zu\n",
+			    opt->name);
+			return reply_error_ack(wq, mp, req->PRIM_type,
+			    ENOPROTOOPT);
+		}
+
+		break;
+	}
+
+	default:
+		return reply_error_ack(wq, mp, req->PRIM_type, ENOPROTOOPT);
+	}
+
+	mp->db->type = M_PCPROTO;
+	ack = (struct T_optmgmt_ack *)mp->rptr;
+	ack->PRIM_type = T_OPTMGMT_ACK;
+	str_qreply(wq, mp);
 }
 
 static void
@@ -71,6 +301,12 @@ udp_wput(queue_t *wq, mblk_t *mp)
 		union T_primitives *prim = (union T_primitives *)mp->rptr;
 
 		switch (prim->type) {
+		case T_BIND_REQ:
+			return udp_wput_bind_req(wq, mp, &prim->bind_req);
+
+		case T_OPTMGMT_REQ:
+			return udp_wput_optmgmt_req(wq, mp, &prim->optmgmt_req);
+
 		default:
 			kfatal("udp_wput: unhandled primitive type %d\n",
 			    prim->type);
@@ -93,5 +329,111 @@ udp_wput(queue_t *wq, mblk_t *mp)
 
 	default:
 		kfatal("udp_wput: unhandled message type %d\n", mp->db->type);
+	}
+}
+
+static void
+udp_deliver(stdata_t *stdata, const struct ip *iph, const struct udphdr *uh,
+    mblk_t *payload)
+{
+	struct T_unitdata_ind *ind;
+	struct sockaddr_in *src;
+	mblk_t *hdr_mp;
+
+	hdr_mp = str_allocb(sizeof(struct T_unitdata_ind));
+	if (hdr_mp == NULL) {
+		str_freemsg(payload);
+		return;
+	}
+
+	hdr_mp->db->type = M_PROTO;
+	hdr_mp->wptr = hdr_mp->rptr + sizeof(*ind);
+
+	ind = (struct T_unitdata_ind *)hdr_mp->rptr;
+	memset(ind, 0, sizeof(*ind));
+	ind->PRIM_type = T_UNITDATA_IND;
+	ind->SRC_length = sizeof(struct sockaddr_in);
+	src = (struct sockaddr_in *)&ind->SRC;
+	src->sin_family = AF_INET;
+	src->sin_port = uh->uh_sport;
+	src->sin_addr = iph->ip_src;
+
+	hdr_mp->cont = payload;
+	str_ingress_putq(stdata, hdr_mp);
+}
+
+void
+udp_ipv4_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
+{
+	const struct ip *iph = attr->l3hdr.ip4;
+	const struct udphdr *uh;
+	size_t avail, udp_len;
+	udp_t *matches[8];
+	size_t nmatch = 0, nexact = 0;
+	udp_t *udp;
+
+	/* this is entirely within the context of an RCU critical section */
+
+	(void)ifp;
+
+	avail = mp->wptr - mp->rptr;
+	if (avail < sizeof(*uh)) {
+		str_freemsg(mp);
+		return;
+	}
+
+	uh = (const struct udphdr *)mp->rptr;
+	udp_len = ntohs(uh->uh_ulen);
+
+	if (udp_len < sizeof(*uh) || avail < udp_len) {
+		str_freemsg(mp);
+		return;
+	}
+
+	mp->wptr = mp->rptr + udp_len;
+	mp->rptr += sizeof(*uh);
+
+	/* try to match exactly */
+	RCULIST_FOREACH(udp, &udp_ipv4_pcb_list, pcb_entry)
+	{
+		if (udp->laddr_in4.sin_port != uh->uh_dport)
+			continue;
+		if (udp->laddr_in4.sin_addr.s_addr != iph->ip_dst.s_addr)
+			continue;
+		if (nmatch < 8)
+			matches[nmatch++] = udp;
+		nexact++;
+	}
+
+	/* if no match, try to match by wildcard */
+	if (nexact == 0) {
+		RCULIST_FOREACH(udp, &udp_ipv4_pcb_list, pcb_entry)
+		{
+			if (udp->laddr_in4.sin_port != uh->uh_dport)
+				continue;
+			if (udp->laddr_in4.sin_addr.s_addr != INADDR_ANY)
+				continue;
+			if (nmatch < 8)
+				matches[nmatch++] = udp;
+		}
+	}
+
+	if (nmatch == 0) {
+		str_freemsg(mp);
+		return;
+	}
+
+	for (int i = 0; i < nmatch; i++) {
+		mblk_t *payload;
+
+		if (i < nmatch - 1) {
+			payload = str_copymsg(mp);
+			if (payload == NULL)
+				continue;
+		} else {
+			payload = mp;
+		}
+
+		udp_deliver(matches[i]->rq->stdata, iph, uh, payload);
 	}
 }

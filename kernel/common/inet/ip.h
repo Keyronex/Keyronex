@@ -203,6 +203,8 @@ uint16_t ip_icmp6_checksum(const struct in6_addr *src,
 
 void ip_uwput_ioctl_sgif(struct queue *, struct msgb *);
 
+void udp_ipv4_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+
 /* currently missing from mlibc */
 #define ip6_flow	ip6_ctlun.ip6_un1.ip6_un1_flow
 #define ip6_plen	ip6_ctlun.ip6_un1.ip6_un1_plen
