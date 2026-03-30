@@ -66,6 +66,20 @@ static void
 udp_wput(queue_t *wq, mblk_t *mp)
 {
 	switch (mp->db->type) {
+	case M_PROTO:
+	case M_PCPROTO: {
+		union T_primitives *prim = (union T_primitives *)mp->rptr;
+
+		switch (prim->type) {
+		default:
+			kfatal("udp_wput: unhandled primitive type %d\n",
+			    prim->type);
+			ktodo();
+		}
+
+		break;
+	}
+
 	case M_IOCTL: {
 		struct strioctl *ioc = (typeof(ioc))mp->rptr;
 
@@ -78,6 +92,6 @@ udp_wput(queue_t *wq, mblk_t *mp)
 	}
 
 	default:
-		ktodo();
+		kfatal("udp_wput: unhandled message type %d\n", mp->db->type);
 	}
 }

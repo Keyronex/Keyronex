@@ -11,7 +11,8 @@
  * @brief STREAMS logic.
  */
 
- #include <sys/kmem.h>
+#include <sys/kmem.h>
+#include <sys/libkern.h>
 #include <sys/stream.h>
 #include <sys/strsubr.h>
 
@@ -85,6 +86,48 @@ str_freemsg(mblk_t *mp)
 		str_freeb(mp);
 		mp = next;
 	}
+}
+
+mblk_t *
+str_copyb(mblk_t *mp)
+{
+	mblk_t *nmp;
+
+	if (mp == NULL)
+		return NULL;
+
+	nmp = str_allocb(mp->wptr - mp->rptr);
+	if (nmp == NULL)
+		return NULL;
+
+	memcpy(nmp->rptr, mp->rptr, mp->wptr - mp->rptr);
+	nmp->wptr = nmp->rptr + (mp->wptr - mp->rptr);
+
+	return nmp;
+}
+
+mblk_t *
+str_copymsg(mblk_t *mp)
+{
+	mblk_t *nmp, *head = NULL, *prev = NULL;
+
+	while (mp != NULL) {
+		nmp = str_copyb(mp);
+		if (nmp == NULL) {
+			str_freemsg(head);
+			return NULL;
+		}
+
+		if (prev != NULL)
+			prev->cont = nmp;
+		else
+			head = nmp;
+
+		prev = nmp;
+		mp = mp->cont;
+	}
+
+	return head;
 }
 
 size_t

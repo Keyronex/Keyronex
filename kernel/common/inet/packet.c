@@ -17,6 +17,7 @@
 #include <sys/socket.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
+#include <sys/strsubr.h>
 #include <sys/tihdr.h>
 
 #include <inet/ip.h>
@@ -28,6 +29,7 @@ static void packet_wput(queue_t *, mblk_t *);
 
 struct qinit packet_rinit = {
 	.qopen = packet_ropen,
+	.putp = str_putnext,
 };
 
 struct qinit packet_winit = {
@@ -41,6 +43,8 @@ struct streamtab packet_streamtab = {
 
 typedef struct packet {
 	bpf_listener_t bpf_listener;
+	ip_if_t *bound_ifp;
+	queue_t *bot_rq;
 } packet_t;
 
 static int
@@ -49,6 +53,7 @@ packet_ropen(queue_t *rq, void *devp)
 	packet_t *pkt;
 
 	pkt = kmem_zalloc(sizeof(packet_t));
+	pkt->bot_rq = rq;
 	rq->ptr = rq->other->ptr = pkt;
 
 	return 0;
@@ -77,6 +82,8 @@ packet_wput_bind_req(queue_t *wq, mblk_t *mp, struct T_bind_req *br)
 	if (r != 0)
 		kfatal("packet bind: failed to attach BPF listener");
 
+	pkt->bound_ifp = ifp;
+
 	br->PRIM_type = T_BIND_ACK;
 	str_qreply(wq, mp);
 }
@@ -104,8 +111,10 @@ packet_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 	struct T_optmgmt_ack *ack;
 	packet_t *pkt = wq->ptr;
 	struct opthdr *opt;
-
 	size_t msg_len = (size_t)(mp->wptr - mp->rptr);
+
+	(void)pkt;
+
 	if (req->OPT_length < sizeof(struct opthdr) ||
 	    req->OPT_offset + req->OPT_length > msg_len)
 		return packet_error_ack(wq, mp, req->PRIM_type, EINVAL);
@@ -145,7 +154,16 @@ packet_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 static void
 packet_wput(queue_t *wq, mblk_t *mp)
 {
+	struct packet *pkt = wq->ptr;
+
 	switch (mp->db->type) {
+	case M_DATA: {
+		ipl_t ipl = spldisp();
+		pkt->bound_ifp->nic_wput(pkt->bound_ifp->nic_data, mp);
+		splx(ipl);
+		break;
+	}
+
 	case M_PROTO: {
 		union T_primitives *prim = (typeof(prim))mp->rptr;
 		switch (prim->type) {
@@ -170,6 +188,8 @@ void
 bpf_input(bpf_listener_t *bpf, mblk_t *mp)
 {
 	packet_t *pkt = (typeof(pkt))bpf;
-
-	kdprintf("bpf_input\n");
+	mblk_t *nmp = str_copymsg(mp);
+	if (nmp == NULL)
+		return;
+	str_ingress_putq(pkt->bot_rq->stdata, nmp);
 }

@@ -1218,6 +1218,10 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 
 	/* TODO: this is not recvmsg! */
 
+	if (msg->msg_name != NULL || msg->msg_control != NULL)
+		kdprintf("warning recvmsg called with msg_name %p "
+		    "and msg_control %p\n", msg->msg_name, msg->msg_control);
+
 	sn = VTOSN(file->vnode);
 
 	kassert(msg->msg_iovlen == 1 /* && msg->msg_controllen == 0 */);
