@@ -226,10 +226,6 @@ udp_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 	struct opthdr *opt;
 	ipl_t ipl;
 	size_t msg_len = (size_t)(mp->wptr - mp->rptr);
-	int r = 0;
-
-	(void)udp;
-	(void)r;
 
 	if (req->OPT_length < sizeof(struct opthdr) ||
 	    req->OPT_offset + req->OPT_length > msg_len)
@@ -333,33 +329,61 @@ udp_wput(queue_t *wq, mblk_t *mp)
 }
 
 static void
-udp_deliver(stdata_t *stdata, const struct ip *iph, const struct udphdr *uh,
-    mblk_t *payload)
+udp_deliver(udp_t *udp, ip_if_t *ifp, ip_rxattr_t *attr,
+    const struct udphdr *uh, mblk_t *payload)
 {
 	struct T_unitdata_ind *ind;
 	struct sockaddr_in *src;
 	mblk_t *hdr_mp;
+	size_t pktinfo_space, hdr_size;
 
-	hdr_mp = str_allocb(sizeof(struct T_unitdata_ind));
+	ke_spinlock_enter_nospl(&udp->lock);
+
+	pktinfo_space = udp->recvpktinfo ?
+	    TI_OPT_SPACE(sizeof(struct in_pktinfo)) : 0;
+	hdr_size = sizeof(struct T_unitdata_ind) + pktinfo_space;
+
+	hdr_mp = str_allocb(hdr_size);
 	if (hdr_mp == NULL) {
 		str_freemsg(payload);
 		return;
 	}
 
 	hdr_mp->db->type = M_PROTO;
-	hdr_mp->wptr = hdr_mp->rptr + sizeof(*ind);
+	hdr_mp->wptr = hdr_mp->rptr + hdr_size;
 
 	ind = (struct T_unitdata_ind *)hdr_mp->rptr;
-	memset(ind, 0, sizeof(*ind));
+	memset(ind, 0, hdr_size);
 	ind->PRIM_type = T_UNITDATA_IND;
 	ind->SRC_length = sizeof(struct sockaddr_in);
 	src = (struct sockaddr_in *)&ind->SRC;
 	src->sin_family = AF_INET;
 	src->sin_port = uh->uh_sport;
-	src->sin_addr = iph->ip_src;
+	src->sin_addr = attr->l3hdr.ip4->ip_src;
+
+	if (udp->recvpktinfo) {
+		struct T_opthdr *toph;
+		struct in_pktinfo *pktinfo;
+
+		ind->OPT_length = pktinfo_space;
+		ind->OPT_offset = sizeof(struct T_unitdata_ind);
+
+		toph = (struct T_opthdr *)(hdr_mp->rptr + ind->OPT_offset);
+		toph->len = TI_OPT_LEN(sizeof(struct in_pktinfo));
+		toph->level = IPPROTO_IP;
+		toph->name = IP_PKTINFO;
+		toph->status = 0;
+
+		pktinfo = (struct in_pktinfo *)TI_OPT_DATA(toph);
+		pktinfo->ipi_ifindex = ifp->muxid;
+		pktinfo->ipi_spec_dst = attr->ifa.ifa != NULL ?
+		    attr->ifa.ifa->addr.in.sin_addr : attr->l3hdr.ip4->ip_dst;
+		pktinfo->ipi_addr = attr->l3hdr.ip4->ip_dst;
+	}
 
 	hdr_mp->cont = payload;
-	str_ingress_putq(stdata, hdr_mp);
+	str_ingress_putq(udp->rq->stdata, hdr_mp);
+	ke_spinlock_exit_nospl(&udp->lock);
 }
 
 void
@@ -368,13 +392,11 @@ udp_ipv4_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 	const struct ip *iph = attr->l3hdr.ip4;
 	const struct udphdr *uh;
 	size_t avail, udp_len;
-	udp_t *matches[8];
-	size_t nmatch = 0, nexact = 0;
+	udp_t *last = NULL;
+	bool exact;
 	udp_t *udp;
 
 	/* this is entirely within the context of an RCU critical section */
-
-	(void)ifp;
 
 	avail = mp->wptr - mp->rptr;
 	if (avail < sizeof(*uh)) {
@@ -393,47 +415,39 @@ udp_ipv4_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 	mp->wptr = mp->rptr + udp_len;
 	mp->rptr += sizeof(*uh);
 
-	/* try to match exactly */
-	RCULIST_FOREACH(udp, &udp_ipv4_pcb_list, pcb_entry)
-	{
+	RCULIST_FOREACH(udp, &udp_ipv4_pcb_list, pcb_entry) {
 		if (udp->laddr_in4.sin_port != uh->uh_dport)
 			continue;
 		if (udp->laddr_in4.sin_addr.s_addr != iph->ip_dst.s_addr)
 			continue;
-		if (nmatch < 8)
-			matches[nmatch++] = udp;
-		nexact++;
+
+		if (last != NULL) {
+			mblk_t *copy = str_copymsg(mp);
+			if (copy)
+				udp_deliver(last, ifp, attr, uh, copy);
+		}
+		last = udp;
+		exact = true;
 	}
 
-	/* if no match, try to match by wildcard */
-	if (nexact == 0) {
-		RCULIST_FOREACH(udp, &udp_ipv4_pcb_list, pcb_entry)
-		{
+	if (!exact) {
+		RCULIST_FOREACH(udp, &udp_ipv4_pcb_list, pcb_entry) {
 			if (udp->laddr_in4.sin_port != uh->uh_dport)
 				continue;
 			if (udp->laddr_in4.sin_addr.s_addr != INADDR_ANY)
 				continue;
-			if (nmatch < 8)
-				matches[nmatch++] = udp;
+
+			if (last != NULL) {
+				mblk_t *copy = str_copymsg(mp);
+				if (copy != NULL)
+					udp_deliver(last, ifp, attr, uh, copy);
+			}
+			last = udp;
 		}
 	}
 
-	if (nmatch == 0) {
+	if (last != NULL)
+		udp_deliver(last, ifp, attr, uh, mp);
+	else
 		str_freemsg(mp);
-		return;
-	}
-
-	for (int i = 0; i < nmatch; i++) {
-		mblk_t *payload;
-
-		if (i < nmatch - 1) {
-			payload = str_copymsg(mp);
-			if (payload == NULL)
-				continue;
-		} else {
-			payload = mp;
-		}
-
-		udp_deliver(matches[i]->rq->stdata, iph, uh, payload);
-	}
 }

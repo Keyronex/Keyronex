@@ -224,6 +224,8 @@ struct T_unitdata_ind {
 	enum T_prim PRIM_type;
 	int SRC_length;
 	struct sockaddr_storage SRC;
+	size_t OPT_length;
+	size_t OPT_offset;
 };
 
 /*
