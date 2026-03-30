@@ -36,6 +36,7 @@ kernel_sources += [
     'inet/route.c',
     'inet/rtnetlink.c',
     'inet/tcp.c',
+    'inet/udp.c',
     'inet/util.c',
 
     'io/console.c',

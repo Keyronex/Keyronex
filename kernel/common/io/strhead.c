@@ -427,6 +427,9 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 
 		mp = TAILQ_FIRST(&sh->rq->msgq);
 
+		if (mp->db->type == M_PROTO)
+			kfatal("handle me: M_PROTO in strread\n");
+
 		for (bp = mp; bp != NULL && ncopied < len; bp = bp->cont) {
 			size_t avail, tocopy;
 
@@ -1165,6 +1168,7 @@ sth_rput(queue_t *q, mblk_t *mp)
 
 	switch (mp->db->type) {
 	case M_DATA:
+	case M_PROTO:
 
 		q->count += str_msgsize(mp);
 

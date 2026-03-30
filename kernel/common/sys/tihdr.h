@@ -30,6 +30,7 @@ enum T_prim {
 	T_CONN_REQ = 0,		/* connection request */
 	T_CONN_RES = 1,		/* connection response*/
 	T_BIND_REQ = 6,		/* bind request */
+	T_UNITDATA_REQ = 9,	/* unit data request */
 	T_ORDREL_REQ = 10,	/* orderly-release request */
 
 	T_CONN_IND = 11,	/* connection indication */
@@ -39,6 +40,8 @@ enum T_prim {
 	T_BIND_ACK = 17,	/* bind acknowledgement */
 	T_ERROR_ACK = 18,	/* error acknowledgement */
 	T_OK_ACK = 19,		/* success acknowledge */
+	T_UNITDATA_IND = 20,	/* unit data indication */
+
 
 	T_ORDREL_IND = 23,	/* orderly-release indication */
 
@@ -79,6 +82,18 @@ struct T_conn_res {
 	enum T_prim PRIM_type;
 	size_t ACCEPTOR_id;
 	size_t SEQ_number;
+};
+
+/*
+ * @brief Unit Data Request
+ *
+ * User-originated. Transmits a message to a peer without establishing a
+ * connection.
+ */
+struct T_unitdata_req {
+	enum T_prim PRIM_type;
+	int DEST_length;
+	struct sockaddr_storage DEST;
 };
 
 /*
@@ -186,6 +201,18 @@ struct T_ok_ack {
 	enum T_prim CORRECT_prim;
 };
 
+/*
+ * @brief Unit Data Indication
+ *
+ * Provider-originated. Indicates the arrival of a message sent by a peer via
+ * a unit data request.
+ */
+struct T_unitdata_ind {
+	enum T_prim PRIM_type;
+	int SRC_length;
+	struct sockaddr_storage SRC;
+};
+
 
 /* @brief Union of all TI primitives */
 union T_primitives {
@@ -194,12 +221,14 @@ union T_primitives {
 	struct T_conn_req conn_req;
 	struct T_conn_res conn_res;
 	struct T_addr_req addr_req;
+	struct T_unitdata_req unitdata_req;
 	struct T_conn_ind conn_ind;
 	struct T_conn_con conn_con;
 	struct T_addr_ack addr_ack;
 	struct T_bind_ack bind_ack;
 	struct T_error_ack error_ack;
 	struct T_ok_ack ok_ack;
+	struct T_unitdata_ind unitdata_ind;
 };
 
 

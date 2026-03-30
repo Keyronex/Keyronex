@@ -88,6 +88,7 @@ static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
 extern struct streamtab tcp_streamtab;
+extern struct streamtab udp_ipv4_streamtab, udp_ipv6_streamtab;
 extern struct streamtab nl_streamtab;
 
 static struct qinit sock_rinit = {
@@ -148,8 +149,24 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			streamtab = &tcp_streamtab;
 			break;
 
+		case SOCK_DGRAM:
+			streamtab = &udp_ipv4_streamtab;
+			break;
+
 		default:
 			kfatal("unexpected AF_INET type %d (0x%x)\n", type,
+			    type);
+		}
+		break;
+
+	case AF_INET6:
+		switch (type) {
+		case SOCK_DGRAM:
+			streamtab = &udp_ipv6_streamtab;
+			break;
+
+		default:
+			kfatal("unexpected AF_INET6 type %d (0x%x)\n", type,
 			    type);
 		}
 		break;
@@ -871,7 +888,7 @@ so_getsockname(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	socklen_t llen, rlen;
 	int r;
 
-	if (sn->domain != AF_INET) {
+	if (sn->domain == AF_UNIX) {
 		/* TODO: use the local version for AF_UNIX? */
 		return -EOPNOTSUPP;
 	}
@@ -880,12 +897,7 @@ so_getsockname(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	if (r != 0)
 		return r;
 
-	if (llen > 0) {
-		return copyout_sockaddr(&laddr, llen, addr, addrlen);
-	} else {
-		struct sockaddr zero = { .sa_family = AF_INET };
-		return copyout_sockaddr(&zero, sizeof(zero), addr, addrlen);
-	}
+	return copyout_sockaddr(&laddr, llen, addr, addrlen);
 }
 
 static int
@@ -898,7 +910,7 @@ so_getpeername(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	if (!(sn->state & SS_ISCONNECTED))
 		return -ENOTCONN;
 
-	if (sn->domain != AF_INET) {
+	if (sn->domain == AF_UNIX) {
 		/* TODO: AF_UNIX peer address support */
 		return -EOPNOTSUPP;
 	}
@@ -1118,6 +1130,9 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 	int readflags = 0;
 	int r = lookup_sockfd(sockfd, &file);
 
+	if (r < 0)
+		return r;
+
 	/* TODO: this is not recvmsg! */
 
 	sn = VTOSN(file->vnode);
@@ -1146,6 +1161,9 @@ sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 	struct socknode *sn;
 	int writeflags = 0;
 	int r = lookup_sockfd(sockfd, &file);
+
+	if (r < 0)
+		return r;
 
 	/* TODO: this is not sendmsg! */
 
