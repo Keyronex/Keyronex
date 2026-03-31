@@ -131,7 +131,7 @@ str_copymsg(mblk_t *mp)
 }
 
 size_t
-str_msgsize(mblk_t *mp)
+str_msgsize(const mblk_t *mp)
 {
 	size_t size = 0;
 	while (mp != NULL) {

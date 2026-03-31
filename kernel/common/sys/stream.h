@@ -110,7 +110,8 @@ enum {
 mblk_t *str_allocb(size_t);
 void str_freeb(mblk_t *);
 void str_freemsg(mblk_t *);
-size_t str_msgsize(mblk_t *);
+size_t str_msgsize(const mblk_t *);
+#define STR_MBLKL(MP) ((MP)->wptr - (MP)->rptr)
 
 mblk_t *str_copymsg(mblk_t *);
 mblk_t *str_dupmsg(mblk_t *);

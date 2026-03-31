@@ -23,6 +23,7 @@ kernel_sources += [
     'fs/vnode.c',
 
     'inet/arp.c',
+    'inet/bpf.c',
     'inet/icmpv6.c',
     'inet/ip_if.c',
     'inet/ip.c',

@@ -14,6 +14,7 @@
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/kmem.h>
+#include <sys/libkern.h>
 #include <sys/socket.h>
 #include <sys/stream.h>
 #include <sys/stropts.h>
@@ -42,9 +43,12 @@ struct streamtab packet_streamtab = {
 };
 
 typedef struct packet {
+	kspinlock_t lock;
 	bpf_listener_t bpf_listener;
 	ip_if_t *bound_ifp;
 	queue_t *bot_rq;
+	struct sock_filter *bpf;
+	uint32_t bpf_len;
 } packet_t;
 
 static int
@@ -53,6 +57,9 @@ packet_ropen(queue_t *rq, void *devp)
 	packet_t *pkt;
 
 	pkt = kmem_zalloc(sizeof(packet_t));
+	ke_spinlock_init(&pkt->lock);
+	pkt->bpf = NULL;
+	pkt->bpf_len = 0;
 	pkt->bot_rq = rq;
 	rq->ptr = rq->other->ptr = pkt;
 
@@ -105,6 +112,44 @@ reply_error_ack(queue_t *wq, mblk_t *mp, int err_prim, int unix_error)
 	str_qreply(wq, mp);
 }
 
+static int
+packet_attach_filter(packet_t *pkt, const struct sock_fprog *fprog)
+{
+	struct sock_filter *bpf;
+	ipl_t ipl;
+
+	if (fprog->len == 0 || fprog->len > 512)
+		return -EINVAL;
+
+	bpf = kmem_alloc(fprog->len * sizeof(struct sock_filter));
+	if (bpf == NULL)
+		return -ENOMEM;
+
+	/* TODO: wrong context for a copyin - needs to happen in sockfs! */
+	if (memcpy_from_user(bpf, fprog->filter,
+		fprog->len * sizeof(struct sock_filter)) != 0) {
+		kmem_free(bpf, fprog->len * sizeof(struct sock_filter));
+		return -EFAULT;
+	}
+
+	ipl = ke_spinlock_enter(&pkt->lock);
+	if (pkt->bpf != NULL) {
+		ke_spinlock_exit(&pkt->lock, ipl);
+		kmem_free(bpf, fprog->len * sizeof(struct sock_filter));
+		return -EBUSY; /* ? right error */
+	}
+
+	pkt->bpf = bpf;
+	pkt->bpf_len = fprog->len;
+
+	ke_spinlock_exit(&pkt->lock, ipl);
+
+	kdprintf("packet: attached SO_ATTACH_FILTER with %u instructions\n",
+	    fprog->len);
+
+	return 0;
+}
+
 static void
 packet_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 {
@@ -112,8 +157,7 @@ packet_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 	packet_t *pkt = wq->ptr;
 	struct opthdr *opt;
 	size_t msg_len = (size_t)(mp->wptr - mp->rptr);
-
-	(void)pkt;
+	int r;
 
 	if (req->OPT_length < sizeof(struct opthdr) ||
 	    req->OPT_offset + req->OPT_length > msg_len)
@@ -131,7 +175,10 @@ packet_wput_optmgmt_req(queue_t *wq, mblk_t *mp, struct T_optmgmt_req *req)
 	case SO_ATTACH_FILTER:
 		if (opt->len != sizeof(struct sock_fprog))
 			return reply_error_ack(wq, mp, req->PRIM_type, EINVAL);
-		kdprintf("packet: attached SO_ATTACH_FILTER\n");
+		r = packet_attach_filter(pkt,
+		    (const struct sock_fprog *)OPTVAL(opt));
+		if (r != 0)
+			return reply_error_ack(wq, mp, req->PRIM_type, -r);
 		break;
 
 	case SO_LOCK_FILTER:
@@ -184,12 +231,28 @@ packet_wput(queue_t *wq, mblk_t *mp)
 	}
 }
 
+uint32_t bpf_filter(const struct sock_filter *, size_t, const mblk_t *);
+
 void
 bpf_input(bpf_listener_t *bpf, mblk_t *mp)
 {
-	packet_t *pkt = (typeof(pkt))bpf;
+	packet_t *pkt = (typeof(pkt))containerof(bpf, packet_t, bpf_listener);
 	mblk_t *nmp = str_copymsg(mp);
 	if (nmp == NULL)
 		return;
+	ke_spinlock_enter_nospl(&pkt->lock);
+	if (pkt->bpf != NULL) {
+		uint32_t len = bpf_filter(pkt->bpf, pkt->bpf_len, nmp);
+		size_t msglen = str_msgsize(nmp);
+		kdprintf("bpf_input: new len %u (msgsize was %zu)\n", len,
+		    msglen);
+		if (len == 0) {
+			str_freemsg(nmp);
+			ke_spinlock_exit_nospl(&pkt->lock);
+		} else if (len < msglen) {
+			nmp->wptr = nmp->rptr + len;
+		}
+	}
 	str_ingress_putq(pkt->bot_rq->stdata, nmp);
+	ke_spinlock_exit_nospl(&pkt->lock);
 }

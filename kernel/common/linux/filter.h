@@ -73,10 +73,11 @@ struct sock_fprog {
 #define BPF_X	0x08
 
 #define BPF_RVAL(code) ((code) & 0x18)
-#define BPF_A	0x00
+#define BPF_A	0x10
 
 #define BPF_MISCOP(code) ((code) & 0xf8)
 #define BPF_TAX	0x00
+#define BPF_TXA	0x80
 
 #define BPF_STMT(code, k)		{ (uint16_t)code, 0,  0, k }
 #define BPF_JUMP(code, k, jt, jf)	{ (uint16_t)code, jt, jf, k }

@@ -57,7 +57,6 @@ typedef enum ipv6_ifaddr_state {
 
 typedef struct bpf_listener {
 	RCULIST_ENTRY(bpf_listener) rlentry;
-	kspinlock_t lock;
 } bpf_listener_t;
 
 typedef struct ip_ifaddr {
