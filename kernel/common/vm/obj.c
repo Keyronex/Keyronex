@@ -54,6 +54,8 @@ vm_obj_new_vnode(vnode_t *vnode)
 		obj->direct[i].value = 0;
 	for (size_t i = 0; i < OBJ_LEVELS; i++)
 		obj->indirect[i].value = 0;
+	ke_mutex_init(&obj->map_entries_lock);
+	LIST_INIT(&obj->map_entries);
 
 	return obj;
 }
