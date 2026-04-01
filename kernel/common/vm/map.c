@@ -19,7 +19,6 @@ static int map_entry_cmp(struct vm_map_entry *x, struct vm_map_entry *y);
 RB_GENERATE(vm_map_tree, vm_map_entry, rb_link, map_entry_cmp);
 vm_map_t kernel_map;
 
-
 static int
 map_entry_cmp(struct vm_map_entry *x, struct vm_map_entry *y)
 {
@@ -93,6 +92,22 @@ vm_map_release(vm_map_t *map)
  * mapping
  */
 
+static void
+object_map_list_insert(vm_object_t *object, struct vm_map_entry *map_entry)
+{
+	ke_mutex_enter(&object->map_entries_lock, "object_map_list_insert");
+	LIST_INSERT_HEAD(&object->map_entries, map_entry, object_link);
+	ke_mutex_exit(&object->map_entries_lock);
+}
+
+static void
+object_map_list_remove(vm_object_t *object, struct vm_map_entry *map_entry)
+{
+	ke_mutex_enter(&object->map_entries_lock, "object_map_list_remove");
+	LIST_REMOVE(map_entry, object_link);
+	ke_mutex_exit(&object->map_entries_lock);
+}
+
 int
 vm_allocate(vm_map_t *map, vm_prot_t prot, vaddr_t *vaddrp, size_t size,
     bool exact)
@@ -140,6 +155,9 @@ vm_map(vm_map_t *map, vm_object_t *object, vaddr_t *vaddrp, size_t size,
 
 	RB_INSERT(vm_map_tree, &map->entries, map_entry);
 
+	if (object != NULL)
+		object_map_list_insert(object, map_entry);
+
 	ke_rwlock_exit_write(&map->map_lock);
 
 	*vaddrp = addr;
@@ -156,7 +174,6 @@ vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
 	struct pte_cursor cursor;
 	vmem_addr_t addr = exact ? *vaddrp : 0;
 	ipl_t ipl;
-	bool user;
 
 	kassert(size % PGSIZE == 0);
 	kassert(paddr % PGSIZE == 0);
@@ -574,9 +591,10 @@ vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
 
 			RB_REMOVE(vm_map_tree, &map->entries, entry);
 
-			if (entry->object != NULL)
-				/* TODO retain object */
-				;
+			if (entry->object != NULL) {
+				/* FIXME: also release object */
+				object_map_list_remove(entry->object, entry);
+			}
 
 			kmem_free(entry, sizeof(struct vm_map_entry));
 
@@ -650,9 +668,11 @@ vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
 			    &right_entry->start);
 			kassert(r == 0);
 
-			if (entry->object != NULL)
-				/* TODO release object */
-				;
+			if (right_entry->object != NULL) {
+				object_map_list_insert(right_entry->object,
+				    right_entry);
+				/* FIXME: also retain object */
+			}
 
 			RB_INSERT(vm_map_tree, &map->entries, right_entry);
 		}

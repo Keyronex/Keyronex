@@ -28,6 +28,7 @@ struct vm_map_entry {
 	vm_cache_mode_t cache;
 	paddr_t phys_base;
 	struct vm_object *object;
+	LIST_ENTRY(vm_map_entry) object_link; /* link in vm_object_t.entries */
 };
 
 RB_HEAD(vm_map_tree, vm_map_entry);
@@ -71,6 +72,8 @@ typedef struct vm_object {
 	};
 	pte_t direct[6];
 	pte_t indirect[4]; /* [0] = indirect, [1] = doubly indirect, etc */
+	kmutex_t map_entries_lock;
+	LIST_HEAD(, vm_map_entry) map_entries;
 } vm_object_t;
 
 struct vm_anon {
