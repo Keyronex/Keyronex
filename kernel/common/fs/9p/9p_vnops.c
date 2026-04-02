@@ -23,6 +23,7 @@
 #include <libkern/lib.h>
 
 #include "9pbuf.h"
+#include "sys/vm.h"
 
 typedef uint32_t fid_t;
 
@@ -131,6 +132,9 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 
 	found->vnode = vn_alloc(fs->vfs, found->vattr.type, &ninep_vnops,
 	    (uintptr_t)found, 0);
+	if (found->vattr.type == VREG)
+		vm_vnobj_set_valid_length(found->vnode->file.vmobj,
+		    found->vattr.size);
 
 	ke_rwlock_enter_write(&found->rwlock, "");
 
@@ -1045,6 +1049,8 @@ ninep_dispatch_iop(vnode_t *, iop_t *iop)
 
 	node = VTO9(frame->vp);
 
+	/* must be a read-hold on node->rwlock */
+
 #if 1 /* FIXME: needs to be under appropriate lock */
 	if (frame->rw.offset + frame->rw.length > node->vattr.size) {
 		if (frame->rw.offset >= node->vattr.size)
@@ -1113,17 +1119,31 @@ ninep_complete_iop(vnode_t *, iop_t *iop)
 }
 
 static void
-ninep_lock_for_vc_io(vnode_t *vn, bool write)
+ninep_vc_enter(vnode_t *vn, bool write)
 {
 	struct ninep_node *node = VTO9(vn);
-	ke_rwlock_enter_read(&node->rwlock, "ninep_lock_for_vc_io");
+	ke_rwlock_enter_read(&node->rwlock, "ninep_vc_enter");
 }
 
 static void
-ninep_unlock_for_vc_io(vnode_t *vn, bool write)
+ninep_vc_exit(vnode_t *vn, bool write)
 {
 	struct ninep_node *node = VTO9(vn);
 	ke_rwlock_exit_read(&node->rwlock);
+}
+
+static void
+ninep_paging_enter(vnode_t *vn)
+{
+	struct ninep_node *node = VTO9(vn);
+	ke_rwlock_enter_read(&node->paging_rwlock, "ninep_paging_enter");
+}
+
+static void
+ninep_paging_exit(vnode_t *vn)
+{
+	struct ninep_node *node = VTO9(vn);
+	ke_rwlock_exit_read(&node->paging_rwlock);
 }
 
 
@@ -1141,9 +1161,13 @@ ninep_write(vnode_t *vn, const void *buf, size_t buflen, off_t offset, int)
 	struct ninep_node *node = VTO9(vn);
 	int r;
 	ke_rwlock_enter_write(&node->rwlock, "ninep_write");
-	if (offset + buflen > node->vattr.size)
+	if (offset + buflen > node->vattr.size) {
+		ke_rwlock_enter_read(&node->paging_rwlock,
+		    "ninep_write:paging_rwlock");
 		node->vattr.size = offset + buflen;
-	/* could downgrade to a read lock here... */
+		vm_vnobj_set_valid_length(vn->file.vmobj, offset + buflen);
+		ke_rwlock_exit_read(&node->paging_rwlock);
+	}
 	ke_rwlock_downgrade(&node->rwlock);
 	r = viewcache_io(vn, offset, buflen, true, (void *)buf);
 	ke_rwlock_exit_read(&node->rwlock);
@@ -1173,8 +1197,10 @@ static struct vnode_ops ninep_vnops = {
 	.readdir = ninep_readdir,
 	.readlink = ninep_readlink,
 	.stack_depth = 2,
-	.lock_for_vc_io = ninep_lock_for_vc_io,
-	.unlock_for_vc_io = ninep_unlock_for_vc_io,
+	.vc_enter = ninep_vc_enter,
+	.vc_exit = ninep_vc_exit,
+	.paging_enter = ninep_paging_enter,
+	.paging_exit = ninep_paging_exit,
 	.read = ninep_read,
 	.write = ninep_write,
 	.seek = ninep_seek,

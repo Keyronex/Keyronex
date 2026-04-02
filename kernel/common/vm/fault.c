@@ -13,6 +13,7 @@
 #include <sys/kmem.h>
 #include <sys/libkern.h>
 #include <sys/proc.h>
+#include <sys/vnode.h>
 
 #include <vm/map.h>
 #include <vm/page.h>
@@ -252,9 +253,11 @@ do_object_fault(struct fault_info *info,
 		sgl.elems = sg_seg;
 		sgl.elems_n = count;
 
-		iop = iop_new_read(info->object->vnode, &sgl, 0,
+		VOP_PAGING_ENTER(info->object->vnobj.vnode);
+		iop = iop_new_read(info->object->vnobj.vnode, &sgl, 0,
 		    count << PGSHIFT, obj_pgoff << PGSHIFT);
 		iop_send_sync(iop);
+		VOP_PAGING_EXIT(info->object->vnobj.vnode);
 
 #if 0
 		kprintf("Did read in object page (%d; tot. %d)\n", obj_pgoff, count);

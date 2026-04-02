@@ -47,7 +47,8 @@ vm_obj_new_vnode(vnode_t *vnode)
 	vm_object_t *obj = kmem_alloc(sizeof(*obj));
 
 	obj->kind = VM_OBJ_VNODE;
-	obj->vnode = vnode;
+	obj->vnobj.vnode = vnode;
+	obj->vnobj.valid_length = SIZE_MAX;
 	ke_spinlock_init(&obj->creation_lock);
 	ke_spinlock_init(&obj->stealing_lock);
 	for (size_t i = 0; i < OBJ_N_DIRECT; i++)
@@ -58,6 +59,17 @@ vm_obj_new_vnode(vnode_t *vnode)
 	LIST_INIT(&obj->map_entries);
 
 	return obj;
+}
+
+
+void
+vm_vnobj_set_valid_length(vm_object_t *obj, size_t length)
+{
+	ipl_t ipl = ke_spinlock_enter(&obj->creation_lock);
+	ke_spinlock_enter_nospl(&obj->stealing_lock);
+	obj->vnobj.valid_length = length;
+	ke_spinlock_exit_nospl(&obj->stealing_lock);
+	ke_spinlock_exit(&obj->creation_lock, ipl);
 }
 
 /*

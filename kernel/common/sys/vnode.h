@@ -101,10 +101,12 @@ struct vnode_ops {
 	int (*chpoll)(vnode_t *, struct poll_entry *, enum chpoll_mode);
 	int (*mmap)(void *addr, size_t len, int prot, int flags, vnode_t *vn,
 	    off_t offset, vaddr_t *window);
-	void (*lock_for_vc_io)(vnode_t *, bool write);
-	void (*unlock_for_vc_io)(vnode_t *, bool write);
-	iop_return_t (*iop_dispatch)(vnode_t *vn, struct iop *);
-	iop_return_t (*iop_complete)(vnode_t *vn, struct iop *);
+	void (*vc_enter)(vnode_t *, bool write);
+	void (*vc_exit)(vnode_t *, bool write);
+	iop_return_t (*iop_dispatch)(vnode_t *, struct iop *);
+	iop_return_t (*iop_complete)(vnode_t *, struct iop *);
+	void (*paging_enter)(vnode_t *);
+	void (*paging_exit)(vnode_t *);
 };
 
 #define VOP_OPEN(VN, FLAGS) (*(VN))->ops->open(VN, FLAGS);
@@ -119,9 +121,10 @@ struct vnode_ops {
 #define VOP_READDIR(VN, BUF, LEN, OFF) (VN)->ops->readdir(VN, BUF, LEN, OFF);
 #define VOP_WRITE(VN, BUF, LEN, OFF, F) (VN)->ops->write(VN, BUF, LEN, OFF, F);
 #define VOP_SEEK(VN, OLD, NEW) (VN)->ops->seek(VN, (OLD), (NEW));
-#define VOP_LOCK_FOR_VC_IO(VN, WRITE) (VN)->ops->lock_for_vc_io(VN, (WRITE));
-#define VOP_UNLOCK_FROM_VC_IO(VN, WRITE) \
-    (VN)->ops->unlock_for_vc_io(VN, (WRITE));
+#define VOP_VC_ENTER(VN, WRITE) (VN)->ops->vc_enter(VN, (WRITE));
+#define VOP_VC_EXIT(VN, WRITE) (VN)->ops->vc_exit(VN, (WRITE));
+#define VOP_PAGING_ENTER(VN) (VN)->ops->paging_enter(VN)
+#define VOP_PAGING_EXIT(VN) (VN)->ops->paging_exit(VN)
 
 vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, uintptr_t fspriv2);
 

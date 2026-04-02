@@ -2,7 +2,7 @@
 /*
  * notes:
  *
- * truncation logic will acquire the same lock exclusive as lock_for_vc_io does
+ * truncation logic will acquire the same lock exclusive as vc_enter does
  * - that means only writeback ios can be ongoing while truncation is happening.
  * - so (i think) we only need to have a way to wait for writeback ios to finish
  * - truncation can otherwise make away with views beyond truncation point
@@ -298,7 +298,7 @@ viewcache_io(vnode_t *vn, uint64_t offset, size_t length, bool write, void *buf)
 	 * note re above comment: we don't do the writeback of other vnodes from
 	 * this context, we kick the writeback thread to do that.
 	 */
-	VOP_LOCK_FOR_VC_IO(vn, write);
+	VOP_VC_ENTER(vn, write);
 
 	while (done < length) {
 		io_off_t view_off = rounddown2(offset + done, VIEW_SIZE);
@@ -322,7 +322,7 @@ viewcache_io(vnode_t *vn, uint64_t offset, size_t length, bool write, void *buf)
 		done += size_from_view;
 	}
 
-	VOP_UNLOCK_FROM_VC_IO(vn, write);
+	VOP_VC_EXIT(vn, write);
 
 	return done;
 }
