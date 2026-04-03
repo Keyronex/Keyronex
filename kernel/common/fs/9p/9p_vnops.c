@@ -715,16 +715,63 @@ ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
 }
 
 int
-ninep_getattr(vnode_t *dvn, vattr_t *vattr)
+ninep_getattr(vnode_t *vn, vattr_t *attr)
 {
-	struct ninep_node *dn = VTO9(dvn);
+	struct ninep_node *dn = VTO9(vn);
 #if 0
 	struct ninepfs_state *fs = VTO9FS(dvn);
 	return do_getattr(fs, dn->fid, vattr);
 #else
-	*vattr = dn->vattr;
+	*attr = dn->vattr;
 	return 0;
 #endif
+}
+
+static int
+ninep_truncate(vnode_t *vn, size_t size)
+{
+	struct ninep_node *node = VTO9(vn);
+
+	if (vn->type != VREG)
+		return -EINVAL;
+
+	/* blocks all read/write calls, blocking all viewcache io */
+	ke_rwlock_enter_write(&node->rwlock, "9p truncate");
+	/* blocks paging io */
+	ke_rwlock_enter_write(&node->paging_rwlock, "9p truncate");
+	/* faults will no longer create busy pages beyond new size */
+	vm_vnobj_set_valid_length(vn->file.vmobj, size);
+	/* pageouts can proceed */
+	ke_rwlock_exit_write(&node->paging_rwlock);
+
+	if (size < node->vattr.size) {
+		/* clear up viewcache windows/ptes beyond new size */
+		viewcache_truncate(vn, size);
+
+		/* clear valid PTEs from mappings beyond new size */
+		// ...
+
+		/* clear the object table of pages beyond new size */
+		// ...
+	}
+
+	/* update size, do FS-specific acts... */
+	// ...
+
+	ke_rwlock_exit_write(&node->rwlock);
+	return 0;
+}
+
+int
+ninep_setattr(vnode_t *vn, vattr_t *attr)
+{
+	int r = 0;
+
+	if (attr->size != -1) {
+		r = ninep_truncate(vn, attr->size);
+	}
+
+	return r;
 }
 
 static inline size_t
@@ -1194,6 +1241,7 @@ static struct vnode_ops ninep_vnops = {
 	.remove = ninep_remove,
 	.rename = ninep_rename,
 	.getattr = ninep_getattr,
+	.setattr = ninep_setattr,
 	.readdir = ninep_readdir,
 	.readlink = ninep_readlink,
 	.stack_depth = 2,

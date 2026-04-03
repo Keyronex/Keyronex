@@ -34,9 +34,11 @@
 
 #define VIEW_SIZE (64 * 1024) /* 64 KiB views */
 
-/*
- * A view retains its vnode, iff the view is dirty or being written back.
- */
+struct view_waiter {
+	TAILQ_ENTRY(view_waiter) tqentry;
+	kevent_t ev;
+};
+
 struct view {
 	size_t refcnt;
 	uint64_t offset; /* byte offset in file */
@@ -47,6 +49,8 @@ struct view {
 
 	enum view_dirtiness { VIEW_CLEAN, VIEW_DIRTY, VIEW_WRITEBACK } dirty;
 	kabstime_t dirty_time; /* time when marked dirty after being clean */
+
+	TAILQ_HEAD(, view_waiter) waiters;
 };
 
 TAILQ_HEAD(view_tq, view);
@@ -105,6 +109,7 @@ viewcache_writeback_thread(void *)
 	while (true) {
 		ipl_t ipl;
 		struct view *view;
+		struct view_waiter *waiter;
 
 		ke_wait1(&ev, "viewcache_writeback_thread", false,
 		    ke_time() + NS_PER_S);
@@ -136,13 +141,18 @@ viewcache_writeback_thread(void *)
 			/* dirtied again while writeback was ongoing */
 			view->dirty = VIEW_DIRTY;
 			TAILQ_INSERT_TAIL(&dirty_queue, view, queue_entry);
-			ke_spinlock_exit(&vc_lock, ipl);
 		} else {
 			/* now clean */
 			view->dirty = VIEW_CLEAN;
 			TAILQ_INSERT_TAIL(&lru_queue, view, queue_entry);
-			ke_spinlock_exit(&vc_lock, ipl);
 		}
+
+		while ((waiter = TAILQ_FIRST(&view->waiters)) != NULL) {
+			TAILQ_REMOVE(&view->waiters, waiter, tqentry);
+			ke_event_set_signalled(&waiter->ev, true);
+		}
+
+		ke_spinlock_exit(&vc_lock, ipl);
 	}
 }
 
@@ -156,6 +166,7 @@ viewcache_init(void)
 	for (size_t i = 0; i < view_count; i++) {
 		struct view *v = &views[i];
 		TAILQ_INSERT_TAIL(&free_queue, v, queue_entry);
+		TAILQ_INIT(&v->waiters);
 	}
 
 	thread_t *thread = proc_new_system_thread(viewcache_writeback_thread, NULL);
@@ -338,6 +349,111 @@ viewcache_vmm_get_fault_info(vaddr_t addr, struct vm_object **out_object,
 	    (uintptr_t)(view - views) * VIEW_SIZE;
 	*out_mapping_end = *out_mapping_start + VIEW_SIZE;
 	*out_mapping_offset = view->offset;
+}
+
+/*
+ * Wait for a view to leave VIEW_WRITEBACK state.
+ * Requires vc_lock held (drops & reacquires it).
+ */
+static void
+view_wait_writeback(struct view *view)
+{
+	struct view_waiter waiter;
+
+	kassert(ke_spinlock_held(&vc_lock));
+	kassert(view->dirty == VIEW_WRITEBACK);
+
+	ke_event_init(&waiter.ev, false);
+	TAILQ_INSERT_TAIL(&view->waiters, &waiter, tqentry);
+	ke_spinlock_exit(&vc_lock, IPL_0);
+
+	ke_wait1(&waiter.ev, "view_wait_writeback", false, ABSTIME_FOREVER);
+
+	ke_spinlock_enter(&vc_lock);
+}
+
+/*
+ * Discard viewcache state for a vnode beyond newsize.
+ *
+ * @pre vnode rwlock held write
+ */
+void
+viewcache_truncate(vnode_t *vn, uint64_t newsize)
+{
+	struct vn_vc_state *vc_state = vn->file.vc_state;
+	uint64_t partial_view_off = rounddown2(newsize, VIEW_SIZE);
+	uint64_t first_discard_off = roundup2(newsize, VIEW_SIZE);
+	struct view *view, *next;
+	struct view key;
+	ipl_t ipl;
+
+	/*
+	 * If newsize is not VIEW_SIZE-aligned, there may be a view at
+	 * partial_view_off. So unmap the needful pages there.
+	 */
+	if (newsize % VIEW_SIZE != 0) {
+		key.offset = partial_view_off;
+
+retry:
+		ipl = ke_spinlock_enter(&vc_lock);
+		view = RB_FIND(view_tree, &vc_state->view_tree, &key);
+		if (view != NULL) {
+			vaddr_t from, len;
+
+			if (view->dirty == VIEW_WRITEBACK) {
+				view_wait_writeback(view);
+				goto retry;
+			}
+
+			from = view_addr(view) +
+			    roundup2(newsize - partial_view_off, PGSIZE);
+			len = (view_addr(view) + VIEW_SIZE) -
+			    from;
+
+			vm_vc_unmap(from, len);
+		}
+		ke_spinlock_exit(&vc_lock, ipl);
+	}
+
+	key.offset = first_discard_off;
+
+	ipl = ke_spinlock_enter(&vc_lock);
+
+retry_2:
+	/*
+	 * Now make away with any views wholly beyond the new size.
+	 */
+	view = RB_NFIND(view_tree, &vc_state->view_tree, &key);
+	while (view != NULL) {
+		next = RB_NEXT(view_tree, &vc_state->view_tree, view);
+
+		kassert(view->offset >= first_discard_off);
+		kassert(view->vnode == vn);
+		kassert(view->refcnt == 0); /* because vnode rwlock held */
+
+		if (view->dirty == VIEW_WRITEBACK) {
+			view_wait_writeback(view);
+			goto retry_2;
+		}
+
+		if (view->dirty == VIEW_DIRTY)
+			TAILQ_REMOVE(&dirty_queue, view, queue_entry);
+		else
+			TAILQ_REMOVE(&lru_queue, view, queue_entry);
+
+		RB_REMOVE(view_tree, &vc_state->view_tree, view);
+
+		vm_vc_unmap(view_addr(view), VIEW_SIZE);
+
+		view->vnode = NULL;
+		view->offset = 0;
+		TAILQ_INIT(&view->waiters);
+		TAILQ_INSERT_TAIL(&free_queue, view, queue_entry);
+
+		view = next;
+	}
+
+	ke_spinlock_exit(&vc_lock, ipl);
 }
 
 void

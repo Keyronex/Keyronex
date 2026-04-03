@@ -49,6 +49,23 @@ typedef struct vattr {
 	uint64_t	dsize;	/*!< on-disk size in bytes */
 } vattr_t;
 
+#define VATTR_NULL (vattr_t) {				\
+	.type = VNON,					\
+	.mode = -1,					\
+	.nlink = -1,					\
+	.uid = -1,					\
+	.gid = -1,					\
+	.fsid = -1,					\
+	.fileid = -1,					\
+	.size = -1,					\
+	.bsize = -1,					\
+	.atim = { .tv_sec = -1, .tv_nsec = -1 },	\
+	.mtim = { .tv_sec = -1, .tv_nsec = -1 },	\
+	.ctim = { .tv_sec = -1, .tv_nsec = -1 },	\
+	.rdev = -1,					\
+	.dsize = -1,					\
+};
+
 typedef struct vnode {
 	atomic_uint	refcount;
 	struct vfs	*vfs;
@@ -133,6 +150,7 @@ void vn_release(vnode_t *);
 
 int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
     void *buf);
+void viewcache_truncate(vnode_t *, size_t newsize);
 struct vn_vc_state *viewcache_alloc_vnode_state(vnode_t *vn);
 
 #endif /* ECX_SYS_VNODE_H */
