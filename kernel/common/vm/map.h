@@ -20,6 +20,7 @@
 
 struct vm_map_entry {
 	RB_ENTRY(vm_map_entry) rb_link;
+	vm_map_t *map;
 	vaddr_t start, end;
 	vm_prot_t prot, max_prot;
 	bool inherit_shared, cow;

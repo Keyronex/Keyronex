@@ -138,6 +138,7 @@ vm_map(vm_map_t *map, vm_object_t *object, vaddr_t *vaddrp, size_t size,
 	}
 
 	map_entry = kmem_alloc(sizeof(struct vm_map_entry));
+	map_entry->map = map;
 	map_entry->start = addr;
 	map_entry->end = addr + size;
 	map_entry->max_prot = max_prot;
@@ -191,6 +192,7 @@ vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
 		prot |= VM_USER;
 
 	map_entry = kmem_alloc(sizeof(struct vm_map_entry));
+	map_entry->map = map;
 	map_entry->start = addr;
 	map_entry->end = addr + size;
 	map_entry->max_prot = prot;

@@ -513,4 +513,93 @@ obj_max_readahead(struct obj_pte_wire_state *cursor, pgoff_t pgoff,
 void
 vm_obj_purge(vm_object_t *obj)
 {
+	kfatal("implement me");
+}
+
+void
+vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize)
+{
+	struct vm_map_entry *entry;
+	uint64_t newsizepg = roundup2(newsize, PGSIZE);
+
+	kassert(obj->kind == VM_OBJ_VNODE);
+
+	ke_mutex_enter(&obj->map_entries_lock, "vm_obj_truncate_mappings");
+
+	LIST_FOREACH(entry, &obj->map_entries, object_link) {
+		vm_map_t *map = entry->map;
+		vaddr_t trunc_start;
+		ipl_t ipl;
+
+		if (newsizepg <= entry->offset) {
+			/* entire mapping is beyond truncation point */
+			trunc_start = entry->start;
+		} else if (newsizepg >=
+		    entry->offset + (entry->end - entry->start)) {
+			/* entire mapping is before truncation point */
+			continue;
+		} else {
+			trunc_start = entry->start +
+			    (newsizepg - entry->offset);
+		}
+
+		ipl = spldisp();
+		ke_spinlock_enter_nospl(&map->creation_lock);
+		ke_spinlock_enter_nospl(&map->stealing_lock);
+
+		for (vaddr_t va = trunc_start; va < entry->end; va += PGSIZE) {
+			pte_t *ppte, pte;
+			vm_page_t *page;
+
+			/*
+			 * TODO: optimise this, don't fetch each individually!!
+			 * don't fetch while in same table (Not crossing PGSIZE
+			 * PTE boundary).
+			 * and pmap_fetch_pte() should, like pmap_wire_pte(),
+			 * return at what level there's no PTE, so we can skip
+			 * multiples of tables.
+			 */
+			ppte = pmap_fetch_pte(map, NULL, va);
+			if (ppte == NULL)
+				continue;
+
+			pte = pmap_load_pte(ppte);
+
+			switch (pmap_pte_characterise(pte)) {
+			case kPTEKindHW:
+				page = pmap_pte_hwleaf_page(pte, PMAP_L0);
+				if (page->use != VM_PAGE_FILE) {
+					/*
+					 * We don't bother clearing it out if
+					 * it's not a VM_PAGE_FILE; it must then
+					 * be a private or fork page so it's not
+					 * a page of this object.
+					 */
+					continue;
+				}
+
+				rs_evict_leaf_pte(&map->rs, va, page, ppte);
+				break;
+
+			case kPTEKindBusy:
+				/*
+				 * We don't need to worry about these. Whoever
+				 * is faulting will check valid_length after
+				 * I/O completes and discover that the busy PTE
+				 * is now beyond valid_length, and zero it
+				 * instead of making it valid.
+				 */
+				break;
+
+			default:
+				break;
+			}
+		}
+
+		ke_spinlock_exit_nospl(&map->stealing_lock);
+		ke_spinlock_exit_nospl(&map->creation_lock);
+		splx(ipl);
+	}
+
+	ke_mutex_exit(&obj->map_entries_lock);
 }
