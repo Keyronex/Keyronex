@@ -150,7 +150,7 @@ void vn_release(vnode_t *);
 
 int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
     void *buf);
-void viewcache_truncate(vnode_t *, size_t newsize);
+void viewcache_truncate(vnode_t *, uint64_t newsize);
 struct vn_vc_state *viewcache_alloc_vnode_state(vnode_t *vn);
 
 #endif /* ECX_SYS_VNODE_H */

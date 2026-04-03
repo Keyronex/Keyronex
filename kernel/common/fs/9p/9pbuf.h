@@ -20,6 +20,7 @@ enum ninep_kind {
 	k9pLcreate = 14,
 	k9pReadlink = 22,
 	k9pGetattr = 24,
+	k9pSetattr = 26,
 	k9pReaddir = 40,
 	k9pLink = 70,
 	k9pMkDir = 72,
@@ -62,6 +63,18 @@ enum ninep_getattr_mask {
 
 	k9pGetattrBasic = 0x7ffULL, /* all up to & including blocks */
 	k9pGetattrAll = 0x3fffULL,  /* all */
+};
+
+enum ninep_setattr_mask {
+	P9_SETATTR_MODE = 0x00000001UL,
+	P9_SETATTR_UID = 0x00000002UL,
+	P9_SETATTR_GID = 0x00000004UL,
+	P9_SETATTR_SIZE = 0x00000008UL,
+	P9_SETATTR_ATIME = 0x00000010UL,
+	P9_SETATTR_MTIME = 0x00000020UL,
+	P9_SETATTR_CTIME = 0x00000040UL,
+	P9_SETATTR_ATIME_SET = 0x00000080UL,
+	P9_SETATTR_MTIME_SET = 0x00000100UL,
 };
 
 struct ninep_hdr {

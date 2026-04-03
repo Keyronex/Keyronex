@@ -248,7 +248,8 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	case k9pLerror + 1: {
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
-		kdprintf("Failed to clone node id: %d\n", err);
+		kdprintf("Failed to clone node id: %d (file %s)\n", err,
+		    node->name);
 		kassert(err != 0);
 		r = -err;
 		break;
@@ -728,15 +729,75 @@ ninep_getattr(vnode_t *vn, vattr_t *attr)
 }
 
 static int
+ninep_do_setattr_size(struct ninepfs_state *fs, fid_t fid, uint64_t new_size)
+{
+	struct ninep_buf *buf_in, *buf_out;
+	iop_t *iop;
+	int r = 0;
+
+	/*
+	 * size[4] Tsetattr tag[2] fid[4] valid[4] mode[4] uid[4] gid[4] size[8]
+	 *           atime_sec[8] atime_nsec[8] mtime_sec[8] mtime_nsec[8]
+	 */
+	buf_in = ninep_buf_alloc("Fddddlllll");
+	/* size[4] Rsetattr tag[2] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pSetattr;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addu32(buf_in, P9_SETATTR_SIZE);
+	ninep_buf_addu32(buf_in, 0);		/* mode (ignored) */
+	ninep_buf_addu32(buf_in, 0);		/* uid (ignored) */
+	ninep_buf_addu32(buf_in, 0);		/* gid (ignored) */
+	ninep_buf_addu64(buf_in, new_size);	/* size */
+	ninep_buf_addu64(buf_in, 0);		/* atime_sec (ignored) */
+	ninep_buf_addu64(buf_in, 0);		/* atime_nsec (ignored) */
+	ninep_buf_addu64(buf_in, 0);		/* mtime_sec (ignored) */
+	ninep_buf_addu64(buf_in, 0);		/* mtime_nsec (ignored) */
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pSetattr + 1:
+		r = 0;
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		break;
+	}
+
+	default:
+		kfatal("9p: unexpected Tsetattr response\n");
+	}
+
+	ninep_buf_free(buf_out);
+	return r;
+}
+
+static int
 ninep_truncate(vnode_t *vn, size_t size)
 {
 	struct ninep_node *node = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+	int r;
 
 	if (vn->type != VREG)
 		return -EINVAL;
 
 	/* blocks all read/write calls, blocking all viewcache io */
 	ke_rwlock_enter_write(&node->rwlock, "9p truncate");
+
+	if (size < node->vattr.size)
+		viewcache_truncate(vn, size);
+
 	/* blocks paging io */
 	ke_rwlock_enter_write(&node->paging_rwlock, "9p truncate");
 	/* faults will no longer create busy pages beyond new size */
@@ -744,19 +805,25 @@ ninep_truncate(vnode_t *vn, size_t size)
 	/* pageouts can proceed */
 	ke_rwlock_exit_write(&node->paging_rwlock);
 
-	if (size < node->vattr.size) {
-		/* clear up viewcache windows/ptes beyond new size */
-		viewcache_truncate(vn, size);
+	if (size < node->vattr.size)
+		vm_obj_truncate(vn->file.vmobj, node->vattr.size, size);
 
-		/* clear valid PTEs from mappings beyond new size */
-		// ...
+	/*
+	 * TODO: for extend (rather than  true truncate) maybe zero any partial
+	 * page that exists? could have junk in it from shared mappings.
+	 */
 
-		/* clear the object table of pages beyond new size */
-		// ...
+	r = ninep_do_setattr_size(fs, node->fid, size);
+	if (r == 0) {
+		node->vattr.size = size;
+	} else {
+		kdprintf("9pfs: setattr size failed!!");
+
+		/* best-effort ""recovery"" "*/
+		ke_rwlock_enter_write(&node->paging_rwlock, "9p truncate");
+		vm_vnobj_set_valid_length(vn->file.vmobj, node->vattr.size);
+		ke_rwlock_exit_write(&node->paging_rwlock);
 	}
-
-	/* update size, do FS-specific acts... */
-	// ...
 
 	ke_rwlock_exit_write(&node->rwlock);
 	return 0;

@@ -711,3 +711,10 @@ vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
 			break;
 	}
 }
+
+void
+vm_obj_truncate(vm_object_t *obj, size_t oldsize, size_t newsize)
+{
+	vm_obj_truncate_mappings(obj, newsize);
+	vm_obj_truncate_pages(obj, oldsize, newsize);
+}
