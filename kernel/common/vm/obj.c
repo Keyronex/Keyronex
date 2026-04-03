@@ -520,7 +520,7 @@ void
 vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize)
 {
 	struct vm_map_entry *entry;
-	uint64_t newsizepg = roundup2(newsize, PGSIZE);
+	uint64_t newsize_pg = roundup2(newsize, PGSIZE);
 
 	kassert(obj->kind == VM_OBJ_VNODE);
 
@@ -531,16 +531,16 @@ vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize)
 		vaddr_t trunc_start;
 		ipl_t ipl;
 
-		if (newsizepg <= entry->offset) {
+		if (newsize_pg <= entry->offset) {
 			/* entire mapping is beyond truncation point */
 			trunc_start = entry->start;
-		} else if (newsizepg >=
+		} else if (newsize_pg >=
 		    entry->offset + (entry->end - entry->start)) {
 			/* entire mapping is before truncation point */
 			continue;
 		} else {
 			trunc_start = entry->start +
-			    (newsizepg - entry->offset);
+			    (newsize_pg - entry->offset);
 		}
 
 		ipl = spldisp();
@@ -602,4 +602,112 @@ vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize)
 	}
 
 	ke_mutex_exit(&obj->map_entries_lock);
+}
+
+void pagein_wait_retain(struct pagein_wait *);
+void pagein_wait_release(struct pagein_wait *);
+
+void
+vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
+{
+	uint64_t newsize_pg = roundup2(newsize, PGSIZE),
+		 oldsize_pg = roundup2(oldsize, PGSIZE);
+	uint64_t offset;
+	ipl_t ipl;
+
+
+	offset = newsize_pg;
+
+	while (true) {
+		pte_t *ppte;
+
+		ipl = spldisp();
+		ke_spinlock_enter_nospl(&obj->creation_lock);
+		ke_spinlock_enter_nospl(&obj->stealing_lock);
+
+		/*
+		 * TODO:
+		 * - don't fetch PTE if in same table
+		 * - skip appropriate levels
+		 */
+
+		ppte = obj_fetch_pte(obj, offset);
+
+		if (ppte == NULL) {
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+
+			offset += PGSIZE;
+
+			if (offset >= oldsize_pg)
+				break;
+
+			continue;
+		}
+
+		pte_t pte = pmap_load_pte(ppte);
+
+		switch (pmap_pte_characterise(pte)) {
+		case kPTEKindHW: {
+			vm_page_t *page = pmap_pte_hwleaf_page(pte, PMAP_L0);
+
+			/*
+			 * Viewcache and user mappings should have been cleared
+			 * out by the time this function was called, leaving a
+			 * share count of 0.
+			 */
+			kassert(page->use == VM_PAGE_FILE);
+			kassert(page->shared.share_count == 0);
+			kassert(page->owner_obj == obj);
+
+			pmap_pte_zeroleaf_create(ppte, PMAP_L0);
+			obj_page_zeroed(obj, page);
+			/* (unref=false as share_count is 0) */
+			vm_page_delete(page, false);
+
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+			break;
+		}
+
+		case kPTEKindBusy: {
+			/*
+			 * Pagein is happening. The faulter will check
+			 * valid_length and zero this PTE itself when it
+			 * returns. Wait for it to complete and try again with
+			 * same offset.
+			 */
+			vm_page_t *page = pmap_pte_soft_page(ppte);
+			struct pagein_wait *pw = page->pagein_wait;
+
+			pagein_wait_retain(pw);
+
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+
+			ke_wait1(&pw->event, "truncate_busy", false,
+			    ABSTIME_FOREVER);
+			pagein_wait_release(pw);
+
+			/* no change to offset, go again. */
+			continue;
+		}
+
+		case kPTEKindZero:
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+			break;
+
+		default:
+			kfatal("vm_obj_truncate: unexpected PTE kind\n");
+		}
+
+		offset += PGSIZE;
+		if (offset >= oldsize_pg)
+			break;
+	}
 }

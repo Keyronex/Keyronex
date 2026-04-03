@@ -18,23 +18,6 @@
 #include <vm/map.h>
 #include <vm/page.h>
 
-/*
- * State used when waiting for a pagein to complete, as in collided page faults.
- *
- * A pointer to a pagein_wait (in vm_page->pagein_wait) is guaranteed to
- * continue existing, with a refcount > 0, while holding either or both of:
- * - the vm_rs creation_lock
- * - the vm_object creation_lock (if it's an object page)
- * because these are both reacquired by the faulter before it releases the
- * pagein_wait.
- *
- * The refcount, on the other hand, is atomic. So waiters can release it while
- * holding no locks.
- */
-struct pagein_wait {
-	atomic_uint_fast32_t refcount;
-	kevent_t event;
-};
 
 #define MAX_CLUSTER 16
 
