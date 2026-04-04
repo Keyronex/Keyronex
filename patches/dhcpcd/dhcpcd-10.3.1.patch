@@ -1,0 +1,237 @@
+diff -ruN dhcpcd-10.3.1/configure dhcpcd/configure
+--- dhcpcd-10.3.1/configure	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/configure	2026-04-04 15:38:59.543333554 +0100
+@@ -247,7 +247,7 @@
+ 
+ 	# Work with cpu-kernel-os, ie Debian
+ 	case "$VENDOR" in
+-	linux*|kfreebsd*) OS=$VENDOR; VENDOR= ;;
++	linux*|kfreebsd*|keyronex*) OS=$VENDOR; VENDOR= ;;
+ 	esac
+ 	case "$REST" in
+ 	gnu/kfreebsd*)		OS="kfreebsd"; VENDOR= ;;
+@@ -370,7 +370,7 @@
+ 	ALLOW_USR_LIBS=true
+ fi
+ case "$OS" in
+-linux*|solaris*|sunos*|kfreebsd*|dragonfly*|freebsd*) ;;
++linux*|solaris*|sunos*|kfreebsd*|dragonfly*|freebsd*|keyronex*) ;;
+ *)
+ 	# There might be more than one ...
+ 	for LDELFN in /libexec/ld-elf.so.[0-9]*; do
+@@ -482,7 +482,7 @@
+ 	echo "CPPFLAGS+=	-D_OPENBSD_SOURCE" >>$CONFIG_MK
+ 	echo "DHCPCD_SRCS+=	if-bsd.c" >>$CONFIG_MK
+ 	;;
+-linux*)
++linux*|keyronex*)
+ 	echo "CPPFLAGS+=	-D_GNU_SOURCE" >>$CONFIG_MK
+ 	# Large File Support, should be fine for 32-bit systems.
+ 	# But if this is the case, why is it not set by default?
+@@ -599,7 +599,7 @@
+ 		echo "PRIVSEP_SRCS+=	privsep-bpf.c" >>$CONFIG_MK
+ 	fi
+ 	case "$OS" in
+-	linux*)
++	linux*|keyronex*)
+ 			 echo "PRIVSEP_SRCS+=	privsep-linux.c" >>$CONFIG_MK
+ 			 if [ -n "$SECCOMP" ] && [ "$SECCOMP" = no ]; then
+ 				 echo "#define	DISABLE_SECCOMP" >>$CONFIG_H
+@@ -684,7 +684,7 @@
+ 	echo "EMBEDDEDINSTALL=	_embeddedinstall" >>$CONFIG_MK
+ fi
+ 
+-if [ "$OS" = linux ]; then
++if [ "$OS" = linux ] || [ "$OS" = "keyronex" ]; then
+ 	printf "Testing for nl80211 ... "
+ 	cat <<EOF >_nl80211.c
+ #include <linux/nl80211.h>
+@@ -1577,7 +1577,7 @@
+ 		echo "yes"
+ 	elif [ -n "$LIBUDEV_LIBS" ]; then
+ 		case "$OS" in
+-		linux*)	echo "yes";;
++		linux*|keyronex*)	echo "yes";;
+ 		*)	echo "yes (disabled)"
+ 			# FreeBSD libudev fails to return a udev device
+ 			# with udev_device_new_from_subsystem_sysname
+diff -ruN dhcpcd-10.3.1/src/bpf.c dhcpcd/src/bpf.c
+--- dhcpcd-10.3.1/src/bpf.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/bpf.c	2026-04-04 15:39:53.201866222 +0100
+@@ -35,7 +35,7 @@
+ #include <netinet/in.h>
+ #include <netinet/if_ether.h>
+ 
+-#ifdef __linux__
++#if defined(__linux__) || defined(__keyronex__)
+ /* Special BPF snowflake. */
+ #include <linux/filter.h>
+ #define	bpf_insn		sock_filter
+@@ -139,7 +139,7 @@
+ 	}
+ }
+ 
+-#ifndef __linux__
++#if !defined(__linux__) && !defined(__keyronex__)
+ /* Linux is a special snowflake for opening, attaching and reading BPF.
+  * See if-linux.c for the Linux specific BPF functions. */
+ 
+diff -ruN dhcpcd-10.3.1/src/dhcpcd.c dhcpcd/src/dhcpcd.c
+--- dhcpcd-10.3.1/src/dhcpcd.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/dhcpcd.c	2026-04-04 16:30:54.126472014 +0100
+@@ -843,7 +843,7 @@
+ 			loginfox("%s: carrier acquired", ifp->name);
+ 	}
+ 
+-#if !defined(__linux__) && !defined(__NetBSD__)
++#if !defined(__linux__) && !defined(__NetBSD__) && !defined(__keyronex__)
+ 	/* BSD does not emit RTM_NEWADDR or RTM_CHGADDR when the
+ 	 * hardware address changes so we have to go
+ 	 * through the disovery process to work it out. */
+@@ -2342,7 +2342,9 @@
+ 	}
+ 	if (eloop_signal_mask(ctx.eloop) == -1) {
+ 		logerr("%s: eloop_signal_mask", __func__);
++#if 0 /* FIXME keyronex doesn't do signals yet  */
+ 		goto exit_failure;
++#endif
+ 	}
+ 
+ 	if (sig != 0) {
+diff -ruN dhcpcd-10.3.1/src/if-linux.c dhcpcd/src/if-linux.c
+--- dhcpcd-10.3.1/src/if-linux.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/if-linux.c	2026-04-04 16:00:41.272810871 +0100
+@@ -54,7 +54,7 @@
+ /* musl has its own definition of struct ethhdr, so only include
+  * netinet/if_ether.h on systems with GLIBC.  For the ARPHRD constants,
+  * we must include linux/if_arp.h instead. */
+-#if defined(__GLIBC__)
++#if defined(__GLIBC__) || defined(__keyronex__)
+ #include <netinet/if_ether.h>
+ #else
+ #include <linux/if_arp.h>
+diff -ruN dhcpcd-10.3.1/src/if.c dhcpcd/src/if.c
+--- dhcpcd-10.3.1/src/if.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/if.c	2026-04-04 16:37:27.841394835 +0100
+@@ -186,7 +186,6 @@
+ bool
+ if_is_link_up(const struct interface *ifp)
+ {
+-
+ 	return ifp->flags & IFF_UP &&
+ 	    (ifp->carrier != LINK_DOWN ||
+ 	     (ifp->options != NULL && !(ifp->options->options & DHCPCD_LINK)));
+@@ -661,7 +660,7 @@
+ 			active = if_check_arphrd(ifp, active, if_noconf);
+ #endif
+ 		}
+-#ifdef __linux__
++#if defined(__linux__) || defined(__keyronex__)
+ 		else {
+ 			struct ifreq ifr = { .ifr_flags = 0 };
+ 
+diff -ruN dhcpcd-10.3.1/src/if.h dhcpcd/src/if.h
+--- dhcpcd-10.3.1/src/if.h	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/if.h	2026-04-04 15:58:25.503012671 +0100
+@@ -132,7 +132,7 @@
+ #endif
+ };
+ #endif
+-#ifdef __linux__
++#if defined(__linux__) || defined(__keyronex__)
+ struct priv {
+ 	int route_fd;
+ 	int generic_fd;
+@@ -283,7 +283,7 @@
+ struct interface *if_findifpfromcmsg(struct dhcpcd_ctx *,
+     struct msghdr *, int *);
+ 
+-#ifdef __linux__
++#if defined(__linux__) || defined(__keyronex__)
+ int if_linksocket(struct sockaddr_nl *, int, int);
+ int if_getnetlink(struct dhcpcd_ctx *, struct iovec *, int, int,
+     int (*)(struct dhcpcd_ctx *, void *, struct nlmsghdr *), void *);
+diff -ruN dhcpcd-10.3.1/src/ipv4.h dhcpcd/src/ipv4.h
+--- dhcpcd-10.3.1/src/ipv4.h	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/ipv4.h	2026-04-04 15:42:30.802700116 +0100
+@@ -80,7 +80,7 @@
+ #define IN_ARE_ADDR_EQUAL(a, b)		((a)->s_addr == (b)->s_addr)
+ #define IN_IS_ADDR_UNSPECIFIED(a)	((a)->s_addr == INADDR_ANY)
+ 
+-#ifdef __linux__
++#if defined(__linux__) || defined(__keyronex__)
+ #define IP_LIFETIME
+ #endif
+ 
+diff -ruN dhcpcd-10.3.1/src/ipv6.h dhcpcd/src/ipv6.h
+--- dhcpcd-10.3.1/src/ipv6.h	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/ipv6.h	2026-04-04 16:01:52.669659584 +0100
+@@ -35,7 +35,7 @@
+ #include "config.h"
+ #include "if.h"
+ 
+-#ifndef __linux__
++#if !defined(__linux__) && !defined(__keyronex__)
+ #  if !defined(__QNX__) && !defined(__sun)
+ #    include <sys/endian.h>
+ #  endif
+@@ -140,7 +140,7 @@
+ #define	IPV6_MANAGETEMPADDR
+ #endif
+ 
+-#ifdef __linux__
++#if defined(__linux__) || defined(__keyronex__)
+    /* Match Linux defines to BSD */
+ #  ifdef IFA_F_TEMPORARY
+ #    define IN6_IFF_TEMPORARY	IFA_F_TEMPORARY
+diff -ruN dhcpcd-10.3.1/src/logerr.c dhcpcd/src/logerr.c
+--- dhcpcd-10.3.1/src/logerr.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/logerr.c	2026-04-04 15:57:12.171503777 +0100
+@@ -74,7 +74,7 @@
+ 	.log_pid = 0,
+ };
+ 
+-#if defined(__linux__)
++#if defined(__linux__) || defined(__keyronex__)
+ /* Poor man's getprogname(3). */
+ static char *_logprog;
+ static const char *
+diff -ruN dhcpcd-10.3.1/src/privsep-linux.c dhcpcd/src/privsep-linux.c
+--- dhcpcd-10.3.1/src/privsep-linux.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/privsep-linux.c	2026-04-04 15:57:32.554767912 +0100
+@@ -29,7 +29,9 @@
+ #include <sys/ioctl.h>
+ #include <sys/prctl.h>
+ #include <sys/socket.h>
++#if defined(__linux__)
+ #include <sys/syscall.h>
++#endif
+ 
+ #include <linux/audit.h>
+ #include <linux/filter.h>
+diff -ruN dhcpcd-10.3.1/src/route.h dhcpcd/src/route.h
+--- dhcpcd-10.3.1/src/route.h	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/route.h	2026-04-04 15:57:45.175845057 +0100
+@@ -57,7 +57,7 @@
+ /* Some systems have route metrics.
+  * OpenBSD route priority is not this. */
+ #ifndef HAVE_ROUTE_METRIC
+-# if defined(__linux__)
++# if defined(__linux__) || defined(__keyronex__)
+ #  define HAVE_ROUTE_METRIC 1
+ # endif
+ #endif
+diff -ruN dhcpcd-10.3.1/src/script.c dhcpcd/src/script.c
+--- dhcpcd-10.3.1/src/script.c	2026-03-16 12:03:38.000000000 +0000
++++ dhcpcd/src/script.c	2026-04-04 16:31:02.075748521 +0100
+@@ -772,6 +772,10 @@
+ 	argv[1] = NULL;
+ 	logdebugx("%s: executing: %s %s", ifp->name, argv[0], reason);
+ 
++#if 1
++	return 0; /* FIXME breaks with keyronex 9p at the moment */
++#endif
++
+ #ifdef PRIVSEP
+ 	if (IN_PRIVSEP(ctx)) {
+ 		ssize_t err;

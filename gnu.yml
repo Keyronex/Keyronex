@@ -735,3 +735,36 @@ packages:
       - args: ['make', 'install']
         environ:
           DESTDIR: '@THIS_COLLECT_DIR@'
+
+  - name: dhcpcd
+    architecture: '@OPTION:arch@'
+    source:
+      subdir: 'sources'
+      url: 'https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.3.1/dhcpcd-10.3.1.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'dhcpcd-10.3.1'
+      version: '10.3.1'
+      patch-path-strip: 1
+    tools_required:
+      - host-pkgconf
+      - host-gcc
+      - virtual: pkgconfig-for-target
+        triple: "@OPTION:arch-triple@"
+    pkgs_required:
+      - mlibc
+    configure:
+      - args: ['cp', '-r', '@THIS_SOURCE_DIR@/.', '@THIS_BUILD_DIR@']
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--sysconfdir=/etc'
+        - '--disable-privsep'
+        - '--with-sysroot=@SYSROOT_DIR@' # Set libtool's lt_sysroot.
+        - '--debug'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+      - args: ['chmod', '0755', '@THIS_COLLECT_DIR@/usr/sbin/dhcpcd']

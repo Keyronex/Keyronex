@@ -17,8 +17,8 @@ meson.add_install_script(
   mkdir -p "$ROOT/var/db"
   mkdir -p "$ROOT/var/run"
 
-  ln -sf run  "$ROOT/var/run"
   ln -sf usr/bin  "$ROOT/bin"
   ln -sf usr/sbin "$ROOT/sbin"
+  ln -sf var/run  "$ROOT/run"
   '''
 )
