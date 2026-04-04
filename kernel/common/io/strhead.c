@@ -1123,7 +1123,8 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 			return r;
 		}
 	} else if (mp->db->type == M_IOCNAK) {
-		kfatal("handle negative ioctl ack\n");
+		struct strioctl *ioc = (struct strioctl *)mp->rptr;
+		r = -ioc->rval;
 	} else {
 		r = 0;
 	}

@@ -970,6 +970,19 @@ ux_wput(queue_t *wq, mblk_t *mp)
 		ux_wput_data(wq, mp);
 		break;
 
+	case M_IOCTL: {
+		struct strioctl *ioc = (typeof(ioc))mp->rptr;
+
+		switch (ioc->ic_cmd) {
+		default:
+			kdprintf("ux_wput: unhandled ioctl 0x%x\n",
+			    ioc->ic_cmd);
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+			ktodo();
+		}
+	}
+
 	case M_PROTO: {
 		union T_primitives *prim = (union T_primitives *)mp->rptr;
 		switch (prim->type) {
@@ -999,7 +1012,7 @@ ux_wput(queue_t *wq, mblk_t *mp)
 
 
 	default:
-		ktodo();
+		kfatal("unix_wput: unhandled msg type %d\n", mp->db->type);
 	}
 }
 

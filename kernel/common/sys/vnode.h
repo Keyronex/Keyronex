@@ -133,6 +133,7 @@ struct vnode_ops {
 #define VOP_CHPOLL(VN, POLL, MODE) (VN)->ops->chpoll(VN, (POLL), (MODE));
 #define VOP_READLINK(VN, BUF, LEN) (VN)->ops->readlink(VN, (BUF), (LEN));
 #define VOP_GETATTR(VN, VATTR) (VN)->ops->getattr(VN, (VATTR));
+#define VOP_SETATTR(VN, VATTR) (VN)->ops->setattr(VN, (VATTR));
 #define VOP_IOCTL(VN, CMD, DATA) (VN)->ops->ioctl(VN, (CMD), (DATA));
 #define VOP_READ(VN, BUF, LEN, OFF, F) (VN)->ops->read(VN, BUF, LEN, OFF, F);
 #define VOP_READDIR(VN, BUF, LEN, OFF) (VN)->ops->readdir(VN, BUF, LEN, OFF);

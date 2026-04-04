@@ -239,6 +239,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return sys_readlinkat((int)arg1, (const char *)arg2,
 		    (char *)arg3, (size_t)arg4);
 
+	case SYS_truncate:
+		return sys_truncate((const char *)arg1, (off_t)arg2);
+
 
 	/*
 	 *  file ops
@@ -265,6 +268,12 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_fstatat:
 		return sys_fstatat(arg1, (const char *)arg2, (int)arg3,
 		    (struct stat *)arg4);
+
+	case SYS_ftruncate:
+		return sys_ftruncate((int)arg1, arg2);
+
+	case SYS_flock:
+		return sys_flock((int)arg1, (int)arg2);
 
 	/*
 	 * fd manipulation

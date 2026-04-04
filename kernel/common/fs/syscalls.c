@@ -546,6 +546,40 @@ out:
 	return r;
 }
 
+int
+sys_truncate(const char *upath, off_t length)
+{
+	char *path;
+	namecache_handle_t nch;
+	int r, len;
+	vattr_t attr;
+
+	len = strldup_user(&path, upath, 4095);
+	if (len < 0)
+		return len;
+
+	r = vfs_lookup_simple(root_nch, &nch, path, 0);
+	if (r != 0) {
+		kmem_free(path, len + 1);
+		return r;
+	}
+
+	if (nch.nc->vp->type != VREG) {
+		r = -EINVAL;
+		goto out;
+	}
+
+	attr = VATTR_NULL;
+	attr.size = length;
+	r = VOP_SETATTR(nch.nc->vp, &attr);
+
+out:
+	nchandle_release(nch);
+	kmem_free(path, len + 1);
+
+	return r;
+}
+
 ssize_t
 sys_read(int fd, void *ubuf, size_t nbyte)
 {
@@ -776,5 +810,48 @@ out:
 	if (path != NULL)
 		kmem_free(path, pathlen + 1);
 
+	return r;
+}
+
+int
+sys_ftruncate(int fd, off_t length)
+{
+	file_t *file;
+	vattr_t attr;
+	int r;
+
+	file = uf_lookup(curproc()->finfo, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	if (file->vnode->type != VREG) {
+		r = -EINVAL;
+		goto out;
+	}
+
+	attr = VATTR_NULL;
+	attr.size = length;
+	r = VOP_SETATTR(file->vnode, &attr);
+
+out:
+	file_release(file);
+	return r;
+}
+
+int
+sys_flock(int fd, int op)
+{
+	file_t *file;
+	int r;
+
+	file = uf_lookup(curproc()->finfo, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	kdprintf("sys_flock: fd=%d op=0x%x\n", fd, op);
+	r = -ENOSYS;
+
+out:
+	file_release(file);
 	return r;
 }
