@@ -450,6 +450,66 @@ out:
 	return r;
 }
 
+static int
+ninep_mkdir(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
+{
+	struct ninep_node *dn = VTO9(dvn);
+	struct ninepfs_state *fs = VTO9FS(dvn);
+	struct ninep_buf *buf_in, *buf_out;
+	iop_t *iop;
+	struct ninep_qid qid;
+	uint32_t mode;
+	int r = 0;
+
+	mode = 0755;
+
+	/* size[4] Tmkdir tag[2] dfid[4] name[s] mode[4] gid[4] */
+	buf_in = ninep_buf_alloc("FS64dd");
+	/* size[4] Rmkdir tag[2] qid[13] */
+	buf_out = ninep_buf_alloc("Q");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pMkDir;
+	ninep_buf_addfid(buf_in, dn->fid);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_addu32(buf_in, mode);
+	ninep_buf_addu32(buf_in, 0);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pMkDir + 1: {
+		ninep_buf_getqid(buf_out, &qid);
+		ninep_buf_free(buf_out);
+		r = 0;
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		ninep_buf_free(buf_out);
+		r = -err;
+		kassert(r != 0);
+		kdprintf("9p: Tmkdir failed: %d\n", r);
+		goto out;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	r = ninep_lookup(dvn, name, out);
+
+out:
+	return r;
+}
+
 int
 ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 {
@@ -463,27 +523,17 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	int nineplmode = 0;
 	int r = 0;
 
-	/*
-	 * note:
-	 * "lcreate creates a regular file name in directory fid and prepares it
-	 * for I/O."
-	 *
-	 * There doesn't appear to be a special mode for creating sockets, dirs,
-	 * etc; accordingly we need to handle these.
-	 */
-
 	switch (attr->type) {
 	case VREG:
 		nineplmode = 0755 | S_IFREG;
 		break;
 
-	case VDIR:
-		nineplmode = 0755 | S_IFDIR;
-		break;
-
 	case VSOCK:
 		nineplmode = 0755 | S_IFSOCK;
 		break;
+
+	case VDIR:
+		return ninep_mkdir(dvn, name, attr, out);
 
 	default:
 		kfatal("Unexpected vattr type %d\n", attr->type);
