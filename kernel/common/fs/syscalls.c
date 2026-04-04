@@ -547,6 +547,21 @@ out:
 }
 
 int
+sys_fchmodat(int dirfd, const char *pathname, mode_t mode, int flags)
+{
+	kdprintf("warnings: sys_fchmodat() is a noop!\n");
+	return 0;
+}
+
+int
+sys_fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group,
+    int flags)
+{
+	kdprintf("warnings: sys_fchownat() is a noop!\n");
+	return 0;
+}
+
+int
 sys_truncate(const char *upath, off_t length)
 {
 	char *path;
@@ -848,8 +863,8 @@ sys_flock(int fd, int op)
 	if (file == NULL)
 		return -EBADF;
 
-	kdprintf("sys_flock: fd=%d op=0x%x\n", fd, op);
-	r = -ENOSYS;
+	kdprintf("sys_flock: fd=%d op=0x%x is a no-op!\n", fd, op);
+	r = 0;
 
 out:
 	file_release(file);

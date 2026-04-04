@@ -134,6 +134,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 	case AF_UNIX:
 		switch (type) {
 		case SOCK_STREAM:
+		case SOCK_SEQPACKET:
 			streamtab = &ux_cotsord_streamtab;
 			break;
 
@@ -226,7 +227,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		goto err;
 	}
 
-	if (type == SOCK_RAW || type == SOCK_DGRAM)
+	if (type == SOCK_RAW || type == SOCK_DGRAM || type == SOCK_SEQPACKET)
 		sh->read_mode = STR_RMSGD;
 
 	r = strpush(sh, &sock_streamtab);

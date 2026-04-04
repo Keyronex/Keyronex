@@ -447,6 +447,13 @@ sys_fcntl(int fd, int cmd, unsigned long arg)
 		file_release(f);
 		return 0;
 
+	case F_GETLK:
+	case F_SETLK:
+	case F_SETLKW: {
+		kdprintf("sys_fcntl: file locking is unimplemented!\n");
+		return -ENOSYS;
+	}
+
 	default:
 		return -EINVAL;
 	}

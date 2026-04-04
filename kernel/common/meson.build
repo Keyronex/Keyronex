@@ -16,6 +16,7 @@ kernel_sources += [
     'fs/9p/9p_vnops.c',
     'fs/devfs/devfs.c',
     'fs/fifofs.c',
+    'fs/flock.c',
     'fs/namecache.c',
     'fs/sockfs.c',
     'fs/syscalls.c',

@@ -29,6 +29,9 @@ typedef struct file {
 
 	kspinlock_t epoll_lock;
 	LIST_HEAD(, poll_entry) epoll_watches;
+
+	kmutex_t flock_mutex;	/* protects flock_entries */
+	TAILQ_HEAD(, flock_entry) flocks_held; /* BSD-style flock()s held */
 } file_t;
 
 /* steals namecache/vnode ref */

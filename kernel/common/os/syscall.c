@@ -242,6 +242,13 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_truncate:
 		return sys_truncate((const char *)arg1, (off_t)arg2);
 
+	case SYS_fchmodat:
+		return sys_fchmodat((int)arg1, (const char *)arg2, (mode_t)arg3,
+		    (int)arg4);
+
+	case SYS_fchownat:
+		return sys_fchownat((int)arg1, (const char *)arg2, (uid_t)arg3,
+		    (gid_t)arg4, (int)arg5);
 
 	/*
 	 *  file ops

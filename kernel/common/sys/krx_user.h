@@ -17,6 +17,7 @@
 #include <sys/user.h>
 
 struct file;
+struct proc;
 typedef struct uf_info uf_info_t;
 
 uf_info_t *uf_new(void);

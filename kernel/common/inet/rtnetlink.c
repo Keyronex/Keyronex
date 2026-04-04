@@ -169,7 +169,8 @@ rtnl_emit_newlink(queue_t *wq, ip_if_t *ifp, uint32_t seq, uint32_t pid)
 	ifi->ifi_family = AF_UNSPEC;
 	ifi->ifi_type = ARPHRD_ETHER;
 	ifi->ifi_index = ifp->muxid;
-	ifi->ifi_flags = IFF_UP | IFF_RUNNING; /* todo: real flags */
+	ifi->ifi_flags = IFF_UP | IFF_RUNNING |
+	    IFF_LOWER_UP; /* todo: real flags */
 	ifi->ifi_change = ifi->ifi_flags;
 
 	/* IFLA_IFNAME */
