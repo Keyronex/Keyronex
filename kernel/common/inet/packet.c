@@ -26,10 +26,12 @@
 #include <linux/if_packet.h>
 
 static int packet_ropen(queue_t *, void *devp);
+static void packet_rclose(queue_t *);
 static void packet_wput(queue_t *, mblk_t *);
 
 struct qinit packet_rinit = {
 	.qopen = packet_ropen,
+	.qclose = packet_rclose,
 	.putp = str_putnext,
 };
 
@@ -64,6 +66,18 @@ packet_ropen(queue_t *rq, void *devp)
 	rq->ptr = rq->other->ptr = pkt;
 
 	return 0;
+}
+
+static void
+packet_rclose(queue_t *rq)
+{
+	packet_t *pkt = rq->ptr;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&pkt->lock);
+	/* FIXME: RCU freeing, detach etc */
+	pkt->bot_rq = NULL;
+	ke_spinlock_exit(&pkt->lock, ipl);
 }
 
 static void
@@ -237,10 +251,20 @@ void
 bpf_input(bpf_listener_t *bpf, mblk_t *mp)
 {
 	packet_t *pkt = (typeof(pkt))containerof(bpf, packet_t, bpf_listener);
-	mblk_t *nmp = str_copymsg(mp);
+	mblk_t *nmp;
+
+	nmp = str_copymsg(mp);
 	if (nmp == NULL)
 		return;
+
 	ke_spinlock_enter_nospl(&pkt->lock);
+
+	if (pkt->bot_rq == NULL) {
+		ke_spinlock_exit_nospl(&pkt->lock);
+		str_freemsg(nmp);
+		return;
+	}
+
 	if (pkt->bpf != NULL) {
 		uint32_t len = bpf_filter(pkt->bpf, pkt->bpf_len, nmp);
 		size_t msglen = str_msgsize(nmp);
@@ -253,6 +277,8 @@ bpf_input(bpf_listener_t *bpf, mblk_t *mp)
 			nmp->wptr = nmp->rptr + len;
 		}
 	}
+
 	str_ingress_putq(pkt->bot_rq->stdata, nmp);
+
 	ke_spinlock_exit_nospl(&pkt->lock);
 }
