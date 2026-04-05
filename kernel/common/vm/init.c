@@ -160,7 +160,8 @@ map_rpt(void)
 		struct limine_memmap_entry *entry = entries[i];
 
 		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
-		    entry->type != LIMINE_MEMMAP_USABLE)
+		    entry->type != LIMINE_MEMMAP_USABLE &&
+		    entry->type != LIMINE_MEMMAP_EXECUTABLE_AND_MODULES)
 			continue;
 
 		uint64_t rounded_down_start = rounddown(entry->base,
@@ -199,7 +200,8 @@ map_rpt(void)
 		struct limine_memmap_entry *entry = entries[i];
 
 		if (entry->type != LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE &&
-		    entry->type != LIMINE_MEMMAP_USABLE)
+		    entry->type != LIMINE_MEMMAP_USABLE &&
+		    entry->type != LIMINE_MEMMAP_EXECUTABLE_AND_MODULES)
 			continue;
 
 		uint64_t rounded_down_start = rounddown(entry->base,
