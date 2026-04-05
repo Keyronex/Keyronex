@@ -58,7 +58,10 @@ if [ "$kvm" = "1" ]; then
 fi
 
 virtio_net=1
-virtio_net_arg="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no"
+
+#virtio_net_arg="-netdev tap,id=net0,ifname=tap0,script=no,downscript=no"
+virtio_net_arg="-netdev user,id=net0"
+
 if [ "${ARCH}" = "m68k" ]; then
 	virtio_net_arg="${virtio_net_arg} -device virtio-net-device,netdev=net0"
 else

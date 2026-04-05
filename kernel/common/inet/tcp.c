@@ -10,19 +10,43 @@
  * @file tcp.c
  * @brief Transmission Control Protocol implementation.
  *
- * Notes
- * ------
+ * Locking
+ * -------
  *
- * For the sake of timers, tcp_endp::rq can only be written under *both* the
- * endpoint's mutex and detach_lock.
+ * Each TCB has a spinlock (tcp_t::lock) that protects all its state.
+ * The connection table is protected by tcp_conntab_lock.
+ * Lock ordering when acquiring multiple TCB locks: by ascending pointer value.
+ *
+ * DPC context (tcp_ipv4_input, timer DPCs) runs at IPL_DISP.  The TCB
+ * spinlock raises to IPL_DISP, so it may be held by both thread-level and
+ * DPC-level code without issue.
+ *
+ * Upstream delivery
+ * -----------------
+ *
+ * str_putnext() cannot be called while the TCB spinlock is held (it would
+ * try to acquire a sleeping stream mutex).  Instead, received data is stored
+ * in tcp_t::rcv_q and pending control-message flags are set, then the read
+ * queue is qenable()'d.  tcp_rsrv() runs at thread level and flushes
+ * everything upstream.
+ *
+ * str_ingress_putq() is safe to call under the spinlock (it uses its own
+ * internal spinlock) and is used for T_CONN_IND / T_DISCON_IND to a
+ * listener.
+ *
+ * Existence guarantees
+ * --------------------
+ *
+ * The connection table holds one reference per entry.  RCU (via
+ * ke_rcu_call) defers the actual free until all in-flight DPCs that may
+ * have obtained a pointer to the TCB are done.
  */
 
 #include <sys/errno.h>
-#include <sys/k_thread.h>
-#include <sys/k_wait.h>
 #include <sys/kmem.h>
+#include <sys/k_rcu.h>
 #include <sys/libkern.h>
-#include <sys/proc.h>
+#include <sys/queue.h>
 #include <sys/stream.h>
 #include <sys/strsubr.h>
 #include <sys/tihdr.h>
@@ -31,7 +55,6 @@
 #include <netinet/ip.h>
 
 #include <inet/ip.h>
-#include <inet/ip_intf.h>
 #include <inet/tcphdr.h>
 #include <inet/util.h>
 
@@ -41,12 +64,12 @@
 #define TCP_MAXRETRIES	 5
 
 #define TCP_INIT_RTO_MS	 1000
-#define TCP_MAX_RTO_MS	 60000 /* 60 seconds */
-#define TCP_MIN_RTO_MS	 200
-#define TCP_2MSL_MS	 60000	 /* 60 seconds */
+#define TCP_MAX_RTO_MS	 60000	/* 60 seconds */
+#define TCP_MIN_RTO_MS	 200	/* 200 milliseconds (deliberately not RFC) */
+#define TCP_2MSL_MS	 60000	/* 60 seconds */
 #define TCP_KEEPALIVE_MS 7200000 /* 2 hours */
 
-/* state machine & types */
+/* state machine & types*/
 
 typedef tcp_seq tcp_seq_t;
 #define SEQ_LT(a, b)	((int32_t)((a) - (b)) < 0)
@@ -64,7 +87,7 @@ enum tcp_state {
 	TCPS_CLOSE_WAIT,	/* receiver closing; received FIN */
 	TCPS_FIN_WAIT_1,	/* initiator closing; sent FIN */
 	TCPS_CLOSING,		/* both sides closing simultaneously */
-	TCPS_LAST_ACK,		/* receiver closing, sent FIN */
+	TCPS_LAST_ACK,		/* receiver closing; sent FIN */
 	TCPS_FIN_WAIT_2,	/* initiator closing, received ACK for FIN */
 	TCPS_TIME_WAIT,		/* waiting for network to clear (2MSL timer) */
 };
@@ -78,33 +101,26 @@ enum tcp_timer_type {
 };
 
 typedef struct tcp {
-	kmutex_t	mutex;
+	kspinlock_t	lock;
 	atomic_uint	refcnt;
 
-	kspinlock_t	detach_lock;	/* involved in detaching */
 	queue_t		*rq;		/* stream read queue, if not detached */
+	mblk_q_t	rcv_q;
+	uint32_t	rcv_q_count;
 
-	TAILQ_ENTRY(tcp) detached_link; /* in tcp_detached_work_q */
-	bool	on_detached_work_q; /* is it currently on detached work q? */
-
-	/* in detached state, our send queue */
-	mblk_q_t detached_snd_q;
-	uint32_t detached_snd_q_count;
-
-	/* in detached state, our receive queue */
-	/* TODO could merge with above? detached close = hard reset on recv */
-	mblk_q_t detached_rcv_q;
-	uint32_t detached_rcv_q_count;
+	/* send queue when detached */
+	mblk_q_t	detached_snd_q;
+	uint32_t	detached_snd_q_count;
 
 	/* listener / passive-open bookkeeping */
 	bool	closing;
-	LIST_HEAD(, tcp) conninds;	/* valid while LISTEN */
-	uint32_t next_connind_seq;	/* valid while LISTEN */
+	LIST_HEAD(, tcp) conninds;
+	uint32_t next_connind_seq;
 
 	LIST_ENTRY(tcp) conninds_entry;	/* valid for passive child */
 	struct tcp *passive_listener;	/* retained while queued */
 	uint32_t connind_seq;		/* T_CONN_IND / T_DISCON_IND seqno */
-	bool	connind_sent;	 	/* T_CONN_IND already sent upward */
+	bool	connind_sent;		/* T_CONN_IND already sent upward */
 
 	enum tcp_state state;	/* state of TCB */
 	int conn_id;		/* ID in the connections/binds table */
@@ -112,20 +128,23 @@ typedef struct tcp {
 	struct sockaddr_in laddr;	/* local address */
 	struct sockaddr_in faddr;	/* foreign address */
 
-	ip_intf_t *processing_ifp;	/* ifp context we are executing in
-					 * right now, if in it*/
-
 	struct tcp_timer {
 		kcallout_t	callout;
 		kdpc_t		dpc;
 		kabstime_t	deadline;
-	} timers[TCP_TIMER_MAX];	/* TCP timers */
-	atomic_uint pending_timers;	/* TCP timers that fired */
+	} timers[TCP_TIMER_MAX];
+	atomic_uint pending_timers;
 
 	bool	shutdown_rd:	1, /* can't receive any more. */
 		shutdown_wr:	1, /* can't send any more */
-		emit_ack: 	1, /* send ACK next tcp_output() */
-		ordrel_needed:	1; /* need to put up T_ORDREL_IND after data */
+		emit_ack:	1, /* send ACK next tcp_output() */
+		ordrel_needed:	1, /* need to put up T_ORDREL_IND after data */
+
+		/* upstream deliveries deferred to tcp_rsrv*/
+		pending_conn_con:	1,
+		pending_ordrel:		1,
+		pending_discon:		1;
+	int pending_discon_reason;
 
 	uint16_t	mss;
 
@@ -141,51 +160,46 @@ typedef struct tcp {
 	tcp_seq_t	irs;		/* initial receive sequence number */
 	tcp_seq_t	rcv_nxt;	/* receive next */
 	uint32_t	rcv_wnd;	/* receive window */
-	tcp_seq_t	rcv_up; 	/* receive urgent pointer */
-	tcp_seq_t	rcv_wnd_max;	/* maximum receive window */
+	tcp_seq_t	rcv_up;		/* receive urgent pointer */
+	uint32_t	rcv_wnd_max;	/* maximum receive window */
 
 	bool	timing_rtt;	/* is RTT being timed for a transmitted seg? */
-	tcp_seq_t	rtseq;		/* seq of segment being timed */
-	kabstime_t	rtstart;	/* time RTT measurement began */
+	tcp_seq_t	rtseq;		/* seq of segment being timed for RTT */
+	kabstime_t	rtstart;	/* start time of RTT measurement */
 
 	uint32_t	srtt;		/* smoothed RTT (ms) */
-	uint32_t	rttvar;		/* RTT variation (ms) */
+	uint32_t	rttvar;		/* RTT variance (ms) */
 	uint32_t	rto;		/* retransmission timeout (ms) */
-	uint8_t		n_rexmits;	/* N rexmits of current segment */
+	uint8_t		n_rexmits;	/* num of rexmits of current segment */
 
-	mblk_q_t	reass_queue;	/* segment reassembly queue */
+	mblk_q_t	reass_queue;	/* sergment reassembly queue */
 
-	/* congestion control */
 	uint32_t	snd_cwnd;	/* congestion window */
-	uint32_t	snd_ssthresh;	/* slow-start threshold */
-	uint32_t	bytes_acked;
+	uint32_t	snd_ssthresh;	/* slow start threshold */
+	uint32_t	bytes_acked;	/* bytes acknowledged */
 
-	uint8_t		dupacks;
-	tcp_seq_t	snd_recover;	/* after acked, fast recovery ends */
-	bool		fast_recovery;
+	uint8_t		dupacks;	/* duplicate acknowledgments */
+	tcp_seq_t	snd_recover;	/* sequence number to recover from */
+	bool		fast_recovery;	/* in fast recovery? */
 
-	/* mblks preallocated for connected TCBs. */
-	mblk_t	*conn_con_m;	/* preallocated T_CONN_CON */
-	mblk_t	*ordrel_ind_m;	/* preallocated T_ORDREL_IND */
-	mblk_t	*discon_ind_m;	/* preallocated T_DISCON_IND */
+	mblk_t	*conn_con_m;	/* pre-allocated T_CONN_CON */
+	mblk_t	*ordrel_ind_m;	/* pre-allocated T_ORDREL_IND */
+	mblk_t	*discon_ind_m;	/* pre-allocated T_DISCON_IND */
+	mblk_t	*conn_ind_m;	/* pre-allocated T_CONN_IND (passive opener) */
 
-	/* mblk preallocated for TCBs created by passive opens */
-	mblk_t	*conn_ind_m;	/* preallocated T_CONN_IND */
-
-	krcu_entry_t rcu;		/* for RCU deferred free'ing */
+	krcu_entry_t rcu;
 } tcp_t;
 
 static int tcp_open(queue_t *, void *dev);
 static void tcp_close(queue_t *);
 static void tcp_wput(queue_t *, mblk_t *);
 static void tcp_wsrv(queue_t *);
-static void tcp_rput(queue_t *, mblk_t *);
 static void tcp_rsrv(queue_t *);
 
 static int tcp_output(tcp_t *);
 
-static void tcp_ordrel_ind(tcp_t *tp);
-void tcp_conn_input(ip_intf_t *ifp, tcp_t **tpp, mblk_t *);
+static void tcp_ordrel_ind(tcp_t *);
+void tcp_conn_input(tcp_t **tpp, mblk_t *, const ip_rxattr_t *attr);
 
 static void tcp_rexmt_timer(tcp_t *);
 static void tcp_2msl_timer(tcp_t *);
@@ -200,7 +214,6 @@ static void tcp_timer_dpchandler(void *, void *);
 struct qinit tcp_rinit = {
 	.qopen = tcp_open,
 	.qclose = tcp_close,
-	.putp = tcp_rput,
 	.srvp = tcp_rsrv,
 };
 
@@ -231,19 +244,17 @@ static const char *tcp_state_names[] = {
 
 #define TCP_CONN_TABLE_SIZE 256
 static tcp_t *tcp_conn_table[TCP_CONN_TABLE_SIZE];
-static krwlock_t tcp_conntab_lock;
+static kspinlock_t tcp_conntab_lock;
 
 #define TCP_EPHEMERAL_LOW  49152
 #define TCP_EPHEMERAL_HIGH 65535
 static uint16_t tcp_next_ephemeral = TCP_EPHEMERAL_LOW;
-static krwlock_t tcp_bind_lock;
-
-static kspinlock_t tcp_detached_lock;
-static TAILQ_HEAD(, tcp) tcp_detached_work_q =
-    TAILQ_HEAD_INITIALIZER(tcp_detached_work_q);
-static kevent_t tcp_detached_event;
 
 #define TCP_TRACE(...) kdprintf("TCP: " __VA_ARGS__)
+
+/*
+ * TCB lifecycle
+ */
 
 static tcp_t *
 tcp_new(queue_t *rq)
@@ -252,10 +263,15 @@ tcp_new(queue_t *rq)
 	if (tp == NULL)
 		return NULL;
 
-	ke_mutex_init(&tp->mutex);
+	ke_spinlock_init(&tp->lock);
 	tp->refcnt = 1;
 
-	tp->on_detached_work_q = false;
+	tp->rq = rq;
+
+	tp->pending_conn_con = false;
+	tp->pending_ordrel = false;
+	tp->pending_discon = false;
+	tp->pending_discon_reason = 0;
 
 	tp->state = TCPS_CLOSED;
 	tp->conn_id = -1;
@@ -266,12 +282,6 @@ tcp_new(queue_t *rq)
 	tp->passive_listener = NULL;
 	tp->connind_seq = 0;
 	tp->connind_sent = false;
-
-	ke_spinlock_init(&tp->detach_lock);
-
-	tp->rq = rq;
-
-	tp->processing_ifp = NULL;
 
 	tp->mss = TCP_MSS;
 
@@ -295,7 +305,6 @@ tcp_new(queue_t *rq)
 	tp->conn_con_m = NULL;
 	tp->ordrel_ind_m = NULL;
 	tp->discon_ind_m = NULL;
-
 	tp->conn_ind_m = NULL;
 
 	tp->shutdown_rd = 0;
@@ -303,11 +312,11 @@ tcp_new(queue_t *rq)
 	tp->emit_ack = 0;
 	tp->ordrel_needed = 0;
 
+	TAILQ_INIT(&tp->rcv_q);
+	tp->rcv_q_count = 0;
+
 	TAILQ_INIT(&tp->detached_snd_q);
 	tp->detached_snd_q_count = 0;
-
-	TAILQ_INIT(&tp->detached_rcv_q);
-	tp->detached_rcv_q_count = 0;
 
 	for (int i = 0; i < TCP_TIMER_MAX; i++) {
 		ke_callout_init_dpc(&tp->timers[i].callout, &tp->timers[i].dpc,
@@ -331,20 +340,15 @@ tcp_retain(tcp_t *tp)
 static bool
 tcp_tryretain(tcp_t *tp)
 {
-	ipl_t ipl = spldisp();
 	unsigned int current = atomic_load_explicit(&tp->refcnt,
 	    memory_order_acquire);
 	for (;;) {
-		if (current == 0) {
-			splx(ipl);
+		if (current == 0)
 			return false;
-		}
 		if (atomic_compare_exchange_weak_explicit(&tp->refcnt, &current,
 			current + 1, memory_order_acq_rel,
-			memory_order_acquire)) {
-			splx(ipl);
+			memory_order_acquire))
 			return true;
-		}
 	}
 }
 
@@ -362,54 +366,65 @@ tcp_release(tcp_t *tp)
 	    1) {
 		kassert(tp->rq == NULL);
 		tcp_cancel_all_timers(tp);
-		kdprintf("rcu-freeing TCB %p\n", tp);
-		/* RCU free since we may have DPCs in flight */
 		ke_rcu_call(&tp->rcu, tcp_free_rcu, tp);
 	}
 }
 
-static inline void
-tcp_swap_tcbs(tcp_t **a, tcp_t **b)
-{
-	tcp_t *t = *a;
-	*a = *b;
-	*b = t;
-}
+/*
+ * locking helpers
+ */
 
-static void
-tcp_lock_two_tcbs(tcp_t *a, tcp_t *b, const char *why)
+#if 0 /* currently unused */
+static ipl_t
+tcp_enter_two(tcp_t *a, tcp_t *b)
 {
+	ipl_t ipl;
+	kassert(a != b);
 	if (a < b) {
-		ke_mutex_enter(&a->mutex, why);
-		ke_mutex_enter(&b->mutex, why);
-	} else if (a > b) {
-		ke_mutex_enter(&b->mutex, why);
-		ke_mutex_enter(&a->mutex, why);
+		ipl = ke_spinlock_enter(&a->lock);
+		ke_spinlock_enter_nospl(&b->lock);
 	} else {
-		kfatal("tcp_lock_two_tcbs: identical TCBs");
+		ipl = ke_spinlock_enter(&b->lock);
+		ke_spinlock_enter_nospl(&a->lock);
 	}
+	return ipl;
+}
+#endif
+
+static void __attribute__((unused))
+tcp_exit_two(tcp_t *a, tcp_t *b, ipl_t ipl)
+{
+	ke_spinlock_exit_nospl(&a->lock);
+	ke_spinlock_exit_nospl(&b->lock);
+	splx(ipl);
 }
 
-static void
-tcp_lock_three_tcbs(tcp_t *a, tcp_t *b, tcp_t *c, const char *why)
+static ipl_t
+tcp_enter_three(tcp_t *a, tcp_t *b, tcp_t *c)
 {
 	tcp_t *v[3] = { a, b, c };
+	tcp_t *t;
 
-	if (v[0] > v[1])
-		tcp_swap_tcbs(&v[0], &v[1]);
-	if (v[1] > v[2])
-		tcp_swap_tcbs(&v[1], &v[2]);
-	if (v[0] > v[1])
-		tcp_swap_tcbs(&v[0], &v[1]);
+	kassert(a != b && b != c && a != c);
 
-	if (v[0] == v[1] || v[1] == v[2])
-		kfatal("tcp_lock_three_tcbs: identical TCBs");
+	if (v[0] > v[1]) { t = v[0]; v[0] = v[1]; v[1] = t; }
+	if (v[1] > v[2]) { t = v[1]; v[1] = v[2]; v[2] = t; }
+	if (v[0] > v[1]) { t = v[0]; v[0] = v[1]; v[1] = t; }
 
-	ke_mutex_enter(&v[0]->mutex, why);
-	ke_mutex_enter(&v[1]->mutex, why);
-	ke_mutex_enter(&v[2]->mutex, why);
+	ipl_t ipl = ke_spinlock_enter(&v[0]->lock);
+	ke_spinlock_enter_nospl(&v[1]->lock);
+	ke_spinlock_enter_nospl(&v[2]->lock);
+	return ipl;
 }
 
+static void
+tcp_exit_three(tcp_t *a, tcp_t *b, tcp_t *c, ipl_t ipl)
+{
+	ke_spinlock_exit_nospl(&a->lock);
+	ke_spinlock_exit_nospl(&b->lock);
+	ke_spinlock_exit_nospl(&c->lock);
+	splx(ipl);
+}
 
 static void
 tcp_change_state(tcp_t *tp, enum tcp_state newstate)
@@ -432,10 +447,10 @@ tcb_free_connstate(tcp_t *tp)
 	tcp_cancel_all_timers(tp);
 
 	if (tp->conn_id != -1) {
-		ke_rwlock_enter_write(&tcp_conntab_lock, "tcp_free_connstate");
+		ipl_t ipl = ke_spinlock_enter(&tcp_conntab_lock);
 		kassert(tcp_conn_table[tp->conn_id] == tp);
 		tcp_conn_table[tp->conn_id] = NULL;
-		ke_rwlock_exit_write(&tcp_conntab_lock);
+		ke_spinlock_exit(&tcp_conntab_lock, ipl);
 		tp->conn_id = -1;
 	}
 
@@ -444,15 +459,17 @@ tcb_free_connstate(tcp_t *tp)
 	str_mblk_q_free(&tp->detached_snd_q);
 	tp->detached_snd_q_count = 0;
 
-	str_mblk_q_free(&tp->detached_rcv_q);
-	tp->detached_rcv_q_count = 0;
+	str_mblk_q_free(&tp->rcv_q);
+	tp->rcv_q_count = 0;
 
 	str_freeb(tp->conn_con_m);
 	tp->conn_con_m = NULL;
 	str_freeb(tp->ordrel_ind_m);
 	tp->ordrel_ind_m = NULL;
-	str_freeb(tp->discon_ind_m);
-	tp->discon_ind_m = NULL;
+	if (!tp->pending_discon) {
+		str_freeb(tp->discon_ind_m);
+		tp->discon_ind_m = NULL;
+	}
 	str_freeb(tp->conn_ind_m);
 	tp->conn_ind_m = NULL;
 
@@ -461,96 +478,55 @@ tcb_free_connstate(tcp_t *tp)
 }
 
 static queue_t *
-tcp_wq(tcp_t *tcb)
+tcp_wq(tcp_t *tp)
 {
-	return tcb->rq != NULL ? tcb->rq->other : NULL;
+	return tp->rq != NULL ? tp->rq->other : NULL;
 }
 
+/*
+ * detach the TCB from its stream. steals the write queue into the
+ * detached send queue so tcp_output can still retransmit.
+ */
 static void
 tcp_detach(tcp_t *tp)
 {
-	ipl_t ipl;
-	uint32_t pending;
-
-	/* steal the send queue */
 	kassert(TAILQ_EMPTY(&tp->detached_snd_q));
 	kassert(tp->detached_snd_q_count == 0);
 
 	TAILQ_CONCAT(&tp->detached_snd_q, &tcp_wq(tp)->msgq, link);
 	tp->detached_snd_q_count = tcp_wq(tp)->count;
-
 	tcp_wq(tp)->count = 0;
 	TAILQ_INIT(&tcp_wq(tp)->msgq);
 
-	ipl = ke_spinlock_enter(&tp->detach_lock);
 	tp->rq = NULL;
-	ke_spinlock_exit(&tp->detach_lock, ipl);
-
-	pending = atomic_load(&tp->pending_timers);
-	if (pending != 0) {
-		ipl = ke_spinlock_enter(&tcp_detached_lock);
-		if (!tp->on_detached_work_q) {
-			tcp_retain(tp); /* safe, we are certainly alive */
-			TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp,
-			    detached_link);
-			tp->on_detached_work_q = true;
-			ke_event_set_signalled(&tcp_detached_event, true);
-		}
-		ke_spinlock_exit(&tcp_detached_lock, ipl);
-	}
-
-	/*
-	 * TODO: what if there are packets on the stream ingress queue?
-	 * it is not big problem (they'll get retransmitted by remote) but not
-	 * desirable to just get rid of them.
-	 * we might legitimately NOT use the ingress queue at all even when
-	 * attached, but instead queue up packets on a queue in the TCB, and
-	 * have tcp_rsrv() deal with them.
-	 * Has flow control implications but the ingress queue doesn't deal
-	 * with those at all right now anyway.
-	 */
 }
 
+/*
+ * attach a passive child to an acceptor's stream.
+ * all three TCBs' locks held.
+ */
 static void
 tcp_attach(tcp_t *child, tcp_t *acceptor)
 {
 	queue_t *rq;
-	ipl_t ipl;
 
-	kassert(ke_mutex_held(&child->mutex));
-	kassert(ke_mutex_held(&acceptor->mutex));
 	kassert(child->rq == NULL);
 	kassert(acceptor->rq != NULL);
 
 	rq = acceptor->rq;
-
 	kassert(rq->ptr == acceptor);
 	kassert(rq->other->ptr == acceptor);
 	kassert(TAILQ_EMPTY(&rq->msgq));
 	kassert(TAILQ_EMPTY(&child->detached_snd_q));
 
-	ipl = ke_spinlock_enter(&acceptor->detach_lock);
 	acceptor->rq = NULL;
-	ke_spinlock_exit(&acceptor->detach_lock, ipl);
 
 	rq->ptr = rq->other->ptr = child;
-
-	ipl = ke_spinlock_enter(&child->detach_lock);
 	child->rq = rq;
-	ke_spinlock_exit(&child->detach_lock, ipl);
 
-	if (!TAILQ_EMPTY(&child->detached_rcv_q)) {
-		TAILQ_CONCAT(&rq->msgq, &child->detached_rcv_q, link);
-		rq->count += child->detached_rcv_q_count;
-		TAILQ_INIT(&child->detached_rcv_q);
-		child->detached_rcv_q_count = 0;
+	if (!TAILQ_EMPTY(&child->rcv_q) || child->pending_ordrel ||
+	    child->pending_conn_con || child->pending_discon)
 		str_qenable(rq);
-	}
-
-	if (child->ordrel_needed && TAILQ_EMPTY(&rq->msgq)) {
-		child->ordrel_needed = false;
-		tcp_ordrel_ind(child);
-	}
 
 	if (atomic_load(&child->pending_timers) != 0)
 		str_qenable(rq->other);
@@ -558,8 +534,12 @@ tcp_attach(tcp_t *child, tcp_t *acceptor)
 	str_kick(rq->stdata);
 }
 
+/*
+ * output processing
+ */
+
 static int
-tcp_open(queue_t *rq, void *)
+tcp_open(queue_t *rq, void *devp)
 {
 	tcp_t *tp = tcp_new(rq);
 	if (tp == NULL)
@@ -571,14 +551,14 @@ tcp_open(queue_t *rq, void *)
 static void
 tcp_passive_unlink(tcp_t *listener, tcp_t *child)
 {
-	kassert(ke_mutex_held(&listener->mutex));
-	kassert(ke_mutex_held(&child->mutex));
+	kassert(ke_spinlock_held(&listener->lock));
+	kassert(ke_spinlock_held(&child->lock));
 	kassert(child->passive_listener == listener);
 
 	LIST_REMOVE(child, conninds_entry);
 	child->passive_listener = NULL;
 
-	tcp_release(child);	/* listener list ref on child */
+	tcp_release(child);	 /* listener list ref on child */
 	tcp_release(listener); /* child ref on listener */
 }
 
@@ -586,8 +566,9 @@ static void
 tcp_close(queue_t *rq)
 {
 	tcp_t *tp = rq->ptr;
+	ipl_t ipl;
 
-	ke_mutex_enter(&tp->mutex, "tcp_close");
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	TCP_TRACE("closing connection TCB %p state %s\n", tp,
 	    tcp_state_names[tp->state]);
@@ -598,11 +579,10 @@ tcp_close(queue_t *rq)
 			tcp_t *child;
 
 			if (tp->conn_id != -1) {
-				ke_rwlock_enter_write(&tcp_conntab_lock,
-				    "tcp_close listen remove");
+				ke_spinlock_enter_nospl(&tcp_conntab_lock);
 				if (tcp_conn_table[tp->conn_id] == tp)
 					tcp_conn_table[tp->conn_id] = NULL;
-				ke_rwlock_exit_write(&tcp_conntab_lock);
+				ke_spinlock_exit_nospl(&tcp_conntab_lock);
 				tp->conn_id = -1;
 			}
 
@@ -612,31 +592,31 @@ tcp_close(queue_t *rq)
 			if (child == NULL)
 				break;
 
-			tcp_retain(child); /* local ref */
+			tcp_retain(child);
 
 			if (tp > child) {
-				ke_mutex_exit(&tp->mutex);
-				ke_mutex_enter(&child->mutex, "tcp_close listen child");
-				ke_mutex_enter(&tp->mutex, "tcp_close listen relock");
+				ke_spinlock_exit_nospl(&tp->lock);
+				ke_spinlock_enter_nospl(&child->lock);
+				ke_spinlock_enter_nospl(&tp->lock);
 			} else {
-				ke_mutex_enter(&child->mutex, "tcp_close listen child");
+				ke_spinlock_enter_nospl(&child->lock);
 			}
 
 			if (child->passive_listener == tp) {
 				tcp_passive_unlink(tp, child);
 				tcb_free_connstate(child);
-				ke_mutex_exit(&child->mutex);
+				ke_spinlock_exit_nospl(&child->lock);
 				tcp_release(child); /* child existence ref */
 			} else {
-				ke_mutex_exit(&child->mutex);
+				ke_spinlock_exit_nospl(&child->lock);
 			}
 
-			tcp_release(child); /* local ref */
+			tcp_release(child);
 		}
 
 		tcp_detach(tp);
 		tcb_free_connstate(tp);
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		tcp_release(tp);
 		break;
 	}
@@ -646,31 +626,29 @@ tcp_close(queue_t *rq)
 	case TCPS_SYN_SENT:
 		tcp_detach(tp);
 		tcb_free_connstate(tp);
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		tcp_release(tp);
 		break;
 
 	case TCPS_SYN_RECEIVED:
 	case TCPS_ESTABLISHED:
-		if (!TAILQ_EMPTY(&tp->reass_queue) ||
-		    !TAILQ_EMPTY(&tp->rq->msgq))
+		if (!TAILQ_EMPTY(&tp->reass_queue) || !TAILQ_EMPTY(&tp->rcv_q))
 			kfatal("TODO: tcp_close: unreceived data on close\n");
 
 		tcp_detach(tp);
 		tcp_change_state(tp, TCPS_FIN_WAIT_1);
 		tcp_output(tp);
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		break;
 
 	case TCPS_CLOSE_WAIT:
-		if (!TAILQ_EMPTY(&tp->reass_queue) ||
-		    !TAILQ_EMPTY(&tp->rq->msgq))
+		if (!TAILQ_EMPTY(&tp->reass_queue) || !TAILQ_EMPTY(&tp->rcv_q))
 			kfatal("TODO: tcp_close: unreceived data on close\n");
 
 		tcp_detach(tp);
 		tcp_change_state(tp, TCPS_LAST_ACK);
 		tcp_output(tp);
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		break;
 
 	case TCPS_FIN_WAIT_1:
@@ -678,10 +656,9 @@ tcp_close(queue_t *rq)
 	case TCPS_LAST_ACK:
 	case TCPS_FIN_WAIT_2:
 	case TCPS_TIME_WAIT:
-		kassert(TAILQ_EMPTY(&tp->reass_queue) &&
-		    TAILQ_EMPTY(&tp->rq->msgq));
+		kassert(TAILQ_EMPTY(&tp->reass_queue) && TAILQ_EMPTY(&tp->rcv_q));
 		tcp_detach(tp);
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		break;
 	}
 }
@@ -692,21 +669,23 @@ tcp_snd_q_count(tcp_t *tp)
 	if (tp->rq == NULL)
 		return tp->detached_snd_q_count;
 	else
-		return tp->rq->other->count;
+		return tcp_wq(tp)->count;
 }
 
 /*
- * connection/binding managmeent table
+ * connection/binding management
  */
 
 static bool
 tcp_port_in_use(uint16_t port, in_addr_t addr)
 {
+	kassert(ke_spinlock_held(&tcp_conntab_lock));
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
 		tcp_t *t = tcp_conn_table[i];
 		if (t != NULL && t->laddr.sin_port == port &&
 		    (t->laddr.sin_addr.s_addr == INADDR_ANY ||
-			addr == INADDR_ANY || t->laddr.sin_addr.s_addr == addr))
+			addr == INADDR_ANY ||
+			t->laddr.sin_addr.s_addr == addr))
 			return true;
 	}
 	return false;
@@ -716,6 +695,8 @@ static uint16_t
 tcp_alloc_ephemeral(in_addr_t addr)
 {
 	uint16_t start = tcp_next_ephemeral;
+
+	kassert(ke_spinlock_held(&tcp_conntab_lock));
 
 	do {
 		uint16_t port = htons(tcp_next_ephemeral);
@@ -731,36 +712,34 @@ tcp_alloc_ephemeral(in_addr_t addr)
 }
 
 static int
-tcp_conn_table_insert(tcp_t *tp)
+tcp_conn_table_insert_locked(tcp_t *tp)
 {
-	ke_rwlock_enter_write(&tcp_conntab_lock, "tcp_conn_table_insert");
+	kassert(ke_spinlock_held(&tcp_conntab_lock));
+
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
 		if (tcp_conn_table[i] == NULL) {
 			tcp_conn_table[i] = tp;
 			tp->conn_id = i;
-			ke_rwlock_exit_write(&tcp_conntab_lock);
 			return 0;
 		}
 	}
-	ke_rwlock_exit_write(&tcp_conntab_lock);
 	return -ENOSPC;
 }
 
 static tcp_t *
-tcp_conn_lookup(struct in_addr src, uint16_t sport, struct in_addr dst,
-    uint16_t dport)
+tcp_conn_lookup_locked(struct in_addr src, uint16_t sport,
+    struct in_addr dst, uint16_t dport)
 {
-	ke_rwlock_enter_read(&tcp_conntab_lock, "tcp_conn_lookup");
+	kassert(ke_spinlock_held(&tcp_conntab_lock));
+
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
 		tcp_t *t = tcp_conn_table[i];
-		if (t != NULL && t->laddr.sin_addr.s_addr == dst.s_addr &&
+		if (t != NULL &&
+		    t->laddr.sin_addr.s_addr == dst.s_addr &&
 		    t->laddr.sin_port == dport &&
 		    t->faddr.sin_addr.s_addr == src.s_addr &&
-		    t->faddr.sin_port == sport) {
-			tcp_retain(t);
-			ke_rwlock_exit_read(&tcp_conntab_lock);
+		    t->faddr.sin_port == sport)
 			return t;
-		}
 	}
 
 	for (int i = 0; i < TCP_CONN_TABLE_SIZE; i++) {
@@ -768,42 +747,11 @@ tcp_conn_lookup(struct in_addr src, uint16_t sport, struct in_addr dst,
 		if (t != NULL && t->state == TCPS_LISTEN &&
 		    t->laddr.sin_port == dport &&
 		    (t->laddr.sin_addr.s_addr == INADDR_ANY ||
-			t->laddr.sin_addr.s_addr == dst.s_addr)) {
-			tcp_retain(t);
-			ke_rwlock_exit_read(&tcp_conntab_lock);
+			t->laddr.sin_addr.s_addr == dst.s_addr))
 			return t;
-		}
 	}
 
-	ke_rwlock_exit_read(&tcp_conntab_lock);
 	return NULL;
-}
-
-/*
- * output processing
- */
-static void
-reply_ok_ack(queue_t *wq, mblk_t *mp, enum T_prim correct_prim)
-{
-	struct T_ok_ack *oa = (struct T_ok_ack *)mp->rptr;
-	kassert(mp->wptr - mp->rptr >= sizeof(*oa));
-	oa->PRIM_type = T_OK_ACK;
-	oa->CORRECT_prim = correct_prim;
-	mp->wptr = mp->rptr + sizeof(*oa);
-	str_qreply(wq, mp);
-}
-
-static void
-reply_error_ack(queue_t *wq, mblk_t *mp, enum T_prim error_prim,
-    int unix_error)
-{
-	struct T_error_ack *ea = (struct T_error_ack *)mp->rptr;
-	kassert(mp->wptr - mp->rptr >= sizeof(*ea));
-	ea->PRIM_type = T_ERROR_ACK;
-	ea->ERROR_prim = error_prim;
-	ea->UNIX_error = unix_error;
-	mp->wptr = mp->rptr + sizeof(*ea);
-	str_qreply(wq, mp);
 }
 
 static int
@@ -811,18 +759,19 @@ tcp_do_bind(tcp_t *tp, struct sockaddr_in *laddr)
 {
 	uint16_t port;
 	int r;
+	ipl_t ipl;
 
-	ke_rwlock_enter_write(&tcp_bind_lock, "tcp_do_bind");
+	ipl = ke_spinlock_enter(&tcp_conntab_lock);
 
 	if (laddr->sin_port == 0) {
 		port = tcp_alloc_ephemeral(laddr->sin_addr.s_addr);
 		if (port == 0) {
-			ke_rwlock_exit_write(&tcp_bind_lock);
+			ke_spinlock_exit(&tcp_conntab_lock, ipl);
 			return -EADDRINUSE;
 		}
 	} else {
 		if (tcp_port_in_use(laddr->sin_port, laddr->sin_addr.s_addr)) {
-			ke_rwlock_exit_write(&tcp_bind_lock);
+			ke_spinlock_exit(&tcp_conntab_lock, ipl);
 			return -EADDRINUSE;
 		}
 		port = laddr->sin_port;
@@ -832,15 +781,15 @@ tcp_do_bind(tcp_t *tp, struct sockaddr_in *laddr)
 	tp->laddr.sin_port = port;
 	tp->laddr.sin_addr = laddr->sin_addr;
 
-	r = tcp_conn_table_insert(tp);
+	r = tcp_conn_table_insert_locked(tp);
 	if (r != 0) {
-		ke_rwlock_exit_write(&tcp_bind_lock);
+		ke_spinlock_exit(&tcp_conntab_lock, ipl);
 		return r;
 	}
 
 	tcp_change_state(tp, TCPS_BOUND);
 
-	ke_rwlock_exit_write(&tcp_bind_lock);
+	ke_spinlock_exit(&tcp_conntab_lock, ipl);
 	return 0;
 }
 
@@ -864,12 +813,12 @@ tcp_setup_connection(tcp_t *tp, struct sockaddr_in *faddr)
 	tp->snd_wl2 = 0;
 
 	if (tp->mss > 2190)
-		tp->snd_cwnd  = 2 * tp->mss;
+		tp->snd_cwnd = 2 * tp->mss;
 	else if (tp->mss > 1095)
 		tp->snd_cwnd = 3 * tp->mss;
 	else
 		tp->snd_cwnd = 4 * tp->mss;
-	tp->snd_ssthresh = INT32_MAX; /* "arbitrarily high" */
+	tp->snd_ssthresh = INT32_MAX;
 	tp->snd_recover = tp->iss;
 
 	tp->bytes_acked = 0;
@@ -902,24 +851,53 @@ tcp_setup_connection(tcp_t *tp, struct sockaddr_in *faddr)
 	return 0;
 }
 
+/*
+ * STREAMS output processing
+ */
+
+static void
+reply_ok_ack(queue_t *wq, mblk_t *mp, enum T_prim correct_prim)
+{
+	struct T_ok_ack *oa = (struct T_ok_ack *)mp->rptr;
+	kassert(mp->wptr - mp->rptr >= sizeof(*oa));
+	oa->PRIM_type = T_OK_ACK;
+	oa->CORRECT_prim = correct_prim;
+	mp->wptr = mp->rptr + sizeof(*oa);
+	str_qreply(wq, mp);
+}
+
+static void
+reply_error_ack(queue_t *wq, mblk_t *mp, enum T_prim error_prim,
+    int unix_error)
+{
+	struct T_error_ack *ea = (struct T_error_ack *)mp->rptr;
+	kassert(mp->wptr - mp->rptr >= sizeof(*ea));
+	ea->PRIM_type = T_ERROR_ACK;
+	ea->ERROR_prim = error_prim;
+	ea->UNIX_error = unix_error;
+	mp->wptr = mp->rptr + sizeof(*ea);
+	str_qreply(wq, mp);
+}
+
 static void
 tcp_wput_bind_req(queue_t *wq, mblk_t *mp)
 {
 	tcp_t *tp = wq->ptr;
 	struct T_bind_req *br = (struct T_bind_req *)mp->rptr;
 	struct sockaddr_in sin;
+	ipl_t ipl;
 	int r;
 
-	ke_mutex_enter(&tp->mutex, "tcp_wput_bind_req");
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	if (!(tp->state == TCPS_CLOSED) &&
 	    !(tp->state == TCPS_BOUND && br->CONIND_number > 0)) {
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		reply_error_ack(wq, mp, T_BIND_REQ, EINVAL);
 		return;
 	}
 
-	if (br->ADDR_length >= sizeof(struct sockaddr_in)) {
+	if (br->ADDR_length >= (int)sizeof(struct sockaddr_in)) {
 		sin = *(struct sockaddr_in *)&br->ADDR;
 	} else {
 		sin.sin_family = AF_INET;
@@ -930,7 +908,7 @@ tcp_wput_bind_req(queue_t *wq, mblk_t *mp)
 	if (tp->state == TCPS_CLOSED) {
 		r = tcp_do_bind(tp, &sin);
 		if (r != 0) {
-			ke_mutex_exit(&tp->mutex);
+			ke_spinlock_exit(&tp->lock, ipl);
 			reply_error_ack(wq, mp, T_BIND_REQ, -r);
 			return;
 		}
@@ -943,7 +921,7 @@ tcp_wput_bind_req(queue_t *wq, mblk_t *mp)
 		tcp_change_state(tp, TCPS_BOUND);
 	}
 
-	ke_mutex_exit(&tp->mutex);
+	ke_spinlock_exit(&tp->lock, ipl);
 
 	br->PRIM_type = T_BIND_ACK;
 	str_qreply(wq, mp);
@@ -955,9 +933,10 @@ tcp_wput_conn_req(queue_t *wq, mblk_t *mp)
 	struct T_conn_req *cr = (struct T_conn_req *)mp->rptr;
 	struct sockaddr_in *dest = (struct sockaddr_in *)&cr->DEST;
 	tcp_t *tp = wq->ptr;
+	ipl_t ipl;
 	int r;
 
-	ke_mutex_enter(&tp->mutex, "tcp_wput_conn_req");
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	switch (tp->state) {
 	case TCPS_CLOSED: {
@@ -969,56 +948,66 @@ tcp_wput_conn_req(queue_t *wq, mblk_t *mp)
 
 		r = tcp_do_bind(tp, &sin);
 		if (r != 0) {
-			ke_mutex_exit(&tp->mutex);
+			ke_spinlock_exit(&tp->lock, ipl);
 			reply_error_ack(wq, mp, T_CONN_REQ, -r);
 			return;
 		}
-
-		/* fall through... */
+		/* fall through */
 	}
 
 	case TCPS_BOUND:
 		if (tp->laddr.sin_addr.s_addr == INADDR_ANY) {
-			struct ip_route_result rt;
+			union sockaddr_union rt_dst = {
+				.in = { .sin_family = AF_INET,
+					.sin_addr = dest->sin_addr }
+			};
+			route_result_t rt;
+			ip_ifaddr_t *ifa;
+			uint32_t mtu;
 
-			rt = ip_route_lookup(dest->sin_addr);
-			if (rt.intf == NULL) {
-				ke_mutex_exit(&tp->mutex);
-				reply_error_ack(wq, mp, T_CONN_REQ,
-				    EHOSTUNREACH);
+			r = route_lookup(&rt_dst, &rt, true);
+			if (r != 0) {
+				ke_spinlock_exit(&tp->lock, ipl);
+				reply_error_ack(wq, mp, T_CONN_REQ, EHOSTUNREACH);
 				return;
 			}
 
-			tp->laddr.sin_addr = rt.intf->addr;
-			tp->mss = rt.intf->mtu - sizeof(struct ip) -
-			    sizeof(struct tcphdr);
-			ip_intf_release(rt.intf);
+			/* spinlock is held, so in an RCU grace period */
+			RCULIST_FOREACH(ifa, &rt.ifp->addrs, rlentry) {
+				if (ifa->addr.sa.sa_family == AF_INET) {
+					tp->laddr.sin_addr =
+					    ifa->addr.in.sin_addr;
+					break;
+				}
+			}
+
+#if 0 /* when we have PMTUD */
+			mtu = rt.mtu != 0 ? rt.mtu : TCP_DEFAULT_MTU;
+			tp->mss = mtu - sizeof(struct ether_header) -
+			    sizeof(struct ip) - sizeof(struct tcphdr);
+#endif
+			tp->mss = TCP_MSS;
+			ip_if_release(rt.ifp);
 		}
 
 		r = tcp_setup_connection(tp, dest);
 		if (r != 0) {
-			ke_mutex_exit(&tp->mutex);
+			ke_spinlock_exit(&tp->lock, ipl);
 			reply_error_ack(wq, mp, T_CONN_REQ, -r);
 			return;
 		}
 
 		tcp_change_state(tp, TCPS_SYN_SENT);
-		r = tcp_output(tp);
-		if (r != 0) {
-			/* TODO: cleanup state? */
-			ke_mutex_exit(&tp->mutex);
-			reply_error_ack(wq, mp, T_CONN_REQ, -r);
-			return;
-		}
+		tcp_output(tp);
 
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 
 		reply_ok_ack(wq, mp, T_CONN_REQ);
 		break;
 
 	default:
 		TCP_TRACE("tcp_connect: invalid state %d\n", tp->state);
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		reply_error_ack(wq, mp, T_CONN_REQ, EISCONN);
 		return;
 	}
@@ -1032,15 +1021,16 @@ tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 	struct T_conn_res *cres = (struct T_conn_res *)mp->rptr;
 	queue_t *acceptorrq;
 	tcp_t *child = NULL, *acceptor;
+	ipl_t ipl;
 	bool ok = false;
 
 	/* sockfs guarantees continued existence of the acceptor stream */
 	acceptorrq = (queue_t *)cres->ACCEPTOR_id;
 	kassert(acceptorrq->qinfo == &tcp_rinit);
 
-	ke_mutex_enter(&listener->mutex, "tcp_wput_conn_res listener");
+	ipl = ke_spinlock_enter(&listener->lock);
 	if (listener->state != TCPS_LISTEN || listener->closing) {
-		ke_mutex_exit(&listener->mutex);
+		ke_spinlock_exit(&listener->lock, ipl);
 		reply_error_ack(wq, mp, T_CONN_RES, EINVAL);
 		return;
 	}
@@ -1049,9 +1039,9 @@ tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 		if (child->connind_seq == cres->SEQ_number)
 			break;
 	if (child != NULL)
-		tcp_retain(child); /* local ref */
+		tcp_retain(child);
 
-	ke_mutex_exit(&listener->mutex);
+	ke_spinlock_exit(&listener->lock, ipl);
 
 	if (child == NULL) {
 		reply_error_ack(wq, mp, T_CONN_RES, ECONNABORTED);
@@ -1067,7 +1057,7 @@ tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 		return;
 	}
 
-	tcp_lock_three_tcbs(listener, child, acceptor, "tcp_wput_conn_res");
+	ipl = tcp_enter_three(listener, child, acceptor);
 
 	if (listener->state != TCPS_LISTEN || listener->closing)
 		goto out;
@@ -1082,7 +1072,7 @@ tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 
 	kassert(TAILQ_EMPTY(&acceptor->reass_queue));
 	kassert(TAILQ_EMPTY(&acceptor->detached_snd_q));
-	kassert(TAILQ_EMPTY(&acceptor->detached_rcv_q));
+	kassert(TAILQ_EMPTY(&acceptor->rcv_q));
 
 	tcp_passive_unlink(listener, child);
 
@@ -1092,12 +1082,10 @@ tcp_wput_conn_res(queue_t *wq, mblk_t *mp)
 	ok = true;
 
 out:
-	ke_mutex_exit(&listener->mutex);
-	ke_mutex_exit(&child->mutex);
-	ke_mutex_exit(&acceptor->mutex);
+	tcp_exit_three(listener, child, acceptor, ipl);
 
 	if (ok) {
-		tcp_release(acceptor); /* drop old acceptor ref from q->ptr */
+		tcp_release(acceptor);	/* drop old acceptor ref from q->ptr */
 		tcp_release(child);	/* drop local ref from search */
 		reply_ok_ack(wq, mp, T_CONN_RES);
 	} else {
@@ -1113,6 +1101,7 @@ tcp_wput_addr_req(queue_t *wq, mblk_t *mp)
 	struct T_addr_ack *aa;
 	struct sockaddr_in *sin;
 	mblk_t *ackmp;
+	ipl_t ipl;
 
 	ackmp = str_allocb(sizeof(struct T_addr_ack));
 	if (ackmp == NULL) {
@@ -1126,7 +1115,7 @@ tcp_wput_addr_req(queue_t *wq, mblk_t *mp)
 	aa = (struct T_addr_ack *)ackmp->rptr;
 	aa->PRIM_type = T_ADDR_ACK;
 
-	ke_mutex_enter(&tp->mutex, "tcp_wput_addr_req");
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	if (tp->state >= TCPS_BOUND) {
 		aa->LOCADDR_length = sizeof(struct sockaddr_in);
@@ -1144,7 +1133,7 @@ tcp_wput_addr_req(queue_t *wq, mblk_t *mp)
 		aa->REMADDR_length = 0;
 	}
 
-	ke_mutex_exit(&tp->mutex);
+	ke_spinlock_exit(&tp->lock, ipl);
 
 	ackmp->wptr = ackmp->rptr + sizeof(struct T_addr_ack);
 	str_qreply(wq, ackmp);
@@ -1154,9 +1143,10 @@ static void
 tcp_wput_ordrel_req(queue_t *wq, mblk_t *mp)
 {
 	tcp_t *tp = wq->ptr;
+	ipl_t ipl;
 	int err = 0;
 
-	ke_mutex_enter(&tp->mutex, "tcp_wput_ordrel_req");
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	switch (tp->state) {
 	case TCPS_ESTABLISHED:
@@ -1184,7 +1174,7 @@ tcp_wput_ordrel_req(queue_t *wq, mblk_t *mp)
 		break;
 	}
 
-	ke_mutex_exit(&tp->mutex);
+	ke_spinlock_exit(&tp->lock, ipl);
 
 	if (err != 0)
 		reply_error_ack(wq, mp, T_ORDREL_REQ, err);
@@ -1196,11 +1186,12 @@ static void
 tcp_wput_data(queue_t *wq, mblk_t *mp)
 {
 	tcp_t *tp = wq->ptr;
+	ipl_t ipl;
 
-	ke_mutex_enter(&tp->mutex, "tcp_wput_data");
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	if (tp->shutdown_wr) {
-		ke_mutex_exit(&tp->mutex);
+		ke_spinlock_exit(&tp->lock, ipl);
 		str_freemsg(mp);
 		return;
 	}
@@ -1208,7 +1199,7 @@ tcp_wput_data(queue_t *wq, mblk_t *mp)
 	str_putq(wq, mp);
 	tcp_output(tp);
 
-	ke_mutex_exit(&tp->mutex);
+	ke_spinlock_exit(&tp->lock, ipl);
 }
 
 static void
@@ -1257,13 +1248,6 @@ tcp_wput(queue_t *wq, mblk_t *mp)
 static void
 tcp_dispatch_pending_timers(tcp_t *tp, uint32_t pending)
 {
-	/*
-	 * Note some timer handlers here release a reference on the tcp if it is
-	 * detached. But either we are called from within the STREAMS service
-	 * routine (in which case the stream owns a reference on tp) or from the
-	 * detached timer handler (in which case that handler has taken a local
-	 * reference on the tcp.) So it should be safe.
-	 */
 	if (pending & (1 << TCP_TIMER_REXMT))
 		tcp_rexmt_timer(tp);
 	if (pending & (1 << TCP_TIMER_2MSL))
@@ -1278,28 +1262,214 @@ static void
 tcp_wsrv(queue_t *wq)
 {
 	tcp_t *tp = wq->ptr;
-	uint32_t pending = atomic_exchange(&tp->pending_timers, 0);
-	if (pending != 0) {
-		ke_mutex_enter(&tp->mutex, "tcp_rsrv_timers");
+	ipl_t ipl;
+	uint32_t pending;
+
+	ipl = ke_spinlock_enter(&tp->lock);
+	pending = atomic_exchange(&tp->pending_timers, 0);
+	if (pending != 0)
 		tcp_dispatch_pending_timers(tp, pending);
-		ke_mutex_exit(&tp->mutex);
+	ke_spinlock_exit(&tp->lock, ipl);
+}
+
+/*
+ * tcp_rsrv: drain rcv_q and deliver pending upstream indications.
+ * Runs at thread level (stream service context), safe to call str_putnext.
+ */
+static void
+tcp_rsrv(queue_t *rq)
+{
+	tcp_t *tp = rq->ptr;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&tp->lock);
+	if (tp->pending_discon) {
+		mblk_t *mp;
+
+		tp->pending_discon = false;
+		mp = tp->discon_ind_m;
+		tp->discon_ind_m = NULL;
+		ke_spinlock_exit(&tp->lock, ipl);
+
+		str_putnext(rq, mp);
+		return;
+	}
+
+	/* active open completed */
+	if (tp->pending_conn_con) {
+		mblk_t *mp;
+
+		tp->pending_conn_con = false;
+		mp = tp->conn_con_m;
+		tp->conn_con_m = NULL;
+		ke_spinlock_exit(&tp->lock, ipl);
+
+		str_putnext(rq, mp);
+
+		return;
+	}
+	ke_spinlock_exit(&tp->lock, ipl);
+
+	for (;;) {
+		mblk_t *mp;
+
+		if (!str_canputnext(rq))
+			return;
+
+		ipl = ke_spinlock_enter(&tp->lock);
+		mp = TAILQ_FIRST(&tp->rcv_q);
+		if (mp != NULL) {
+			TAILQ_REMOVE(&tp->rcv_q, mp, link);
+			tp->rcv_q_count -= str_msgsize(mp);
+		}
+		ke_spinlock_exit(&tp->lock, ipl);
+
+		if (mp == NULL)
+			break;
+
+		str_putnext(rq, mp);
+	}
+
+	if (str_canputnext(rq)) {
+		size_t wnd_opening;
+
+		ipl = ke_spinlock_enter(&tp->lock);
+
+		/* ordrel can go up if no data left in queue */
+		if (tp->pending_ordrel) {
+			mblk_t *mp;
+
+			tp->pending_ordrel = false;
+			mp = tp->ordrel_ind_m;
+			tp->ordrel_ind_m = NULL;
+			ke_spinlock_exit(&tp->lock, ipl);
+
+			str_putnext(rq, mp);
+			return;
+		}
+
+		wnd_opening = tp->rcv_wnd_max - tp->rcv_wnd;
+		tp->rcv_wnd = tp->rcv_wnd_max;
+
+		if (wnd_opening >= (size_t)(tp->mss * 2) ||
+		    wnd_opening >= tp->rcv_wnd_max / 2) {
+			tp->emit_ack = true;
+			tcp_output(tp);
+		}
+
+		ke_spinlock_exit(&tp->lock, ipl);
 	}
 }
 
-static uint8_t tcp_out_flags[] = {
-	[TCPS_CLOSED] = TH_RST | TH_ACK,
-	[TCPS_BOUND] = TH_RST | TH_ACK,
-	[TCPS_LISTEN] = 0,
-	[TCPS_SYN_SENT] = TH_SYN,
-	[TCPS_SYN_RECEIVED] = TH_SYN | TH_ACK,
-	[TCPS_ESTABLISHED] = TH_ACK,
-	[TCPS_CLOSE_WAIT] = TH_ACK,
-	[TCPS_FIN_WAIT_1] = TH_FIN | TH_ACK,
-	[TCPS_CLOSING] = TH_FIN | TH_ACK,
-	[TCPS_LAST_ACK] = TH_FIN | TH_ACK,
-	[TCPS_FIN_WAIT_2] = TH_ACK,
-	[TCPS_TIME_WAIT] = TH_ACK,
-};
+static uint32_t
+csum_add(uint32_t sum, const uint8_t *p, size_t len)
+{
+	while (len >= 2) {
+		sum += ((uint16_t)p[0] << 8) | p[1];
+		p += 2;
+		len -= 2;
+	}
+	if (len)
+		sum += (uint16_t)p[0] << 8;
+
+	while (sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+
+	return sum;
+}
+
+static uint16_t
+csum_finish(uint32_t sum)
+{
+	while (sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+	return (uint16_t)~sum;
+}
+
+static uint16_t
+tcp_checksum(const struct ip *ip, const struct tcphdr *th, size_t tcp_len)
+{
+	uint8_t pseudo[12];
+	uint32_t sum = 0;
+
+	memcpy(&pseudo[0], &ip->ip_src.s_addr, 4);
+	memcpy(&pseudo[4], &ip->ip_dst.s_addr, 4);
+	pseudo[8] = 0;
+	pseudo[9] = IPPROTO_TCP;
+	pseudo[10] = (tcp_len >> 8) & 0xff;
+	pseudo[11] = tcp_len & 0xff;
+
+	sum = csum_add(sum, pseudo, sizeof(pseudo));
+	sum = csum_add(sum, (const uint8_t *)th, tcp_len);
+
+	return csum_finish(sum);
+}
+
+static void
+tcp_reply(const struct ip *orig_ip, const struct tcphdr *orig_th,
+    tcp_seq_t seq, tcp_seq_t ack, uint8_t flags)
+{
+	mblk_t *mp;
+	struct ip *ip;
+	struct tcphdr *th;
+
+	mp = str_allocb(sizeof(struct ether_header) + sizeof(struct ip) +
+	    sizeof(struct tcphdr));
+	if (mp == NULL)
+		return;
+
+	mp->rptr += sizeof(struct ether_header);
+	mp->wptr += sizeof(struct ether_header) + sizeof(struct ip) +
+	    sizeof(struct tcphdr);
+	ip = (struct ip *)mp->rptr;
+	th = (struct tcphdr *)(ip + 1);
+
+	ip->ip_v = IPVERSION;
+	ip->ip_hl = sizeof(struct ip) >> 2;
+	ip->ip_tos = 0;
+	ip->ip_len = htons(sizeof(struct ip) + sizeof(struct tcphdr));
+	ip->ip_id = 0;
+	ip->ip_off = 0;
+	ip->ip_ttl = 64;
+	ip->ip_p = IPPROTO_TCP;
+	ip->ip_sum = 0;
+	ip->ip_src = orig_ip->ip_dst;
+	ip->ip_dst = orig_ip->ip_src;
+
+	th->th_sport = orig_th->th_dport;
+	th->th_dport = orig_th->th_sport;
+	th->th_seq = htonl(seq);
+	th->th_ack = htonl(ack);
+	th->th_off = sizeof(struct tcphdr) >> 2;
+	th->th_x2 = 0;
+	th->th_flags = flags;
+	th->th_win = 0;
+	th->th_urp = 0;
+	th->th_sum = 0;
+	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr)));
+
+	ipv4_output(mp);
+}
+
+static void
+tcp_reply_reset(const struct ip *ip, const struct tcphdr *th, uint16_t tcp_len)
+{
+	if (th->th_flags & TH_ACK) {
+		tcp_reply(ip, th, ntohl(th->th_ack), 0, TH_RST);
+	} else {
+		size_t data_len = tcp_len - (th->th_off << 2);
+		if (th->th_flags & TH_SYN)
+			data_len++;
+		if (th->th_flags & TH_FIN)
+			data_len++;
+		tcp_reply(ip, th, 0, ntohl(th->th_seq) + data_len,
+		    TH_RST | TH_ACK);
+	}
+}
+
+/*
+ * Output processing
+ */
 
 static size_t
 copy_from_mpchain(mblk_t *m, size_t off, size_t len, uint8_t *dst)
@@ -1367,56 +1537,11 @@ copy_data(tcp_t *tp, size_t off, size_t len, uint8_t *dst)
 	return copied;
 }
 
-static uint32_t
-csum_add(uint32_t sum, const uint8_t *p, size_t len)
-{
-	while (len >= 2) {
-		sum += ((uint16_t)p[0] << 8) | p[1];
-		p += 2;
-		len -= 2;
-	}
-	if (len)
-		sum += (uint16_t)p[0] << 8;
-
-	while (sum >> 16)
-		sum = (sum & 0xffff) + (sum >> 16);
-
-	return sum;
-}
-
-static uint16_t
-csum_finish(uint32_t sum)
-{
-	while (sum >> 16)
-		sum = (sum & 0xffff) + (sum >> 16);
-	return (uint16_t)~sum;
-}
-
-uint16_t
-tcp_checksum(struct ip *ip, struct tcphdr *tcp, size_t tcp_len)
-{
-	uint8_t pseudo[12];
-	uint32_t sum = 0;
-
-	memcpy(&pseudo[0], &ip->ip_src.s_addr, 4);
-	memcpy(&pseudo[4], &ip->ip_dst.s_addr, 4);
-	pseudo[8] = 0;
-	pseudo[9] = IPPROTO_TCP;
-	pseudo[10] = (tcp_len >> 8) & 0xff;
-	pseudo[11] = tcp_len & 0xff;
-
-	sum = csum_add(sum, pseudo, sizeof(pseudo));
-	sum = csum_add(sum, (const uint8_t *)tcp, tcp_len);
-
-	return csum_finish(sum);
-}
-
 static int
 do_send(tcp_t *tp, tcp_seq_t seq, uint8_t flags, size_t data_len,
     size_t data_off)
 {
 	mblk_t *mp;
-	struct ether_header *eh;
 	struct ip *ip;
 	struct tcphdr *th;
 
@@ -1425,19 +1550,18 @@ do_send(tcp_t *tp, tcp_seq_t seq, uint8_t flags, size_t data_len,
 	if (mp == NULL)
 		return -ENOMEM;
 
+	mp->rptr += sizeof(struct ether_header);
 	mp->wptr += sizeof(struct ether_header) + sizeof(struct ip) +
 	    sizeof(struct tcphdr) + data_len;
 
-	eh = (struct ether_header *)mp->rptr;
-	ip = (struct ip *)(eh + 1);
+	ip = (struct ip *)mp->rptr;
 	th = (struct tcphdr *)(ip + 1);
 
 	ip->ip_v = IPVERSION;
 	ip->ip_hl = sizeof(struct ip) >> 2;
 	ip->ip_tos = 0;
-	ip->ip_len = htons(sizeof(struct ip) + sizeof(struct tcphdr) +
-	    data_len);
-	ip->ip_id = htons(0); /* should be a counter */
+	ip->ip_len = htons(sizeof(struct ip) + sizeof(struct tcphdr) + data_len);
+	ip->ip_id = htons(0);
 	ip->ip_off = 0;
 	ip->ip_ttl = 64;
 	ip->ip_p = IPPROTO_TCP;
@@ -1459,15 +1583,28 @@ do_send(tcp_t *tp, tcp_seq_t seq, uint8_t flags, size_t data_len,
 	    data_len);
 
 	th->th_sum = 0;
-	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr) + data_len));
+	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr) +
+	    data_len));
 
-	if (tp->processing_ifp != NULL)
-		ip_output_intfheld(mp, tp->processing_ifp);
-	else
-		ip_output(mp);
+	ipv4_output(mp);
 
 	return 0;
 }
+
+static uint8_t tcp_out_flags[] = {
+	[TCPS_CLOSED]		= TH_RST | TH_ACK,
+	[TCPS_BOUND] 		= TH_RST | TH_ACK,
+	[TCPS_LISTEN]		= 0,
+	[TCPS_SYN_SENT]		= TH_SYN,
+	[TCPS_SYN_RECEIVED]	= TH_SYN | TH_ACK,
+	[TCPS_ESTABLISHED]	= TH_ACK,
+	[TCPS_CLOSE_WAIT]	= TH_ACK,
+	[TCPS_FIN_WAIT_1]	= TH_FIN | TH_ACK,
+	[TCPS_CLOSING]		= TH_FIN | TH_ACK,
+	[TCPS_LAST_ACK]		= TH_FIN | TH_ACK,
+	[TCPS_FIN_WAIT_2]	= TH_ACK,
+	[TCPS_TIME_WAIT]	= TH_ACK,
+};
 
 int
 tcp_output(tcp_t *tp)
@@ -1480,7 +1617,7 @@ tcp_output(tcp_t *tp)
 	tcp_seq_t old_nxt;
 	int r;
 
-	kassert(ke_mutex_held(&tp->mutex));
+	kassert(ke_spinlock_held(&tp->lock));
 
 	/*
 	 * These are the reasons to send a packet:
@@ -1513,7 +1650,6 @@ send_more:
 
 	if (data_len < 0)
 		data_len = 0;
-
 	if (swnd < 0)
 		swnd = 0;
 
@@ -1533,13 +1669,9 @@ send_more:
 	if (data_len != 0 && (flags & TH_FIN) == 0) {
 		if (tp->snd_wnd < tp->mss || data_len < tp->mss) {
 			if (tp->snd_una != tp->snd_max) {
-				TCP_TRACE("nagle delaying send\n"
-					"snd_una=%u snd_nxt=%u snd_max=%u\n"
-					"snd_wnd=%u snd_cwnd=%u mss=%u data_len=%d\n",
-				    tp->snd_una, tp->snd_nxt, tp->snd_max,
-				    tp->snd_wnd, tp->snd_cwnd, tp->mss, data_len);
+				TCP_TRACE("nagle delaying send\n");
 				data_len = 0;
-			    }
+			}
 		}
 	}
 
@@ -1551,7 +1683,6 @@ send_more:
 		flags &= ~TH_FIN;
 	else if (data_len != 0)
 		flags |= TH_PUSH;
-
 
 	if (tp->emit_ack) {
 		tp->emit_ack = false;
@@ -1609,7 +1740,7 @@ tcp_rexmit(tcp_t *tp)
 	uint32_t outstanding, data_out;
 	size_t rexmit_len;
 
-	kassert(ke_mutex_held(&tp->mutex));
+	kassert(ke_spinlock_held(&tp->lock));
 
 	outstanding = tp->snd_max - tp->snd_una;
 	if (outstanding == 0)
@@ -1639,27 +1770,24 @@ tcp_rexmit(tcp_t *tp)
  */
 
 static void
-tcp_conn_con(tcp_t *tp, struct ip *ip, struct tcphdr *th, in_port_t sport)
+tcp_conn_con(tcp_t *tp, const struct ip *ip, const struct tcphdr *th,
+    in_port_t sport)
 {
-	mblk_t *mp;
 	struct T_conn_con *con;
 	struct sockaddr_in *sin;
 
 	kassert(tp->rq != NULL);
-
 	kassert(tp->conn_con_m != NULL);
-	mp = tp->conn_con_m;
-	tp->conn_con_m = NULL;
 
-	con = (struct T_conn_con *)mp->rptr;
+	con = (typeof(con))tp->conn_con_m->rptr;
 	con->PRIM_type = T_CONN_CON;
 	con->RES_length = sizeof(struct sockaddr_in);
-	sin = (struct sockaddr_in *)&con->RES;
+	sin = (typeof(sin))&con->RES;
 	sin->sin_family = AF_INET;
 	sin->sin_port = sport;
 	sin->sin_addr = ip->ip_src;
 
-	str_putnext(tp->rq, mp);
+	tp->pending_conn_con = true;
 }
 
 static void
@@ -1669,8 +1797,8 @@ tcp_conn_ind(tcp_t *listener, tcp_t *child)
 	struct T_conn_ind *ci;
 	struct sockaddr_in *sin;
 
-	kassert(ke_mutex_held(&listener->mutex));
-	kassert(ke_mutex_held(&child->mutex));
+	kassert(ke_spinlock_held(&listener->lock));
+	kassert(ke_spinlock_held(&child->lock));
 	kassert(listener->rq != NULL);
 	kassert(child->conn_ind_m != NULL);
 	kassert(!child->connind_sent);
@@ -1680,12 +1808,12 @@ tcp_conn_ind(tcp_t *listener, tcp_t *child)
 	child->connind_sent = true;
 
 	mp->db->type = M_PROTO;
-	ci = (struct T_conn_ind *)mp->rptr;
+	ci = (typeof(ci))mp->rptr;
 	ci->PRIM_type = T_CONN_IND;
 	ci->SEQ_number = child->connind_seq;
 	ci->SRC_length = sizeof(struct sockaddr_in);
 
-	sin = (struct sockaddr_in *)&ci->SRC;
+	sin = (typeof(sin))&ci->SRC;
 	sin->sin_family = AF_INET;
 	sin->sin_port = child->faddr.sin_port;
 	sin->sin_addr = child->faddr.sin_addr;
@@ -1696,39 +1824,13 @@ tcp_conn_ind(tcp_t *listener, tcp_t *child)
 }
 
 static void
-tcp_discon_ind(tcp_t *tp, int reason)
-{
-	mblk_t *mp;
-	struct T_discon_ind *di;
-
-	kassert(tp->discon_ind_m != NULL);
-	mp = tp->discon_ind_m;
-	tp->discon_ind_m = NULL;
-
-	di = (struct T_discon_ind *)mp->rptr;
-	di->PRIM_type = T_DISCON_IND;
-	di->DISCON_reason = reason;
-#if 0 /* old listening code */
-	di->SEQ_number = (tp->listener == NULL) ? -1 : tp->conind_seq;
-#endif
-	di->SEQ_number = -1;
-
-#if 0
-	if (tp->listener != NULL)
-		str_putnext(tp->listener->rq, mp);
-	else
-#endif
-		str_putnext(tp->rq, mp);
-}
-
-static void
 tcp_discon_ind_listener(tcp_t *listener, tcp_t *child, int reason)
 {
 	mblk_t *mp;
 	struct T_discon_ind *di;
 
-	kassert(ke_mutex_held(&listener->mutex));
-	kassert(ke_mutex_held(&child->mutex));
+	kassert(ke_spinlock_held(&listener->lock));
+	kassert(ke_spinlock_held(&child->lock));
 	kassert(listener->rq != NULL);
 	kassert(child->discon_ind_m != NULL);
 
@@ -1736,7 +1838,7 @@ tcp_discon_ind_listener(tcp_t *listener, tcp_t *child, int reason)
 	child->discon_ind_m = NULL;
 
 	mp->db->type = M_PROTO;
-	di = (struct T_discon_ind *)mp->rptr;
+	di = (typeof(di))mp->rptr;
 	di->PRIM_type = T_DISCON_IND;
 	di->DISCON_reason = reason;
 	di->SEQ_number = child->connind_seq;
@@ -1750,7 +1852,7 @@ tcp_passive_maybe_ind(tcp_t *child)
 {
 	tcp_t *listener;
 
-	kassert(ke_mutex_held(&child->mutex));
+	kassert(ke_spinlock_held(&child->lock));
 
 	if (child->passive_listener == NULL || child->connind_sent ||
 	    child->conn_ind_m == NULL || child->state < TCPS_ESTABLISHED)
@@ -1760,11 +1862,11 @@ tcp_passive_maybe_ind(tcp_t *child)
 	tcp_retain(listener); /* local ref while we may relock */
 
 	if (child > listener) {
-		ke_mutex_exit(&child->mutex);
-		ke_mutex_enter(&listener->mutex, "tcp_passive_maybe_ind listener");
-		ke_mutex_enter(&child->mutex, "tcp_passive_maybe_ind child");
+		ke_spinlock_exit_nospl(&child->lock);
+		ke_spinlock_enter_nospl(&listener->lock);
+		ke_spinlock_enter_nospl(&child->lock);
 	} else {
-		ke_mutex_enter(&listener->mutex, "tcp_passive_maybe_ind listener");
+		ke_spinlock_enter_nospl(&listener->lock);
 	}
 
 	if (child->passive_listener == listener &&
@@ -1774,112 +1876,39 @@ tcp_passive_maybe_ind(tcp_t *child)
 	    child->conn_ind_m != NULL)
 		tcp_conn_ind(listener, child);
 
-	ke_mutex_exit(&listener->mutex);
+	ke_spinlock_exit_nospl(&listener->lock);
 	tcp_release(listener);
 }
 
+/* sets ordrel pending; tcp_rsrv() will deliver it duly */
 static void
 tcp_ordrel_ind(tcp_t *tp)
 {
-	mblk_t *mp;
 	struct T_ordrel_ind *ord;
 
 	kassert(tp->ordrel_ind_m != NULL);
-	mp = tp->ordrel_ind_m;
-	tp->ordrel_ind_m = NULL;
 
-	ord = (struct T_ordrel_ind *)mp->rptr;
+	ord = (typeof(ord))tp->ordrel_ind_m->rptr;
 	ord->PRIM_type = T_ORDREL_IND;
 
-	str_putnext(tp->rq, mp);
-}
-
-/* we reuse these fields for our convenience; they can be figured out again */
-#define th_1stdata th_sport
-#define th_datalen th_dport
-
-static void
-tcp_rput(queue_t *rq, mblk_t *mp)
-{
-	tcp_t *tp = rq->ptr;
-	ke_mutex_enter(&tp->mutex, "tcp_rput");
-	if (mp->db->type == M_DATA)
-		tcp_conn_input(NULL, &tp, mp);
-	else
-	 	str_putnext(rq, mp); /* M_CONN_IND from remote */
-	ke_mutex_exit(&tp->mutex);
-}
-
-static void
-tcp_rsrv_locked(tcp_t *tp, queue_t *rq)
-{
-	mblk_t *mp;
-
-	while ((mp = str_getq(rq)) != NULL) {
-		if (str_canputnext(rq)) {
-			str_putnext(rq, mp);
-		} else {
-			str_putbq(rq, mp);
-			break;
-		}
-	}
-
-	if (str_canputnext(rq)) {
-		size_t wnd_opening;
-
-		kassert(TAILQ_EMPTY(&rq->msgq)); /* should be empty by now */
-
-		if (tp->ordrel_needed) {
-			tp->ordrel_needed = false;
-			tcp_ordrel_ind(tp);
-		}
-
-		/* reopen the window to its maximum */
-		wnd_opening = tp->rcv_wnd_max - tp->rcv_wnd;
-		tp->rcv_wnd = tp->rcv_wnd_max;
-
-		/*
-		 * only send a window update if SWS-avoidance conditions
-		 * met not quite RFC 9293 compliant but we aren't
-		 * vulnerable to silly windows anyway; we don't reopen
-		 * the window at all until we can push everything we've
-		 * got upstream.
-		 */
-		if (wnd_opening >= tp->mss * 2 ||
-		    wnd_opening >= tp->rcv_wnd_max / 2) {
-			tp->emit_ack = true;
-			tcp_output(tp);
-		}
-	}
-}
-
-static void
-tcp_rsrv(queue_t *rq)
-{
-	tcp_t *tp = rq->ptr;
-
-	if (!str_canputnext(rq))
-		return;
-
-	ke_mutex_enter(&tp->mutex, "tcp_rsrv");
-	tcp_rsrv_locked(tp, rq);
-	ke_mutex_exit(&tp->mutex);
+	tp->pending_ordrel = true;
 }
 
 static void
 tcp_abort(tcp_t *tp, int err)
 {
+	kassert(ke_spinlock_held(&tp->lock));
+
 	if (tp->passive_listener != NULL) {
 		tcp_t *listener = tp->passive_listener;
-
-		tcp_retain(listener); /* local ref while we may relock */
+		tcp_retain(listener);
 
 		if (tp > listener) {
-			ke_mutex_exit(&tp->mutex);
-			ke_mutex_enter(&listener->mutex, "tcp_abort listener");
-			ke_mutex_enter(&tp->mutex, "tcp_abort child");
+			ke_spinlock_exit_nospl(&tp->lock);
+			ke_spinlock_enter_nospl(&listener->lock);
+			ke_spinlock_enter_nospl(&tp->lock);
 		} else {
-			ke_mutex_enter(&listener->mutex, "tcp_abort listener");
+			ke_spinlock_enter_nospl(&listener->lock);
 		}
 
 		if (tp->passive_listener == listener) {
@@ -1890,12 +1919,20 @@ tcp_abort(tcp_t *tp, int err)
 			tcp_passive_unlink(listener, tp);
 		}
 
-		ke_mutex_exit(&listener->mutex);
+		ke_spinlock_exit_nospl(&listener->lock);
 		tcp_release(listener);
 	}
 
-	if (tp->rq != NULL)
-		tcp_discon_ind(tp, err);
+	if (tp->rq != NULL && tp->discon_ind_m != NULL) {
+		struct T_discon_ind *di = (typeof(di))tp->discon_ind_m->rptr;
+		di->PRIM_type = T_DISCON_IND;
+		di->DISCON_reason = err;
+		di->SEQ_number = -1;
+		tp->discon_ind_m->db->type = M_PROTO;
+		tp->discon_ind_m->wptr =
+		    tp->discon_ind_m->rptr + sizeof(*di);
+		tp->pending_discon = true;
+	}
 
 	tcb_free_connstate(tp);
 
@@ -1903,124 +1940,13 @@ tcp_abort(tcp_t *tp, int err)
 		tcp_release(tp);
 }
 
-static void
-tcp_reply(ip_intf_t *ifpheld, mblk_t *m, struct ip *ip, struct tcphdr *th,
-    tcp_seq_t seq, tcp_seq_t ack, uint8_t flags)
-{
-	struct in_addr tmp_addr;
-	uint16_t tmp_port;
-	size_t hlen = ip->ip_hl << 2;
+/*
+ * reassembly/segment delivery
+ */
 
-	tmp_addr = ip->ip_src;
-	ip->ip_src = ip->ip_dst;
-	ip->ip_dst = tmp_addr;
-
-	ip->ip_len = htons(hlen + sizeof(struct tcphdr));
-	ip->ip_sum = 0;
-
-	tmp_port = th->th_sport;
-	th->th_sport = th->th_dport;
-	th->th_dport = tmp_port;
-
-	th->th_seq = htonl(seq);
-	th->th_ack = htonl(ack);
-	th->th_off = sizeof(struct tcphdr) >> 2;
-	th->th_flags = flags;
-	th->th_win = 0;
-	th->th_sum = 0;
-	th->th_urp = 0;
-
-	m->wptr = m->rptr + sizeof(struct ether_header) + hlen +
-	    sizeof(struct tcphdr);
-
-	th->th_sum = htons(tcp_checksum(ip, th, sizeof(struct tcphdr)));
-
-	if (ifpheld != NULL)
-		ip_output_intfheld(m, ifpheld);
-	else
-	 	ip_output(m);
-}
-
-static void
-tcp_reply_reset(ip_intf_t *ifp, mblk_t *m, struct ip *ip, struct tcphdr *th)
-{
-	if (th->th_flags & TH_ACK) {
-		tcp_reply(ifp, m, ip, th, ntohl(th->th_ack), 0, TH_RST);
-	} else {
-		size_t seg_len = ntohs(ip->ip_len) - (ip->ip_hl << 2) -
-		    (th->th_off << 2);
-		if (th->th_flags & TH_SYN)
-			seg_len++;
-		if (th->th_flags & TH_FIN)
-			seg_len++;
-		tcp_reply(ifp, m, ip, th, 0, ntohl(th->th_seq) + seg_len,
-		    TH_RST);
-	}
-}
-
-void
-tcp_rtt_update(tcp_t *tp, tcp_seq_t ack_seq)
-{
-	kabstime_t now = ke_time();
-	uint32_t r; /* RTT in milloseconds*/
-
-	if (!tp->timing_rtt || !SEQ_GEQ(ack_seq, tp->rtseq))
-		return;
-
-	r = (uint32_t)((now - tp->rtstart) / 1000000ULL);
-
-	TCP_TRACE("Measured RTT = %u ms for seq %u\n", r, tp->rtseq);
-
-#define ALPHA_RTT_SHIFT	  3 /* 1/8 */
-#define BETA_RTTVAR_SHIFT 2 /* 1/4 */
-#define K_RTO_MULTIPLIER  4 /* 4/1 */
-
-	if (tp->srtt == 0) {
-		/*
-		 * First measurement:
-		 *
-		 * SRTT <- R
-		 * RTTVAR <- R/2
-		 * RTO <- SRTT + max (G, K*RTTVAR)
-		 */
-
-		tp->srtt = r;
-		tp->rttvar = r >> 1;
-
-		TCP_TRACE("First RTT measurement - "
-			"SRTT=%u ms, RTTVAR=%u ms\n",
-		    tp->srtt, tp->rttvar);
-	} else {
-		/*
-		 * Subsequent measurements:
-		 *
-		 * RTTVAR <- (1 - beta) * RTTVAR + beta * |SRTT - R'|
-		 * SRTT <- (1 - alpha) * SRTT + alpha * R'
-		 */
-
-		uint32_t delta = (tp->srtt > r) ? (tp->srtt - r) :
-						  (r - tp->srtt);
-
-		tp->rttvar = tp->rttvar - (tp->rttvar >> BETA_RTTVAR_SHIFT) +
-		    (delta >> BETA_RTTVAR_SHIFT);
-
-		tp->srtt = tp->srtt - (tp->srtt >> ALPHA_RTT_SHIFT) +
-		    (r >> ALPHA_RTT_SHIFT);
-
-		TCP_TRACE("Updated SRTT=%u ms, RTTVAR=%u ms "
-			"(measured RTT=%u ms)\n",
-		    tp->srtt, tp->rttvar, r);
-	}
-
-	/* RTO <- SRTT + max (G, K*RTTVAR) [G is 1ms] */
-	tp->rto = tp->srtt + MAX2(1, K_RTO_MULTIPLIER * tp->rttvar);
-	tp->rto = MIN2(MAX2(tp->rto, TCP_MIN_RTO_MS), TCP_MAX_RTO_MS);
-
-	TCP_TRACE("New RTO=%u ms\n", tp->rto);
-
-	tp->timing_rtt = false;
-	tp->n_rexmits = 0;
-}
+/* reuse header fields for our own bookkeeping within tcp_conn_input */
+#define th_1stdata th_sport
+#define th_datalen th_dport
 
 static void
 tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
@@ -2029,7 +1955,7 @@ tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
 	uint32_t *countp;
 	mblk_t *m, *next;
 
-	kassert(ke_mutex_held(&tp->mutex));
+	kassert(ke_spinlock_held(&tp->lock));
 
 	if (tcp_wq(tp) != NULL) {
 		msgq = &tcp_wq(tp)->msgq;
@@ -2039,7 +1965,7 @@ tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
 		countp = &tp->detached_snd_q_count;
 	}
 
-	if (bytes_acked >= *countp) {
+	if (bytes_acked >= (int)*countp) {
 		while ((m = TAILQ_FIRST(msgq)) != NULL) {
 			TAILQ_REMOVE(msgq, m, link);
 			kassert(m->cont == NULL);
@@ -2054,17 +1980,14 @@ tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
 		size_t size = m->wptr - m->rptr;
 
 		kassert(m->cont == NULL);
-
 		next = TAILQ_NEXT(m, link);
 
-		if (bytes_acked >= size) {
-			/* drop an entire mblk */
+		if (bytes_acked >= (int)size) {
 			bytes_acked -= size;
 			*countp -= size;
 			TAILQ_REMOVE(msgq, m, link);
 			str_freeb(m);
 		} else {
-			/* trim the front of mblk */
 			m->rptr += bytes_acked;
 			*countp -= bytes_acked;
 			return;
@@ -2074,12 +1997,10 @@ tcp_snd_q_consume(tcp_t *tp, int bytes_acked)
 	}
 }
 
-
-struct tcphdr *
+static struct tcphdr *
 mtoth(mblk_t *m)
 {
-	return (struct tcphdr *)(m->rptr + sizeof(struct ether_header) +
-	    sizeof(struct ip));
+	return (struct tcphdr *)m->rptr;
 }
 
 bool
@@ -2094,7 +2015,7 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 	tcp_seq_t seg_end = seg_seq + SEG_LEN(th);
 	mblk_t *data_head = NULL, *data_tail = NULL;
 
-	TAILQ_FOREACH (mq, &tp->reass_queue, link) {
+	TAILQ_FOREACH(mq, &tp->reass_queue, link) {
 		thq = mtoth(mq);
 		if (SEQ_GT(ntohl(thq->th_seq), seg_seq))
 			break;
@@ -2106,10 +2027,6 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 	else
 		prev = TAILQ_LAST(&tp->reass_queue, msgb_q);
 
-	/*
-	 * Handle overlap wih preceding segments.
-	 * Trim from the new segment; if completely overlapped, drop.
-	 */
 	if (prev != NULL) {
 		struct tcphdr *thprev = mtoth(prev);
 		tcp_seq_t prev_seq = ntohl(thprev->th_seq);
@@ -2120,8 +2037,8 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 			uint32_t datatrim = MIN2(overlap, th->th_datalen);
 
 			if (overlap >= SEG_LEN(th)) {
-				TCP_TRACE("Segment completely overlapped by "
-				    " previous segment, dropping\n");
+				TCP_TRACE("Segment completely overlapped, "
+				    "dropping\n");
 				return false;
 			}
 
@@ -2130,19 +2047,13 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 			th->th_datalen -= datatrim;
 			seg_seq += datatrim;
 
-			/* if overlap exceeds data, then FIN gets trimmed */
 			if (overlap > datatrim)
 				th->th_flags &= ~TH_FIN;
 
 			seg_end = seg_seq + SEG_LEN(th);
-
-			TCP_TRACE("Trimmed %u bytes%s from beginning of new "
-				  "segment\n",
-			    datatrim, (overlap > datatrim) ? " and FIN" : "");
 		}
 	}
 
-	/* this mblk is being kept - we now own it */
 	*drop_mp = false;
 
 	if (mq != NULL)
@@ -2150,11 +2061,6 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 	else
 		TAILQ_INSERT_TAIL(&tp->reass_queue, m, link);
 
-
-	/*
-	 * Handle overlap wih succeeding segments.
-	 * Trim from the succeeding segment; if completely overlapped, drop.
-	 */
 	mq = TAILQ_NEXT(m, link);
 	while (mq != NULL) {
 		tcp_seq_t succ_seq;
@@ -2166,8 +2072,6 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 			uint32_t overlap = seg_end - succ_seq;
 
 			if (overlap >= SEG_LEN(thq)) {
-				TCP_TRACE("Succeeding segment completely "
-				    "overlapped, removing\n");
 				next = TAILQ_NEXT(mq, link);
 				TAILQ_REMOVE(&tp->reass_queue, mq, link);
 				str_freemsg(mq);
@@ -2183,14 +2087,8 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 
 				if (overlap > datatrim)
 					thq->th_flags &= ~TH_FIN;
-
-				TCP_TRACE("Trimmed %u bytes%s from beginning "
-					  "of succeeding segment\n",
-				    overlap,
-				    (overlap > datatrim) ? " and FIN" : "");
 			}
 		} else {
-			/* no overlap */
 			break;
 		}
 
@@ -2205,13 +2103,9 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 		if (cur_seq != tp->rcv_nxt)
 			break;
 
-		TCP_TRACE("Processing contiguous segment, seq=%u, len=%u\n",
-		    cur_seq, thq->th_datalen);
-
 		tp->rcv_nxt += thq->th_datalen;
 
 		if (thq->th_flags & TH_FIN) {
-			TCP_TRACE("FIN segment processed\n");
 			tp->rcv_nxt++;
 			fin_reached = true;
 		}
@@ -2219,7 +2113,6 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 		next = TAILQ_NEXT(mq, link);
 		TAILQ_REMOVE(&tp->reass_queue, mq, link);
 
-		/* strip headers ready for passing upstream */
 		if (thq->th_datalen > 0) {
 			mq->rptr = (char *)thq + thq->th_1stdata;
 			mq->wptr = mq->rptr + thq->th_datalen;
@@ -2241,66 +2134,102 @@ tcp_queue_for_reassembly(tcp_t *tp, mblk_t *m, struct tcphdr *th,
 
 	if (data_head != NULL) {
 		/*
-		 * We manage rcv_wnd like this: it stays constant until we can't
-		 * putnext() any further data and have to queue it; then, we
-		 * reduce rcv_wnd by as much as we receive. this continues until
-		 * we are free to putnext() again, at which point we reopen the
-		 * window to its full extent.
+		 * Always queue into rcv_q; tcp_rsrv drains upstream.
+		 * Shrink the advertised window as data accumulates.
 		 */
-
-		if (tp->rq != NULL && str_canputnext(tp->rq)) {
-			if (!TAILQ_EMPTY(&tp->rq->msgq)) {
-#if 0 /* FIXME: what is this here for? */
-				kassert(tp->rq->enabled);
-#endif
-				tp->rcv_wnd -= str_msgsize(data_head);
-				str_putq(tp->rq, data_head);
-				if (str_canputnext(tp->rq))
-					tcp_rsrv_locked(tp, tp->rq);
-				tp->rq->enabled = false;
-			} else {
-				str_putnext(tp->rq, data_head);
-			}
-		} else if (tp->rq == NULL) {
-			TAILQ_INSERT_TAIL(&tp->detached_rcv_q, data_head, link);
-			tp->detached_rcv_q_count += str_msgsize(data_head);
-			tp->rcv_wnd -= str_msgsize(data_head);
-		} else {
-			str_putq(tp->rq, data_head);
-			tp->rcv_wnd -= str_msgsize(data_head);
-		}
+		TAILQ_INSERT_TAIL(&tp->rcv_q, data_head, link);
+		tp->rcv_q_count += str_msgsize(data_head);
+		tp->rcv_wnd -= str_msgsize(data_head);
 	}
 
 	return fin_reached;
+#undef SEG_LEN
+}
+
+static void
+tcp_rtt_update(tcp_t *tp, tcp_seq_t ack_seq)
+{
+	kabstime_t now = ke_time();
+	uint32_t r;
+
+	if (!tp->timing_rtt || !SEQ_GEQ(ack_seq, tp->rtseq))
+		return;
+
+	r = (uint32_t)((now - tp->rtstart) / 1000000ULL);
+
+	TCP_TRACE("Measured RTT = %u ms for seq %u\n", r, tp->rtseq);
+
+#define ALPHA_RTT_SHIFT   3
+#define BETA_RTTVAR_SHIFT 2
+#define K_RTO_MULTIPLIER  4
+
+	if (tp->srtt == 0) {
+		tp->srtt = r;
+		tp->rttvar = r >> 1;
+	} else {
+		uint32_t delta = (tp->srtt > r) ? (tp->srtt - r) :
+						  (r - tp->srtt);
+
+		tp->rttvar = tp->rttvar - (tp->rttvar >> BETA_RTTVAR_SHIFT) +
+		    (delta >> BETA_RTTVAR_SHIFT);
+
+		tp->srtt = tp->srtt - (tp->srtt >> ALPHA_RTT_SHIFT) +
+		    (r >> ALPHA_RTT_SHIFT);
+	}
+
+	tp->rto = tp->srtt + MAX2(1, K_RTO_MULTIPLIER * tp->rttvar);
+	tp->rto = MIN2(MAX2(tp->rto, TCP_MIN_RTO_MS), TCP_MAX_RTO_MS);
+
+	tp->timing_rtt = false;
+	tp->n_rexmits = 0;
 }
 
 static tcp_t *
-tcp_passive_open(tcp_t *listener, struct ip *ip, struct tcphdr *th,
+tcp_passive_open(tcp_t *listener, const struct ip *ip, const struct tcphdr *th,
     in_port_t sport, in_port_t dport)
 {
 	tcp_t *child;
 	struct sockaddr_in faddr;
-	struct ip_route_result rt;
+	union sockaddr_union rt_dst = {
+		.in = { .sin_family = AF_INET, .sin_addr = ip->ip_src }
+	};
+	route_result_t rt;
+	ip_ifaddr_t *ifa;
+	struct in_addr laddr = { .s_addr = INADDR_ANY };
+	uint32_t mtu;
+	uint16_t mss;
 	int r;
 
-	rt = ip_route_lookup(ip->ip_src);
-	if (rt.intf == NULL)
+	r = route_lookup(&rt_dst, &rt, true);
+	if (r != 0)
 		return NULL;
 
-	child = tcp_new(NULL);
-	if (child == NULL) {
-		ip_intf_release(rt.intf);
-		return NULL;
+	RCULIST_FOREACH(ifa, &rt.ifp->addrs, rlentry) {
+		if (ifa->addr.sa.sa_family == AF_INET) {
+			laddr = ifa->addr.in.sin_addr;
+			break;
+		}
 	}
 
-	ke_mutex_enter(&child->mutex, "tcp_passive_open child");
+#if 0 /* when we have PMTUD */
+	mtu = rt.mtu != 0 ? rt.mtu : TCP_DEFAULT_MTU;
+	mss = mtu - sizeof(struct ether_header) - sizeof(struct ip) -
+	    sizeof(struct tcphdr);
+#endif
+	mss = TCP_MSS;
+	ip_if_release(rt.ifp);
 
-	child->mss = rt.intf->mtu - sizeof(struct ip) - sizeof(struct tcphdr);
-	ip_intf_release(rt.intf);
+	child = tcp_new(NULL);
+	if (child == NULL)
+		return NULL;
+
+	ke_spinlock_enter_nospl(&child->lock);
+
+	child->mss = mss;
 
 	child->laddr.sin_family = AF_INET;
 	child->laddr.sin_port = dport;
-	child->laddr.sin_addr = ip->ip_dst;
+	child->laddr.sin_addr = laddr;
 
 	faddr.sin_family = AF_INET;
 	faddr.sin_port = sport;
@@ -2317,7 +2246,9 @@ tcp_passive_open(tcp_t *listener, struct ip *ip, struct tcphdr *th,
 	child->conn_ind_m->db->type = M_PROTO;
 	child->conn_ind_m->wptr += sizeof(struct T_conn_ind);
 
-	r = tcp_conn_table_insert(child);
+	ke_spinlock_enter_nospl(&tcp_conntab_lock);
+	r = tcp_conn_table_insert_locked(child);
+	ke_spinlock_exit_nospl(&tcp_conntab_lock);
 	if (r != 0)
 		goto fail;
 
@@ -2328,17 +2259,17 @@ tcp_passive_open(tcp_t *listener, struct ip *ip, struct tcphdr *th,
 	child->snd_wl2 = 0;
 
 	child->passive_listener = listener;
-	tcp_retain(listener); /* child ref on listener */
+	tcp_retain(listener);
 
 	child->connind_seq = listener->next_connind_seq++;
 	LIST_INSERT_HEAD(&listener->conninds, child, conninds_entry);
-	tcp_retain(child);    /* listener list ref on child */
+	tcp_retain(child);
 
 	tcp_change_state(child, TCPS_SYN_RECEIVED);
 	return child;
 
 fail:
-	ke_mutex_exit(&child->mutex);
+	ke_spinlock_exit_nospl(&child->lock);
 	tcb_free_connstate(child);
 	tcp_release(child);
 	return NULL;
@@ -2359,7 +2290,6 @@ tcp_cc_on_dup_ack(tcp_t *tp)
 	if (tp->dupacks != 3)
 		return;
 
-	/* RFC 6582: only enter fast retransmit if ACK covers > recover */
 	if (!SEQ_GT(tp->snd_una, tp->snd_recover))
 		return;
 
@@ -2369,7 +2299,7 @@ tcp_cc_on_dup_ack(tcp_t *tp)
 	tp->snd_cwnd = tp->snd_ssthresh + 3 * tp->mss;
 	tp->fast_recovery = true;
 
-	tp->timing_rtt = false; /* Karn */
+	tp->timing_rtt = false;
 
 	tcp_rexmit(tp);
 }
@@ -2382,18 +2312,16 @@ tcp_cc_on_new_ack(tcp_t *tp, uint32_t acked_data, tcp_seq_t ack)
 
 	if (tp->fast_recovery) {
 		if (SEQ_GEQ(ack, tp->snd_recover)) {
-			/* full ACK, fast recovery ends */
 			tp->snd_cwnd = tp->snd_ssthresh;
 			tp->fast_recovery = false;
 			return;
 		} else {
-			/* partial ACK */
 			tp->snd_cwnd -= MIN2(tp->snd_cwnd, acked_data);
 			if (acked_data >= tp->mss)
 				tp->snd_cwnd += tp->mss;
 			tp->snd_cwnd = MAX2(tp->snd_cwnd, (uint32_t)tp->mss);
 
-			tp->timing_rtt = false;		/* Karn */
+			tp->timing_rtt = false;
 			tcp_rexmit(tp);
 			tcp_output(tp);
 			return;
@@ -2411,35 +2339,28 @@ tcp_cc_on_new_ack(tcp_t *tp, uint32_t acked_data, tcp_seq_t ack)
 	}
 }
 
-/*
- * entered with tp->mutex held
- * if detached, ifp is the interface whose processing context we're in (for
- * passing to IP)
- * if not detached, then entered from stream processing context (so stream mutex
- * also held).
- */
 void
-tcp_conn_input(ip_intf_t *ifp, tcp_t **tpp, mblk_t *mp)
+tcp_conn_input(tcp_t **tpp, mblk_t *mp, const ip_rxattr_t *attr)
 {
-	struct ip *ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
-	uint16_t hlen = ip->ip_hl << 2;
-	uint16_t tcp_len = ntohs(ip->ip_len) - hlen;
-	struct tcphdr *th = (struct tcphdr *)((char *)ip + hlen);
+	const struct ip *ip = attr->l3hdr.ip4;
+	uint16_t tcp_len = (uint16_t)(mp->wptr - mp->rptr);
+	struct tcphdr *th = (struct tcphdr *)mp->rptr;
 	bool got_fin = false;
 	uint16_t sport, dport;
 	bool dropmp = true;
 	tcp_t *tp = *tpp;
 
-	tp->processing_ifp = ifp;
+	kassert(ke_spinlock_held(&tp->lock));
 
 	sport = th->th_sport;
 	dport = th->th_dport;
-#define TCP_REPLY_RESET(ifp, mp, ip, th) \
+
+#define TCP_REPLY_RESET() \
 do { \
 	th->th_sport = sport; \
 	th->th_dport = dport; \
-	tcp_reply_reset(ifp, mp, ip, th); \
-	(mp) = NULL; \
+	tcp_reply_reset(ip, th, tcp_len); \
+	goto finish; \
 } while (0)
 
 	th->th_1stdata = (th->th_off << 2);
@@ -2448,21 +2369,14 @@ do { \
 	/* 3.10.7: SEGMENT ARRIVES */
 	switch (tp->state) {
 	case TCPS_CLOSED:
-		TCP_REPLY_RESET(ifp, mp, ip, th);
-		dropmp = false;
-		goto finish;
+		TCP_REPLY_RESET();
 
 	case TCPS_LISTEN:
-		/* 3.10.7.2: If the state is LISTEN, then... */
-
 		if (th->th_flags & TH_RST)
 			goto finish;
 
-		if (th->th_flags & TH_ACK) {
-			TCP_REPLY_RESET(ifp, mp, ip, th);
-			dropmp = false;
-			goto finish;
-		}
+		if (th->th_flags & TH_ACK)
+			TCP_REPLY_RESET();
 
 		if (th->th_flags & TH_SYN) {
 			tcp_t *listener = tp;
@@ -2477,24 +2391,14 @@ do { \
 				goto finish;
 
 			/*
-			 * Henceforth processing is now on the passive child, no
-			 * longer the listener.
-			 * child->mutex is held on return from
-			 * tcp_passive_open().
+			 * Henceforth processing is now on the passive child.
+			 * child->lock is held; listener->lock is released.
 			 */
-			listener->processing_ifp = NULL;
-			ke_mutex_exit(&listener->mutex);
+			ke_spinlock_exit_nospl(&listener->lock);
 
 			tp = child;
-			tp->processing_ifp = ifp;
 			*tpp = tp;
 
-			/*
-			 * We have accepted the SYN into the child's
-			 * IRS/RCV.NXT. Consume the SYN in the incoming segment
-			 * and continue with normal text / FIN processing on the
-			 * child.
-			 */
 			th->th_seq = htonl(ntohl(th->th_seq) + 1);
 
 			if (th->th_datalen > 0 &&
@@ -2507,83 +2411,36 @@ do { \
 			goto step_6;
 		}
 
-		/* no valid case */
 		goto finish;
 
 	case TCPS_SYN_SENT:
-		/*
-		 * 3.10.7.3: If the state is SYN-SENT, then
-		 * First, check the ACK bit:
-		 */
 		if (th->th_flags & TH_ACK) {
 			if (SEQ_LEQ(ntohl(th->th_ack), tp->iss) ||
-			    SEQ_GT(ntohl(th->th_ack), tp->snd_max)) {
-				/*
-				 * If SEG.ACK =< ISS or SEG.ACK > SND.NXT, send
-				 * a reset (unless the RST bit is set, if so
-				 * drop the segment and return)
-				 */
-				TCP_REPLY_RESET(ifp, mp, ip, th);
-				dropmp = false;
-				goto finish;
-			}
+			    SEQ_GT(ntohl(th->th_ack), tp->snd_max))
+				TCP_REPLY_RESET();
 		}
 
 		if (th->th_flags & TH_RST) {
 			if (th->th_flags & TH_ACK) {
-				/*
-				 * If the ACK was acceptable, then signal to the
-				 * user "error: connection reset", drop the
-				 * segment, enter CLOSED state, delete TCB, and
-				 * return.
-				 */
 				tcp_abort(tp, ECONNRESET);
 				goto finish;
 			} else {
-				/* Otherwise, drop the segment and return. */
 				goto finish;
 			}
 		}
 
 		if (th->th_flags & TH_SYN) {
-			/*
-			 * If the SYN bit is on and the security/compartment is
-			 * acceptable, then RCV.NXT is set to SEG.SEQ+1, IRS is
-			 * set to SEG.SEQ...
-			 */
-
 			tp->irs = ntohl(th->th_seq);
 			tp->rcv_nxt = tp->irs + 1;
 
-			/* ...SND.UNA should be advanced to equal SEG.ACK (if
-			 * there is an ACK), and any segments on the
-			 * retransmission queue that are thereby acknowledged
-			 * should be removed.
-			 *
-			 * [we don't send any data with the SYN so no need.]
-			 */
 			if (th->th_flags & TH_ACK)
 				tp->snd_una = ntohl(th->th_ack);
 
 			if (SEQ_GT(tp->snd_una, tp->iss)) {
-				/*
-				 * If SND.UNA > ISS (our SYN has been ACKed),
-				 * change the connection state to ESTABLISHED,
-				 * form an ACK segment and send it.
-				 *
-				 * [this will happen next tcp_output()]
-				 */
 				tcp_change_state(tp, TCPS_ESTABLISHED);
-#if 0
-				kassert(tp->listener == NULL);
-#endif
 				tcp_conn_con(tp, ip, th, sport);
 				tp->emit_ack = true;
 			} else {
-				/*
-				 * Otherwise, enter SYN-RECEIVED, form a SYN,ACK
-				 * segment, and send it. Set the variables:
-				 */
 				tcp_change_state(tp, TCPS_SYN_RECEIVED);
 				tp->emit_ack = true;
 			}
@@ -2609,10 +2466,6 @@ do { \
 			goto step_6;
 		}
 
-		/*
-		 * Fifth, if neither of the SYN or RST bits is set, then drop
-		 * the segment and return.
-		 */
 		if (!(th->th_flags & (TH_SYN | TH_RST)))
 			goto finish;
 
@@ -2623,19 +2476,7 @@ do { \
 	/* First, check sequence number: */
 
 	if (tp->rcv_wnd == 0) {
-		/*
-		 * If the RCV.WND is zero, no segments will be acceptable, but
-		 * special allowance should be made to accept valid ACKs, URGs,
-		 * and RSTs.
-		 * [SEG.SEQ = RCV.NXT - trim any data, FIN, PUSH]
-		 */
-
 		if (ntohl(th->th_seq) != tp->rcv_nxt) {
-			/*
-			 * If an incoming segment is not acceptable, an
-			 * acknowledgment should be sent in reply (unless the
-			 * RST bit is set, if so drop the segment and return)
-			 */
 			tp->emit_ack = true;
 			tcp_output(tp);
 			goto finish;
@@ -2699,21 +2540,10 @@ do { \
 
 	/* Second, check the RST bit: */
 	if (th->th_flags & TH_RST) {
-		/*
-		 * If the RST bit is set and the sequence number is outside the
-		 * current receive window, silently drop the segment.
-		 */
 		if (SEQ_LT(ntohl(th->th_seq), tp->rcv_nxt) ||
 		    SEQ_GT(ntohl(th->th_seq), tp->rcv_nxt + tp->rcv_wnd)) {
 			goto finish;
 		} else if (ntohl(th->th_seq) == tp->rcv_nxt) {
-			/*
-			 * If the RST bit is set and the sequence number exactly
-			 * matches the next expected sequence number (RCV.NXT),
-			 * then TCP endpoints MUST reset the connection in the
-			 * manner prescribed below according to the connection
-			 * state.
-			 */
 			switch (tp->state) {
 			case TCPS_SYN_RECEIVED:
 				tcp_abort(tp, ECONNRESET);
@@ -2723,11 +2553,6 @@ do { \
 			case TCPS_FIN_WAIT_1:
 			case TCPS_FIN_WAIT_2:
 			case TCPS_CLOSE_WAIT:
-			/*
-			 * RFC specifies different handling for the below; all
-			 * these reflect detached TCBs, and tcp_abort() does the
-			 * needful in that case.
-			 */
 			case TCPS_CLOSING:
 			case TCPS_LAST_ACK:
 			case TCPS_TIME_WAIT:
@@ -2739,49 +2564,21 @@ do { \
 			}
 		} else if (SEQ_LEQ(ntohl(th->th_seq),
 			       tp->rcv_nxt + tp->rcv_wnd)) {
-			/*
-			 * If the RST bit is set and the sequence number does
-			 * not exactly match the next expected sequence value,
-			 * yet is within the current receive window, TCP
-			 * endpoints MUST send an acknowledgment (challenge
-			 * ACK):
-			 *
-			 * <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>
-			 *
-			 * After sending the challenge ACK, TCP endpoints MUST
-			 * drop the unacceptable segment and stop processing the
-			 * incoming packet further. Note that RFC 5961 and
-			 * Errata ID 4772 [99] contain additional considerations
-			 * for ACK throttling in an implementation.
-			 */
 			th->th_sport = sport;
 			th->th_dport = dport;
-			tcp_reply(ifp, mp, ip, th, tp->snd_nxt, tp->rcv_nxt,
-			    TH_ACK);
-			dropmp = false;
+			tcp_reply(ip, th, tp->snd_nxt, tp->rcv_nxt, TH_ACK);
 			goto finish;
 		}
 	}
 
 	/* Fourth, check the SYN bit: */
 	if (th->th_flags & TH_SYN) {
-		/*
-		 * If the SYN is in the window it is an error: send a reset, any
-		 * outstanding RECEIVEs and SEND should receive "reset"
-		 * responses, all segment queues should be flushed, the user
-		 * should also receive an unsolicited general "connection reset"
-		 * signal, enter the CLOSED state, delete the TCB, and return.
-		 */
-
 		tcp_abort(tp, ECONNRESET);
-		TCP_REPLY_RESET(ifp, mp, ip, th);
-		dropmp = false;
-		goto finish;
+		TCP_REPLY_RESET();
 	}
 
 	/* Fifth, check the ACK field: */
 	if (!(th->th_flags & TH_ACK)) {
-		/* if the ACK bit is off, drop the segment and return */
 		if (tp->emit_ack)
 			tcp_output(tp);
 		goto finish;
@@ -2789,10 +2586,6 @@ do { \
 
 	switch (tp->state) {
 	case TCPS_SYN_RECEIVED:
-		/*
-		 * If SND.UNA < SEG.ACK =< SND.NXT, then enter ESTABLISHED state
-		 * and continue processing with the variables below set to:
-		 */
 		if (SEQ_LT(tp->snd_una, ntohl(th->th_ack)) &&
 		    SEQ_LEQ(ntohl(th->th_ack), tp->snd_max)) {
 			/* advance for SYN bit */
@@ -2811,9 +2604,7 @@ do { \
 
 			goto acceptable_ack;
 		} else {
-			TCP_REPLY_RESET(ifp, mp, ip, th);
-			dropmp = false;
-			goto finish;
+			TCP_REPLY_RESET();
 		}
 
 	case TCPS_ESTABLISHED:
@@ -2826,13 +2617,7 @@ do { \
 		bool our_fin_acked = false;
 
 		if (SEQ_LEQ(ntohl(th->th_ack), tp->snd_una)) {
-			/*
-			 * RFC 5685 defines a duplicate ACK as one where there
-			 * is outstanding data, there is no data carried,
-			 * SYN/FIN are both unset, the ACK equals SND.UNA, and
-			 * the window size is unchanged.
-			 */
-			if (tp->snd_una != tp->snd_max && /* outstanding data */
+			if (tp->snd_una != tp->snd_max &&
 			    th->th_datalen == 0 &&
 			    (th->th_flags & (TH_SYN | TH_FIN)) == 0 &&
 			    ntohl(th->th_ack) == tp->snd_una &&
@@ -2842,12 +2627,6 @@ do { \
 			}
 
 		} else if (SEQ_GT(ntohl(th->th_ack), tp->snd_max)) {
-			/*
-			 * "If the ACK acks something not yet sent (SEG.ACK >
-			 * SND.NXT), then send an ACK, drop the segment, and
-			 * return.""
-			 * [snd_max in our case.]
-			 */
 			tp->emit_ack = true;
 			tcp_output(tp);
 			goto finish;
@@ -2862,10 +2641,6 @@ do { \
 			if (SEQ_LT(tp->snd_nxt, tp->snd_una))
 				tp->snd_nxt = tp->snd_una;
 
-			/*
-			 * If SND.UNA =< SEG.ACK =< SND.NXT, the send window
-			 * should be updated.
-			 */
 			if (nseq_acked > tcp_snd_q_count(tp)) {
 				tp->snd_wnd -= tcp_snd_q_count(tp);
 				tcp_snd_q_consume(tp, tcp_snd_q_count(tp));
@@ -2877,27 +2652,17 @@ do { \
 
 			tcp_cc_on_new_ack(tp, bytes_acked, ntohl(th->th_ack));
 
-			/* RFC 6298 5.2: turn off timer if all data ACKed */
 			if (tp->snd_una == tp->snd_max)
 				tcp_cancel_timer(tp, TCP_TIMER_REXMT);
-			else /* RFC 6298 5.3: reset to RTO if some data ACK'd */
-			 	tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
+			else
+				tcp_set_timer(tp, TCP_TIMER_REXMT, tp->rto);
 
-			/* Maybe update RTT. */
 			tcp_rtt_update(tp, ntohl(th->th_ack));
 		}
 
-		/*
-		 * If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and
-		 * SND.WL2 =< SEG.ACK)), set SND.WND <- SEG.WND, set SND.WL1 <-
-		 * SEG.SEQ, and set SND.WL2 <- SEG.ACK.
-		 */
 		if (SEQ_LT(tp->snd_wl1, ntohl(th->th_seq)) ||
 		    (tp->snd_wl1 == ntohl(th->th_seq) &&
 			SEQ_LEQ(tp->snd_wl2, ntohl(th->th_ack)))) {
-			TCP_TRACE("snd_wnd now %d, wl1 now %u, wl2 now %u\n",
-			    ntohs(th->th_win), ntohl(th->th_seq),
-			    ntohl(th->th_ack));
 			tp->snd_wnd = ntohs(th->th_win);
 			tp->snd_wl1 = ntohl(th->th_seq);
 			tp->snd_wl2 = ntohl(th->th_ack);
@@ -2905,33 +2670,17 @@ do { \
 				tcp_cancel_timer(tp, TCP_TIMER_PERSIST);
 		}
 
-after_ack_window_update:
 		switch (tp->state) {
 		case TCPS_FIN_WAIT_1:
 			if (our_fin_acked) {
 				tcp_change_state(tp, TCPS_FIN_WAIT_2);
-				if (tp->rq == NULL || tp->shutdown_rd) {
-					/*
-					 * Do the nonstandard BSD behaviour
-					 * here, whereby if there's no way to
-					 * further read from this connection
-					 * (due to shutdown SHUT_RD or the TCB
-					 * being detached), we set a 2MSL timer
-					 * and give up if we don't see FIN from
-					 * the remote in that time.
-					 */
-
+				if (tp->rq == NULL || tp->shutdown_rd)
 					tcp_set_timer(tp, TCP_TIMER_2MSL,
 					    TCP_2MSL_MS);
-				}
 			}
 			break;
 
 		case TCPS_CLOSING:
-			/*
-			 * If the ACK acknowledges our FIN, then enter the
-			 * TIME-WAIT state; otherwise, ignore the segment
-			 */
 			if (our_fin_acked) {
 				tcp_change_state(tp, TCPS_TIME_WAIT);
 				tcp_cancel_all_timers(tp);
@@ -2942,12 +2691,6 @@ after_ack_window_update:
 			break;
 
 		case TCPS_LAST_ACK:
-			/*
-			 * The only thing that can arrive in this state is an
-			 * acknowledgment of our FIN. If our FIN is now
-			 * acknowledged, delete the TCB, enter the CLOSED state,
-			 * and return.
-			 */
 			if (our_fin_acked) {
 				tcb_free_connstate(tp);
 				tcp_release(tp);
@@ -2956,11 +2699,6 @@ after_ack_window_update:
 			break;
 
 		case TCPS_TIME_WAIT:
-			/*
-			 * The only thing that can arrive in this state is a
-			 * retransmission of the remote FIN. Acknowledge it and
-			 * restart the 2MSL timer.
-			 */
 			tcp_set_timer(tp, TCP_TIMER_2MSL, TCP_2MSL_MS);
 			tp->emit_ack = true;
 			tcp_output(tp);
@@ -2977,40 +2715,17 @@ after_ack_window_update:
 	}
 
 step_6:
-	/* Sixth, check the URG bit: */
 	if (th->th_flags & TH_URG)
-		TCP_TRACE("TH_URG currently ignored!!");
+		TCP_TRACE("TH_URG currently ignored!\n");
 
-	/* Seventh, process the segment text: */
-	if (th->th_datalen > 0 || (th->th_flags & (TH_FIN))) {
-		TCP_TRACE("Processing data segment, seq=%d (rcv_nxt=%d)\n",
-		    ntohl(th->th_seq), tp->rcv_nxt);
+	if (th->th_datalen > 0 || (th->th_flags & TH_FIN)) {
 		got_fin = tcp_queue_for_reassembly(tp, mp, th, &dropmp);
 		tp->emit_ack = true;
 	}
 
-	/* Eighth, check the FIN bit: */
 	if (got_fin) {
-		if (tp->state <= TCPS_SYN_SENT) {
-			/*
-			 * Do not process the FIN if the state is CLOSED,
-			 * LISTEN, or SYN-SENT since the SEG.SEQ cannot be
-			 * validated; drop the segment and return.
-			 */
+		if (tp->state <= TCPS_SYN_SENT)
 			goto finish;
-		}
-
-		/*
-		 * If the FIN bit is set, signal the user "connection
-		 * closing" and return any pending RECEIVEs with same
-		 * message, advance RCV.NXT over the FIN, and send an
-		 * acknowledgment for the FIN. Note that FIN implies
-		 * PUSH for any segment text not yet delivered to the
-		 * user.
-		 *
-		 * [the RCV.NXT advancement was done in
-		 * tcp_queue_for_reassembly]
-		 */
 
 		switch (tp->state) {
 		case TCPS_SYN_RECEIVED:
@@ -3020,16 +2735,6 @@ step_6:
 			break;
 
 		case TCPS_FIN_WAIT_1:
-			/*
-			 * If our FIN has been ACKed (perhaps in this segment),
-			 * then enter TIME-WAIT, start the time-wait timer, turn
-			 * off the other timers; otherwise, enter the CLOSING
-			 * state.
-			 *
-			 * [if our FIN was acked, it would have been processed
-			 * above in the ACK handling and we'd be in FIN-WAIT-2.
-			 * Therefore, it must be unACKed so we go to CLOSING.]
-			 */
 			tcp_change_state(tp, TCPS_CLOSING);
 			tp->ordrel_needed = true;
 			break;
@@ -3044,14 +2749,9 @@ step_6:
 		case TCPS_CLOSE_WAIT:
 		case TCPS_CLOSING:
 		case TCPS_LAST_ACK:
-			/* remain in these states */
 			break;
 
 		case TCPS_TIME_WAIT:
-			/*
-			 * Remain in the TIME-WAIT state. Restart the 2 MSL
-			 * time-wait timeout.
-			 */
 			tcp_set_timer(tp, TCP_TIMER_2MSL, TCP_2MSL_MS);
 			break;
 
@@ -3060,37 +2760,43 @@ step_6:
 		}
 
 		if (tp->ordrel_needed && tp->rq != NULL &&
-		    TAILQ_EMPTY(&tp->rq->msgq))
+		    TAILQ_EMPTY(&tp->rcv_q))
 			tcp_ordrel_ind(tp);
+		else if (tp->ordrel_needed)
+			tp->pending_ordrel = true;
 	}
 
 	tcp_output(tp);
 
 finish:
-	tp->processing_ifp = NULL;
-
 	if (dropmp)
 		str_freemsg(mp);
 }
 
 void
-tcp_input(ip_intf_t *ifp, mblk_t *mp)
+tcp_ipv4_input(ip_if_t *ifp, mblk_t *mp, ip_rxattr_t *attr)
 {
-	struct ip *ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
-	uint16_t hlen = ip->ip_hl << 2;
+	const struct ip *ip = attr->l3hdr.ip4;
+	struct tcphdr *th;
 	uint16_t tcp_len;
-	struct tcphdr *th = (struct tcphdr *)((char *)ip + hlen);
 	tcp_t *tp, *tp2;
+	bool wake;
+	queue_t *rq;
+	ipl_t ipl;
 
-	tcp_len = ntohs(ip->ip_len) - hlen;
+	(void)ifp;
+
+	tcp_len = (uint16_t)(mp->wptr - mp->rptr);
+
 	if (tcp_len < sizeof(struct tcphdr)) {
 		TCP_TRACE("Header too small\n");
 		str_freemsg(mp);
 		return;
 	}
 
-	/* prettyprint key facts of packet */
-	TCP_TRACE(" -- Received TCP packet: src=" FMT_IP4 ":%u dst=" FMT_IP4 ":%u "
+	th = (struct tcphdr *)mp->rptr;
+
+	TCP_TRACE(" -- src=" FMT_IP4 ":%u dst=" FMT_IP4 ":%u "
 	    "seq=%u ack=%u len=%u flags=%s%s%s%s%s%s\n",
 	    ARG_IP4(ip->ip_src.s_addr), ntohs(th->th_sport),
 	    ARG_IP4(ip->ip_dst.s_addr), ntohs(th->th_dport),
@@ -3102,36 +2808,46 @@ tcp_input(ip_intf_t *ifp, mblk_t *mp)
 	    (th->th_flags & TH_ACK) ? "ACK " : "",
 	    (th->th_flags & TH_URG) ? "URG " : "");
 
-	tp = tcp_conn_lookup(ip->ip_src, th->th_sport, ip->ip_dst,
+	ipl = ke_spinlock_enter(&tcp_conntab_lock);
+	tp = tcp_conn_lookup_locked(ip->ip_src, th->th_sport, ip->ip_dst,
 	    th->th_dport);
+	if (tp != NULL)
+		tcp_retain(tp);
+	ke_spinlock_exit(&tcp_conntab_lock, ipl);
 
 	if (tp == NULL) {
 		TCP_TRACE("No matching connection found\n");
-		tcp_reply_reset(ifp, mp, ip, th);
+		tcp_reply_reset(ip, th, tcp_len);
+		str_freemsg(mp);
 		return;
 	}
 
 	tp2 = tp;
 
-	ke_mutex_enter(&tp->mutex, "tcp_input");
-	if (tp->rq != NULL)
-	 	str_ingress_putq(tp->rq->stdata, mp);
-	else
-		tcp_conn_input(ifp, &tp2, mp);
-	ke_mutex_exit(&tp2->mutex);
+	ipl = ke_spinlock_enter(&tp->lock);
+	tcp_conn_input(&tp2, mp, attr);
+
+	wake = tp2->rq != NULL &&
+	    (!TAILQ_EMPTY(&tp2->rcv_q) || tp2->pending_conn_con ||
+		tp2->pending_ordrel || tp2->pending_discon);
+	rq = tp2->rq;
+
+	ke_spinlock_exit(&tp2->lock, ipl);
+
+	if (wake)
+		str_qenable(rq);
 
 	tcp_release(tp);
 }
 
 /*
- * timers
+ * Timer infrastructure
  */
+
 void
 tcp_set_timer(tcp_t *tp, enum tcp_timer_type type, uint32_t timeout_ms)
 {
-	kabstime_t deadline;
-
-	deadline = ke_time() + (kabstime_t)timeout_ms * NS_PER_MS;
+	kabstime_t deadline = ke_time() + (kabstime_t)timeout_ms * NS_PER_MS;
 	tcp_cancel_timer(tp, type);
 	tp->timers[type].deadline = deadline;
 	ke_callout_set(&tp->timers[type].callout, deadline);
@@ -3159,35 +2875,23 @@ tcp_timer_dpchandler(void *arg, void *timer_arg)
 	int timer_type = timer - tp->timers;
 	ipl_t ipl;
 
-	/* could have refcnt 0 & on way to RCU free by now, take a local ref */
 	if (!tcp_tryretain(tp))
 		return;
 
 	atomic_fetch_or(&tp->pending_timers, (1 << timer_type));
 
-	ipl = ke_spinlock_enter(&tp->detach_lock);
+	ipl = ke_spinlock_enter(&tp->lock);
 
 	if (tp->rq != NULL) {
-		/* current attached. Wsrv routine handles pending timers. */
 		str_qenable(tcp_wq(tp));
 		str_kick(tp->rq->stdata);
-		ke_spinlock_exit(&tp->detach_lock, ipl);
-		tcp_release(tp); /* drop local ref */
+		ke_spinlock_exit(&tp->lock, ipl);
+		tcp_release(tp);
 	} else {
-		/* currently detached. Put to a TCP worker thread. */
-		ke_spinlock_exit(&tp->detach_lock, ipl);
-
-		ipl = ke_spinlock_enter(&tcp_detached_lock);
-		if (!tp->on_detached_work_q) {
-			tp->on_detached_work_q = true;
-			TAILQ_INSERT_TAIL(&tcp_detached_work_q, tp, detached_link);
-			ke_event_set_signalled(&tcp_detached_event, true);
-			/* workq takes ownership of the local ref. */
-		} else {
-			/* can safely do this here; workq holds a ref */
-			tcp_release(tp);
-		}
-		ke_spinlock_exit(&tcp_detached_lock, ipl);
+		uint32_t pending = atomic_exchange(&tp->pending_timers, 0);
+		tcp_dispatch_pending_timers(tp, pending);
+		ke_spinlock_exit(&tp->lock, ipl);
+		tcp_release(tp);
 	}
 }
 
@@ -3205,25 +2909,21 @@ tcp_rexmt_timer(tcp_t *tp)
 		return;
 	}
 
-	/*
-	 * RFC 5681 3.1 / RFC 6298 5.4: Only on first timeout for a given flight
-	 * reduce ssthresh and reset cwnd to 1 MSS.
-	 */
 	if (tp->n_rexmits == 0) {
 		tp->snd_ssthresh = MAX2((tp->snd_max - tp->snd_una) / 2,
 		    2 * (uint32_t)tp->mss);
-		tp->snd_recover = tp->snd_max; /* RFC 5682 3 */
+		tp->snd_recover = tp->snd_max;
 	}
 
 	tp->n_rexmits++;
-	tp->snd_cwnd = tp->mss;		/* restart slow start */
+	tp->snd_cwnd = tp->mss;	/* restart slow start */
 	tp->fast_recovery = false;
 	tp->dupacks = 0;
 
 	/*
 	 * Retransmit timer expired - stop timing RTT, backoff RTO, and let the
 	 * next sequence to be sent be the first unacknowledged one.
-	 */
+	*/
 
 	tp->timing_rtt = false;
 	tp->rto = MIN2(tp->rto * 2, TCP_MAX_RTO_MS);
@@ -3234,15 +2934,17 @@ tcp_rexmt_timer(tcp_t *tp)
 }
 
 static void
-tcp_persist_timer(tcp_t *)
+tcp_persist_timer(tcp_t *tp)
 {
+	(void)tp;
 	TCP_TRACE("TODO: TCP persist timer expired\n");
 }
 
 static void
-tcp_keepalive_timer(tcp_t *)
+tcp_keepalive_timer(tcp_t *tp)
 {
-	TCP_TRACE("TODO: TCP keepalive timer expire\n");
+	(void)tp;
+	TCP_TRACE("TODO: TCP keepalive timer expired\n");
 }
 
 static void
@@ -3265,54 +2967,8 @@ tcp_2msl_timer(tcp_t *tp)
 		tcp_release(tp);
 }
 
-static void
-tcp_detached_worker(void *arg)
-{
-	for (;;) {
-		ke_wait1(&tcp_detached_event, "tcp detached wait", false,
-		    ABSTIME_FOREVER);
-		ke_event_set_signalled(&tcp_detached_event, false);
-
-		for (;;) {
-			tcp_t *tp;
-			uint32_t pending;
-			ipl_t ipl;
-
-			ipl = ke_spinlock_enter(&tcp_detached_lock);
-			tp = TAILQ_FIRST(&tcp_detached_work_q);
-			if (tp == NULL) {
-				ke_spinlock_exit(&tcp_detached_lock, ipl);
-				break;
-			}
-			TAILQ_REMOVE(&tcp_detached_work_q, tp, detached_link);
-			tp->on_detached_work_q = false;
-			ke_spinlock_exit(&tcp_detached_lock, ipl);
-
-			pending = atomic_exchange(&tp->pending_timers, 0);
-
-			ke_mutex_enter(&tp->mutex, "tcp_detached_timers");
-			if (tp->rq != NULL) {
-				/* reattached while pending. wsrv will handle */
-				ke_mutex_exit(&tp->mutex);
-				tcp_release(tp);
-				continue;
-			}
-
-			tcp_dispatch_pending_timers(tp, pending);
-			ke_mutex_exit(&tp->mutex);
-
-			tcp_release(tp); /* tp was retained in dpc handler */
-		}
-	}
-}
-
 void
 tcp_init(void)
 {
-	static thread_t *tcp_timer_thread;
-
-	TAILQ_INIT(&tcp_detached_work_q);
-	ke_event_init(&tcp_detached_event, false);
-	tcp_timer_thread = proc_new_system_thread(tcp_detached_worker, NULL);
-	ke_thread_resume(&tcp_timer_thread->kthread, false);
+	ke_spinlock_init(&tcp_conntab_lock);
 }

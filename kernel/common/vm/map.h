@@ -20,6 +20,7 @@
 
 struct vm_map_entry {
 	RB_ENTRY(vm_map_entry) rb_link;
+	vm_map_t *map;
 	vaddr_t start, end;
 	vm_prot_t prot, max_prot;
 	bool inherit_shared, cow;
@@ -68,7 +69,12 @@ typedef struct vm_object {
 		VM_OBJ_ANON,
 	} kind;
 	union {
-		struct vnode *vnode;
+		struct {
+			struct vnode *vnode;
+			size_t valid_length;	/* both vnode rwlocks + both
+						 * vm_object spinlocks to write;
+						 * any to read! */
+		} vnobj;
 	};
 	pte_t direct[6];
 	pte_t indirect[4]; /* [0] = indirect, [1] = doubly indirect, etc */

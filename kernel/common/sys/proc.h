@@ -66,6 +66,9 @@ typedef struct proc {
 	char comm[32];			/* belongs in user */
 	struct vm_map *vm_map;		/* ~? virtual memory map */
 	struct uf_info *finfo;		/* belongs in user*/
+
+	kmutex_t flock_mutex;		/* protects flock_entries */
+	TAILQ_HEAD(, flock_entry) flocks_held; /* file locks held */
 } proc_t;
 
 

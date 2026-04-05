@@ -9,45 +9,212 @@
 /*!
  * @file ip.h
  * @brief IP stack header.
+ *
+ * TODO
+ * ----
+ *
+ * ip_ifaddr should be tied into RCU readable lists.
  */
 
 #ifndef ECX_INET_IP_H
 #define ECX_INET_IP_H
 
+#include <sys/k_intr.h>
+#include <sys/k_wait.h>
+#include <sys/krx_atomic.h>
+#include <sys/queue.h>
+#include <sys/rcu_queue.h>
+
+#include <net/if.h>
+#include <netinet/if_ether.h>
 #include <netinet/in.h>
 
+#include <linux/rtnetlink.h>
 #include <stdbool.h>
 
 struct queue;
 struct msgb;
 
-typedef struct ip_intf ip_intf_t;
-typedef struct arp_state arp_state_t;
-
-ip_intf_t *ip_intf_retain(ip_intf_t *intf);
-void ip_intf_release(ip_intf_t *intf);
-
-ip_intf_t *ip_intf_lookup_by_muxid(int muxid);
-ip_intf_t *ip_intf_lookup_by_name(const char *name);
-
-struct ip_route_result {
-	ip_intf_t *intf;
-	struct in_addr next_hop;
+union in_addr_union {
+	struct in_addr in;
+	struct in6_addr in6;
 };
 
-int ip_route_add(struct in_addr dst, uint8_t dst_len, struct in_addr gateway,
-    ip_intf_t *intf, uint8_t protocol, uint8_t scope, uint8_t type,
-    uint32_t metric);
+union sockaddr_union {
+	struct sockaddr sa;
+	struct sockaddr_in in;
+	struct sockaddr_in6 in6;
+};
 
-struct ip_route_result ip_route_lookup(struct in_addr dst);
+typedef struct neighbour_cache neighbour_cache_t;
 
-/* connected-network route management */
-void ip_route_if_up(ip_intf_t *intf);
-void ip_route_if_down(ip_intf_t *intf);
+typedef enum ipv6_ifaddr_state {
+	IFADDR_TENTATIVE,
+	IFADDR_PREFERRED,
+	IFADDR_DEPRECATED,
+	IFADDR_DUPLICATED
+} ipv6_ifaddr_state_t;
 
-int ip_output(struct msgb *);
-int ip_output_intfheld(struct msgb *, ip_intf_t *heldintf);
+typedef struct bpf_listener {
+	RCULIST_ENTRY(bpf_listener) rlentry;
+} bpf_listener_t;
 
-void arp_output(ip_intf_t *ifp, in_addr_t dst, struct msgb *, bool ifp_locked);
+typedef struct ip_ifaddr {
+	RCULIST_ENTRY(ip_ifaddr) rlentry;
+	union sockaddr_union addr;
+	uint8_t prefixlen;
+
+	/* these may be worth extracting into an ifaddr_ipv6 */
+	ipv6_ifaddr_state_t ipv6_state;
+	kcallout_t dad_callout;
+	kdpc_t dad_dpc;
+	uint8_t dad_probes_nsent;
+	/* linkage in a global list of IPv6 addresses could go here? */
+} ip_ifaddr_t;
+
+typedef struct ip_if {
+	TAILQ_ENTRY(ip_if) tqentry;
+	atomic_uint refcnt;
+	char name[IFNAMSIZ];
+	uint8_t mac[ETH_ALEN];
+	int muxid; /* ifindex */
+	RCULIST_HEAD(, ip_ifaddr) addrs;
+
+	RCULIST_HEAD(, bpf_listener) bpf_listeners;
+
+	neighbour_cache_t *neighbours_ipv4;
+	neighbour_cache_t *neighbours_ipv6;
+
+	void *nic_data;
+	int (*nic_wput)(void *, struct msgb *);
+} ip_if_t;
+
+enum route_match {
+	ROUTE_MATCH_GATEWAY = 1U << 0,
+	ROUTE_MATCH_PRIORITY = 1U << 1,
+	ROUTE_MATCH_PROTOCOL = 1U << 2,
+	ROUTE_MATCH_SCOPE = 1U << 3,
+	ROUTE_MATCH_TOS = 1U << 4,
+	ROUTE_MATCH_TYPE = 1U << 5,
+	ROUTE_MATCH_TABLE = 1U << 6,
+	ROUTE_MATCH_IFP = 1U << 7,
+};
+
+/*
+ * Key for adding/deleting routes.
+ * At least prefix (and prefixlen) has to be specified. Rest are optional.
+ */
+typedef struct route_info {
+	union sockaddr_union prefix;
+	uint8_t		prefixlen;
+
+	union sockaddr_union gateway;
+	uint32_t	priority;
+	uint32_t	mtu;
+	uint32_t	priv_flags;
+	uint32_t	rtm_flags;
+	enum rt_class_t	table : 8;
+	enum rt_prot	protocol : 8;
+	enum rt_scope_t	scope : 8;
+	enum rt_type_t	type : 8;
+	uint8_t		tos;
+	struct ip_if	*ifp;
+
+	enum route_match match : 8;
+} route_info_t;
+
+/*
+ * Result of performing a route lookup.
+ */
+typedef struct route_result {
+	union sockaddr_union nexthop;
+	uint32_t	rtm_flags;
+	uint32_t	mtu;
+	uint32_t	generation;
+	struct ip_if	*ifp;	/* retained unless asked for otherwise */
+} route_result_t;
+
+typedef struct ip_rxattr {
+	struct ether_addr *src_l2;
+	union {
+		const struct ip6_hdr *ip6;
+		const struct ip *ip4;
+	} l3hdr;
+	union {
+		ip_ifaddr_t *ifa;
+	} ifa;
+} ip_rxattr_t;
+
+ip_if_t *ip_if_new(uint8_t *mac);
+void ip_if_publish(ip_if_t *, int muxid);
+ip_if_t *ip_if_lookup_by_muxid(int);
+ip_if_t *ip_if_lookup_by_name(const char *);
+ip_if_t *ip_if_retain(ip_if_t *ifp);
+void ip_if_release(ip_if_t *);
+
+int ip_if_bpf_attach(ip_if_t *, bpf_listener_t *);
+
+int ip_if_output(ip_if_t *, struct msgb *, uint16_t ethertype,
+    const struct ether_addr *);
+
+neighbour_cache_t *neighbour_cache_new(ip_if_t *, sa_family_t);
+void neighbour_cache_learn(neighbour_cache_t *, const union in_addr_union *,
+    const struct ether_addr *, bool solicited);
+void neighbour_cache_confirm(neighbour_cache_t *, const union in_addr_union *);
+int neighbour_output(ip_if_t *, neighbour_cache_t *, struct msgb *,
+    const union in_addr_union *);
+
+void route_info_init(route_info_t *, const union sockaddr_union *,
+    uint8_t prefixlen);
+void route_info_setup_spec(route_info_t *);
+void route_info_set_gateway(route_info_t *, const union sockaddr_union *);
+void route_info_set_priority(route_info_t *, uint32_t);
+void route_info_set_protocol(route_info_t *, enum rt_prot);
+void route_info_set_scope(route_info_t *, enum rt_scope_t);
+void route_info_set_table(route_info_t *, enum rt_class_t);
+void route_info_set_ifp(route_info_t *, struct ip_if *);
+void route_info_set_tos(route_info_t *, uint8_t);
+void route_info_set_type(route_info_t *, enum rt_type_t);
+
+int route_add(route_info_t *spec);
+int route_del(route_info_t *spec);
+int route_add_connected(const union sockaddr_union *prefix, uint8_t prefixlen,
+    ip_if_t *ifp);
+int route_lookup(const union sockaddr_union *dst, route_result_t *out,
+    bool retain_ifp);
+
+typedef void (*route_walk_fn)(const route_info_t *, void *arg);
+void route_walk(sa_family_t family, route_walk_fn fn, void *arg);
+
+void bpf_input(bpf_listener_t *, struct msgb *);
+
+void arp_input(ip_if_t *, struct msgb *);
+
+int ipv4_if_newaddr(ip_if_t *, const struct in_addr *, uint8_t prefixlen);
+
+void icmpv6_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+
+void ndp_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+void ndp_solicit_dad(ip_if_t *, const struct in6_addr *);
+
+int ipv6_if_newaddr(ip_if_t *, const struct in6_addr *, uint8_t prefixlen);
+void ipv6_ifaddr_dad_fail(ip_ifaddr_t *);
+
+int ipv4_output(struct msgb *);
+int ipv6_output(struct msgb *);
+
+uint16_t ip_icmp6_checksum(const struct in6_addr *src,
+    const struct in6_addr *dst, const void *payload, size_t payload_len);
+
+void ip_uwput_ioctl_sgif(struct queue *, struct msgb *);
+
+void tcp_ipv4_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+void udp_ipv4_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
+
+/* currently missing from mlibc */
+#define ip6_flow	ip6_ctlun.ip6_un1.ip6_un1_flow
+#define ip6_plen	ip6_ctlun.ip6_un1.ip6_un1_plen
+#define ip6_hlim	ip6_ctlun.ip6_un1.ip6_un1_hlim
+#define ip6_hops	ip6_ctlun.ip6_un1.ip6_un1_hlim
 
 #endif /* ECX_INET_IP_H */

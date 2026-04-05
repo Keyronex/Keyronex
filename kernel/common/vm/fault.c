@@ -13,27 +13,11 @@
 #include <sys/kmem.h>
 #include <sys/libkern.h>
 #include <sys/proc.h>
+#include <sys/vnode.h>
 
 #include <vm/map.h>
 #include <vm/page.h>
 
-/*
- * State used when waiting for a pagein to complete, as in collided page faults.
- *
- * A pointer to a pagein_wait (in vm_page->pagein_wait) is guaranteed to
- * continue existing, with a refcount > 0, while holding either or both of:
- * - the vm_rs creation_lock
- * - the vm_object creation_lock (if it's an object page)
- * because these are both reacquired by the faulter before it releases the
- * pagein_wait.
- *
- * The refcount, on the other hand, is atomic. So waiters can release it while
- * holding no locks.
- */
-struct pagein_wait {
-	atomic_uint_fast32_t refcount;
-	kevent_t event;
-};
 
 #define MAX_CLUSTER 16
 
@@ -132,6 +116,14 @@ max_file_readahead(struct fault_info *info, struct obj_pte_wire_state *cursor)
 	if (max_pages == 1)
 		return 1;
 
+	if (info->object->kind == VM_OBJ_VNODE) {
+		size_t valid_pages = (roundup2(info->object->vnobj.valid_length,
+		    PGSIZE) - info->object_offset) >> PGSHIFT;
+		max_pages = MIN2(max_pages, valid_pages);
+		if (max_pages <= 1)
+			return 1;
+	}
+
 	max_pages = obj_max_readahead(cursor, pgoff, max_pages);
 	if (max_pages == 1)
 		return 1;
@@ -170,6 +162,10 @@ do_object_fault(struct fault_info *info,
 	ke_spinlock_enter_nospl(&info->object->creation_lock);
 	ke_spinlock_enter_nospl(&info->object->stealing_lock);
 
+	if (info->object->kind == VM_OBJ_VNODE &&
+	    info->object_offset >= info->object->vnobj.valid_length)
+		return -EFAULT;
+
 	r = obj_wire_pte(info->object, &objcursor, info->object_offset,
 	    true, proc_creation_lock_state);
 	if (r != 0)
@@ -207,6 +203,7 @@ do_object_fault(struct fault_info *info,
 		sg_seg_t sg_seg[MAX_CLUSTER];
 		size_t count;
 		struct pagein_wait *pagewait;
+		size_t pages_valid;
 
 		ke_spinlock_exit_nospl(&info->object->stealing_lock);
 
@@ -252,9 +249,11 @@ do_object_fault(struct fault_info *info,
 		sgl.elems = sg_seg;
 		sgl.elems_n = count;
 
-		iop = iop_new_read(info->object->vnode, &sgl, 0,
+		VOP_PAGING_ENTER(info->object->vnobj.vnode);
+		iop = iop_new_read(info->object->vnobj.vnode, &sgl, 0,
 		    count << PGSHIFT, obj_pgoff << PGSHIFT);
 		iop_send_sync(iop);
+		VOP_PAGING_EXIT(info->object->vnobj.vnode);
 
 #if 0
 		kprintf("Did read in object page (%d; tot. %d)\n", obj_pgoff, count);
@@ -266,23 +265,53 @@ do_object_fault(struct fault_info *info,
 		ke_spinlock_enter_nospl(&info->object->creation_lock);
 		ke_spinlock_enter_nospl(&info->object->stealing_lock);
 
-		for (size_t i = 0; i < count; i++) {
+		/*
+		 * deal with a concurrent. attempt to truncate the file that's
+		 * now waiting on our busy pages, which are in our custody.
+		 *
+		 * Make away the pages that are beyond the valid limit as of
+		 * now.
+		 */
+		if (info->object->kind == VM_OBJ_VNODE &&
+		    info->object_offset < info->object->vnobj.valid_length) {
+			size_t valid_bytes = info->object->vnobj.valid_length -
+			    info->object_offset;
+			pages_valid = MIN2(count,
+			    (valid_bytes + PGSIZE - 1) >> PGSHIFT);
+		} else if (info->object->kind == VM_OBJ_VNODE) {
+			pages_valid = 0;
+		} else {
+			pages_valid = count;
+		}
+
+		/* resolve busy PTEs to become valid */
+		for (size_t i = 0; i < pages_valid; i++) {
 			pmap_pte_hwleaf_create(objcursor.pte + i,
 			    VM_PAGE_PFN(page[i]), PMAP_L0, 0,
 			    kCacheModeDefault);
 			pmap_pte_hwleaf_create(info->cursor.pte + i,
 			    VM_PAGE_PFN(page[i]), PMAP_L0,
-			    VM_READ | (info->prot & VM_EXEC) | userland_prot(info->vaddr),
+			    VM_READ | (info->prot & VM_EXEC) |
+			        userland_prot(info->vaddr),
 			    kCacheModeDefault);
 		}
 
-		obj_new_ptes_created(&objcursor, count);
+		/* zero busy PTEs beyond valid length */
+		for (size_t i = pages_valid; i < count; i++) {
+			pmap_pte_zeroleaf_create(objcursor.pte + i, PMAP_L0);
+			pmap_pte_zeroleaf_create(info->cursor.pte + i, PMAP_L0);
+			page[i]->shared.share_count = 0;
+			vm_page_delete(page[i], true);
+		}
+
+		obj_new_ptes_created(&objcursor, pages_valid);
 		obj_unwire_pte(info->object, &objcursor);
 		ke_spinlock_exit_nospl(&info->object->stealing_lock);
 		ke_spinlock_exit_nospl(&info->object->creation_lock);
 
-		info->rs->valid_n += count;
-		pmap_new_leaf_valid_ptes_created(info->rs, &info->cursor, count);
+		info->rs->valid_n += pages_valid;
+		pmap_new_leaf_valid_ptes_created(info->rs, &info->cursor,
+		    pages_valid);
 		pmap_unwire_pte(info->map, info->rs, &info->cursor);
 		ke_spinlock_exit_nospl(&info->map->stealing_lock);
 		ke_spinlock_exit_nospl(&info->map->creation_lock);
@@ -290,7 +319,14 @@ do_object_fault(struct fault_info *info,
 		ke_event_set_signalled(&pagewait->event, true);
 		pagein_wait_release(pagewait);
 
-		return count;
+		/*
+		 * Retry the fault if no pages were valid; probably the file was
+		 * truncated and there will be an EFAULT next time.
+		 */
+		if (pages_valid == 0)
+			return -EAGAIN;
+		else
+			return count;
 
 	}
 

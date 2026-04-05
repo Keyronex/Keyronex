@@ -11,8 +11,9 @@
 #define ECX_VM_PAGE_H
 
 #include <sys/k_intr.h>
-#include <sys/vm_types.h>
+#include <sys/k_wait.h>
 #include <sys/vm.h>
+#include <sys/vm_types.h>
 
 #include <libkern/queue.h>
 
@@ -126,6 +127,26 @@ struct vm_domain {
 	vm_page_queue_t free_q[FREELIST_ORDERS], stby_q, dirty_q;
 	size_t free_n[FREELIST_ORDERS], stby_n, dirty_n, active_n;
 	size_t use_n[VM_PAGE_USE_N];
+};
+
+/*
+ * State used when waiting for a pagein to complete, as in collided page faults.
+ *
+ * A pointer to a pagein_wait (in vm_page->pagein_wait) is guaranteed to
+ * continue existing, with a refcount > 0, while holding either or both of:
+ * - the vm_rs creation_lock
+ * - the vm_object creation_lock (if it's an object page)
+ * because these are both reacquired by the faulter before it releases the
+ * pagein_wait.
+ *
+ * The refcount, on the other hand, is atomic. So waiters can release it while
+ * holding no locks.
+ *
+ * TODO - maybe use chained stack waiters (as in other parts) instead?
+ */
+struct pagein_wait {
+	atomic_uint_fast32_t refcount;
+	kevent_t event;
 };
 
 /*! @brief get the pfn some vm_page describes */

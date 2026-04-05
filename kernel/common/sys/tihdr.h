@@ -30,6 +30,8 @@ enum T_prim {
 	T_CONN_REQ = 0,		/* connection request */
 	T_CONN_RES = 1,		/* connection response*/
 	T_BIND_REQ = 6,		/* bind request */
+	T_UNITDATA_REQ = 8,	/* unit data request */
+	T_OPTMGMT_REQ = 9,
 	T_ORDREL_REQ = 10,	/* orderly-release request */
 
 	T_CONN_IND = 11,	/* connection indication */
@@ -39,11 +41,13 @@ enum T_prim {
 	T_BIND_ACK = 17,	/* bind acknowledgement */
 	T_ERROR_ACK = 18,	/* error acknowledgement */
 	T_OK_ACK = 19,		/* success acknowledge */
-
+	T_UNITDATA_IND = 20,	/* unit data indication */
+	T_OPTMGMT_ACK = 22,
 	T_ORDREL_IND = 23,	/* orderly-release indication */
 
 	T_ADDR_REQ = 24,	/* get local/peer address request */
 	T_ADDR_ACK = 25,	/* get local/peer address acknowledgment */
+
 };
 
 /*
@@ -79,6 +83,18 @@ struct T_conn_res {
 	enum T_prim PRIM_type;
 	size_t ACCEPTOR_id;
 	size_t SEQ_number;
+};
+
+/*
+ * @brief Unit Data Request
+ *
+ * User-originated. Transmits a message to a peer without establishing a
+ * connection.
+ */
+struct T_unitdata_req {
+	enum T_prim PRIM_type;
+	int DEST_length;
+	struct sockaddr_storage DEST;
 };
 
 /*
@@ -136,6 +152,18 @@ struct T_ordrel_ind {
 };
 
 /*
+ * @brief Options Management Request
+ *
+ * User-originated. Sets or gets socket options.
+ */
+struct T_optmgmt_req {
+	enum T_prim  PRIM_type;
+	size_t OPT_length;
+	size_t OPT_offset;
+	size_t MGMT_flags;
+};
+
+/*
  * provider-originated
  */
 
@@ -186,6 +214,32 @@ struct T_ok_ack {
 	enum T_prim CORRECT_prim;
 };
 
+/*
+ * @brief Unit Data Indication
+ *
+ * Provider-originated. Indicates the arrival of a message sent by a peer via
+ * a unit data request.
+ */
+struct T_unitdata_ind {
+	enum T_prim PRIM_type;
+	int SRC_length;
+	struct sockaddr_storage SRC;
+	size_t OPT_length;
+	size_t OPT_offset;
+};
+
+/*
+ * @brief Options Management Acknowledgement
+ *
+ * Provider-originated. Acknowledges an options management request.
+ */
+struct T_optmgmt_ack {
+	enum T_prim  PRIM_type;
+	size_t OPT_length;
+	size_t OPT_offset;
+	size_t MGMT_flags;
+};
+
 
 /* @brief Union of all TI primitives */
 union T_primitives {
@@ -194,13 +248,64 @@ union T_primitives {
 	struct T_conn_req conn_req;
 	struct T_conn_res conn_res;
 	struct T_addr_req addr_req;
+	struct T_unitdata_req unitdata_req;
+	struct T_optmgmt_req optmgmt_req;
 	struct T_conn_ind conn_ind;
 	struct T_conn_con conn_con;
 	struct T_addr_ack addr_ack;
 	struct T_bind_ack bind_ack;
 	struct T_error_ack error_ack;
 	struct T_ok_ack ok_ack;
+	struct T_unitdata_ind unitdata_ind;
+	struct T_optmgmt_ack optmgmt_ack;
 };
+
+/* option header used in optmgmt */
+
+#define T_NEGOTIATE 0x004
+#define T_CHECK 0x008
+
+struct opthdr {
+	size_t level;
+	size_t name;
+	size_t len;
+};
+
+#define OPTLEN(x) ((((x) + sizeof(size_t) - 1) / \
+    sizeof(size_t)) * sizeof(size_t))
+#define OPTVAL(opt) ((char *)(opt + 1))
+
+/* option header used in unitdata etc. */
+
+struct T_opthdr {
+	size_t	len;	/* total length of option (incl. T_opthdr) */
+	size_t	level;	/* protocol level */
+	size_t	name;	/* option name	*/
+	size_t	status;	/* status value	*/
+};
+
+#define TI_OPT_ALIGN(len) (roundup2(len, sizeof(uintptr_t)))
+
+/* size_t TI_OPT_LEN(size_t len) - calc value that to be put in len */
+#define TI_OPT_LEN(s) (sizeof(struct T_opthdr) + (s))
+/* size_t TI_OPT_SPACE(size_t len) - calc total length incl. padding of option */
+#define TI_OPT_SPACE(s) (sizeof(struct T_opthdr) + TI_OPT_ALIGN(s))
+
+#define __TI_OPT_NEXT(opt) ((char *)(opt) + TI_OPT_ALIGN((opt)->len))
+#define __TI_OPTBUF_LIMIT(buf, buflen) ((char *)(buf) + (buflen))
+
+#define TI_OPT_FIRSTHDR(buf, buflen) \
+	((buflen) < sizeof(struct T_opthdr) ? \
+	    (struct T_opthdr *)0 : (struct T_opthdr *)(buf))
+
+#define TI_OPT_NXTHDR(buf, buflen, opt) \
+	(((opt)->len < sizeof(struct T_opthdr) || \
+	    (ptrdiff_t)(sizeof(struct T_opthdr) + TI_OPT_ALIGN((opt)->len)) \
+		>= (__TI_OPTBUF_LIMIT((buf), (buflen)) - (char *)(opt))) \
+	    ? (struct T_opthdr *)0 : (struct T_opthdr *)__TI_OPT_NEXT(opt))
+
+#define TI_OPT_DATA_LEN(opt) ((opt)->len - sizeof(struct T_opthdr))
+#define TI_OPT_DATA(opt) ((char *)(opt) + sizeof(struct T_opthdr))
 
 
 #endif /* ECX_SYS_TIHDR_H */

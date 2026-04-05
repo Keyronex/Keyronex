@@ -1,0 +1,5 @@
+#ifndef ECX_LINUX_ICMPV6_H
+#define ECX_LINUX_ICMPV6_H
+
+
+#endif /* ECX_LINUX_ICMPV6_H */

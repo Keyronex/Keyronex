@@ -424,6 +424,7 @@ ldterm_ioctl(struct ldterm_state *ld, queue_t *wq, mblk_t *mp)
 	case TCGETS:
 		memcpy(ioc->ic_dp, &ld->termios, sizeof(struct termios));
 		mp->db->type = M_IOCACK;
+		ioc->rval = 0;
 		str_putnext(wq->other, mp);
 		break;
 
@@ -442,6 +443,7 @@ ldterm_ioctl(struct ldterm_state *ld, queue_t *wq, mblk_t *mp)
 		}
 
 		mp->db->type = M_IOCACK;
+		ioc->rval = 0;
 		str_putnext(wq->other, mp);
 		break;
 

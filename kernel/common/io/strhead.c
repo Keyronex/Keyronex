@@ -28,6 +28,8 @@
 #include <net/if.h>
 
 #include <fs/devfs/devfs.h>
+#include <linux/filter.h>
+#include <linux/sockios.h>
 
 static int do_unlink(stdata_t *upper_sh, int index);
 
@@ -39,7 +41,7 @@ static struct streamtab sth_streamtab;
 
 static kmutex_t mux_links_lock = KMUTEX_INITIALISER;
 static TAILQ_HEAD(, linkblk) mux_links = TAILQ_HEAD_INITIALIZER(mux_links);
-static atomic_uint next_link_index = 0;
+static atomic_uint next_link_index = 1;
 
 #define SIOCSIFADDR 0x8916
 #define SIOCSIFNETMASK 0x891C
@@ -426,6 +428,9 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 		}
 
 		mp = TAILQ_FIRST(&sh->rq->msgq);
+
+		if (mp->db->type == M_PROTO)
+			kfatal("handle me: M_PROTO in strread\n");
 
 		for (bp = mp; bp != NULL && ncopied < len; bp = bp->cont) {
 			size_t avail, tocopy;
@@ -1041,9 +1046,15 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCGIFFLAGS:
 	case SIOCGIFADDR:
 	case SIOCGIFNETMASK:
+	case SIOCGIFNAME:
+	case SIOCGIFINDEX:
+	case SIOCGIFMTU:
 		in_size = sizeof(struct ifreq);
 		out_size = sizeof(struct ifreq);
 		break;
+
+	case SIOCGIFVLAN:
+		return -EINVAL;
 
 	case SIOCSIFFLAGS:
 	case SIOCSIFADDR:
@@ -1054,6 +1065,13 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case SIOCSIFNAMEBYMUXID:
 		in_size = sizeof(struct ifreq);
 		break;
+
+	case SO_ATTACH_FILTER:
+		in_size = sizeof(struct sock_fprog);
+		break;
+
+	case SO_LOCK_FILTER:
+		return 0;
 
 	default:
 		kfatal("str_ioctl: unhandled ioctl %lu/0x%x\n", cmd, cmd);
@@ -1105,7 +1123,8 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 			return r;
 		}
 	} else if (mp->db->type == M_IOCNAK) {
-		kfatal("handle negative ioctl ack\n");
+		struct strioctl *ioc = (struct strioctl *)mp->rptr;
+		r = -ioc->rval;
 	} else {
 		r = 0;
 	}
@@ -1163,6 +1182,7 @@ sth_rput(queue_t *q, mblk_t *mp)
 
 	switch (mp->db->type) {
 	case M_DATA:
+	case M_PROTO:
 
 		q->count += str_msgsize(mp);
 

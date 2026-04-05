@@ -14,6 +14,7 @@
 #include <sys/dlpi.h>
 #include <sys/errno.h>
 #include <sys/ioctl.h>
+#include <sys/k_intr.h>
 #include <sys/k_thread.h>
 #include <sys/k_wait.h>
 #include <sys/kmem.h>
@@ -21,6 +22,7 @@
 #include <sys/stream.h>
 #include <sys/stropts.h>
 
+#include <net/ethernet.h>
 #include <net/if.h>
 #include <netinet/ether.h>
 #include <netinet/in.h>
@@ -29,17 +31,11 @@
 
 #include <fs/devfs/devfs.h>
 #include <inet/ip.h>
-#include <inet/ip_intf.h>
 #include <inet/util.h>
 
-#define SIOCSIFADDR		0x8916
-#define SIOCSIFNETMASK		0x891C
-#define SIOCSIFNAMEBYMUXID	0x89A0
+extern kspinlock_t ip_allif_lock;
 
-void arp_input(ip_intf_t *, mblk_t *);
-void icmp_input(ip_intf_t *, mblk_t *);
-void ip_input(ip_intf_t *, mblk_t *);
-void tcp_input(ip_intf_t *, mblk_t *);
+#define SIOCSIFNAMEBYMUXID 0x89A0
 
 static void ip_uwput(queue_t *, mblk_t *);
 
@@ -72,178 +68,92 @@ static dev_ops_t ip_devops = {
 	.streamtab = &ip_streamtab,
 };
 
-static LIST_HEAD(, ip_intf) ip_intf_list = LIST_HEAD_INITIALIZER(ip_intf_list);
-static krwlock_t ip_intf_rwlock = KRWLOCK_INITIALISER;
-
-#define TRACE_IP(...) kdprintf("IP: " __VA_ARGS__)
-
-ip_intf_t *
-ip_intf_retain(ip_intf_t *intf)
-{
-	atomic_fetch_add_explicit(&intf->refcnt, 1, memory_order_relaxed);
-	return intf;
-}
-
 void
-ip_intf_release(ip_intf_t *intf)
-{
-	if (atomic_fetch_sub_explicit(&intf->refcnt, 1, memory_order_relaxed) ==
-	    1) {
-		kfatal("ip_intf_release");
-	}
-}
-
-ip_intf_t *
-ip_intf_lookup_by_muxid(int muxid)
-{
-	ip_intf_t *intf;
-
-	ke_rwlock_enter_read(&ip_intf_rwlock, "ip_intf_lookup_by_muxid");
-	LIST_FOREACH(intf, &ip_intf_list, if_list_link) {
-		if (intf->muxid == muxid) {
-			intf = ip_intf_retain(intf);
-			break;
-		}
-	}
-	ke_rwlock_exit_read(&ip_intf_rwlock);
-
-	return intf;
-}
-
-ip_intf_t *
-ip_intf_lookup_by_name(const char *name)
-{
-	ip_intf_t *intf;
-
-	ke_rwlock_enter_read(&ip_intf_rwlock, "ip_intf_lookup_by_name");
-	LIST_FOREACH(intf, &ip_intf_list, if_list_link) {
-		if (strcmp(intf->name, name) == 0) {
-			intf = ip_intf_retain(intf);
-			break;
-		}
-	}
-	ke_rwlock_exit_read(&ip_intf_rwlock);
-
-	return intf;
-}
-
-void
-ip_input(ip_intf_t *ifp, mblk_t *mp)
-{
-	struct ip *ip;
-	size_t msgsize = mp->wptr - mp->rptr;
-	uint16_t hlen;
-
-	if (msgsize < sizeof(struct ether_header) + sizeof(struct ip)) {
-		TRACE_IP("Packet too small\n");
-		str_freemsg(mp);
-		return;
-	}
-
-	ip = (struct ip *)(mp->rptr + sizeof(struct ether_header));
-
-	hlen = ip->ip_hl << 2;
-	if (hlen < sizeof(struct ip)) {
-		TRACE_IP("Invalid IP header length\n");
-		str_freemsg(mp);
-		return;
-	}
-
-	if (msgsize < sizeof(struct ether_header) + hlen) {
-		TRACE_IP("Packet too small for IP header\n");
-		str_freemsg(mp);
-		return;
-	}
-
-	if (ip->ip_v != IPVERSION) {
-		TRACE_IP("Invalid version %d\n", ip->ip_v);
-		str_freemsg(mp);
-		return;
-	}
-
-	if ((ip->ip_sum = ip_checksum(ip, hlen)) != 0) {
-		TRACE_IP("Checksum error\n");
-		str_freemsg(mp);
-		return;
-	}
-
-	switch (ip->ip_p) {
-	case IPPROTO_TCP:
-		tcp_input(ifp, mp);
-		break;
-
-	case IPPROTO_ICMP:
-		icmp_input(ifp, mp);
-		break;
-
-	default:
-		TRACE_IP("Unknown IP protocol %d\n", ip->ip_p);
-		str_freemsg(mp);
-		break;
-	}
-}
-
-static void
 ip_uwput_ioctl_sgif(queue_t *wq, mblk_t *mp)
 {
 	struct strioctl *ioc = (typeof(ioc))mp->rptr;
 	struct ifreq *ifr = (typeof(ifr))ioc->ic_dp;
-	ip_intf_t *intf = ip_intf_lookup_by_name(ifr->ifr_name);
 
-	if (intf == NULL) {
-		kdprintf("ip_uwput_ioctl_sgif: no such interface %s\n",
-		    ifr->ifr_name);
-		mp->db->type = M_IOCNAK;
-		ioc->rval = -ENOENT;
+	switch (ioc->ic_cmd) {
+	case SIOCGIFINDEX: {
+		ip_if_t *intf = ip_if_lookup_by_name(ifr->ifr_name);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
+
+		ifr->ifr_ifindex = intf->muxid;
+		ip_if_release(intf);
+
+		mp->db->type = M_IOCACK;
 		return str_qreply(wq, mp);
 	}
 
-	ke_rwlock_enter_write(&ip_intf_rwlock, "ip_uwput_ioctl_sgif");
+	case SIOCGIFNAME: {
+		ip_if_t *intf = ip_if_lookup_by_muxid(ifr->ifr_ifindex);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
 
-	switch (ioc->ic_cmd) {
-	case SIOCGIFFLAGS:
-		ifr->ifr_flags = IFF_UP | IFF_RUNNING;
-		break;
+		strncpy(ifr->ifr_name, intf->name, IF_NAMESIZE);
+		ip_if_release(intf);
 
-	case SIOCSIFFLAGS:
-		/* ignore for now */
-		break;
-
-	case SIOCGIFADDR:
-		ifr->ifr_addr.sa_family = AF_INET;
-		((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr = intf->addr;
-		break;
-
-	case SIOCSIFADDR:
-		ip_route_if_down(intf);
-		intf->addr = ((struct sockaddr_in *)&ifr->ifr_addr)->sin_addr;
-		ip_route_if_up(intf);
-		break;
-
-	case SIOCGIFNETMASK:
-		ifr->ifr_netmask.sa_family = AF_INET;
-		((struct sockaddr_in *)&ifr->ifr_netmask)->sin_addr =
-		    intf->netmask;
-		break;
-
-	case SIOCSIFNETMASK:
-		ip_route_if_down(intf);
-		intf->netmask =
-		    ((struct sockaddr_in *)&ifr->ifr_netmask)->sin_addr;
-		ip_route_if_up(intf);
-		break;
-
-	default:
-		kunreachable(); /* only called for above */
+		mp->db->type = M_IOCACK;
+		return str_qreply(wq, mp);
 	}
 
-	ke_rwlock_exit_write(&ip_intf_rwlock);
+	case SIOCSIFNAMEBYMUXID: {
+		ipl_t ipl;
+		ip_if_t *intf = ip_if_lookup_by_muxid(ifr->ifr_ifindex);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
 
-	ip_intf_release(intf);
+		ipl = ke_spinlock_enter(&ip_allif_lock);
+		strncpy(intf->name, ifr->ifr_name, IF_NAMESIZE - 1);
+		intf->name[IF_NAMESIZE - 1] = '\0';
+		ke_spinlock_exit(&ip_allif_lock, ipl);
+		ip_if_release(intf);
 
-	ioc->ic_len = sizeof(struct ifreq);
-	mp->db->type = M_IOCACK;
-	str_qreply(wq, mp);
+		mp->db->type = M_IOCACK;
+		return str_qreply(wq, mp);
+	}
+
+	case SIOCGIFFLAGS: {
+		ip_if_t *intf = ip_if_lookup_by_name(ifr->ifr_name);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
+
+		/* todo flags */
+		ifr->ifr_flags = IFF_UP | IFF_RUNNING;
+		ip_if_release(intf);
+
+		mp->db->type = M_IOCACK;
+		return str_qreply(wq, mp);
+	}
+
+	case SIOCGIFMTU: {
+		ip_if_t *intf = ip_if_lookup_by_name(ifr->ifr_name);
+		if (intf == NULL) {
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+		}
+
+		ifr->ifr_mtu = 1500; /* todo mtu */
+		ip_if_release(intf);
+
+		mp->db->type = M_IOCACK;
+		return str_qreply(wq, mp);
+	}
+
+	default:
+		mp->db->type = M_IOCNAK;
+		return str_qreply(wq, mp);
+	}
 }
 
 static void
@@ -254,135 +164,111 @@ ip_uwput(queue_t *wq, mblk_t *mp)
 		struct strioctl *ioc = (typeof(ioc))mp->rptr;
 
 		switch (ioc->ic_cmd) {
-		case SIOCGIFFLAGS:
-		case SIOCSIFFLAGS:
-		case SIOCGIFADDR:
-		case SIOCSIFADDR:
-		case SIOCGIFNETMASK:
-		case SIOCSIFNETMASK:
-			return ip_uwput_ioctl_sgif(wq, mp);
-
-		case SIOCSIFNAMEBYMUXID: {
-			struct ifreq *ifr = (typeof(ifr))ioc->ic_dp;
-			ip_intf_t *intf;
-
-			intf = ip_intf_lookup_by_muxid(ifr->ifr_ifindex);
-			if (intf == NULL) {
-				kdprintf("/dev/ip: no such muxid %d\n",
-				    ifr->ifr_ifindex);
-				mp->db->type = M_IOCNAK;
-				return str_qreply(wq, mp);
-			}
-
-			strncpy(intf->name, ifr->ifr_name, IFNAMSIZ);
-			ip_intf_release(intf);
-
-			kdprintf("/dev/ip: muxid %d now named <%s>\n",
-			    ifr->ifr_ifindex, ifr->ifr_name);
-
-			mp->db->type = M_IOCACK;
-			return str_qreply(wq, mp);
-		}
-
 		case I_PLINK: {
-			ip_intf_t *intf;
 			struct linkblk *linkp = (typeof(linkp))ioc->ic_dp;
 
 			kassert(linkp->qbot->qinfo == &ip_lwinit);
 
-			ke_rwlock_enter_write(&ip_intf_rwlock,
-			    "ip_uwput I_PLINK");
-			intf = linkp->qbot->ptr;
-			intf->muxid = linkp->index;
-			ke_rwlock_exit_write(&ip_intf_rwlock);
+			ip_if_publish(linkp->qbot->ptr, linkp->index);;
 
 			mp->db->type = M_IOCACK;
+			ioc->rval = 0;
 			return str_qreply(wq, mp);
 		}
 
-		default:
-			kfatal("ip_uwput: unexpected ioctl type 0x%x",
-			    ioc->ic_cmd);
-		}
+		case SIOCGIFINDEX:
+		case SIOCGIFNAME:
+		case SIOCSIFNAMEBYMUXID:
+		case SIOCGIFFLAGS:
+			return ip_uwput_ioctl_sgif(wq, mp);
 
-		break;
+		default:
+			kdprintf("ip_uwput: unhandled ioctl 0x%x\n",
+			    ioc->ic_cmd);
+			mp->db->type = M_IOCNAK;
+			return str_qreply(wq, mp);
+			ktodo();
+		}
 	}
 
 	default:
-		kfatal("ip_uwput: unexpected message type %d", mp->db->type);
+		ktodo();
 	}
 }
 
-/*
- * lower multiplexor side
- */
+void arp_input(ip_if_t *, mblk_t *);
+void ipv4_input(ip_if_t *, mblk_t *);
+void ipv6_input(ip_if_t *, mblk_t *);
 
-/* Send and wait synchronously for the DLPI bind request to be returned. */
 static void
-send_dlpi_bind(queue_t *rq)
+bpf_deliver(ip_if_t *ifp, mblk_t *mp)
 {
-	ip_intf_t *intf = rq->ptr;
-	kevent_t ack_ev;
-	struct dl_bind_req *req;
-	struct dl_bind_ack *ack;
-	mblk_t *mp;
-
-	ke_event_init(&ack_ev, false);
-
-	mp = str_allocb(sizeof(*req));
-
-	mp->db->type = M_PROTO;
-	req = (typeof(req))mp->rptr;
-	req->dl_primitive = DL_BIND_REQ;
-	req->dl_sap = -1; /* all SAPs */
-	req->dl_max_conind = 0;
-	req->dl_service_mode = DL_CLDLS;
-	req->dl_conn_mgmt = 0;
-	req->dl_xidtest_flg = 0;
-	mp->wptr += sizeof(*req);
-
-	intf->sync_ack_mp = NULL;
-	intf->sync_ack_ev = &ack_ev;
-
-	str_putnext(rq->other, mp);
-	str_qwait(rq, intf->sync_ack_ev);
-
-	mp = intf->sync_ack_mp;
-	ack = (typeof(ack))mp->rptr;
-
-	memcpy(&intf->mac, (char *)ack + ack->dl_addr_offset,
-	    sizeof(struct ether_addr));
-
-	intf->mtu = 1500;
+	bpf_listener_t *listener;
+	RCULIST_FOREACH(listener, &ifp->bpf_listeners, rlentry)
+		bpf_input(listener, mp);
 }
+
+static void
+ip_input(void *ptr, mblk_t *mp)
+{
+	ip_if_t *ifp = ptr;
+	struct ether_header *eh = (struct ether_header *)mp->rptr;
+	uint16_t ethertype = ntohs(eh->ether_type);
+
+	bpf_deliver(ifp, mp);
+
+	mp->rptr += sizeof(struct ether_header);
+
+	switch(ethertype) {
+	case ETHERTYPE_ARP:
+		return arp_input(ifp, mp);
+
+	case ETHERTYPE_IP:
+		return ipv4_input(ifp, mp);
+
+	case ETHERTYPE_IPV6:
+		return ipv6_input(ifp, mp);
+	}
+}
+
+struct attach_result {
+	mblk_t *ack_mp;
+	kevent_t ack_ev;
+};
 
 static int
 ip_lropen(queue_t *rq, void *)
 {
-	ip_intf_t *intf;
+	struct attach_result attach_res;
+	dl_keyronex_bind_req_t *req;
+	dl_keyronex_bind_ack_t *ack;
+	ip_if_t *ifp;
+	mblk_t *mp;
 
-	intf = kmem_alloc(sizeof(*intf));
+	attach_res.ack_mp = NULL;
+	ke_event_init(&attach_res.ack_ev, false);
 
-	intf->refcnt = 1;
-	intf->name[0] = '\0';
-	intf->muxid = -1;
-	intf->wq = rq->other->next;
+	rq->ptr =  &attach_res;
 
-	intf->addr.s_addr = INADDR_ANY;
-	intf->netmask.s_addr = INADDR_ANY;
+	mp = str_allocb(sizeof(*req));
+	mp->db->type = M_PROTO;
+	req = (typeof(req))mp->rptr;
+	req->dl_primitive = DL_KEYRONEX_BIND_REQ;
+	mp->wptr += sizeof(*req);
 
-	arp_state_init(intf);
+	str_putnext(rq->other, mp);
+	str_qwait(rq, &attach_res.ack_ev);
 
-	rq->ptr = rq->other->ptr = intf;
+	ack = (typeof(ack))attach_res.ack_mp->rptr;
 
-	send_dlpi_bind(rq);
+	ifp = ip_if_new(ack->dl_mac);
+	rq->ptr = rq->other->ptr = ifp;
+	memcpy(ifp->mac, ack->dl_mac, ETH_ALEN);
+	*ack->pdata = ifp;
+	*ack->pput = ip_input;
 
-	kdprintf("ip_open: if bound, MAC " FMT_MAC ", MTU %d\n",
-	    ARG_MAC(intf->mac), intf->mtu);
-
-	ke_rwlock_enter_write(&ip_intf_rwlock, "ip_lopen");
-	LIST_INSERT_HEAD(&ip_intf_list, intf, if_list_link);
-	ke_rwlock_exit_write(&ip_intf_rwlock);
+	ifp->nic_data = ack->nic_data;
+	ifp->nic_wput = ack->nic_wput;
 
 	return 0;
 }
@@ -390,32 +276,21 @@ ip_lropen(queue_t *rq, void *)
 static void
 ip_lrput(queue_t *q, mblk_t *mp)
 {
-	ip_intf_t *intf = q->ptr;
-
 	switch (mp->db->type) {
-	case M_DATA: {
-		struct ether_header *eh = (struct ether_header *)mp->rptr;
-		if (ntohs(eh->ether_type) == ETHERTYPE_IP) {
-			ip_input(intf, mp);
-		} else if (ntohs(eh->ether_type) == ETHERTYPE_ARP) {
-			arp_input(intf, mp);
-		} else {
-			kdprintf("IP: unknown ethertype 0x%04x\n",
-			    ntohs(eh->ether_type));
-			str_freemsg(mp);
-		}
-		break;
-	}
-
 	case M_PROTO: {
 		union DL_primitives *dlp = (typeof(dlp))mp->rptr;
 
 		switch (dlp->dl_primitive) {
-		case DL_BIND_ACK:
-			kassert(intf->sync_ack_mp == NULL);
-			intf->sync_ack_mp = mp;
-			ke_event_set_signalled(intf->sync_ack_ev, true);
-			break;
+		case DL_KEYRONEX_BIND_ACK: {
+			struct attach_result *attach_res =
+			    (typeof(attach_res))q->ptr;
+			attach_res->ack_mp = mp;
+			ke_event_set_signalled(&attach_res->ack_ev, true);
+			return;
+		}
+
+		default:
+			ktodo();
 		}
 
 		break;
@@ -426,48 +301,17 @@ ip_lrput(queue_t *q, mblk_t *mp)
 	}
 }
 
-int
-ip_output(mblk_t *mp)
-{
-	return ip_output_intfheld(mp, NULL);
-}
-
-int
-ip_output_intfheld(mblk_t *m, ip_intf_t *ifp)
-{
-	struct ether_header *eh = (struct ether_header *)m->rptr;
-	struct ip *ip = (struct ip *)(eh + 1);
-	struct ip_route_result rt;
-
-	rt =  ip_route_lookup(ip->ip_dst);
-	if (rt.intf == NULL) {
-		TRACE_IP("No route to " FMT_IP4 "\n",
-		    ARG_IP4(ip->ip_dst.s_addr));
-		str_freemsg(m);
-		return -EHOSTUNREACH;
-	}
-
-	eh->ether_type = htons(ETHERTYPE_IP);
-	ip->ip_sum = 0;
-	ip->ip_sum = ip_checksum(ip, ip->ip_hl << 2);
-
-	if (ifp != NULL && rt.intf != ifp)
-		kfatal("handle ip output from unheld interface");
-
-	arp_output(rt.intf, rt.next_hop.s_addr, m, true);
-
-	ip_intf_release(rt.intf);
-
-	return 0;
-}
-
 void
 ip_init(void)
 {
 	void rtnetlink_init(void);
 	void tcp_init(void);
+	void route_init(void);
 
-	devfs_create_node(DEV_KIND_STREAM, &ip_devops, NULL, "ip");
+	route_init();
 	rtnetlink_init();
+	devfs_create_node(DEV_KIND_STREAM, &ip_devops, NULL, "ip");
+#if 0
 	tcp_init();
+#endif
 }

@@ -89,7 +89,7 @@ uf_info_expand(uf_info_t *info, unsigned int min)
 	memset(new_list->entries + old_list->capacity, 0x0,
 	    sizeof(uf_entry_t) * (new_max - old_list->capacity));
 
-	ke_rcu_assign_pointer(info->list, new_list);
+	ke_rcu_assign_pointer(&info->list, new_list);
 
 #if 0
 	ke_rcu_call(&old_entries->rcu, uf_list_free_rcu, old_entries);
@@ -111,12 +111,12 @@ uf_lookup(uf_info_t *info, int fd)
 	ipl = ke_rcu_read_lock();
 
 	while (true) {
-		list = ke_rcu_dereference(info->list);
+		list = ke_rcu_dereference(&info->list);
 
 		if (fd >= list->capacity)
 			break;
 
-		file = ke_rcu_dereference(list->entries[fd].file);
+		file = ke_rcu_dereference(&list->entries[fd].file);
 		if (file == NULL) {
 			/* not open, or raced to close */
 			break;
@@ -165,7 +165,7 @@ uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int oflags)
 		flags |= FD_CLOEXEC;
 
 	list->entries[fd].flags = flags;
-	ke_rcu_assign_pointer(list->entries[fd].file, FD_RESERVED);
+	ke_rcu_assign_pointer(&list->entries[fd].file, FD_RESERVED);
 	ke_mutex_exit(&info->lock);
 
 	return fd;
@@ -182,7 +182,7 @@ uf_unreserve_fd(uf_info_t *info, int fd)
 	kassert(fd >= 0 && fd < list->capacity);
 	kassert(list->entries[fd].file == FD_RESERVED);
 
-	ke_rcu_assign_pointer(list->entries[fd].file, NULL);
+	ke_rcu_assign_pointer(&list->entries[fd].file, NULL);
 	list->entries[fd].flags = 0;
 	ke_mutex_exit(&info->lock);
 }
@@ -198,7 +198,7 @@ uf_install_reserved(uf_info_t *info, int fd, struct file *file)
 	kassert(fd < list->capacity);
 	kassert(list->entries[fd].file == FD_RESERVED);
 
-	ke_rcu_assign_pointer(list->entries[fd].file, file);
+	ke_rcu_assign_pointer(&list->entries[fd].file, file);
 
 	ke_mutex_exit(&info->lock);
 }
@@ -333,7 +333,7 @@ sys_dup3(int oldfd, int newfd, unsigned int flags)
 	}
 
 	list->entries[newfd].flags = flags;
-	ke_rcu_assign_pointer(list->entries[newfd].file, f);
+	ke_rcu_assign_pointer(&list->entries[newfd].file, f);
 	ke_mutex_exit(&info->lock);
 
 	if (to_close)
@@ -447,6 +447,13 @@ sys_fcntl(int fd, int cmd, unsigned long arg)
 		file_release(f);
 		return 0;
 
+	case F_GETLK:
+	case F_SETLK:
+	case F_SETLKW: {
+		kdprintf("sys_fcntl: file locking is unimplemented!\n");
+		return -ENOSYS;
+	}
+
 	default:
 		return -EINVAL;
 	}
@@ -474,7 +481,7 @@ sys_close(int fd)
 		return -EBADF;
 	}
 
-	ke_rcu_assign_pointer(list->entries[fd].file, NULL);
+	ke_rcu_assign_pointer(&list->entries[fd].file, NULL);
 	list->entries[fd].flags = 0;
 
 	ke_mutex_exit(&info->lock);

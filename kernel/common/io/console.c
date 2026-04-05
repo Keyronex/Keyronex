@@ -44,6 +44,11 @@ console_input(const char *buf, int count)
 	memcpy(mp->wptr, buf, count);
 	mp->wptr += count;
 
+	if (console_stdata == NULL) {
+		str_freemsg(mp);
+		return;
+	}
+
 	ke_spinlock_enter_nospl(&console_stdata->ingress_lock);
 	TAILQ_INSERT_TAIL(&console_stdata->ingress_head, mp, link);
 	ke_spinlock_exit_nospl(&console_stdata->ingress_lock);
@@ -86,12 +91,14 @@ console_ioctl(queue_t *wq, mblk_t *mp)
 
 		memcpy(ioc->ic_dp, &ws, sizeof(struct winsize));
 		mp->db->type = M_IOCACK;
+		ioc->rval = 0;
 		str_putnext(wq->other, mp);
 		break;
 	}
 
 	case TIOCSWINSZ:
 		mp->db->type = M_IOCACK;
+		ioc->rval = 0;
 		str_putnext(wq->other, mp);
 		break;
 

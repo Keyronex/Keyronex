@@ -86,8 +86,13 @@ static int sock_write(vnode_t *, const void *buf, size_t buflen, off_t,
 static int sock_ioctl(vnode_t *, unsigned long cmd, void *arg);
 static int sock_chpoll(vnode_t *, struct poll_entry *, enum chpoll_mode);
 
+int ux_socketpair_connect(queue_t *rq1, queue_t *rq2);
+
 extern struct streamtab ux_cotsord_streamtab, ux_clts_streamtab;
 extern struct streamtab tcp_streamtab;
+extern struct streamtab udp_ipv4_streamtab, udp_ipv6_streamtab,
+    raw_ipv4_streamtab, raw_ipv6_streamtab;
+extern struct streamtab packet_streamtab;
 extern struct streamtab nl_streamtab;
 
 static struct qinit sock_rinit = {
@@ -129,11 +134,12 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 	case AF_UNIX:
 		switch (type) {
 		case SOCK_STREAM:
+		case SOCK_SEQPACKET:
 			streamtab = &ux_cotsord_streamtab;
 			break;
 
 		case SOCK_DGRAM:
-			ktodo();
+			streamtab = &ux_clts_streamtab;
 			break;
 
 		default:
@@ -148,8 +154,32 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			streamtab = &tcp_streamtab;
 			break;
 
+		case SOCK_DGRAM:
+			streamtab = &udp_ipv4_streamtab;
+			break;
+
+		case SOCK_RAW:
+			streamtab = &raw_ipv4_streamtab;
+			break;
+
 		default:
 			kfatal("unexpected AF_INET type %d (0x%x)\n", type,
+			    type);
+		}
+		break;
+
+	case AF_INET6:
+		switch (type) {
+		case SOCK_DGRAM:
+			streamtab = &udp_ipv6_streamtab;
+			break;
+
+		case SOCK_RAW:
+			streamtab = &raw_ipv6_streamtab;
+			break;
+
+		default:
+			kfatal("unexpected AF_INET6 type %d (0x%x)\n", type,
 			    type);
 		}
 		break;
@@ -163,6 +193,22 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 
 		default:
 			return -ESOCKTNOSUPPORT;
+		}
+		break;
+
+	case AF_PACKET:
+		switch(type) {
+			case SOCK_STREAM:
+				return -ESOCKTNOSUPPORT;
+
+			case SOCK_DGRAM:
+				kdprintf("note: AF_PACKET/SOCK_DGRAM "
+				    "not yet supported\n");
+				return -ESOCKTNOSUPPORT;
+
+			case SOCK_RAW:
+				streamtab = &packet_streamtab;
+				break;
 		}
 		break;
 
@@ -181,7 +227,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		goto err;
 	}
 
-	if (type == SOCK_RAW || type == SOCK_DGRAM)
+	if (type == SOCK_RAW || type == SOCK_DGRAM || type == SOCK_SEQPACKET)
 		sh->read_mode = STR_RMSGD;
 
 	r = strpush(sh, &sock_streamtab);
@@ -266,6 +312,7 @@ sockmod_rput(queue_t *rq, mblk_t *mp)
 	case T_ADDR_ACK:
 	case T_OK_ACK:
 	case T_ERROR_ACK:
+	case T_OPTMGMT_ACK:
 		kassert(sn->tpi_ack_mp == NULL);
 		sn->tpi_ack_mp = mp;
 		ke_event_set_signalled(&sn->tpi_ack_ev, true);
@@ -350,6 +397,7 @@ sock_tpi_errno(mblk_t *mp)
 	case T_BIND_ACK:
 	case T_ADDR_ACK:
 	case T_OK_ACK:
+	case T_OPTMGMT_ACK:
 		return 0;
 
 	case T_ERROR_ACK:
@@ -871,7 +919,7 @@ so_getsockname(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	socklen_t llen, rlen;
 	int r;
 
-	if (sn->domain != AF_INET) {
+	if (sn->domain == AF_UNIX) {
 		/* TODO: use the local version for AF_UNIX? */
 		return -EOPNOTSUPP;
 	}
@@ -880,12 +928,7 @@ so_getsockname(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	if (r != 0)
 		return r;
 
-	if (llen > 0) {
-		return copyout_sockaddr(&laddr, llen, addr, addrlen);
-	} else {
-		struct sockaddr zero = { .sa_family = AF_INET };
-		return copyout_sockaddr(&zero, sizeof(zero), addr, addrlen);
-	}
+	return copyout_sockaddr(&laddr, llen, addr, addrlen);
 }
 
 static int
@@ -898,7 +941,7 @@ so_getpeername(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	if (!(sn->state & SS_ISCONNECTED))
 		return -ENOTCONN;
 
-	if (sn->domain != AF_INET) {
+	if (sn->domain == AF_UNIX) {
 		/* TODO: AF_UNIX peer address support */
 		return -EOPNOTSUPP;
 	}
@@ -913,6 +956,54 @@ so_getpeername(struct socknode *sn, struct sockaddr *addr, socklen_t *addrlen)
 	return copyout_sockaddr(&raddr, rlen, addr, addrlen);
 }
 
+static int
+so_setsockopt(struct socknode *sn, int level, int optname, const void *optval,
+    socklen_t optlen)
+{
+	mblk_t *mp;
+	struct T_optmgmt_req *req;
+	struct opthdr *opt;
+	int r, total_len;
+
+	total_len = sizeof(struct T_optmgmt_req) + sizeof(struct opthdr) + OPTLEN(optlen);
+	mp = str_allocb(total_len);
+	if (mp == NULL)
+		return -ENOMEM;
+
+	mp->db->type = M_PROTO;
+	req = (struct T_optmgmt_req *)mp->wptr;
+	req->PRIM_type = T_OPTMGMT_REQ;
+	req->OPT_length = sizeof(struct opthdr) + OPTLEN(optlen);
+	req->OPT_offset = sizeof(struct T_optmgmt_req);
+	req->MGMT_flags = T_NEGOTIATE;
+
+	opt = (struct opthdr *)(mp->wptr + req->OPT_offset);
+	opt->level = level;
+	opt->name = optname;
+	opt->len = optlen;
+
+	/*
+	 * TODO: more sophisticated memcpy_from_user neded!
+	 * what about, for instance, bpf where there's a second order pointer?
+	 */
+
+	r = memcpy_from_user(OPTVAL(opt), optval, optlen);
+	if (r != 0) {
+		str_freemsg(mp);
+		return -EFAULT;
+	}
+
+	mp->wptr += total_len;
+
+	str_req_begin(sn->stream);
+	mp = sock_tpi_request(sn, mp);
+	r = sock_tpi_errno(mp);
+	str_req_end(sn->stream);
+
+	str_freemsg(mp);
+
+	return r ? -r : 0;
+}
 
 /*
  * vnode ops
@@ -956,9 +1047,10 @@ sock_write(vnode_t *vn, const void *buf, size_t buflen, off_t, int flags)
 }
 
 static int
-sock_ioctl(vnode_t *, unsigned long cmd, void *arg)
+sock_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 {
-	ktodo();
+	struct socknode *sn = VTOSN(vn);
+	return strioctl(vn, sn->stream, cmd, arg);
 }
 
 static int
@@ -1012,6 +1104,11 @@ sys_socket(int domain, int type, int protocol)
 {
 	file_t *fp;
 	int fd, r;
+
+	/* only socketpair()'d SOCK_DGRAM is supported yet */
+	if (domain == AF_UNIX &&
+	    (type & (SOCK_STREAM | SOCK_SEQPACKET | SOCK_DGRAM)) != SOCK_STREAM)
+		return -ESOCKTNOSUPPORT;
 
 	fd = uf_reserve_fd(curproc()->finfo, 0,
 	    (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0);
@@ -1104,10 +1201,16 @@ int
 sys_setsockopt(int sockfd, int level, int optname, const void *optval,
     socklen_t optlen)
 {
+	file_t *fp;
+	int r = lookup_sockfd(sockfd, &fp);
+	if (r < 0)
+		return r;
 	kdprintf("sys_setsockopt(sockfd=%d, level=0x%d, optname=0x%d, "
 	    " optval=%p, optlen=0x%u)\n", sockfd, level, optname, optval,
 	    optlen);
-	return -ENOSYS;
+	r = so_setsockopt(VTOSN(fp->vnode), level, optname, optval, optlen);
+	file_release(fp);
+	return r;
 }
 
 int
@@ -1118,7 +1221,14 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 	int readflags = 0;
 	int r = lookup_sockfd(sockfd, &file);
 
+	if (r < 0)
+		return r;
+
 	/* TODO: this is not recvmsg! */
+
+	if (msg->msg_name != NULL || msg->msg_control != NULL)
+		kdprintf("warning recvmsg called with msg_name %p "
+		    "and msg_control %p\n", msg->msg_name, msg->msg_control);
 
 	sn = VTOSN(file->vnode);
 
@@ -1146,6 +1256,9 @@ sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 	struct socknode *sn;
 	int writeflags = 0;
 	int r = lookup_sockfd(sockfd, &file);
+
+	if (r < 0)
+		return r;
 
 	/* TODO: this is not sendmsg! */
 
@@ -1201,4 +1314,67 @@ sys_shutdown(int sockfd, int how)
 	    VTOSN(fp->vnode));
 	file_release(fp);
 	return r;
+}
+
+int
+sys_socketpair(int domain, int type, int protocol, int sv[2])
+{
+	file_t *fp1 = NULL, *fp2 = NULL;
+	struct socknode *sn1, *sn2;
+	int fd[2], r;
+
+	if (domain != AF_UNIX)
+		return -EOPNOTSUPP;
+
+	r = so_create(&fp1, &sn1, domain, type, protocol);
+	if (r < 0)
+		return r;
+
+	r = so_create(&fp2, &sn2, domain, type, protocol);
+	if (r < 0) {
+		file_release(fp1);
+		return r;
+	}
+
+	r = ux_socketpair_connect(sn1->stream->rq_bottom,
+	    sn2->stream->rq_bottom);
+	if (r < 0) {
+		file_release(fp2);
+		file_release(fp1);
+		return r;
+	}
+
+	sn1->state = SS_ISCONNECTED;
+	sn2->state = SS_ISCONNECTED;
+
+	fd[0] = uf_reserve_fd(curproc()->finfo, 0,
+	    (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0);
+	if (fd[0] < 0) {
+		file_release(fp2);
+		file_release(fp1);
+		return fd[0];
+	}
+
+	fd[1] = uf_reserve_fd(curproc()->finfo, 0,
+	    (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0);
+	if (fd[1] < 0) {
+		uf_unreserve_fd(curproc()->finfo, fd[0]);
+		file_release(fp2);
+		file_release(fp1);
+		return fd[1];
+	}
+
+	r = memcpy_to_user(sv, fd, sizeof(fd));
+	if (r != 0) {
+		uf_unreserve_fd(curproc()->finfo, fd[0]);
+		uf_unreserve_fd(curproc()->finfo, fd[1]);
+		file_release(fp1);
+		file_release(fp2);
+		return -EFAULT;
+	}
+
+	uf_install_reserved(curproc()->finfo, fd[0], fp1);
+	uf_install_reserved(curproc()->finfo, fd[1], fp2);
+
+	return 0;
 }

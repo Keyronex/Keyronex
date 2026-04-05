@@ -47,7 +47,8 @@ vm_obj_new_vnode(vnode_t *vnode)
 	vm_object_t *obj = kmem_alloc(sizeof(*obj));
 
 	obj->kind = VM_OBJ_VNODE;
-	obj->vnode = vnode;
+	obj->vnobj.vnode = vnode;
+	obj->vnobj.valid_length = SIZE_MAX;
 	ke_spinlock_init(&obj->creation_lock);
 	ke_spinlock_init(&obj->stealing_lock);
 	for (size_t i = 0; i < OBJ_N_DIRECT; i++)
@@ -58,6 +59,17 @@ vm_obj_new_vnode(vnode_t *vnode)
 	LIST_INIT(&obj->map_entries);
 
 	return obj;
+}
+
+
+void
+vm_vnobj_set_valid_length(vm_object_t *obj, size_t length)
+{
+	ipl_t ipl = ke_spinlock_enter(&obj->creation_lock);
+	ke_spinlock_enter_nospl(&obj->stealing_lock);
+	obj->vnobj.valid_length = length;
+	ke_spinlock_exit_nospl(&obj->stealing_lock);
+	ke_spinlock_exit(&obj->creation_lock, ipl);
 }
 
 /*
@@ -501,4 +513,208 @@ obj_max_readahead(struct obj_pte_wire_state *cursor, pgoff_t pgoff,
 void
 vm_obj_purge(vm_object_t *obj)
 {
+	kfatal("implement me");
+}
+
+void
+vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize)
+{
+	struct vm_map_entry *entry;
+	uint64_t newsize_pg = roundup2(newsize, PGSIZE);
+
+	kassert(obj->kind == VM_OBJ_VNODE);
+
+	ke_mutex_enter(&obj->map_entries_lock, "vm_obj_truncate_mappings");
+
+	LIST_FOREACH(entry, &obj->map_entries, object_link) {
+		vm_map_t *map = entry->map;
+		vaddr_t trunc_start;
+		ipl_t ipl;
+
+		if (newsize_pg <= entry->offset) {
+			/* entire mapping is beyond truncation point */
+			trunc_start = entry->start;
+		} else if (newsize_pg >=
+		    entry->offset + (entry->end - entry->start)) {
+			/* entire mapping is before truncation point */
+			continue;
+		} else {
+			trunc_start = entry->start +
+			    (newsize_pg - entry->offset);
+		}
+
+		ipl = spldisp();
+		ke_spinlock_enter_nospl(&map->creation_lock);
+		ke_spinlock_enter_nospl(&map->stealing_lock);
+
+		for (vaddr_t va = trunc_start; va < entry->end; va += PGSIZE) {
+			pte_t *ppte, pte;
+			vm_page_t *page;
+
+			/*
+			 * TODO: optimise this, don't fetch each individually!!
+			 * don't fetch while in same table (Not crossing PGSIZE
+			 * PTE boundary).
+			 * and pmap_fetch_pte() should, like pmap_wire_pte(),
+			 * return at what level there's no PTE, so we can skip
+			 * multiples of tables.
+			 */
+			ppte = pmap_fetch_pte(map, NULL, va);
+			if (ppte == NULL)
+				continue;
+
+			pte = pmap_load_pte(ppte);
+
+			switch (pmap_pte_characterise(pte)) {
+			case kPTEKindHW:
+				page = pmap_pte_hwleaf_page(pte, PMAP_L0);
+				if (page->use != VM_PAGE_FILE) {
+					/*
+					 * We don't bother clearing it out if
+					 * it's not a VM_PAGE_FILE; it must then
+					 * be a private or fork page so it's not
+					 * a page of this object.
+					 */
+					continue;
+				}
+
+				rs_evict_leaf_pte(&map->rs, va, page, ppte);
+				break;
+
+			case kPTEKindBusy:
+				/*
+				 * We don't need to worry about these. Whoever
+				 * is faulting will check valid_length after
+				 * I/O completes and discover that the busy PTE
+				 * is now beyond valid_length, and zero it
+				 * instead of making it valid.
+				 */
+				break;
+
+			default:
+				break;
+			}
+		}
+
+		ke_spinlock_exit_nospl(&map->stealing_lock);
+		ke_spinlock_exit_nospl(&map->creation_lock);
+		splx(ipl);
+	}
+
+	ke_mutex_exit(&obj->map_entries_lock);
+}
+
+void pagein_wait_retain(struct pagein_wait *);
+void pagein_wait_release(struct pagein_wait *);
+
+void
+vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
+{
+	uint64_t newsize_pg = roundup2(newsize, PGSIZE),
+		 oldsize_pg = roundup2(oldsize, PGSIZE);
+	uint64_t offset;
+	ipl_t ipl;
+
+
+	offset = newsize_pg;
+
+	while (true) {
+		pte_t *ppte;
+
+		ipl = spldisp();
+		ke_spinlock_enter_nospl(&obj->creation_lock);
+		ke_spinlock_enter_nospl(&obj->stealing_lock);
+
+		/*
+		 * TODO:
+		 * - don't fetch PTE if in same table
+		 * - skip appropriate levels
+		 */
+
+		ppte = obj_fetch_pte(obj, offset);
+
+		if (ppte == NULL) {
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+
+			offset += PGSIZE;
+
+			if (offset >= oldsize_pg)
+				break;
+
+			continue;
+		}
+
+		pte_t pte = pmap_load_pte(ppte);
+
+		switch (pmap_pte_characterise(pte)) {
+		case kPTEKindHW: {
+			vm_page_t *page = pmap_pte_hwleaf_page(pte, PMAP_L0);
+
+			/*
+			 * Viewcache and user mappings should have been cleared
+			 * out by the time this function was called, leaving a
+			 * share count of 0.
+			 */
+			kassert(page->use == VM_PAGE_FILE);
+			kassert(page->shared.share_count == 0);
+			kassert(page->owner_obj == obj);
+
+			pmap_pte_zeroleaf_create(ppte, PMAP_L0);
+			obj_page_zeroed(obj, page);
+			/* (unref=false as share_count is 0) */
+			vm_page_delete(page, false);
+
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+			break;
+		}
+
+		case kPTEKindBusy: {
+			/*
+			 * Pagein is happening. The faulter will check
+			 * valid_length and zero this PTE itself when it
+			 * returns. Wait for it to complete and try again with
+			 * same offset.
+			 */
+			vm_page_t *page = pmap_pte_soft_page(ppte);
+			struct pagein_wait *pw = page->pagein_wait;
+
+			pagein_wait_retain(pw);
+
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+
+			ke_wait1(&pw->event, "truncate_busy", false,
+			    ABSTIME_FOREVER);
+			pagein_wait_release(pw);
+
+			/* no change to offset, go again. */
+			continue;
+		}
+
+		case kPTEKindZero:
+			ke_spinlock_exit_nospl(&obj->stealing_lock);
+			ke_spinlock_exit_nospl(&obj->creation_lock);
+			splx(ipl);
+			break;
+
+		default:
+			kfatal("vm_obj_truncate: unexpected PTE kind\n");
+		}
+
+		offset += PGSIZE;
+		if (offset >= oldsize_pg)
+			break;
+	}
+}
+
+void
+vm_obj_truncate(vm_object_t *obj, size_t oldsize, size_t newsize)
+{
+	vm_obj_truncate_mappings(obj, newsize);
+	vm_obj_truncate_pages(obj, oldsize, newsize);
 }

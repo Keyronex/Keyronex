@@ -49,6 +49,23 @@ typedef struct vattr {
 	uint64_t	dsize;	/*!< on-disk size in bytes */
 } vattr_t;
 
+#define VATTR_NULL (vattr_t) {				\
+	.type = VNON,					\
+	.mode = -1,					\
+	.nlink = -1,					\
+	.uid = -1,					\
+	.gid = -1,					\
+	.fsid = -1,					\
+	.fileid = -1,					\
+	.size = -1,					\
+	.bsize = -1,					\
+	.atim = { .tv_sec = -1, .tv_nsec = -1 },	\
+	.mtim = { .tv_sec = -1, .tv_nsec = -1 },	\
+	.ctim = { .tv_sec = -1, .tv_nsec = -1 },	\
+	.rdev = -1,					\
+	.dsize = -1,					\
+};
+
 typedef struct vnode {
 	atomic_uint	refcount;
 	struct vfs	*vfs;
@@ -101,10 +118,12 @@ struct vnode_ops {
 	int (*chpoll)(vnode_t *, struct poll_entry *, enum chpoll_mode);
 	int (*mmap)(void *addr, size_t len, int prot, int flags, vnode_t *vn,
 	    off_t offset, vaddr_t *window);
-	void (*lock_for_vc_io)(vnode_t *, bool write);
-	void (*unlock_for_vc_io)(vnode_t *, bool write);
-	iop_return_t (*iop_dispatch)(vnode_t *vn, struct iop *);
-	iop_return_t (*iop_complete)(vnode_t *vn, struct iop *);
+	void (*vc_enter)(vnode_t *, bool write);
+	void (*vc_exit)(vnode_t *, bool write);
+	iop_return_t (*iop_dispatch)(vnode_t *, struct iop *);
+	iop_return_t (*iop_complete)(vnode_t *, struct iop *);
+	void (*paging_enter)(vnode_t *);
+	void (*paging_exit)(vnode_t *);
 };
 
 #define VOP_OPEN(VN, FLAGS) (*(VN))->ops->open(VN, FLAGS);
@@ -114,14 +133,16 @@ struct vnode_ops {
 #define VOP_CHPOLL(VN, POLL, MODE) (VN)->ops->chpoll(VN, (POLL), (MODE));
 #define VOP_READLINK(VN, BUF, LEN) (VN)->ops->readlink(VN, (BUF), (LEN));
 #define VOP_GETATTR(VN, VATTR) (VN)->ops->getattr(VN, (VATTR));
+#define VOP_SETATTR(VN, VATTR) (VN)->ops->setattr(VN, (VATTR));
 #define VOP_IOCTL(VN, CMD, DATA) (VN)->ops->ioctl(VN, (CMD), (DATA));
 #define VOP_READ(VN, BUF, LEN, OFF, F) (VN)->ops->read(VN, BUF, LEN, OFF, F);
 #define VOP_READDIR(VN, BUF, LEN, OFF) (VN)->ops->readdir(VN, BUF, LEN, OFF);
 #define VOP_WRITE(VN, BUF, LEN, OFF, F) (VN)->ops->write(VN, BUF, LEN, OFF, F);
 #define VOP_SEEK(VN, OLD, NEW) (VN)->ops->seek(VN, (OLD), (NEW));
-#define VOP_LOCK_FOR_VC_IO(VN, WRITE) (VN)->ops->lock_for_vc_io(VN, (WRITE));
-#define VOP_UNLOCK_FROM_VC_IO(VN, WRITE) \
-    (VN)->ops->unlock_for_vc_io(VN, (WRITE));
+#define VOP_VC_ENTER(VN, WRITE) (VN)->ops->vc_enter(VN, (WRITE));
+#define VOP_VC_EXIT(VN, WRITE) (VN)->ops->vc_exit(VN, (WRITE));
+#define VOP_PAGING_ENTER(VN) (VN)->ops->paging_enter(VN)
+#define VOP_PAGING_EXIT(VN) (VN)->ops->paging_exit(VN)
 
 vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, uintptr_t fspriv2);
 
@@ -130,6 +151,7 @@ void vn_release(vnode_t *);
 
 int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
     void *buf);
+void viewcache_truncate(vnode_t *, uint64_t newsize);
 struct vn_vc_state *viewcache_alloc_vnode_state(vnode_t *vn);
 
 #endif /* ECX_SYS_VNODE_H */

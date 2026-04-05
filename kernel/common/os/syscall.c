@@ -31,6 +31,7 @@ int sys_futex_wait(int *u_pointer, int expected,
 int sys_futex_wake(int *u_pointer, int count);
 
 int sys_socket(int domain, int type, int protocol);
+int sys_socketpair(int domain, int type, int protocol, int sv[2]);
 int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
     int flags);
 int sys_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
@@ -238,6 +239,16 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return sys_readlinkat((int)arg1, (const char *)arg2,
 		    (char *)arg3, (size_t)arg4);
 
+	case SYS_truncate:
+		return sys_truncate((const char *)arg1, (off_t)arg2);
+
+	case SYS_fchmodat:
+		return sys_fchmodat((int)arg1, (const char *)arg2, (mode_t)arg3,
+		    (int)arg4);
+
+	case SYS_fchownat:
+		return sys_fchownat((int)arg1, (const char *)arg2, (uid_t)arg3,
+		    (gid_t)arg4, (int)arg5);
 
 	/*
 	 *  file ops
@@ -265,6 +276,12 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return sys_fstatat(arg1, (const char *)arg2, (int)arg3,
 		    (struct stat *)arg4);
 
+	case SYS_ftruncate:
+		return sys_ftruncate((int)arg1, arg2);
+
+	case SYS_flock:
+		return sys_flock((int)arg1, (int)arg2);
+
 	/*
 	 * fd manipulation
 	 */
@@ -289,6 +306,10 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 
 	case SYS_socket:
 		return sys_socket((int)arg1, (int)arg2, (int)arg3);
+
+	case SYS_socketpair:
+		return sys_socketpair((int)arg1, (int)arg2, (int)arg3,
+		    (int *)arg4);
 
 	case SYS_accept4:
 		return sys_accept4((int)arg1, (struct sockaddr *)arg2,

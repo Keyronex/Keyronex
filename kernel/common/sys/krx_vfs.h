@@ -98,6 +98,10 @@ int sys_unlinkat(int dirfd, const char *upath, int flags);
 int sys_renameat(int olddirfd, const char *oldpath, int newdirfd,
     const char *newpath);
 int sys_readlinkat(int dirfd, const char *upath, char *ubuf, size_t bufsiz);
+int sys_truncate(const char *upath, off_t length);
+int sys_fchmodat(int dirfd, const char *pathname, mode_t mode, int flags);
+int sys_fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group,
+    int flags);
 
 namecache_handle_t nchandle_retain(namecache_handle_t in);
 namecache_handle_t nchandle_release(namecache_handle_t in);

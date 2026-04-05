@@ -1,0 +1,7 @@
+#ifndef ECX_LINUX_SOCKIOS_H
+#define ECX_LINUX_SOCKIOS_H
+
+#define SIOCSIFHWADDR   0x8924
+#define SIOCGIFVLAN	0x8982
+
+#endif /* ECX_LINUX_SOCKIOS_H */

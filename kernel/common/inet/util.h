@@ -14,6 +14,7 @@
 #ifndef ECX_INET_UTIL_H
 #define ECX_INET_UTIL_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define FMT_MAC "%02x:%02x:%02x:%02x:%02x:%02x"
@@ -33,5 +34,7 @@
 #define ARG_IP4_U8(ip) (ip)[0], (ip)[1], (ip)[2], (ip)[3]
 
 uint16_t ip_checksum(void *data, size_t len);
+
+struct in6_addr ipv6_solicited_node_mc(const struct in6_addr *);
 
 #endif /* ECX_INET_UTIL_H */

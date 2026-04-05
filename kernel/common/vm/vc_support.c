@@ -7,16 +7,15 @@
  * @brief Viewcache support functions
  */
 
- #include <sys/k_log.h>
- #include <sys/k_intr.h>
+#include <sys/iop.h>
+#include <sys/k_intr.h>
+#include <sys/k_log.h>
+#include <sys/pmap.h>
+#include <sys/proc.h>
+#include <sys/vnode.h>
 
 #include <vm/map.h>
 #include <vm/page.h>
-#include <sys/iop.h>
-#include <sys/pmap.h>
-
-#include <sys/proc.h>
-
 
 void rs_evict_leaf_pte(struct vm_rs *rs, vaddr_t vaddr, vm_page_t *page,
     pte_t *pte);
@@ -181,9 +180,11 @@ out:
 		sgl.elems = sg_segs;
 		sgl.elems_n = run_len;
 
-		iop = iop_new_write(vmobj->vnode, &sgl, 0, run_len << PGSHIFT,
-		    offset + (run_start << PGSHIFT));
+		VOP_PAGING_ENTER(vmobj->vnobj.vnode);
+		iop = iop_new_write(vmobj->vnobj.vnode, &sgl, 0,
+		    run_len << PGSHIFT, offset + (run_start << PGSHIFT));
 		iop_send_sync(iop);
+		VOP_PAGING_EXIT(vmobj->vnobj.vnode);
 		iop_free(iop);
 
 #if 0

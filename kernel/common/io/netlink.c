@@ -165,8 +165,6 @@ nl_reply_bind_ack(queue_t *wq, mblk_t *mp, nl_endp_t *ep)
 	str_qreply(wq, mp);
 }
 
-
-
 static int
 nl_ropen(queue_t *rq, void *arg)
 {
@@ -246,6 +244,38 @@ nl_wput_bind_req(queue_t *wq, mblk_t *mp)
 }
 
 static void
+nl_wput_addr_req(queue_t *wq, mblk_t *mp)
+{
+	nl_endp_t *ep = wq->ptr;
+	struct T_addr_ack *aa = (typeof(aa))mp->rptr;
+	struct sockaddr_nl *snl;
+	mblk_t *ackmp;
+
+	str_freemsg(mp);
+
+	ackmp = str_allocb(sizeof(struct T_addr_ack));
+	if (ackmp == NULL) {
+		nl_reply_error_ack(wq, mp, T_ADDR_REQ, ENOMEM);
+		return;
+	}
+
+	ackmp->db->type = M_PCPROTO;
+	ackmp->wptr += sizeof(struct T_addr_ack);
+	aa = (struct T_addr_ack *)ackmp->rptr;
+	aa->PRIM_type = T_ADDR_ACK;
+
+	snl = (struct sockaddr_nl *)&aa->LOCADDR;
+	snl->nl_family = AF_NETLINK;
+	snl->nl_pad = 0;
+	snl->nl_pid = ep->nl_pid;
+	snl->nl_groups = ep->nl_groups;
+
+	aa->REMADDR_length = 0;
+
+	str_qreply(wq, mp);
+}
+
+static void
 nl_dispatch_one(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 {
 	nl_endp_t *ep = wq->ptr;
@@ -302,8 +332,10 @@ nl_wput(queue_t *wq, mblk_t *mp)
 
 		switch (prim->type) {
 		case T_BIND_REQ:
-			nl_wput_bind_req(wq, mp);
-			break;
+			return nl_wput_bind_req(wq, mp);
+
+		case T_ADDR_REQ:
+			return nl_wput_addr_req(wq, mp);
 
 		default:
 			kdprintf("netlink: unexpected TPI primitive %d\n",

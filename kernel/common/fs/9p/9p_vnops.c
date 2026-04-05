@@ -23,6 +23,7 @@
 #include <libkern/lib.h>
 
 #include "9pbuf.h"
+#include "sys/vm.h"
 
 typedef uint32_t fid_t;
 
@@ -33,6 +34,10 @@ struct ninep_node {
 	vnode_t *vnode;
 	krwlock_t rwlock, paging_rwlock;
 	vattr_t vattr;
+
+#if 1
+	char *name;
+#endif
 };
 
 struct ninepfs_state {
@@ -127,6 +132,9 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 
 	found->vnode = vn_alloc(fs->vfs, found->vattr.type, &ninep_vnops,
 	    (uintptr_t)found, 0);
+	if (found->vattr.type == VREG)
+		vm_vnobj_set_valid_length(found->vnode->file.vmobj,
+		    found->vattr.size);
 
 	ke_rwlock_enter_write(&found->rwlock, "");
 
@@ -178,8 +186,6 @@ fid_clone(struct ninepfs_state *fs, ninep_fid_t fid, ninep_fid_t new_fid)
 	case k9pLerror + 1: {
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
-		kdprintf("Failed to clone node id: %d\n", err);
-		kassert(err != 0);
 		r = -err;
 		break;
 	}
@@ -211,7 +217,8 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	new_fid = fid_allocate(fs);
 
 	r = fid_clone(fs, node->fid, new_fid);
-	kassert(r == 0);
+	if (r != 0)
+		kfatal("Failed to clone fid (%s) for paging: %d\n", node->name, r);
 
 	/* size[4] Tlopen tag[2] fid[4] flags[4] */
 	buf_in = ninep_buf_alloc("Fd");
@@ -241,7 +248,8 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	case k9pLerror + 1: {
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
-		kdprintf("Failed to clone node id: %d\n", err);
+		kdprintf("Failed to clone node id: %d (file %s)\n", err,
+		    node->name);
 		kassert(err != 0);
 		r = -err;
 		break;
@@ -413,6 +421,8 @@ ninep_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 		if (r == 1) {
 			/* todo: clunk the new_fid - don't need it!! */
 			r = 0;
+		} else if (r == 0) {
+			node->name = kmem_strdup(name);
 		} else if (r < 0) {
 			kfatal("node_for_qid failed?\n");
 		}
@@ -440,6 +450,66 @@ out:
 	return r;
 }
 
+static int
+ninep_mkdir(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
+{
+	struct ninep_node *dn = VTO9(dvn);
+	struct ninepfs_state *fs = VTO9FS(dvn);
+	struct ninep_buf *buf_in, *buf_out;
+	iop_t *iop;
+	struct ninep_qid qid;
+	uint32_t mode;
+	int r = 0;
+
+	mode = 0755;
+
+	/* size[4] Tmkdir tag[2] dfid[4] name[s] mode[4] gid[4] */
+	buf_in = ninep_buf_alloc("FS64dd");
+	/* size[4] Rmkdir tag[2] qid[13] */
+	buf_out = ninep_buf_alloc("Q");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pMkDir;
+	ninep_buf_addfid(buf_in, dn->fid);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_addu32(buf_in, mode);
+	ninep_buf_addu32(buf_in, 0);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pMkDir + 1: {
+		ninep_buf_getqid(buf_out, &qid);
+		ninep_buf_free(buf_out);
+		r = 0;
+		break;
+	}
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		ninep_buf_free(buf_out);
+		r = -err;
+		kassert(r != 0);
+		kdprintf("9p: Tmkdir failed: %d\n", r);
+		goto out;
+	}
+
+	default: {
+		kfatal("9p error\n");
+	}
+	}
+
+	r = ninep_lookup(dvn, name, out);
+
+out:
+	return r;
+}
+
 int
 ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 {
@@ -453,27 +523,17 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	int nineplmode = 0;
 	int r = 0;
 
-	/*
-	 * note:
-	 * "lcreate creates a regular file name in directory fid and prepares it
-	 * for I/O."
-	 *
-	 * There doesn't appear to be a special mode for creating sockets, dirs,
-	 * etc; accordingly we need to handle these.
-	 */
-
 	switch (attr->type) {
 	case VREG:
 		nineplmode = 0755 | S_IFREG;
 		break;
 
-	case VDIR:
-		nineplmode = 0755 | S_IFDIR;
-		break;
-
 	case VSOCK:
 		nineplmode = 0755 | S_IFSOCK;
 		break;
+
+	case VDIR:
+		return ninep_mkdir(dvn, name, attr, out);
 
 	default:
 		kfatal("Unexpected vattr type %d\n", attr->type);
@@ -706,16 +766,129 @@ ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
 }
 
 int
-ninep_getattr(vnode_t *dvn, vattr_t *vattr)
+ninep_getattr(vnode_t *vn, vattr_t *attr)
 {
-	struct ninep_node *dn = VTO9(dvn);
+	struct ninep_node *dn = VTO9(vn);
 #if 0
 	struct ninepfs_state *fs = VTO9FS(dvn);
 	return do_getattr(fs, dn->fid, vattr);
 #else
-	*vattr = dn->vattr;
+	*attr = dn->vattr;
 	return 0;
 #endif
+}
+
+static int
+ninep_do_setattr_size(struct ninepfs_state *fs, fid_t fid, uint64_t new_size)
+{
+	struct ninep_buf *buf_in, *buf_out;
+	iop_t *iop;
+	int r = 0;
+
+	/*
+	 * size[4] Tsetattr tag[2] fid[4] valid[4] mode[4] uid[4] gid[4] size[8]
+	 *           atime_sec[8] atime_nsec[8] mtime_sec[8] mtime_nsec[8]
+	 */
+	buf_in = ninep_buf_alloc("Fddddlllll");
+	/* size[4] Rsetattr tag[2] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pSetattr;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addu32(buf_in, P9_SETATTR_SIZE);
+	ninep_buf_addu32(buf_in, 0);		/* mode (ignored) */
+	ninep_buf_addu32(buf_in, 0);		/* uid (ignored) */
+	ninep_buf_addu32(buf_in, 0);		/* gid (ignored) */
+	ninep_buf_addu64(buf_in, new_size);	/* size */
+	ninep_buf_addu64(buf_in, 0);		/* atime_sec (ignored) */
+	ninep_buf_addu64(buf_in, 0);		/* atime_nsec (ignored) */
+	ninep_buf_addu64(buf_in, 0);		/* mtime_sec (ignored) */
+	ninep_buf_addu64(buf_in, 0);		/* mtime_nsec (ignored) */
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pSetattr + 1:
+		r = 0;
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		break;
+	}
+
+	default:
+		kfatal("9p: unexpected Tsetattr response\n");
+	}
+
+	ninep_buf_free(buf_out);
+	return r;
+}
+
+static int
+ninep_truncate(vnode_t *vn, size_t size)
+{
+	struct ninep_node *node = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+	int r;
+
+	if (vn->type != VREG)
+		return -EINVAL;
+
+	/* blocks all read/write calls, blocking all viewcache io */
+	ke_rwlock_enter_write(&node->rwlock, "9p truncate");
+
+	if (size < node->vattr.size)
+		viewcache_truncate(vn, size);
+
+	/* blocks paging io */
+	ke_rwlock_enter_write(&node->paging_rwlock, "9p truncate");
+	/* faults will no longer create busy pages beyond new size */
+	vm_vnobj_set_valid_length(vn->file.vmobj, size);
+	/* pageouts can proceed */
+	ke_rwlock_exit_write(&node->paging_rwlock);
+
+	if (size < node->vattr.size)
+		vm_obj_truncate(vn->file.vmobj, node->vattr.size, size);
+
+	/*
+	 * TODO: for extend (rather than  true truncate) maybe zero any partial
+	 * page that exists? could have junk in it from shared mappings.
+	 */
+
+	r = ninep_do_setattr_size(fs, node->fid, size);
+	if (r == 0) {
+		node->vattr.size = size;
+	} else {
+		kdprintf("9pfs: setattr size failed!!");
+
+		/* best-effort ""recovery"" "*/
+		ke_rwlock_enter_write(&node->paging_rwlock, "9p truncate");
+		vm_vnobj_set_valid_length(vn->file.vmobj, node->vattr.size);
+		ke_rwlock_exit_write(&node->paging_rwlock);
+	}
+
+	ke_rwlock_exit_write(&node->rwlock);
+	return 0;
+}
+
+int
+ninep_setattr(vnode_t *vn, vattr_t *attr)
+{
+	int r = 0;
+
+	if (attr->size != -1) {
+		r = ninep_truncate(vn, attr->size);
+	}
+
+	return r;
 }
 
 static inline size_t
@@ -1040,6 +1213,8 @@ ninep_dispatch_iop(vnode_t *, iop_t *iop)
 
 	node = VTO9(frame->vp);
 
+	/* must be a read-hold on node->rwlock */
+
 #if 1 /* FIXME: needs to be under appropriate lock */
 	if (frame->rw.offset + frame->rw.length > node->vattr.size) {
 		if (frame->rw.offset >= node->vattr.size)
@@ -1050,7 +1225,9 @@ ninep_dispatch_iop(vnode_t *, iop_t *iop)
 
 	if (node->paging_fid == 0) {
 		int r = node_make_paging_fid(m_state, node);
-		kassert(r == 0);
+		if (r != 0)
+			kfatal("9pfs: (%s) failed to make paging FID: %d\n",
+			    node->name, r);
 	}
 
 	/* size[4] Tread tag[2] fid[4] offset[8] count[4] */
@@ -1106,17 +1283,31 @@ ninep_complete_iop(vnode_t *, iop_t *iop)
 }
 
 static void
-ninep_lock_for_vc_io(vnode_t *vn, bool write)
+ninep_vc_enter(vnode_t *vn, bool write)
 {
 	struct ninep_node *node = VTO9(vn);
-	ke_rwlock_enter_read(&node->rwlock, "ninep_lock_for_vc_io");
+	ke_rwlock_enter_read(&node->rwlock, "ninep_vc_enter");
 }
 
 static void
-ninep_unlock_for_vc_io(vnode_t *vn, bool write)
+ninep_vc_exit(vnode_t *vn, bool write)
 {
 	struct ninep_node *node = VTO9(vn);
 	ke_rwlock_exit_read(&node->rwlock);
+}
+
+static void
+ninep_paging_enter(vnode_t *vn)
+{
+	struct ninep_node *node = VTO9(vn);
+	ke_rwlock_enter_read(&node->paging_rwlock, "ninep_paging_enter");
+}
+
+static void
+ninep_paging_exit(vnode_t *vn)
+{
+	struct ninep_node *node = VTO9(vn);
+	ke_rwlock_exit_read(&node->paging_rwlock);
 }
 
 
@@ -1134,9 +1325,13 @@ ninep_write(vnode_t *vn, const void *buf, size_t buflen, off_t offset, int)
 	struct ninep_node *node = VTO9(vn);
 	int r;
 	ke_rwlock_enter_write(&node->rwlock, "ninep_write");
-	if (offset + buflen > node->vattr.size)
+	if (offset + buflen > node->vattr.size) {
+		ke_rwlock_enter_read(&node->paging_rwlock,
+		    "ninep_write:paging_rwlock");
 		node->vattr.size = offset + buflen;
-	/* could downgrade to a read lock here... */
+		vm_vnobj_set_valid_length(vn->file.vmobj, offset + buflen);
+		ke_rwlock_exit_read(&node->paging_rwlock);
+	}
 	ke_rwlock_downgrade(&node->rwlock);
 	r = viewcache_io(vn, offset, buflen, true, (void *)buf);
 	ke_rwlock_exit_read(&node->rwlock);
@@ -1163,11 +1358,14 @@ static struct vnode_ops ninep_vnops = {
 	.remove = ninep_remove,
 	.rename = ninep_rename,
 	.getattr = ninep_getattr,
+	.setattr = ninep_setattr,
 	.readdir = ninep_readdir,
 	.readlink = ninep_readlink,
 	.stack_depth = 2,
-	.lock_for_vc_io = ninep_lock_for_vc_io,
-	.unlock_for_vc_io = ninep_unlock_for_vc_io,
+	.vc_enter = ninep_vc_enter,
+	.vc_exit = ninep_vc_exit,
+	.paging_enter = ninep_paging_enter,
+	.paging_exit = ninep_paging_exit,
 	.read = ninep_read,
 	.write = ninep_write,
 	.seek = ninep_seek,

@@ -10,8 +10,15 @@ meson.add_install_script(
   '''
   ROOT="${DESTDIR}${MESON_INSTALL_PREFIX}"
   mkdir -p "$ROOT/dev"
+
   mkdir -p "$ROOT/tmp"
+  chmod 1777 "$ROOT/tmp"
+
+  mkdir -p "$ROOT/var/db"
+  mkdir -p "$ROOT/var/run"
+
   ln -sf usr/bin  "$ROOT/bin"
   ln -sf usr/sbin "$ROOT/sbin"
+  ln -sf var/run  "$ROOT/run"
   '''
 )
