@@ -135,6 +135,10 @@ ipv4_input(ip_if_t *ifp, mblk_t *mp)
 	mp->rptr += hlen;
 
 	switch (iph->ip_p) {
+	case IPPROTO_TCP:
+		tcp_ipv4_input(ifp, mp, &attr);
+		break;
+
 	case IPPROTO_UDP:
 		udp_ipv4_input(ifp, mp, &attr);
 		break;

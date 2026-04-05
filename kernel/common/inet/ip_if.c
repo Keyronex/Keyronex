@@ -123,7 +123,7 @@ ip_if_output(ip_if_t *ifp, mblk_t *mp, uint16_t ethertype,
 			str_freemsg(mp);
 			return -ENOMEM;
 		}
-		ehmp->rptr += sizeof(struct ether_header);
+		ehmp->wptr += sizeof(struct ether_header);
 		ehmp->cont = mp;
 	}
 

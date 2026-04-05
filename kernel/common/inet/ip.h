@@ -200,6 +200,7 @@ void ndp_solicit_dad(ip_if_t *, const struct in6_addr *);
 int ipv6_if_newaddr(ip_if_t *, const struct in6_addr *, uint8_t prefixlen);
 void ipv6_ifaddr_dad_fail(ip_ifaddr_t *);
 
+int ipv4_output(struct msgb *);
 int ipv6_output(struct msgb *);
 
 uint16_t ip_icmp6_checksum(const struct in6_addr *src,
@@ -207,6 +208,7 @@ uint16_t ip_icmp6_checksum(const struct in6_addr *src,
 
 void ip_uwput_ioctl_sgif(struct queue *, struct msgb *);
 
+void tcp_ipv4_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
 void udp_ipv4_input(ip_if_t *, struct msgb *, ip_rxattr_t *);
 
 /* currently missing from mlibc */

@@ -270,6 +270,12 @@ struct vionic_tx_req {
 
 		desc = &m_tx_vq.desc[descs[i]];
 
+		if(mp->wptr <= m->rptr) {
+			DKDevLog(self, "bad mblk (wptr <= rptr)\n");
+			ke_spinlock_exit(&m_tx_vq.spinlock, ipl);
+			return -EINVAL;
+		}
+
 		kassert((uintptr_t)m->rptr / PGSIZE ==
 		    (uintptr_t)(m->rptr + seg_len - 1) / PGSIZE);
 

@@ -31,6 +31,7 @@ kernel_sources += [
     'inet/ipv4_if.c',
     'inet/ipv6_if.c',
     'inet/ipv4_input.c',
+    'inet/ipv4_output.c',
     'inet/ipv6_input.c',
     'inet/ipv6_output.c',
     'inet/ndp.c',
