@@ -149,7 +149,7 @@ rtnl_emit_newlink(queue_t *wq, ip_if_t *ifp, uint32_t seq, uint32_t pid)
 	size_t total;
 
 	total = NLMSG_SPACE(sizeof(struct ifinfomsg)) + RTA_SPACE(namelen) +
-	    RTA_SPACE(ETH_ALEN);
+	    RTA_SPACE(ETH_ALEN) + RTA_SPACE(sizeof(int));
 
 	mp = str_allocb(total);
 	if (mp == NULL)
@@ -184,6 +184,13 @@ rtnl_emit_newlink(queue_t *wq, ip_if_t *ifp, uint32_t seq, uint32_t pid)
 	rta->rta_type = IFLA_ADDRESS;
 	rta->rta_len = (unsigned short)RTA_LENGTH(ETH_ALEN);
 	memcpy(RTA_DATA(rta), ifp->mac, ETH_ALEN);
+
+	/* IFLA_MTU */
+	rta = (struct rtattr *)((char *)rta + RTA_SPACE(ETH_ALEN));
+	rta->rta_type = IFLA_MTU;
+	rta->rta_len = (unsigned short)RTA_LENGTH(sizeof(int));
+	*(int *)RTA_DATA(rta) = 1500; /* todo: real MTU */
+
 
 	mp->wptr = mp->rptr + total;
 	str_qreply(wq, mp);

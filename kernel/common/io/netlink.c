@@ -165,8 +165,6 @@ nl_reply_bind_ack(queue_t *wq, mblk_t *mp, nl_endp_t *ep)
 	str_qreply(wq, mp);
 }
 
-
-
 static int
 nl_ropen(queue_t *rq, void *arg)
 {
