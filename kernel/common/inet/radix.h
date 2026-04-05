@@ -63,4 +63,8 @@ bool radix_remove(radix_tree_t *, const uint8_t *prefix,
 /* remove a data node by pointer */
 void radix_remove_node(radix_tree_t *, radix_node_t *node);
 
+/* call fn for every RADIX_DATA node in the tree */
+typedef void (*radix_walk_fn)(radix_node_t *, void *arg);
+void radix_walk(const radix_tree_t *, radix_walk_fn, void *arg);
+
 #endif /* ECX_INET_RADIX_H */

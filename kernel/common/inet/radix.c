@@ -365,6 +365,23 @@ radix_remove_node(radix_tree_t *tree, radix_node_t *node)
 	collapse(tree, parent);
 }
 
+static void
+radix_walk_node(radix_node_t *node, radix_walk_fn fn, void *arg)
+{
+	if (node == NULL)
+		return;
+	if (node->kind == RADIX_DATA)
+		fn(node, arg);
+	radix_walk_node(node->child[0], fn, arg);
+	radix_walk_node(node->child[1], fn, arg);
+}
+
+void
+radix_walk(const radix_tree_t *tree, radix_walk_fn fn, void *arg)
+{
+	radix_walk_node(tree->root, fn, arg);
+}
+
 bool
 radix_remove(radix_tree_t *tree, const uint8_t *prefix,
     uint8_t prefix_len)

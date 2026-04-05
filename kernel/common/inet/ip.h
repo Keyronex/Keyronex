@@ -176,10 +176,15 @@ void route_info_set_ifp(route_info_t *, struct ip_if *);
 void route_info_set_tos(route_info_t *, uint8_t);
 void route_info_set_type(route_info_t *, enum rt_type_t);
 
+int route_add(route_info_t *spec);
+int route_del(route_info_t *spec);
 int route_add_connected(const union sockaddr_union *prefix, uint8_t prefixlen,
     ip_if_t *ifp);
 int route_lookup(const union sockaddr_union *dst, route_result_t *out,
     bool retain_ifp);
+
+typedef void (*route_walk_fn)(const route_info_t *, void *arg);
+void route_walk(sa_family_t family, route_walk_fn fn, void *arg);
 
 void bpf_input(bpf_listener_t *, struct msgb *);
 

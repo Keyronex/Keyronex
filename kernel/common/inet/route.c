@@ -134,6 +134,7 @@ addr_mask_prefix(union sockaddr_union *addr, uint8_t prefixlen)
 /*
  * api
  */
+
 int
 route_lookup(const union sockaddr_union *dst, route_result_t *out,
     bool retain_ifp)
@@ -253,6 +254,96 @@ route_add_connected(const union sockaddr_union *addr, uint8_t prefixlen,
 	info.type = RTN_UNICAST;
 	return route_add(&info);
 }
+
+int
+route_del(route_info_t *spec)
+{
+	route_table_t *table;
+	radix_node_t *node;
+	route_t *rt;
+	ipl_t ipl;
+	int r = 0;
+
+	kassert(spec->prefix.sa.sa_family < AF_MAX);
+	table = tables[spec->prefix.sa.sa_family];
+	kassert(table != NULL);
+
+	addr_mask_prefix(&spec->prefix, spec->prefixlen);
+
+	ipl = ke_spinlock_enter(&table->lock);
+
+	node = radix_lookup(&table->tree, addr_cbytes(&spec->prefix),
+	    spec->prefixlen);
+	if (node == NULL || node->data == NULL) {
+		r = -ESRCH;
+		goto out;
+	}
+
+	rt = node->data;
+	radix_remove_node(&table->tree, node);
+	route_table_inc_generation(table);
+
+out:
+	ke_spinlock_exit(&table->lock, ipl);
+
+	if (r == 0) {
+		if (rt->ifp != NULL)
+			ip_if_release(rt->ifp);
+		kmem_free(rt, sizeof(*rt));
+	}
+
+	return r;
+}
+
+struct route_walk_ctx {
+	route_walk_fn fn;
+	void *arg;
+};
+
+static void
+route_walk_cb(radix_node_t *node, void *arg)
+{
+	struct route_walk_ctx *ctx = arg;
+	route_t *rt = node->data;
+	route_info_t info;
+
+	if (rt == NULL)
+		return;
+
+	memset(&info, 0, sizeof(info));
+	info.prefix = rt->prefix;
+	info.prefixlen = rt->prefixlen;
+	info.gateway = rt->gateway;
+	info.priority = rt->priority;
+	info.mtu = rt->mtu;
+	info.table = rt->table;
+	info.protocol = rt->protocol;
+	info.scope = rt->scope;
+	info.type = rt->type;
+	info.tos = rt->tos;
+	info.ifp = rt->ifp;
+
+	ctx->fn(&info, ctx->arg);
+}
+
+void
+route_walk(sa_family_t family, route_walk_fn fn, void *arg)
+{
+	route_table_t *table;
+	struct route_walk_ctx ctx = { .fn = fn, .arg = arg };
+	ipl_t ipl;
+
+	if (family >= AF_MAX)
+		return;
+	table = tables[family];
+	if (table == NULL)
+		return;
+
+	ipl = ke_spinlock_enter(&table->lock);
+	radix_walk(&table->tree, route_walk_cb, &ctx);
+	ke_spinlock_exit(&table->lock, ipl);
+}
+
 
 /*
  * key api
