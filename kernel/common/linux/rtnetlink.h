@@ -86,7 +86,9 @@ enum rtattr_type_t {
 	RTA_PREFSRC	= 7,
 	RTA_METRICS	= 8,
 	RTA_TABLE	= 15,
+	__RTA_MAX,
 };
+#define RTA_MAX ((enum rtattr_type_t)(__RTA_MAX - 1))
 
 struct rtmsg {
 	unsigned char	rtm_family;

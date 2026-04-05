@@ -16,10 +16,9 @@
 #include <linux/rtnetlink.h>
 
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
-
-#include "ifconfig.h"
 
 #define NL_BUFSIZE 16384
 
@@ -53,6 +52,45 @@ nl_parse_rtattr(struct rtattr *rta, int len, struct rtattr **tb, int max)
 	for (; RTA_OK(rta, len); rta = RTA_NEXT(rta, len))
 		if (rta->rta_type <= max)
 			tb[rta->rta_type] = rta;
+}
+
+int
+nl_exchange(struct nlmsghdr *req)
+{
+	char buf[NL_BUFSIZE];
+	struct nlmsghdr *nlh;
+	ssize_t n;
+
+	req->nlmsg_seq = ++nl_seq;
+	req->nlmsg_flags |= NLM_F_ACK;
+
+	if (send(nlfd, req, req->nlmsg_len, 0) < 0)
+		return -1;
+
+	for (;;) {
+		n = recv(nlfd, buf, sizeof(buf), 0);
+		if (n < 0)
+			return -1;
+
+		for (nlh = (struct nlmsghdr *)buf; NLMSG_OK(nlh, n);
+		    nlh = NLMSG_NEXT(nlh, n)) {
+			if (nlh->nlmsg_seq != req->nlmsg_seq)
+				continue;
+
+			if (nlh->nlmsg_type == NLMSG_ERROR) {
+				struct nlmsgerr *nlerr = NLMSG_DATA(nlh);
+
+				if (nlerr->error == 0)
+					return 0;
+
+				errno = -nlerr->error;
+				return -1;
+			}
+		}
+	}
+
+	errno = EPROTO;
+	return -1;
 }
 
 static int
@@ -149,4 +187,33 @@ nl_foreach_addr(void (*cb)(const struct ifaddrmsg *, struct rtattr *const[],
 {
 	struct addr_ctx ctx = { cb, arg };
 	return nl_dump(RTM_GETADDR, AF_UNSPEC, addr_msg, &ctx);
+}
+
+struct route_ctx {
+	void (*cb)(const struct rtmsg *, struct rtattr *const[], void *);
+	void *arg;
+};
+
+static void
+route_msg(struct nlmsghdr *nlh, void *arg)
+{
+	struct route_ctx *ctx = arg;
+	struct rtmsg *rtm;
+	struct rtattr *tb[RTA_MAX + 1];
+
+	if (nlh->nlmsg_type != RTM_NEWROUTE)
+		return;
+
+	rtm = NLMSG_DATA(nlh);
+	nl_parse_rtattr(RTM_RTA(rtm), RTM_PAYLOAD(nlh), tb, RTA_MAX);
+	ctx->cb(rtm, (struct rtattr *const *)tb, ctx->arg);
+}
+
+int
+nl_foreach_route(void (*cb)(const struct rtmsg *, struct rtattr *const[],
+		    void *),
+    void *arg)
+{
+	struct route_ctx ctx = { cb, arg };
+	return nl_dump(RTM_GETROUTE, AF_UNSPEC, route_msg, &ctx);
 }

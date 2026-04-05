@@ -54,12 +54,4 @@ struct afhandler {
 	void		(*af_status)(const struct ifa_entry *);
 };
 
-/* netlink.c */
-int nl_open(void);
-int nl_foreach_link(void (*)(const struct ifinfomsg *,
-     struct rtattr * const [], void *), void *);
-int nl_foreach_addr(void (*)(const struct ifaddrmsg *,
-     struct rtattr * const [], void *), void *);
-
-
 #endif /* IFCONFIG_H */

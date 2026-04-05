@@ -27,6 +27,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../nlhelper.h"
 #include "ifconfig.h"
 
 extern struct afhandler af_inet, af_inet6;
