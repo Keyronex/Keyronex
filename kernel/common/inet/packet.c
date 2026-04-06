@@ -273,6 +273,7 @@ bpf_input(bpf_listener_t *bpf, mblk_t *mp)
 		if (len == 0) {
 			str_freemsg(nmp);
 			ke_spinlock_exit_nospl(&pkt->lock);
+			return;
 		} else if (len < msglen) {
 			nmp->wptr = nmp->rptr + len;
 		}
