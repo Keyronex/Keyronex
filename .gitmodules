@@ -6,7 +6,7 @@
 	url = https://github.com/osdev0/libgcc-binaries.git
 [submodule "vendor/mlibc"]
 	path = vendor/mlibc
-	url = git@github.com:Cloudarox/mlibc.git
+	url = ../../Keyronex/mlibc.git
 [submodule "vendor/limine"]
 	path = vendor/limine
 	url = https://github.com/limine-bootloader/limine.git
