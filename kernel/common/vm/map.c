@@ -200,6 +200,7 @@ vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
 	map_entry->inherit_shared = true; /* physical mappings are shared */
 	map_entry->cow = false;
 	map_entry->is_phys = true;
+	map_entry->object = NULL;
 	map_entry->cache = cache;
 	map_entry->phys_base = paddr;
 	map_entry->offset = 0;
