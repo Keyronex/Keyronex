@@ -154,6 +154,7 @@ convert_private_to_fork(struct fork_state *fork_state, vm_map_t *vmps,
 		convert_page(page, forkpage);
 		pmap_pte_anon_create(ppte, forkpage, false);
 		/* FIXME: fork replacing trans - we should drop noswap count? */
+		kdprintf("VM: FIXME: fork replacing trans\n");
 		break;
 	}
 

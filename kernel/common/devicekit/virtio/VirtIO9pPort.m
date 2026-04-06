@@ -254,7 +254,14 @@ static dev_ops_t ninep_dev_ops;
 	iop = req->iop;
 	TAILQ_INSERT_TAIL(&m_free_reqs, req, queue_entry);
 
-	/* this might be better in a separate DPC, or link iop to a list */
+	/*
+	 * FIXME: there is a deadlock possible, for example:
+	 * - on core A, IOP completion runs, trying to wake the waiting thread,
+	 *   which may entail an xcall to the core B where the thread is chosen
+	 *   to run on. all the while we hold the m_io_vq.spinlock.
+	 * - on core B, we are in #dispatchIOP: and want to take
+	 *   m_io_vq.spinlock, so IPL is elevated. xcall isn't serviced.
+	 */
 	iop_continue(iop, kIOPRetCompleted);
 }
 
