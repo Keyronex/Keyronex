@@ -455,6 +455,7 @@ kmem_slablayer_free(kmem_cache_t *cache, void *ptr)
 
 	if (slab->free_n == 1) {
 		/* no longer full; push slab to front of the queue */
+		STAILQ_REMOVE(&cache->slabs, slab, kmem_slab, sqlink);
 		STAILQ_INSERT_HEAD(&cache->slabs, slab, sqlink);
 	} else if (slab->alloced_n == 0) {
 #if 0

@@ -146,6 +146,10 @@ qpair_alloc(stdata_t *s, struct streamtab *tab)
 
 	rq->qinfo = tab->rinit;
 	wq->qinfo = tab->winit;
+	rq->hiwat = tab->rinit->hiwat;
+	rq->lowat = tab->rinit->lowat;
+	wq->hiwat = tab->winit->hiwat;
+	wq->lowat = tab->winit->lowat;
 
 	return rq;
 }

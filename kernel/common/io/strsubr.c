@@ -56,6 +56,8 @@ str_allocb(size_t size)
 	db->base = data;
 	db->lim = data + size;
 
+	mp->link.tqe_next = NULL;
+	mp->link.tqe_prev = NULL;
 	mp->db = db;
 	mp->rptr = data;
 	mp->wptr = data;

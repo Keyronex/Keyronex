@@ -1199,6 +1199,7 @@ iop_frame_setup_9p(iop_frame_t *frame, vnode_t *provider,
 	frame->ninep.ninep_in = ninep_in;
 	frame->ninep.ninep_out = ninep_out;
 	frame->sglist = mdl;
+	frame->sglist_offset = 0;
 }
 
 iop_return_t

@@ -199,7 +199,8 @@ static dev_ops_t ninep_dev_ops;
 		if (frame->sglist != NULL) {
 			size_t breaks = sglist_breaks(frame->sglist,
 			    frame->sglist_offset, sglist_size(frame->sglist));
-			kassert(breaks <= 16);
+			if (breaks > 16)
+				kfatal("vio9p too many breaks: %zu\n", breaks);
 			ndescs += breaks;
 		}
 
