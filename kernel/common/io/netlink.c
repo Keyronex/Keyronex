@@ -66,6 +66,8 @@ nl_send_error(queue_t *wq, struct nlmsghdr *orig_nlh, int error)
 	struct nlmsgerr *nlerr;
 	size_t len = NLMSG_SPACE(sizeof(struct nlmsgerr));
 
+	kassert(error >= 0);
+
 	rmp = str_allocb(len);
 	if (rmp == NULL)
 		return;
@@ -78,7 +80,7 @@ nl_send_error(queue_t *wq, struct nlmsghdr *orig_nlh, int error)
 	nlh->nlmsg_pid = orig_nlh->nlmsg_pid;
 
 	nlerr = (struct nlmsgerr *)NLMSG_DATA(nlh);
-	nlerr->error = error;
+	nlerr->error = -error;
 	nlerr->msg = *orig_nlh;
 
 	rmp->wptr = rmp->rptr + len;
@@ -288,13 +290,13 @@ nl_dispatch_one(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 	handler = nl_handlers[ep->protocol];
 	if (handler == NULL) {
 		kfatal("NetLink: no handler for protocol 0x%x", ep->protocol);
-		nl_send_error(wq, nlh, -ENOSYS);
+		nl_send_error(wq, nlh, ENOSYS);
 		return;
 	}
 
 	r = handler(wq, mp, nlh);
 	if (r != 0)
-		nl_send_error(wq, nlh, r);
+		nl_send_error(wq, nlh, -r);
 }
 
 static void

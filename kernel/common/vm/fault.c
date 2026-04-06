@@ -94,15 +94,12 @@ pagein_wait_release(struct pagein_wait *wait)
  * The maximum number of pages that can possibly be read ahead when faulting in
  * a file-backed mapping.
  *
- * This simply checks what is possible, it does not deal in memory use policy.
  * The limit is defined by:
  * - the number of following pages in the mapping
  * - the number of following zero pages in the object
  * - the number of following zero pages in the process PTEs
- *
- * Mappings can't be made that are larger than the file size, and file size is
- * (supposed to be) finally reduced by a truncation only AFTER mappings beyond
- * the new end have been adjusted.
+ * - if a vnode object, what the valid_length field permits (i.e. the length of
+ *   the file.)
  */
 static size_t
 max_file_readahead(struct fault_info *info, struct obj_pte_wire_state *cursor)

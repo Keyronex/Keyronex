@@ -169,6 +169,7 @@ rtnl_newroute(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 		ip_if_release(info.ifp);
 
 	nl_send_error(wq, nlh, -r);
+
 	return 0;
 }
 
@@ -560,7 +561,7 @@ rtnl_newaddr(queue_t *wq, mblk_t *mp, struct nlmsghdr *nlh)
 
 	ip_if_release(ifp);
 
-	nl_send_error(wq, nlh, r);
+	nl_send_error(wq, nlh, -r);
 	return 0;
 }
 
