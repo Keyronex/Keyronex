@@ -115,7 +115,7 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		return -ENOTDIR;
 	}
 
-	vn = result.nc->vp;
+	vn = vn_retain(result.nc->vp);
 
 	if (result.nc->vp->ops->open != NULL) {
 		r = VOP_OPEN(&vn, flags);
@@ -137,6 +137,13 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 			 */
 			nchandle_release(result);
 			result = NCH_NULL;
+		} else {
+			/*
+			 * The namecache handle is kept, and that retains the
+			 * vnode. file_release() will only release the namecache
+			 * handle. So release the extra retain on vn.
+			 */
+			vn_release(vn);
 		}
 
 	}
