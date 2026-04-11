@@ -28,6 +28,7 @@ void
 console_init(void)
 {
 	devfs_create_node(DEV_KIND_STREAM, &console_ops, NULL, "console");
+	devfs_create_node(DEV_KIND_DEVTTY, NULL, NULL, "tty");
 }
 
 void

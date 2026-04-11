@@ -36,6 +36,8 @@ typedef struct dev_node {
 		DEV_KIND_CHAR_CLONE,
 		DEV_KIND_STREAM,
 		DEV_KIND_STREAM_CLONE,
+
+		DEV_KIND_DEVTTY, /* special case for /dev/tty */
 	} kind;
 	dev_ops_t *ops;
 	TAILQ_ENTRY(dev_node) hash_entry;

@@ -119,6 +119,11 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 
 	if (result.nc->vp->ops->open != NULL) {
 		r = VOP_OPEN(&vn, flags);
+		if (r != 0) {
+			nchandle_release(result);
+			return r;
+		}
+
 		if (vn != result.nc->vp) {
 			/*
 			 * Different vnode (e.g. because of /dev/tty).

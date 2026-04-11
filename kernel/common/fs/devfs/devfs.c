@@ -12,10 +12,13 @@
 #include <sys/kmem.h>
 #include <sys/krx_vfs.h>
 #include <sys/libkern.h>
+#include <sys/proc.h>
+#include <sys/strsubr.h>
 #include <sys/vnode.h>
 
 #include <fs/devfs/devfs.h>
-#include "sys/strsubr.h"
+
+extern kmutex_t proctree_mutex;
 
 #define VTODN(VN) ((dev_node_t *)(VN)->fsprivate_1)
 static struct vnode_ops dev_spec_vnops, dev_vnops;
@@ -132,7 +135,7 @@ dev_getattr(vnode_t *vn, vattr_t *attr)
  */
 
 static int
-dev_spec_open(vnode_t **vn, int)
+dev_spec_open(vnode_t **vn, int flags)
 {
 	dev_node_t *dn = VTODN(*vn);
 
@@ -170,6 +173,35 @@ dev_spec_open(vnode_t **vn, int)
 	case DEV_KIND_CHAR_CLONE:
 		ktodo();
 		break;
+
+	case DEV_KIND_DEVTTY: {
+		vnode_t *ctty_vn;
+		proc_t *proc = curproc();
+		int r;
+
+		ke_rwlock_exit_write(&dn->open_lock);
+
+		ke_mutex_enter(&proctree_mutex, "dev_tty_open");
+		if (proc->pgrp == NULL || proc->pgrp->session == NULL ||
+			proc->pgrp->session->ctty_vn == NULL) {
+			ke_mutex_exit(&proctree_mutex);
+			return -ENXIO;
+		}
+		ctty_vn = proc->pgrp->session->ctty_vn;
+		vn_retain(ctty_vn);
+		ke_mutex_exit(&proctree_mutex);
+
+		/* now we can open the real tty */
+		r = VOP_OPEN(&ctty_vn, flags);
+		if (r != 0) {
+			vn_release(ctty_vn);
+			return r;
+		}
+
+		vn_release(*vn);
+		*vn = ctty_vn;
+		return 0;
+	}
 
 	default:
 		/* fall out */
@@ -213,7 +245,7 @@ dev_spec_inactive(vnode_t *vn)
 {
 	dev_node_t *dn = VTODN(vn);
 
-	ke_rwlock_enter_write(&dn->open_lock, "dev_lookup node");
+	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_inactive");
 	kassert(dn->vn != NULL);
 	if (vn->refcount != 1) {
 		ke_rwlock_exit_write(&dn->open_lock);
@@ -222,17 +254,18 @@ dev_spec_inactive(vnode_t *vn)
 
 	dn->vn = NULL;
 	vn->fsprivate_1 = 0;
+
 	ke_rwlock_exit_write(&dn->open_lock);
 
 	return 0;
 }
 
 static int
-dev_spec_close(vnode_t *vn, int)
+dev_spec_close(vnode_t *vn, int flags)
 {
 	dev_node_t *dn = VTODN(vn);
 
-	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_inactive");
+	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_close");
 
 	kassert(dn->open_count > 0);
 	if (--dn->open_count == 0) {
