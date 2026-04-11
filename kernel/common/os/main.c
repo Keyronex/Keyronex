@@ -54,6 +54,7 @@ void console_init(void);
 void mount_devfs(void);
 void str_sched_init(void);
 void ip_init(void);
+void pty_init(void);
 
 __attribute__((used, section(".requests_start_marker")))
 static volatile uint64_t start_marker[] = LIMINE_REQUESTS_START_MARKER;
@@ -233,6 +234,7 @@ threaded_init(void *)
 	mount_root();
 	mount_devfs();
 	console_init();
+	pty_init();
 	exec_init();
 
 	kdprintf("Threaded init!\n");

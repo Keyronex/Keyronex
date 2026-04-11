@@ -1021,6 +1021,14 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		in_size = sizeof(struct winsize);
 		break;
 
+	case TIOCGPTN:
+		out_size = sizeof(int);
+		break;
+
+	case TIOCSPTLCK:
+		in_size = sizeof(int);
+		break;
+
 	case TCGETS:
 		out_size = sizeof(struct termios);
 		break;
@@ -1078,7 +1086,7 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		return 0;
 
 	default:
-		kfatal("str_ioctl: unhandled ioctl %lu/0x%x\n", cmd, cmd);
+		kfatal("str_ioctl: unhandled ioctl %lu/0x%lx\n", cmd, cmd);
 	}
 
 	if (in_size != 0 || out_size != 0) {

@@ -726,7 +726,7 @@ sys_lseek(int fd, off_t offset, int whence, off_t *out)
 }
 
 int
-sys_ioctl(int fd, int cmd, intptr_t arg)
+sys_ioctl(int fd, unsigned long cmd, intptr_t arg)
 {
 	file_t *file;
 	int r;

@@ -49,6 +49,7 @@ kernel_sources += [
     'io/epoll.c',
     'io/iop.c',
     'io/netlink.c',
+    'io/pty.c',
     'io/strhead.c',
     'io/strsched.c',
     'io/strsubr.c',
