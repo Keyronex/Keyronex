@@ -1,7 +1,7 @@
 project('adm')
 
 install_data(
-    'group', 'localtime', 'passwd', 'profile', 'rc',
+    'group', 'localtime', 'passwd', 'profile', 'rc', 'shadow',
     install_dir: get_option('sysconfdir')
 )
 
