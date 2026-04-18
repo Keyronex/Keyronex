@@ -237,6 +237,7 @@ kep_arch_thread_init(kthread_t *thread, void *stack_base,
 
 		frame = (void *)sp;
 		frame->d0 = 0;
+		sp--;
 	}
 
 	*sp-- = (uint32_t)arg;

@@ -110,9 +110,9 @@ kep_m68k_asm_switch: /* (void)(pcb_t *old, pcb_t *new) */
 kep_m68k_asm_thread_trampoline: /* (void)(void(*)(void *), void *) */
 	jsr kep_m68k_thread_trampoline
 
-	/* restore as in asm_trap */
+	add	#8, %sp
 
-	add	#4, %sp
+	/* restore as in asm_trap */
 	move.l	%sp@+, %a0
 	move.l	%a0, %usp
 	movem.l	%sp@+, %d0-%d7/%a0-%a6
