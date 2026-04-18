@@ -18,6 +18,7 @@ kernel_sources += [
     'fs/fifofs.c',
     'fs/flock.c',
     'fs/namecache.c',
+    'fs/procdescfs.c',
     'fs/sockfs.c',
     'fs/syscalls.c',
     'fs/viewcache.c',

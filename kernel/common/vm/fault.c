@@ -548,7 +548,8 @@ vm_fault(vaddr_t addr, vm_prot_t type)
 	} else {
 		struct vm_map_entry *entry = vm_map_lookup(info.map, addr);
 		if (entry == NULL)
-			kfatal("vm_fault: no entry found for 0x%zx\n", addr);
+			kfatal("vm_fault (%s): no entry found for 0x%zx\n",
+			    curproc()->comm, addr);
 
 		info.entry = entry;
 		info.object = entry->object;

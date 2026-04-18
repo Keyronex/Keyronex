@@ -130,10 +130,11 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		    (struct rusage *)arg4);
 
 	case SYS_pdfork:
-		ktodo();
+		return sys_pdfork(frame, (int *)arg1, (int)arg2);
 
 	case SYS_pdwait:
-		ktodo();
+		return sys_pdwait((int)arg1, (int *)arg2, (int)arg3,
+		    (struct rusage *)arg4, (siginfo_t *)arg5);
 
 	case SYS_getpid:
 		return curproc()->pid;

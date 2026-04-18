@@ -255,10 +255,8 @@ sys_thread_exit(void)
 		proc->exited = true;
 		if (proc->parent->wait_ev != NULL)
 			ke_event_set_signalled(proc->parent->wait_ev, true);
-#if 0
 		if (proc->procdesc != NULL)
 			procdesc_notify_exit(proc->procdesc, proc->exit_status);
-#endif
 		ke_mutex_exit(&proctree_mutex);
 	}
 
@@ -300,12 +298,10 @@ sys_wait4(pid_t pid, int *out_ustatus, int flags,
 
 				pgrp_remove_member(found);
 
-#if 0
 				if (found->procdesc != NULL) {
 					procdesc_orphan(found->procdesc);
 					found->procdesc = NULL;
 				}
-#endif
 
 				/* (unref it! unalloc pid!) */
 #if TRACE_TODO
@@ -355,12 +351,12 @@ sys_fork(karch_trapframe_t *frame)
 	pid = child_proc->pid;
 
 	child_thread = proc_new_thread(child_proc, frame, fork_thread, NULL);
-	child_thread->kthread.user = true;
 	if (child_thread == NULL) {
 		kfatal("todo: cleanup proc!\n");
 		return -ENOMEM;
 	}
 
+	child_thread->kthread.user = true;
 	ke_thread_copy_fpu_state(&child_thread->kthread);
 	child_thread->kthread.tcb = curthread()->kthread.tcb;
 
