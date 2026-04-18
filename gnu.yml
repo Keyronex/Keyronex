@@ -656,6 +656,44 @@ packages:
       # Move the doc dir to a versioned directory
       - args: ['mv', '@THIS_COLLECT_DIR@/usr/share/doc/openssl', '@THIS_COLLECT_DIR@/usr/share/doc/openssl-1.1.1s']
 
+  - name: libxcrypt
+    architecture: '@OPTION:arch@'
+    source:
+      subdir: 'sources'
+      url: 'https://github.com/besser82/libxcrypt/releases/download/v4.5.2/libxcrypt-4.5.2.tar.xz'
+      format: 'tar.xz'
+      extract_path: 'libxcrypt-4.5.2'
+      version: '4.5.2'
+      tools_required:
+        - host-autoconf-2.69
+        - host-automake-1.16
+        - host-libtool
+        - host-pkgconf
+      regenerate:
+        - args: [ 'libtoolize', '-cfvi' ]
+        - args: [ 'autoreconf', '-fvi' ]
+    tools_required:
+      - host-autoconf-2.69
+      - host-automake-1.16
+      - host-gcc
+    pkgs_required:
+      - mlibc
+    configure:
+      - args:
+        - '@THIS_SOURCE_DIR@/configure'
+        - '--host=@OPTION:arch-triple@'
+        - '--prefix=/usr'
+        - '--with-sysroot=@SYSROOT_DIR@' # Set libtool's lt_sysroot.
+        - '--enable-obsolete-api=yes'
+        - '--disable-xcrypt-compat-files'
+        - '--disable-static'
+    build:
+      - args: ['make', '-j@PARALLELISM@']
+      - args: ['make', 'install']
+        environ:
+          DESTDIR: '@THIS_COLLECT_DIR@'
+        quiet: true
+
   - name: python
     from_source: python
     tools_required:
