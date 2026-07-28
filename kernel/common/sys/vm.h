@@ -56,6 +56,8 @@ struct vm_voaddr {
 size_t vm_npages_to_order(size_t npages);
 size_t vm_bytes_to_order(size_t bytes);
 
+bool vm_paddr_is_ram(paddr_t pa);
+
 void *vm_kwired_alloc(size_t npages, vm_alloc_flags_t);
 void vm_kwired_free(void *addr, size_t npages);
 void vm_kwired_init(void);

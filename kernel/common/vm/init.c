@@ -57,6 +57,7 @@ static volatile struct limine_memmap_request memmap_req = {
 static paddr_t bump_start, bump_rpt_base, bump_rpt_end, bump_small_base;
 static paddr_t kpgtable;
 static struct vm_phys_span *phys_spans;
+static struct vm_phys_span *phys_spans;
 
 #if !defined(__m68k__)
 _Static_assert(sizeof(vm_page_t) == 64, "vm_page_t should be 64 bytes");
@@ -402,6 +403,48 @@ add_phys_segs(void)
 }
 
 static void
+build_phys_spans(void)
+{
+	struct limine_memmap_entry **entries = memmap_req.response->entries;
+	size_t nentries = memmap_req.response->entry_count;
+
+	kassert(nentries * sizeof(struct vm_phys_span) <= PGSIZE,
+	    "build_phys_spans: memmap too large for one page\n");
+
+	phys_spans = (struct vm_phys_span *)p2v(boot_alloc());
+
+	for (size_t i = 0; i < nentries; i++) {
+		struct limine_memmap_entry *entry = entries[i];
+		struct vm_phys_span *span = &phys_spans[nphys_spans++];
+
+		span->base = entry->base;
+		span->size = entry->length;
+		span->is_ram = entry->type != LIMINE_MEMMAP_FRAMEBUFFER &&
+		    entry->type != LIMINE_MEMMAP_BAD_MEMORY;
+	}
+}
+
+bool
+vm_paddr_is_ram(paddr_t pa)
+{
+	size_t lo = 0, hi = nphys_spans;
+
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		struct vm_phys_span *span = &phys_spans[mid];
+
+		if (pa < span->base)
+			hi = mid;
+		else if (pa >= span->base + span->size)
+			lo = mid + 1;
+		else
+			return span->is_ram;
+	}
+
+	return false;
+}
+
+static void
 unfree_boot(void)
 {
 #if PMAP_L1_PAGES
@@ -552,6 +595,7 @@ vm_phys_init(void)
 	map_arch();
 	pmap_set_kpgtable();
 	add_phys_segs();
+	build_phys_spans();
 	unfree_boot();
 	unfree_reserved();
 	setup_permanent_tables();
