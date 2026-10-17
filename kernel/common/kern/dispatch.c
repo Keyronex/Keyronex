@@ -180,6 +180,12 @@ static void do_reschedule(void*)
 	ke_raise_disp_int();
 }
 
+void
+kep_xcall_reschedule_handler(void)
+{
+	do_reschedule(NULL);
+}
+
 /*
  * Resume a blocked thread.
  *
@@ -214,7 +220,7 @@ ke_thread_resume(kthread_t *t, bool io_completion)
 		if (cpunum == CPU_LOCAL_LOAD(cpu_num))
 			do_reschedule(NULL);
 		else
-			ke_xcall_unicast(do_reschedule, NULL, cpunum);
+			ke_xcall_reschedule(cpunum);
 	} else {
 		ke_spinlock_exit_nospl(&disp->lock);
 	}

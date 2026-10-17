@@ -9,6 +9,8 @@
 
 #include <sys/cpulocal.h>
 #include <sys/k_cpu.h>
+#include <sys/k_xcall.h>
+#include <sys/k_log.h>
 
 #define UINTPTR_BITS (sizeof(uintptr_t) * 8)
 
@@ -17,28 +19,34 @@ ke_xcall_broadcast(void (*func)(void *), void *arg)
 {
 	ipl_t ipl = splhigh();
 	struct kcpu_data *local = CPU_LOCAL_GET();
+	uint32_t index = local->cpu_num / UINTPTR_BITS;
+	uint32_t bit = local->cpu_num % UINTPTR_BITS;
 
 	local->func = func;
 	local->arg = arg;
-	atomic_store_explicit(&local->xcalls_completed, 1,
+	atomic_store_explicit(&local->xcalls_completed, 0,
 	    memory_order_relaxed);
 
 	atomic_thread_fence(memory_order_release);
 
 	for (uint32_t i = 0; i < ke_ncpu; i++) {
-		katomic_cpumask_t *mask = &ke_cpu_data[i]->xcalls_pending;
-		uint32_t index = local->cpu_num / UINTPTR_BITS;
-		uint32_t bit = local->cpu_num % UINTPTR_BITS;
+		katomic_cpumask_t *mask;
+
+		if (i == local->cpu_num)
+			continue;
+
+		mask = &ke_cpu_data[i]->xcalls_pending;
 		atomic_fetch_or_explicit(&mask->mask[index],
 		    (uintptr_t)1 << bit, memory_order_relaxed);
 	}
 
 	kep_arch_ipi_broadcast();
 
+	/* let others' xcalls in */
 	splx(IPL_DISP);
 
 	while (atomic_load_explicit(&local->xcalls_completed,
-		   memory_order_relaxed) < ke_ncpu)
+		   memory_order_acquire) < ke_ncpu - 1)
 		ke_arch_pause();
 
 	splx(ipl);
@@ -53,6 +61,8 @@ ke_xcall_unicast(void (*func)(void *), void *arg, kcpunum_t cpu_num)
 	uint32_t index = local->cpu_num / UINTPTR_BITS;
 	uint32_t bit = local->cpu_num % UINTPTR_BITS;
 
+	kassert(cpu_num != local->cpu_num, "xcall unicast to self");
+
 	local->func = func;
 	local->arg = arg;
 	atomic_store_explicit(&local->xcalls_completed, 0,
@@ -63,13 +73,28 @@ ke_xcall_unicast(void (*func)(void *), void *arg, kcpunum_t cpu_num)
 	atomic_fetch_or_explicit(&mask->mask[index], (uintptr_t)1 << bit,
 	    memory_order_relaxed);
 
-	splx(IPL_DISP);
-
 	kep_arch_ipi_unicast(cpu_num);
 
+	/* let others' xcalls in */
+	splx(IPL_DISP);
+
 	while (atomic_load_explicit(&local->xcalls_completed,
-		   memory_order_relaxed) != 1)
+		   memory_order_acquire) < 1)
 		ke_arch_pause();
+
+	splx(ipl);
+}
+
+void
+ke_xcall_reschedule(kcpunum_t cpu_num)
+{
+	ipl_t ipl = splhigh();
+
+	kassert(cpu_num != CPU_LOCAL_LOAD(cpu_num), "resched xcall to self");
+
+	atomic_store_explicit(&ke_cpu_data[cpu_num]->resched_ipi_pending, true,
+	    memory_order_release);
+	kep_arch_ipi_unicast(cpu_num);
 
 	splx(ipl);
 }
@@ -80,6 +105,12 @@ kep_xcall_handler(void *unused)
 	struct kcpu_data *local = CPU_LOCAL_GET();
 	katomic_cpumask_t *mask = &local->xcalls_pending;
 	int mask_n = roundup2(ke_ncpu, UINTPTR_BITS) / UINTPTR_BITS;
+
+	(void)unused;
+
+	if (atomic_exchange_explicit(&local->resched_ipi_pending, false,
+		memory_order_acq_rel))
+		kep_xcall_reschedule_handler();
 
 	for (int index = 0; index < mask_n; index++) {
 		uintptr_t pending = atomic_exchange_explicit(&mask->mask[index],
@@ -107,7 +138,7 @@ kep_xcall_handler(void *unused)
 			func(arg);
 
 			atomic_fetch_add_explicit(remote_completed, 1,
-			    memory_order_relaxed);
+			    memory_order_release);
 		}
 	}
 }

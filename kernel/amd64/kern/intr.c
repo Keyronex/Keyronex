@@ -11,6 +11,7 @@
 #include <sys/k_intr.h>
 #include <sys/k_log.h>
 #include <sys/k_thread.h>
+#include <sys/k_xcall.h>
 #include <sys/pcb.h>
 #include <sys/vm_types.h>
 #include <sys/x86.h>
@@ -224,7 +225,6 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 
 	case 225: {
 		ipl_t ipl = splhigh();
-		void kep_xcall_handler(void *unused);
 		kep_xcall_handler(NULL);
 		lapic_eoi();
 		splx(ipl);

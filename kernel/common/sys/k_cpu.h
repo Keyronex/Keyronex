@@ -68,6 +68,7 @@ struct kcpu_data {
 	void *arg;
 	atomic_uint xcalls_completed;
 	katomic_cpumask_t xcalls_pending;
+	atomic_bool resched_ipi_pending;
 
 	/* dispatcher */
 	struct kthread *curthread;
