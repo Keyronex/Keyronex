@@ -249,30 +249,57 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 
 int
 ke_amd64_idt_alloc(struct kirq_source *source, kirq_t *entry,
-    kirq_handler_t *handler, void *arg, uint8_t *vec, kcpunum_t *cpu_out)
+    kirq_handler_t *handler, void *arg, uint8_t *vecp, kcpunum_t *cpu_out)
 {
-	static kspinlock_t irq_lock;
+	static kspinlock_t idt_lock = KSPINLOCK_INITIALISER;
 	ipl_t ipl;
+	int vec = -1;
 
 	ipl = splhigh();
-	ke_spinlock_enter_nospl(&irq_lock);
+	ke_spinlock_enter_nospl(&idt_lock);
 
 	for (int i = 48; i < 224; i++) {
-		if (LIST_EMPTY(&irqs[i]) || (!source->edge)) {
-			entry->source = *source;
-			entry->handler = handler;
-			entry->arg = arg;
-			entry->cpu = CPU_LOCAL_LOAD(cpu_num);
-			*cpu_out = entry->cpu;
-			*vec = i;
-			LIST_INSERT_HEAD(&irqs[i], entry, list_entry);
-			ke_spinlock_exit(&irq_lock, ipl);
-			return 0;
+		if (LIST_EMPTY(&irqs[i])) {
+			vec = i;
+			break;
 		}
 	}
 
-	ke_spinlock_exit(&irq_lock, ipl);
-	return -1;
+	if (vec == -1 && !source->edge) {
+		for (int i = 48; i < 224; i++) {
+			kirq_t *existing;
+			bool all_level = true;
+
+			LIST_FOREACH(existing, &irqs[i], list_entry) {
+				if (existing->source.edge) {
+					all_level = false;
+					break;
+				}
+			}
+
+			if (all_level) {
+				vec = i;
+				break;
+			}
+		}
+	}
+
+	if (vec == -1) {
+		ke_spinlock_exit(&idt_lock, ipl);
+		return -1;
+	}
+
+	entry->source = *source;
+	entry->handler = handler;
+	entry->arg = arg;
+	entry->cpu = CPU_LOCAL_LOAD(cpu_num);
+	entry->vector = vec;
+	*cpu_out = entry->cpu;
+	*vecp = vec;
+	LIST_INSERT_HEAD(&irqs[vec], entry, list_entry);
+
+	ke_spinlock_exit(&idt_lock, ipl);
+	return 0;
 }
 
 void kep_amd64_asm_switch(struct karch_pcb *old, struct karch_pcb *new);
