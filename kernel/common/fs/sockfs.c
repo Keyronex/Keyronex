@@ -1146,8 +1146,9 @@ sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags)
 	int r = lookup_sockfd(sockfd, &fp);
 	if (r < 0)
 		return r;
-	r = so_accept4(VTOSN(fp->vnode), fp->flags & O_NONBLOCK, addr, addrlen,
-	    flags);
+	r = so_accept4(VTOSN(fp->vnode),
+	    atomic_load_explicit(&fp->flags, memory_order_relaxed) & O_NONBLOCK,
+	    addr, addrlen, flags);
 	file_release(fp);
 	return r;
 }
@@ -1268,7 +1269,8 @@ sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 
 	if (flags & MSG_DONTWAIT)
 		writeflags |= O_NONBLOCK;
-	if (file->flags & O_NONBLOCK)
+	if (atomic_load_explicit(&file->flags, memory_order_relaxed) &
+	    O_NONBLOCK)
 		writeflags |= O_NONBLOCK;
 
 	r = strwrite(sn->stream, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len,

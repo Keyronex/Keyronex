@@ -11,6 +11,7 @@
 #define ECX_SYS_KRX_FILE_H
 
 #include <sys/types.h>
+#include <sys/fcntl.h>
 #include <sys/k_thread.h>
 #include <sys/krx_vfs.h>
 
@@ -19,13 +20,18 @@
 struct vnode;
 struct stat;
 
+enum file_mode {
+	FILE_MODE_ATOMIC_OFFSET = 1 << 0,
+};
+
 typedef struct file {
 	uint32_t refcnt;
 	namecache_handle_t nch;
 	struct vnode *vnode;
 	kmutex_t offset_mutex;
 	off_t offset;
-	int flags;
+	atomic_int flags;
+	enum file_mode mode; /* (immutable after creation) */
 
 	kspinlock_t epoll_lock;
 	LIST_HEAD(, poll_entry) epoll_watches;

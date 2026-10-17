@@ -617,12 +617,19 @@ sys_read(int fd, void *ubuf, size_t nbyte)
 	if (file == NULL)
 		return -EBADF;
 
-	ke_mutex_enter(&file->offset_mutex, "offset_mutex");
 	kassert(file->vnode->ops->read != NULL);
-	r = VOP_READ(file->vnode, ubuf, nbyte, file->offset, file->flags);
-	if (r >= 0)
-		file->offset += r;
-	ke_mutex_exit(&file->offset_mutex);
+
+	if (file->mode & FILE_MODE_ATOMIC_OFFSET) {
+		ke_mutex_enter(&file->offset_mutex, "offset_mutex");
+		r = VOP_READ(file->vnode, ubuf, nbyte, file->offset,
+		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+		if (r >= 0)
+			file->offset += r;
+		ke_mutex_exit(&file->offset_mutex);
+	} else {
+		r = VOP_READ(file->vnode, ubuf, nbyte, 0,
+		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+	}
 
 	file_release(file);
 
@@ -639,12 +646,19 @@ sys_write(int fd, const void *ubuf, size_t nbyte)
 	if (file == NULL)
 		return -EBADF;
 
-	ke_mutex_enter(&file->offset_mutex, "offset_mutex");
 	kassert(file->vnode->ops->write != NULL);
-	r = VOP_WRITE(file->vnode, ubuf, nbyte, file->offset, file->flags);
-	if (r >= 0)
-		file->offset += r;
-	ke_mutex_exit(&file->offset_mutex);
+
+	if (file->mode & FILE_MODE_ATOMIC_OFFSET) {
+		ke_mutex_enter(&file->offset_mutex, "offset_mutex");
+		r = VOP_WRITE(file->vnode, ubuf, nbyte, file->offset,
+		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+		if (r >= 0)
+			file->offset += r;
+		ke_mutex_exit(&file->offset_mutex);
+	} else {
+		r = VOP_WRITE(file->vnode, ubuf, nbyte, 0,
+		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+	}
 
 	file_release(file);
 

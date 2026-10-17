@@ -22,6 +22,7 @@ file_t *
 file_new(namecache_handle_t nch, vnode_t *vn, int flags)
 {
 	file_t *file;
+	enum file_mode mode = 0;
 
 	file = kmem_alloc(sizeof(file_t));
 	if (file == NULL) {
@@ -33,7 +34,19 @@ file_new(namecache_handle_t nch, vnode_t *vn, int flags)
 	file->vnode = vn;
 	ke_mutex_init(&file->offset_mutex);
 	file->offset = 0;
-	file->flags = flags;
+
+	atomic_store_explicit(&file->flags, flags, memory_order_release);
+
+	switch (vn->type) {
+	case VCHR:
+	case VSOCK:
+	case VFIFO:
+		break;
+	default:
+		mode |= FILE_MODE_ATOMIC_OFFSET;
+		break;
+	}
+	file->mode = mode;
 
 	ke_spinlock_init(&file->epoll_lock);
 	LIST_INIT(&file->epoll_watches);
@@ -71,11 +84,15 @@ file_release(file_t *file)
 	if (old == 1) {
 		if (file->nch.nc != NULL) {
 			if (file->nch.nc->vp->ops->close != NULL)
-				VOP_CLOSE(file->nch.nc->vp, file->flags);
+				VOP_CLOSE(file->nch.nc->vp,
+				    atomic_load_explicit(&file->flags,
+					memory_order_relaxed));
 			nchandle_release(file->nch);
 		} else if (file->vnode != NULL) {
 			if (file->vnode->ops->close != NULL)
-				VOP_CLOSE(file->vnode, file->flags);
+				VOP_CLOSE(file->vnode,
+				    atomic_load_explicit(&file->flags,
+					memory_order_relaxed));
 			vn_release(file->vnode);
 		}
 	}

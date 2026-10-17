@@ -25,6 +25,10 @@
 
 #include <libkern/bit32.h>
 
+#define F_GETFLABLE_FLAGS	(O_ACCMODE|O_APPEND|O_NONBLOCK|O_ASYNC|O_DSYNC|\
+				 O_SYNC|O_DIRECT|O_NOATIME)
+#define F_SETFLABLE_FLAGS 	(O_APPEND|O_NONBLOCK)
+
 #define FD_RESERVED ((struct file *)-1L)
 
 typedef struct uf_entry {
@@ -433,19 +437,28 @@ sys_fcntl(int fd, int cmd, unsigned long arg)
 		if (f == NULL)
 			return -EBADF;
 
-		r = f->flags;
+		r = atomic_load_explicit(&f->flags, memory_order_relaxed) &
+		    F_GETFLABLE_FLAGS;
 		file_release(f);
 		return r;
 
-	case F_SETFL:
+	case F_SETFL: {
+		int old, new;
+
 		f = uf_lookup(info, fd);
 		if (f == NULL)
 			return -EBADF;
 
-		/* FIXME: lock flags? atomic? */
-		f->flags = (int)arg & (O_APPEND | O_NONBLOCK);
+		old = atomic_load_explicit(&f->flags, memory_order_relaxed);
+		do {
+			new = (old & ~F_SETFLABLE_FLAGS) |
+			    ((int)arg & F_SETFLABLE_FLAGS);
+		} while (!atomic_compare_exchange_weak_explicit(&f->flags, &old,
+		    new, memory_order_relaxed, memory_order_relaxed));
+
 		file_release(f);
 		return 0;
+	}
 
 	case F_GETLK:
 	case F_SETLK:
