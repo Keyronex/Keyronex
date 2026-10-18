@@ -183,7 +183,7 @@ runinit(void *)
 	namecache_handle_t ld, init;
 
 	for (int i = 0; i < 3; i++) {
-		r = sys_openat(AT_FDCWD, "/dev/console", 0, O_RDWR);
+		r = sys_openat(AT_FDCWD, "/dev/console", O_RDWR, 0);
 		if (r < 0)
 			kfatal("Failed to open /dev/console: %d", r);
 	}

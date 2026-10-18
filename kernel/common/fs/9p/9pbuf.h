@@ -44,6 +44,13 @@ enum ninep_kind {
 	k9pWstat = 126,
 };
 
+enum ninep_open_flags {
+	P9_DOTL_RDONLY = 00000000,
+	P9_DOTL_RDWR = 00000002,
+	P9_DOTL_CREATE = 00000100,
+	P9_DOTL_DIRECTORY = 00200000,
+};
+
 enum ninep_getattr_mask {
 	k9pGetattrMode = 0x1ULL,
 	k9pGetattrNlink = 0x2ULL,

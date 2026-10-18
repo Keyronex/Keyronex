@@ -10,7 +10,6 @@
 /* FIXME: Old code, needs review!! */
 
 #include <sys/errno.h>
-#include <sys/fcntl.h>
 #include <sys/k_thread.h>
 #include <sys/kmem.h>
 #include <sys/krx_vfs.h>
@@ -229,7 +228,8 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	buf_in->data->kind = k9pLopen;
 	ninep_buf_addfid(buf_in, new_fid);
 	ninep_buf_addu32(buf_in,
-	    node->vnode->type == VDIR ? O_DIRECTORY : O_RDWR);
+	    node->vnode->type == VDIR ? P9_DOTL_RDONLY | P9_DOTL_DIRECTORY :
+				      P9_DOTL_RDWR);
 	ninep_buf_close(buf_in);
 
 	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
@@ -552,7 +552,7 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	buf_in->data->kind = k9pLcreate;
 	ninep_buf_addfid(buf_in, newfid);
 	ninep_buf_addstr(buf_in, name);
-	ninep_buf_addu32(buf_in, O_CREAT); /* flags */
+	ninep_buf_addu32(buf_in, P9_DOTL_CREATE); /* flags */
 	ninep_buf_addu32(buf_in, nineplmode);
 	ninep_buf_addu32(buf_in, 0); /* gid */
 	ninep_buf_close(buf_in);
