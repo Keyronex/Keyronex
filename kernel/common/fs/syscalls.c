@@ -335,6 +335,9 @@ sys_linkat(int olddirfd, const char *uoldpath, int newdirfd,
 	const char *newname;
 	int r, oldlen, newlen;
 
+	if ((flags & ~AT_SYMLINK_FOLLOW) != 0)
+		return -EINVAL;
+
 	oldlen = strldup_user(&oldpath, uoldpath, 4095);
 	if (oldlen < 0)
 		return oldlen;
@@ -362,7 +365,7 @@ sys_linkat(int olddirfd, const char *uoldpath, int newdirfd,
 
 	/* look up the source file */
 	r = vfs_lookup_simple(old_dirnch, &target_nch, oldpath,
-	    (flags & AT_SYMLINK_NOFOLLOW) ? LOOKUP_NOFOLLOW_FINAL : 0);
+	    (flags & AT_SYMLINK_FOLLOW) ? 0 : LOOKUP_NOFOLLOW_FINAL);
 	if (r != 0)
 		goto out_release_new_dir;
 
@@ -612,24 +615,29 @@ ssize_t
 sys_read(int fd, void *ubuf, size_t nbyte)
 {
 	file_t *file;
-	int r;
+	int r, flags;
 
 	file = uf_lookup(curproc()->finfo, fd);
 	if (file == NULL)
 		return -EBADF;
 
+	flags = atomic_load_explicit(&file->flags, memory_order_relaxed);
+	if ((flags & O_ACCMODE) != O_RDONLY &&
+	    (flags & O_ACCMODE) != O_RDWR) {
+		file_release(file);
+		return -EBADF;
+	}
+
 	kassert(file->vnode->ops->read != NULL);
 
 	if (file->mode & FILE_MODE_ATOMIC_OFFSET) {
 		ke_mutex_enter(&file->offset_mutex, "offset_mutex");
-		r = VOP_READ(file->vnode, ubuf, nbyte, file->offset,
-		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+		r = VOP_READ(file->vnode, ubuf, nbyte, file->offset, flags);
 		if (r >= 0)
 			file->offset += r;
 		ke_mutex_exit(&file->offset_mutex);
 	} else {
-		r = VOP_READ(file->vnode, ubuf, nbyte, 0,
-		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+		r = VOP_READ(file->vnode, ubuf, nbyte, 0, flags);
 	}
 
 	file_release(file);
@@ -641,24 +649,29 @@ ssize_t
 sys_write(int fd, const void *ubuf, size_t nbyte)
 {
 	file_t *file;
-	int r;
+	int r, flags;
 
 	file = uf_lookup(curproc()->finfo, fd);
 	if (file == NULL)
 		return -EBADF;
 
+	flags = atomic_load_explicit(&file->flags, memory_order_relaxed);
+	if ((flags & O_ACCMODE) != O_WRONLY &&
+	    (flags & O_ACCMODE) != O_RDWR) {
+		file_release(file);
+		return -EBADF;
+	}
+
 	kassert(file->vnode->ops->write != NULL);
 
 	if (file->mode & FILE_MODE_ATOMIC_OFFSET) {
 		ke_mutex_enter(&file->offset_mutex, "offset_mutex");
-		r = VOP_WRITE(file->vnode, ubuf, nbyte, file->offset,
-		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+		r = VOP_WRITE(file->vnode, ubuf, nbyte, file->offset, flags);
 		if (r >= 0)
 			file->offset += r;
 		ke_mutex_exit(&file->offset_mutex);
 	} else {
-		r = VOP_WRITE(file->vnode, ubuf, nbyte, 0,
-		    atomic_load_explicit(&file->flags, memory_order_relaxed));
+		r = VOP_WRITE(file->vnode, ubuf, nbyte, 0, flags);
 	}
 
 	file_release(file);
