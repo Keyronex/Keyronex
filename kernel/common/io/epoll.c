@@ -132,6 +132,26 @@ desc_to_epoll(int epdesc, struct epoll **out_ep, struct file **out_file)
 }
 
 static int
+copyin_event(struct epoll_event *event, const struct epoll_event *uevent)
+{
+	int r;
+
+	if (uevent == NULL)
+		return -EFAULT;
+
+	r = memcpy_from_user(event, uevent, sizeof(*event));
+	if (r != 0)
+		return r;
+
+	if (event->events &
+	    ~(EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLPRI))
+		return -EINVAL;
+
+	event->events |= EPOLLERR | EPOLLHUP;
+	return 0;
+}
+
+static int
 watch_add(struct epoll *ep, int desc, struct file *watch_file,
     struct epoll_event *pevent)
 {
@@ -139,7 +159,7 @@ watch_add(struct epoll *ep, int desc, struct file *watch_file,
 	struct epoll_event event;
 	int r;
 
-	r = memcpy_from_user(&event, pevent, sizeof(event));
+	r = copyin_event(&event, pevent);
 	if (r != 0)
 		return r;
 
@@ -161,6 +181,7 @@ watch_add(struct epoll *ep, int desc, struct file *watch_file,
 	entry->epoll = ep;
 	entry->desc = desc;
 	entry->file = watch_file;
+	entry->generation = 0;
 	entry->event = event;
 	LIST_ENTRY_INIT(entry, ready_link);
 
@@ -186,6 +207,54 @@ watch_add(struct epoll *ep, int desc, struct file *watch_file,
 	LIST_INSERT_HEAD(&watch_file->epoll_watches, entry, file_list_entry);
 	ke_spinlock_exit_nospl(&entry->file->epoll_lock);
 
+	ke_mutex_exit(&ep->mutex);
+
+	return 0;
+}
+
+static int
+watch_mod(struct epoll *ep, int desc, struct file *watch_file,
+    struct epoll_event *pevent)
+{
+	struct poll_entry *entry;
+	struct epoll_event event;
+	uint32_t generation;
+	ipl_t ipl;
+	int r;
+
+	r = copyin_event(&event, pevent);
+	if (r != 0)
+		return r;
+
+	ke_mutex_enter(&ep->mutex, "epoll_watch_mod:ep->mutex");
+	LIST_FOREACH(entry, &ep->watches, epoll_watch_link) {
+		if (entry->file == watch_file && entry->desc == desc)
+			break;
+	}
+	if (entry == NULL) {
+		ke_mutex_exit(&ep->mutex);
+		return -ENOENT;
+	}
+
+	ipl = ke_spinlock_enter(&ep->ready_lock);
+	entry->event = event;
+	entry->generation++;
+
+	do {
+		generation = entry->generation;
+		ke_spinlock_exit(&ep->ready_lock, ipl);
+		r = VOP_CHPOLL(watch_file->vnode, NULL, CHPOLL_POLL);
+		ipl = ke_spinlock_enter(&ep->ready_lock);
+	} while ((r & event.events) == 0 && entry->generation != generation);
+
+	if (r & event.events) {
+		if (!LIST_ELEM_IS_INSERTED(entry, ready_link))
+			LIST_INSERT_HEAD(&ep->ready, entry, ready_link);
+	} else if (LIST_ELEM_IS_INSERTED(entry, ready_link)) {
+		LIST_REMOVE_AND_ZERO(entry, ready_link);
+	}
+	ke_event_set_signalled(&ep->event, !LIST_EMPTY(&ep->ready));
+	ke_spinlock_exit(&ep->ready_lock, ipl);
 	ke_mutex_exit(&ep->mutex);
 
 	return 0;
@@ -235,12 +304,13 @@ pollhead_deliver_events(pollhead_t *ph, int revents)
 	LIST_FOREACH(entry, &ph->pollers, pollhead_entry) {
 		struct epoll *ep;
 
-		if ((entry->event.events & revents) == 0)
-			continue;
-
 		ep = entry->epoll;
 
 		ke_spinlock_enter_nospl(&ep->ready_lock);
+		if ((entry->event.events & revents) == 0) {
+			ke_spinlock_exit_nospl(&ep->ready_lock);
+			continue;
+		}
 		entry->generation++;
 		if (!LIST_ELEM_IS_INSERTED(entry, ready_link))
 			LIST_INSERT_HEAD(&ep->ready, entry, ready_link);
@@ -348,13 +418,6 @@ sys_epoll_ctl(int epdesc, int op, int desc,
 	struct file *watch_file;
 	int r;
 
-	if (event != NULL &&
-	    event->events &
-		~(EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLPRI)) {
-		kfatal("unexpected epoll flags\n");
-		return -EINVAL;
-	}
-
 	r = desc_to_epoll(epdesc, &ep, &ep_file);
 	if (r != 0)
 		return r;
@@ -372,7 +435,9 @@ sys_epoll_ctl(int epdesc, int op, int desc,
 		break;
 
 	case EPOLL_CTL_MOD:
-		kfatal("implement me!\n");
+		r = watch_mod(ep, desc, watch_file, event);
+		file_release(watch_file);
+		break;
 
 	case EPOLL_CTL_DEL: {
 		struct poll_entry *entry, *found = NULL;
