@@ -40,7 +40,7 @@ typedef Elf64_Phdr Elf_Phdr;
 #define USER_STACK_SIZE PGSIZE * 32
 
 void ke_md_enter_usermode(uintptr_t ip, uintptr_t sp);
-void pmap_activate(struct vm_map *map);
+void vm_map_activate(struct vm_map *old, struct vm_map *new);
 
 static int
 copyin_strv(char *const user_strv[], char ***out)
@@ -312,7 +312,7 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 
 	ipl = spldisp();
 	curthread()->vm_map = newmap;
-	pmap_activate(newmap);
+	vm_map_activate(oldmap, newmap);
 	splx(ipl);
 
 	r = load_elf(exe_nch.nc->vp, (vaddr_t)0x0, &pkg);
@@ -357,7 +357,7 @@ error:
 	if (newmap != NULL) {
 		ipl = spldisp();
 		curthread()->vm_map = NULL;
-		pmap_activate(oldmap);
+		vm_map_activate(newmap, oldmap);
 		splx(ipl);
 		vm_unmap(newmap, LOWER_HALF, LOWER_HALF + LOWER_HALF_SIZE);
 		vm_map_release(newmap);

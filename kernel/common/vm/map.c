@@ -69,7 +69,7 @@ vm_map_create(void)
 	map->rs.valid_n = 0;
 	TAILQ_INIT(&map->rs.active_leaf_tables);
 
-	map->pgtable = pmap_allocate_pgtable(map);
+	ke_aspace_init(&map->aspace, pmap_allocate_pgtable(map), false);
 
 	vmem_init(&map->vmem, "userland", LOWER_HALF, LOWER_HALF_SIZE, PGSIZE,
 	    NULL, NULL, NULL, 0, 0);
@@ -243,118 +243,6 @@ vm_map_phys(vm_map_t *map, paddr_t paddr, vaddr_t *vaddrp, size_t size,
  * unmapping
  */
 
-#define UNMAP_BATCH_SIZE 64
-
-struct unmap_deferred {
-	enum {
-		DEFERRED_PRIVATE,
-		DEFERRED_SHARED,
-		DEFERRED_FORKED,
-	} action;
-	vm_page_t *page;
-	union {
-		struct vm_anon *anon;
-		vm_object_t *obj;
-	};
-	bool dirty;
-};
-
-struct unmap_batch {
-	struct unmap_deferred entries[UNMAP_BATCH_SIZE];
-	size_t count;
-};
-
-static void
-unmap_batch_init(struct unmap_batch *batch)
-{
-	batch->count = 0;
-}
-
-static void
-unmap_batch_flush(struct unmap_batch *batch)
-{
-	if (batch->count == 0)
-		return;
-
-	pmap_tlb_flush_all_globally();
-
-	for (size_t i = 0; i < batch->count; i++) {
-		struct unmap_deferred *d = &batch->entries[i];
-
-		switch (d->action) {
-		case DEFERRED_PRIVATE:
-			vm_page_delete(d->page, true);
-			break;
-
-		case DEFERRED_SHARED:
-			ke_spinlock_enter_nospl(&d->obj->stealing_lock);
-			d->page->shared.dirty |= d->dirty;
-			if (--d->page->shared.share_count == 0)
-				vm_page_release_and_dirty(d->page,
-				    d->page->shared.dirty);
-			ke_spinlock_exit_nospl(&d->obj->stealing_lock);
-			break;
-
-		case DEFERRED_FORKED: {
-			struct vm_anon *anon = d->anon;
-			vm_page_t *page = d->page;
-
-			ke_spinlock_enter_nospl(&anon_creation_lock);
-			page->shared.share_count--;
-
-			if (--anon->refcount == 0) {
-				ke_spinlock_exit_nospl(&anon_creation_lock);
-				vm_page_delete(page, true);
-				kmem_free(anon, sizeof(struct vm_anon));
-			} else {
-				ke_spinlock_exit_nospl(&anon_creation_lock);
-			}
-			break;
-		}
-		}
-	}
-
-	batch->count = 0;
-}
-
-static void
-unmap_batch_add_private(struct unmap_batch *batch, vm_page_t *page)
-{
-	if (batch->count == UNMAP_BATCH_SIZE)
-		unmap_batch_flush(batch);
-
-	struct unmap_deferred *d = &batch->entries[batch->count++];
-	d->action = DEFERRED_PRIVATE;
-	d->page = page;
-}
-
-static void
-unmap_batch_add_shared(struct unmap_batch *batch, vm_page_t *page,
-    vm_object_t *obj, bool dirty)
-{
-	if (batch->count == UNMAP_BATCH_SIZE)
-		unmap_batch_flush(batch);
-
-	struct unmap_deferred *d = &batch->entries[batch->count++];
-	d->action = DEFERRED_SHARED;
-	d->page = page;
-	d->obj = obj;
-	d->dirty = dirty;
-}
-
-static void
-unmap_batch_add_forked(struct unmap_batch *batch, vm_page_t *page,
-    struct vm_anon *anon)
-{
-	if (batch->count == UNMAP_BATCH_SIZE)
-		unmap_batch_flush(batch);
-
-	struct unmap_deferred *d = &batch->entries[batch->count++];
-	d->action = DEFERRED_FORKED;
-	d->page = page;
-	d->anon = anon;
-}
-
 static void
 unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
     struct vm_map_entry *entry)
@@ -364,10 +252,10 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 	ipl_t ipl;
 	size_t n_zeroed = 0;
 	vm_page_t *table_page = NULL;
-	struct unmap_batch batch;
+	struct vm_unmap_batch batch;
 	int r;
 
-	unmap_batch_init(&batch);
+	vm_unmap_batch_init(&batch, map);
 
 	ipl = spldisp();
 	ke_spinlock_enter_nospl(&map->creation_lock);
@@ -392,8 +280,9 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 					}
 				}
 				pmap_valid_ptes_zeroed(&map->rs, table_page,
-				    n_zeroed);
-				pmap_unwire_pte(map, &map->rs, &cursor);
+				    n_zeroed, &batch.tables);
+				pmap_unwire_pte_batched(map, &map->rs, &cursor,
+				    &batch.tables);
 				n_zeroed = 0;
 			}
 
@@ -441,6 +330,7 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 				/* physical mapping: just zero the PTE */
 				pmap_pte_zeroleaf_create(ppte, PMAP_L0);
 				n_zeroed++;
+				vm_unmap_batch_extend(&batch, addr);
 				break;
 			}
 
@@ -453,20 +343,18 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			case VM_PAGE_PRIVATE:
 				map->rs.private_pages_n--;
 				n_zeroed++;
-				unmap_batch_add_private(&batch, page);
+				vm_unmap_batch_add(&batch, addr, page, false);
 				break;
 
 			case VM_PAGE_ANON_FORKED: {
-				unmap_batch_add_forked(&batch, page,
-				    page->owner_anon);
+				vm_unmap_batch_add(&batch, addr, page, false);
 				n_zeroed++;
 				break;
 			}
 
 			case VM_PAGE_FILE:
 			case VM_PAGE_ANON_SHARED: {
-				unmap_batch_add_shared(&batch, page,
-				    page->owner_obj, dirty);
+				vm_unmap_batch_add(&batch, addr, page, dirty);
 				n_zeroed++;
 				break;
 			}
@@ -558,14 +446,15 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 				    table_page, qlink);
 			}
 		}
-		pmap_valid_ptes_zeroed(&map->rs, table_page, n_zeroed);
-		pmap_unwire_pte(map, &map->rs, &cursor);
+		pmap_valid_ptes_zeroed(&map->rs, table_page, n_zeroed,
+		    &batch.tables);
+		pmap_unwire_pte_batched(map, &map->rs, &cursor, &batch.tables);
 	}
 
 	ke_spinlock_exit_nospl(&map->stealing_lock);
 	ke_spinlock_exit_nospl(&map->creation_lock);
 
-	unmap_batch_flush(&batch);
+	vm_unmap_batch_flush(&batch);
 
 	splx(ipl);
 }
@@ -741,4 +630,10 @@ vm_voaddr_cmp(const struct vm_voaddr *a, const struct vm_voaddr *b)
 		return 1;
 	else
 		return 0;
+}
+
+void
+vm_map_activate(vm_map_t *old, vm_map_t *new)
+{
+	ke_aspace_activate(old != NULL ? &old->aspace : NULL, &new->aspace);
 }

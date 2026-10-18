@@ -1,4 +1,5 @@
 kernel_sources += files(
+    'kern/aspace.c',
     'kern/dlog.c',
     'kern/intr.c',
     'kern/lapic.c',

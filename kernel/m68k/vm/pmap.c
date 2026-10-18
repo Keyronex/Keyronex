@@ -14,23 +14,13 @@
 #include <libkern/lib.h>
 #include <vm/map.h>
 
-void
-pmap_activate(vm_map_t *map)
-{
-	asm volatile("movec %0, %%urp\n\t"
-		     "movec %0, %%srp\n\t"
-		     "pflusha\n\t"
-	    :
-	    : "r"(map->pgtable));
-}
-
 paddr_t
 pmap_allocate_pgtable(vm_map_t *map)
 {
 	vm_page_t *page = vm_page_alloc(VM_PAGE_TABLE, 0, VM_DOMID_ANY,
 	    VM_SLEEP);
 	pte_t *pte = (pte_t *)vm_page_hhdm_addr(page);
-	pte_t *kpte = (pte_t *)p2v(proc0.vm_map->pgtable);
+	pte_t *kpte = (pte_t *)p2v(proc0.vm_map->aspace.root);
 
 	memset(pte, 0, 64 * sizeof(pte_t));
 	memcpy(pte + 64, kpte + 64, 64 * sizeof(pte_t));

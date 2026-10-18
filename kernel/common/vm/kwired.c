@@ -28,6 +28,8 @@ vm_kwired_init(void)
 {
 	vmem_init(&kwired_arena, "kernel-wired-heap", PIN_HEAP_BASE,
 	    PIN_HEAP_SIZE, PGSIZE, NULL, NULL, NULL, 0, 0);
+	vm_kwired_rs.map = &kernel_map;
+	TAILQ_INIT(&vm_kwired_rs.active_leaf_tables);
 }
 
 void *
@@ -101,48 +103,6 @@ vm_kwired_alloc(size_t npages, vm_alloc_flags_t flags)
 	return (void *)addr;
 }
 
-/* TODO: unify with similar in map.c? */
-#define UNMAP_BATCH_SIZE 64
-
-struct unmap_batch {
-	vm_page_t *pages[UNMAP_BATCH_SIZE];
-	size_t count;
-};
-
-static void
-unmap_batch_init(struct unmap_batch *batch)
-{
-	batch->count = 0;
-}
-
-static void
-unmap_batch_flush(struct unmap_batch *batch)
-{
-	extern int kern_initlevel;
-
-	if (batch->count == 0)
-		return;
-
-	if (kern_initlevel >= 2) /* SMP started */
-		pmap_tlb_flush_all_globally();
-	else
-		pmap_tlb_flush_all(0);
-
-	for (size_t i = 0; i < batch->count; i++)
-		vm_page_delete(batch->pages[i], true);
-
-	batch->count = 0;
-}
-
-static void
-unmap_batch_add(struct unmap_batch *batch, vm_page_t *page)
-{
-	if (batch->count == UNMAP_BATCH_SIZE)
-		unmap_batch_flush(batch);
-
-	batch->pages[batch->count++] = page;
-}
-
 void
 vm_kwired_free(void *ptr, size_t npages)
 {
@@ -150,7 +110,7 @@ vm_kwired_free(void *ptr, size_t npages)
 	ipl_t ipl;
 	struct pte_cursor state;
 	pte_t *ppte = NULL;
-	struct unmap_batch batch;
+	struct vm_unmap_batch batch;
 	int r;
 
 	if (npages == 1) {
@@ -159,7 +119,7 @@ vm_kwired_free(void *ptr, size_t npages)
 		return;
 	}
 
-	unmap_batch_init(&batch);
+	vm_unmap_batch_init(&batch, &kernel_map);
 
 	ipl = ke_spinlock_enter(&kwired_lock);
 	ke_spinlock_enter_nospl(&proc0.vm_map->creation_lock);
@@ -173,7 +133,8 @@ vm_kwired_free(void *ptr, size_t npages)
 
 		if (i == 0 || ((uintptr_t)(++ppte) & (PGSIZE - 1)) == 0) {
 			if (ppte != NULL)
-				pmap_unwire_pte(proc0.vm_map, &vm_kwired_rs, &state);
+				pmap_unwire_pte_batched(proc0.vm_map,
+				    &vm_kwired_rs, &state, &batch.tables);
 
 			r = pmap_wire_pte(proc0.vm_map, &vm_kwired_rs, &state,
 			    addr + (i << PGSHIFT), true);
@@ -189,15 +150,17 @@ vm_kwired_free(void *ptr, size_t npages)
 		state.pages[0]->proctable.noswap_ptes--;
 		state.pages[0]->proctable.nonzero_ptes--;
 
-		unmap_batch_add(&batch, page);
+		vm_unmap_batch_add(&batch, addr + (i << PGSHIFT), page,
+		    false);
 	}
-	pmap_unwire_pte(proc0.vm_map, &vm_kwired_rs, &state);
+	pmap_unwire_pte_batched(proc0.vm_map, &vm_kwired_rs, &state,
+	    &batch.tables);
 
 	ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
 	ke_spinlock_exit_nospl(&proc0.vm_map->creation_lock);
 	ke_spinlock_exit(&kwired_lock, ipl);
 
-	unmap_batch_flush(&batch);
+	vm_unmap_batch_flush(&batch);
 }
 
 int

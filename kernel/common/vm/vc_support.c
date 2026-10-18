@@ -26,6 +26,7 @@ vm_vc_unmap(vaddr_t addr, size_t size)
 	vm_page_t *table_page;
 	pte_t *ppte;
 	size_t n_unmapped = 0;
+	vm_page_queue_t tables = TAILQ_HEAD_INITIALIZER(tables);
 
 	kassert(ke_ipl() == IPL_DISP);
 
@@ -34,8 +35,11 @@ vm_vc_unmap(vaddr_t addr, size_t size)
 
 	ppte = pmap_fetch_pte(proc0.vm_map, &table_page, addr);
 
-	if (ppte == NULL)
+	if (ppte == NULL) {
+		ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
+		ke_spinlock_exit_nospl(&proc0.vm_map->creation_lock);
 		return;
+	}
 
 	for (size_t i = 0; i < size / PGSIZE; i++) {
 		pte_t pte = pmap_load_pte(&ppte[i]);
@@ -58,10 +62,17 @@ vm_vc_unmap(vaddr_t addr, size_t size)
 		TAILQ_REMOVE(&proc0.vm_map->rs.active_leaf_tables, table_page,
 		    qlink);
 	}
-	pmap_valid_ptes_zeroed(&proc0.vm_map->rs, table_page, n_unmapped);
+	pmap_valid_ptes_zeroed(&proc0.vm_map->rs, table_page, n_unmapped,
+	    &tables);
 
 	ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
 	ke_spinlock_exit_nospl(&proc0.vm_map->creation_lock);
+
+	if (!TAILQ_EMPTY(&tables)) {
+		ke_aspace_invalidate(&kernel_map.aspace, addr, size,
+		    KE_INVAL_NONLEAF);
+		pmap_free_tables(&kernel_map, &tables);
+	}
 }
 
 #define VIEWCACHE_VIEW_PAGES 16
@@ -111,8 +122,9 @@ vm_vc_clean(vm_object_t *vmobj, size_t offset, vaddr_t addr, size_t size)
 
 				/* make non-writeable */
 				pmap_pte_hwleaf_clear_writeable(&ppte[i]);
-				pmap_tlb_flush_vaddr_globally(addr +
-				    (i << PGSHIFT));
+				ke_aspace_invalidate(&kernel_map.aspace,
+				    addr + (i << PGSHIFT), PGSIZE,
+				    KE_INVAL_LEAF);
 				vm_page_dirty(pages[i]);
 			}
 		}

@@ -31,8 +31,8 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 	memset(state, 0, sizeof(*state));
 	pmap_indexes(vaddr, indexes);
 
-	table = (pte_t *)p2v(map->pgtable);
-	table_page = VM_PAGE_FOR_PADDR(map->pgtable);
+	table = (pte_t *)p2v(map->aspace.root);
+	table_page = VM_PAGE_FOR_PADDR(map->aspace.root);
 
 	kassert(table_page->use == VM_PAGE_TABLE, "");
 	kassert(table_page->proctable.level == PMAP_LEVELS - 1, "");
@@ -181,8 +181,8 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 }
 
 void
-pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs,
-    struct pte_cursor *state)
+pmap_unwire_pte_batched(struct vm_map *map, struct vm_rs *rs,
+    struct pte_cursor *state, vm_page_queue_t *freeq)
 {
 	kassert(ke_spinlock_held(&map->creation_lock), "");
 	kassert(ke_spinlock_held(&map->stealing_lock), "");
@@ -191,7 +191,20 @@ pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs,
 		vm_page_t *page = state->pages[i];
 		kassert(page->use == VM_PAGE_TABLE, "");
 		kassert(page->proctable.level == i, "");
-		pmap_valid_ptes_zeroed(rs, page, 1);
+		pmap_valid_ptes_zeroed(rs, page, 1, freeq);
+	}
+}
+
+void
+pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs, struct pte_cursor *state)
+{
+	vm_page_queue_t freeq = TAILQ_HEAD_INITIALIZER(freeq);
+
+	pmap_unwire_pte_batched(map, rs, state, &freeq);
+
+	if (!TAILQ_EMPTY(&freeq)) {
+		ke_aspace_invalidate_all(&rs->map->aspace, KE_INVAL_NONLEAF);
+		pmap_free_tables(rs->map, &freeq);
 	}
 }
 
@@ -210,7 +223,7 @@ pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr)
 
 	pmap_indexes(vaddr, indexes);
 
-	table = (pte_t *)p2v(map->pgtable);
+	table = (pte_t *)p2v(map->aspace.root);
 
 	for (size_t level = PMAP_LEVELS - 1;; level--) {
 		pte_t *ppte = &table[indexes[level]];
@@ -296,7 +309,8 @@ pmap_anon_ptes_converted_to_leaf_valid_pte(struct vm_rs *rs,
 
 
 void
-pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
+pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n,
+    vm_page_queue_t *freeq)
 {
 	kassert(page->use == VM_PAGE_TABLE, "");
 
@@ -305,11 +319,15 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
 	if (page->proctable.nonzero_ptes == 0) {
 		vm_page_t *dir_page;
 		kassert(!page->proctable.is_root, "freeing root pgtable");
+		kassert(page->proctable.valid_pageable_leaf_ptes == 0,
+		    "emptied table still has pageable leaves");
 		dir_page = VM_PAGE_FOR_HHDM_ADDR((vaddr_t)page->pte);
 		kassert(dir_page->proctable.level == page->proctable.level + 1);
 		pmap_pte_zerodir_create(page->pte, dir_page->proctable.level);
-		vm_page_delete(page, true);
-		pmap_valid_ptes_zeroed(rs, dir_page, 1);
+		page->proctable.unlink_gen =
+		    (uint16_t)ke_aspace_gen(&rs->map->aspace);
+		TAILQ_INSERT_TAIL(freeq, page, qlink);
+		pmap_valid_ptes_zeroed(rs, dir_page, 1, freeq);
 	} else {
 		page->proctable.noswap_ptes -= n;
 		if (page->proctable.noswap_ptes == 0 &&
@@ -325,51 +343,15 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n)
 }
 
 void
-pmap_tlb_flush_vaddr(void *arg)
+pmap_free_tables(vm_map_t *map, vm_page_queue_t *queue)
 {
-#if defined(__amd64__)
-	vaddr_t vaddr = (vaddr_t)(uintptr_t)arg;
-	asm volatile("invlpg (%0)" ::"r"(vaddr) : "memory");
-#elif defined(__riscv)
-	vaddr_t vaddr = (vaddr_t)(uintptr_t)arg;
-	asm volatile("sfence.vma %0, x0" ::"r"(vaddr) : "memory");
-#elif defined(__m68k__)
-	vaddr_t vaddr = (vaddr_t)(uintptr_t)arg;
-	asm volatile("pflush (%0)" : : "a"(vaddr) : "memory");
-#else
-	kfatal("Port me!\n");
-#endif
-}
+	vm_page_t *page, *next;
+	uint16_t gen = (uint16_t)ke_aspace_gen(&map->aspace);
 
-void
-pmap_tlb_flush_all(void *)
-{
-#if defined(__amd64__)
-	unsigned long cr3;
-	asm volatile("mov %%cr3, %0\n\t"
-		     "mov %0, %%cr3\n\t"
-	    : "=r"(cr3)
-	    :
-	    : "memory");
-#elif defined(__riscv)
-	asm volatile("sfence.vma x0, x0" ::: "memory");
-#elif defined(__m68k__)
-	asm volatile("pflusha" : : : "memory");
-#else
-	kfatal("Port me!\n");
-#endif
-}
-
-void
-pmap_tlb_flush_vaddr_globally(vaddr_t vaddr)
-{
-	ke_xcall_broadcast(pmap_tlb_flush_vaddr, (void *)vaddr);
-	pmap_tlb_flush_vaddr((void *)vaddr);
-}
-
-void
-pmap_tlb_flush_all_globally(void)
-{
-	ke_xcall_broadcast(pmap_tlb_flush_all, NULL);
-	pmap_tlb_flush_all(NULL);
+	TAILQ_FOREACH_SAFE(page, queue, qlink, next) {
+		kassert(page->proctable.unlink_gen != gen,
+		    "no invalidation since unlink for page-table page");
+		TAILQ_REMOVE(queue, page, qlink);
+		vm_page_delete(page, true);
+	}
 }

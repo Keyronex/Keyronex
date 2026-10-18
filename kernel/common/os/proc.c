@@ -18,7 +18,7 @@
 
 #include <stdalign.h>
 
-void pmap_activate(vm_map_t *map);
+void vm_map_activate(vm_map_t *old, vm_map_t *new);
 
 kmem_cache_t *turnstile_cache, *proc_cache, *thread_cache;
 _Atomic(pid_t) last_pid = 1;
@@ -175,8 +175,7 @@ proc_new_system_thread(void (*func)(void *), void *arg)
 void
 thread_activate(thread_t *old, thread_t *new)
 {
-	if (thread_vm_map(old) != thread_vm_map(new))
-		pmap_activate(thread_vm_map(new));
+	vm_map_activate(thread_vm_map(old), thread_vm_map(new));
 }
 
 struct thread_new_info {
@@ -235,7 +234,7 @@ sys_thread_exit(void)
 	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
 
 	curthread->vm_map = proc0.vm_map;
-	pmap_activate(proc0.vm_map);
+	vm_map_activate(proc->vm_map, proc0.vm_map);
 
 	if (proc_exited) {
 #if TRACE_TODO

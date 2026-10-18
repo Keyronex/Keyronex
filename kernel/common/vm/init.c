@@ -534,7 +534,7 @@ vm_kmap_init(void)
 
 	vmem_init(&kernel_map.vmem, "kernel-general-paged", PAGE_HEAP_BASE,
 	    PAGE_HEAP_SIZE, PGSIZE, NULL, NULL, NULL, 0, 0);
-	kernel_map.pgtable = kpgtable;
+	ke_aspace_init(&kernel_map.aspace, kpgtable, true);
 	proc0.vm_map = &kernel_map;
 }
 void

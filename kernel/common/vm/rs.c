@@ -22,7 +22,8 @@ rs_evict_leaf_pte(vm_rs_t *rs, vaddr_t vaddr, vm_page_t *page, pte_t *ppte)
 	case VM_PAGE_PRIVATE: {
 		pmap_pte_soft_create(pte, kPTEKindTrans, VM_PAGE_PFN(page),
 		    true);
-		pmap_tlb_flush_vaddr_globally(vaddr);
+		ke_aspace_invalidate(&rs->map->aspace, vaddr, PGSIZE,
+		    KE_INVAL_LEAF);
 		// dcache flush?
 		vm_page_release_and_dirty(page, dirty);
 		break;
@@ -32,7 +33,8 @@ rs_evict_leaf_pte(vm_rs_t *rs, vaddr_t vaddr, vm_page_t *page, pte_t *ppte)
 #endif
 	case VM_PAGE_FILE: {
 		pmap_pte_zeroleaf_create(ppte, PMAP_L0);
-		pmap_tlb_flush_vaddr_globally(vaddr);
+		ke_aspace_invalidate(&rs->map->aspace, vaddr, PGSIZE,
+		    KE_INVAL_LEAF);
 		// dcache flush?
 		/* factor: share count drop */
 

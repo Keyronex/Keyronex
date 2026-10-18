@@ -79,8 +79,18 @@ pmap_pte_anon_create(pte_t *ppte, struct vm_anon *anon, bool was_hw)
 
 int pmap_wire_pte(struct vm_map *map, struct vm_rs *rs,
     struct pte_cursor *state, vaddr_t vaddr, bool create);
+/*
+ * Unwire tables pinned by a cursor. If any tables are now emptied then they
+ * are shot down then freed.
+ */
 void pmap_unwire_pte(struct vm_map *map, struct vm_rs *rs,
     struct pte_cursor *state);
+/*
+ * As pmap_unwire_pte, but emptied tables are queued into freeq to be shot down
+ * and freed later in a batch by the caller with pmap_free_tables().
+ */
+void pmap_unwire_pte_batched(struct vm_map *map, struct vm_rs *rs,
+    struct pte_cursor *state, vm_page_queue_t *freeq);
 pte_t *pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr);
 
 paddr_t pmap_allocate_pgtable(struct vm_map *map);
@@ -95,6 +105,11 @@ void pmap_new_leaf_fork_ptes_created(struct vm_rs *rs,
 void pmap_anon_ptes_converted_to_leaf_valid_pte(struct vm_rs *rs,
     struct pte_cursor *cursor, size_t n);
 
-void pmap_valid_ptes_zeroed(struct vm_rs *rs, vm_page_t *page, size_t n);
+/*
+ * Valid PTEs were zeroed. Emptied tables are queued to freeq for invalidation
+ * and freeing.
+ */
+void pmap_valid_ptes_zeroed(struct vm_rs *rs, vm_page_t *page, size_t n,
+    vm_page_queue_t *freeq);
 
 #endif /* ECX_KEYRONEX_PMAP_H */

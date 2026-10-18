@@ -60,11 +60,15 @@ struct vm_page {
 			 * pageable leaf PTEs.
 			 *
 			 * level: page table level (0 = furthest from root)
+			 *
+			 * unlink_gen: shootdown generation of the aspace at the
+			 * time this table was unlinked - used to check it isn't
+			 * freed before the relevant invalidation.
 			 */
 			int16_t noswap_ptes; /* aka share_count */
 			int16_t nonzero_ptes;
 			int16_t valid_pageable_leaf_ptes;
-			int16_t spare_1;
+			uint16_t unlink_gen;
 			uintptr_t
 				base: PFN_BITS,
 				level: 3,

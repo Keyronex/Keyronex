@@ -1,5 +1,6 @@
 kernel_sources += files(
     'kern/archdep.c',
+    'kern/aspace.c',
     'kern/dlog.c',
     'kern/goldfish_pic.c',
     'kern/goldfish_rtc.c',

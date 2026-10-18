@@ -332,7 +332,7 @@ vm_fork(vm_map_t *src_map, vm_map_t *dst_map)
 
 	src_map->rs.private_pages_n = 0;
 
-	pmap_tlb_flush_all_globally();
+	ke_aspace_invalidate_all(&src_map->aspace, KE_INVAL_LEAF);
 
 	ke_rwlock_exit_write(&dst_map->map_lock);
 	ke_rwlock_exit_write(&src_map->map_lock);

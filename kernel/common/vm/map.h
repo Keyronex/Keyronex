@@ -13,6 +13,7 @@
 #include <sys/k_thread.h>
 #include <sys/tree.h>
 #include <sys/vmem_impl.h>
+#include <sys/k_aspace.h>
 #include <sys/pmap.h>
 #include <sys/vm.h>
 
@@ -49,6 +50,7 @@ typedef struct vm_rs {
 } vm_rs_t;
 
 struct vm_map {
+	struct ke_aspace aspace;
 	atomic_uint refcnt;
 	vmem_t vmem;
 	krwlock_t map_lock;
@@ -56,7 +58,6 @@ struct vm_map {
 	kspinlock_t stealing_lock;
 	struct vm_map_tree entries;
 
-	paddr_t pgtable;
 	struct vm_rs rs;
 };
 
@@ -110,10 +111,26 @@ void obj_page_zeroed(vm_object_t *obj, vm_page_t *page);
 void obj_page_swapped(vm_object_t *obj, vm_page_t *page);
 void obj_table_pte_did_become_swap(vm_object_t *obj, vm_page_t *table_page);
 
-void pmap_tlb_flush_vaddr_globally(vaddr_t vaddr);
-void pmap_tlb_flush_all_globally(void);
+void vm_map_activate(struct vm_map *old, struct vm_map *new);
 
-void pmap_tlb_flush_all(void *unused);
+/* Free queued emptied page-table pages; must follow invalidation. */
+void pmap_free_tables(struct vm_map *map, vm_page_queue_t *queue);
+
+#define VM_UNMAP_BATCH_SIZE 64
+
+struct vm_unmap_batch {
+	struct vm_map *map;
+	size_t count;
+	uintptr_t entries[VM_UNMAP_BATCH_SIZE]; /* vm_page_t *, bit 0: dirty */
+	vaddr_t lo, hi;		/* PTE range zeroed since the last flush */
+	vm_page_queue_t tables; /* emptied page table pages */
+};
+
+void vm_unmap_batch_init(struct vm_unmap_batch *batch, struct vm_map *map);
+void vm_unmap_batch_extend(struct vm_unmap_batch *batch, vaddr_t va);
+void vm_unmap_batch_add(struct vm_unmap_batch *batch, vaddr_t va,
+    vm_page_t *page, bool dirty);
+void vm_unmap_batch_flush(struct vm_unmap_batch *batch);
 
 void rs_evict_leaf_pte(struct vm_rs *rs, vaddr_t vaddr, vm_page_t *page,
     pte_t *pte);

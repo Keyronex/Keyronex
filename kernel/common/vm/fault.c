@@ -496,7 +496,8 @@ do_dirty_fork_fault(struct fault_info *info, vm_page_t *old_page)
 		pmap_pte_hwleaf_create(info->cursor.pte, VM_PAGE_PFN(new_page),
 		    PMAP_L0, prot, kCacheModeDefault);
 		info->rs->private_pages_n++;
-		pmap_tlb_flush_vaddr_globally(info->vaddr);
+		ke_aspace_invalidate(&info->map->aspace, info->vaddr, PGSIZE,
+		    KE_INVAL_LEAF);
 
 		vm_page_release(old_page);
 	}
@@ -642,7 +643,8 @@ vm_fault(vaddr_t addr, vm_prot_t type)
 				    kCacheModeDefault);
 
 				info.rs->private_pages_n++;
-				pmap_tlb_flush_vaddr_globally(info.vaddr);
+				ke_aspace_invalidate(&info.map->aspace,
+				    info.vaddr, PGSIZE, KE_INVAL_LEAF);
 
 				pmap_unwire_pte(info.map, info.rs,
 				    &info.cursor);

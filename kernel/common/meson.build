@@ -57,6 +57,7 @@ kernel_sources += [
     'io/ttyld.c',
     'io/unix.c',
 
+    'kern/aspace.c',
     'kern/callout.c',
     'kern/clock.c',
     'kern/disp_rt.c',
@@ -107,6 +108,7 @@ kernel_sources += [
     'vm/phys.c',
     'vm/pmap.c',
     'vm/rs.c',
+    'vm/unmap.c',
     'vm/vc_support.c',
     'vm/vmem.c',
 ]
