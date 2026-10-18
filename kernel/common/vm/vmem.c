@@ -575,13 +575,13 @@ vmem_global_init()
 void
 vmem_destroy(vmem_t *vmem)
 {
-	vmem_seg_t *seg;
+	vmem_seg_t *seg, *next;
 
 	for (int i = 0; i < VMEM_HASHBUCKET_N; i++)
 		kassert(LIST_EMPTY(&vmem->hashtab[i]),
 		    "destroying non-empty vmem");
 
-	TAILQ_FOREACH(seg, &vmem->segqueue, segqueue)
+	TAILQ_FOREACH_SAFE(seg, &vmem->segqueue, segqueue, next)
 		seg_free(vmem, seg);
 }
 
