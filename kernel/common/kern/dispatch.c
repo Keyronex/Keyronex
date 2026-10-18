@@ -187,10 +187,13 @@ kep_xcall_reschedule_handler(void)
 }
 
 /*
- * Resume a blocked thread.
+ * Resume a blocked or newly created thread.
  *
  * Callers must have exclusive custody of the thread (i.e. they are the only one
  * who will try to call ke_thread_resume() on it.)
+ *
+ * The thread lock is needed to synchronise with ke_waitn/ke_dispatch, since the
+ * thread goes TS_SLEEPING before it is actually quiesced and fit to resume.
  */
 void
 ke_thread_resume(kthread_t *t, bool io_completion)
@@ -199,13 +202,16 @@ ke_thread_resume(kthread_t *t, bool io_completion)
 	uint32_t cpunum;
 	ipl_t ipl;
 
+	ipl = spldisp();
+	kassert(ipl <= IPL_DISP, "ke_thread_resume at >IPL_DISP");
+
+	ke_spinlock_enter_nospl(&t->lock);
+
 	kassert(t->state == TS_SLEEPING || t->state == TS_CREATED,
 	    "invalid thread state in ke_resume");
 
 	if (io_completion)
 		kep_sched_class[t->sched_class]->io_completed(t);
-
-	ipl = spldisp();
 
 	cpunum = pick_cpu(t);
 	disp = &ke_cpu_data[cpunum]->disp;
@@ -217,12 +223,14 @@ ke_thread_resume(kthread_t *t, bool io_completion)
 
 	if (should_preempt(disp, t)) {
 		ke_spinlock_exit_nospl(&disp->lock);
+		ke_spinlock_exit_nospl(&t->lock);
 		if (cpunum == CPU_LOCAL_LOAD(cpu_num))
 			do_reschedule(NULL);
 		else
 			ke_xcall_reschedule(cpunum);
 	} else {
 		ke_spinlock_exit_nospl(&disp->lock);
+		ke_spinlock_exit_nospl(&t->lock);
 	}
 
 	splx(ipl);
@@ -357,7 +365,17 @@ ke_dispatch(void)
 
 	kep_arch_switch(oldt, nextt);
 
-	/* we are now potentially on another CPU, so reload prevthread */
+	/*
+	 * We are now potentially on another CPU, so reload prevthread for the
+	 * new CPU.
+	 *
+	 * The  principle of this is that oldt->lock stays held across the
+	 * context switch. ke_thread_resume() interlocks with us by taking the
+	 * thread lock. This prevents anyone else running oldt until it is
+	 * definitively quiescent.
+	 *
+	 * (kep_thread_trampoline releases oldt->lock for newly-created theads.)
+	 */
 	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
 }
 
