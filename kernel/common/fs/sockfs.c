@@ -143,8 +143,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			break;
 
 		default:
-			kfatal("unexpected AF_UNIX type %d (0x%x)\n", type,
-			    type);
+			return -ESOCKTNOSUPPORT;
 		}
 		break;
 
@@ -163,8 +162,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			break;
 
 		default:
-			kfatal("unexpected AF_INET type %d (0x%x)\n", type,
-			    type);
+			return -ESOCKTNOSUPPORT;
 		}
 		break;
 
@@ -179,8 +177,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			break;
 
 		default:
-			kfatal("unexpected AF_INET6 type %d (0x%x)\n", type,
-			    type);
+			return -ESOCKTNOSUPPORT;
 		}
 		break;
 
@@ -209,6 +206,9 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 			case SOCK_RAW:
 				streamtab = &packet_streamtab;
 				break;
+
+			default:
+				return -ESOCKTNOSUPPORT;
 		}
 		break;
 
@@ -266,7 +266,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 		goto err;
 	}
 
-	fp = file_new(NCH_NULL, vn, nonblock ? O_NONBLOCK : 0);
+	fp = file_new(NCH_NULL, vn, O_RDWR | (nonblock ? O_NONBLOCK : 0));
 	if (fp == NULL) {
 		r = -ENOMEM;
 		goto err;
@@ -430,6 +430,9 @@ so_accept4(struct socknode *sn, bool nonblock, struct sockaddr *addr,
 	struct T_conn_ind *ci;
 	struct T_conn_res *cr;
 	int r, fd;
+
+	if ((flags & ~(SOCK_NONBLOCK | SOCK_CLOEXEC)) != 0)
+		return -EINVAL;
 
 	str_req_begin(sh);
 	if ((sn->state & SS_ISLISTENING) == 0) {
@@ -1109,7 +1112,7 @@ sys_socket(int domain, int type, int protocol)
 
 	/* only socketpair()'d SOCK_DGRAM is supported yet */
 	if (domain == AF_UNIX &&
-	    (type & (SOCK_STREAM | SOCK_SEQPACKET | SOCK_DGRAM)) != SOCK_STREAM)
+	    (type & ~(SOCK_NONBLOCK | SOCK_CLOEXEC)) != SOCK_STREAM)
 		return -ESOCKTNOSUPPORT;
 
 	fd = uf_reserve_fd(curproc()->finfo, 0,
