@@ -136,7 +136,8 @@ static int
 fifo_read(vnode_t *vn, void *buf, size_t buflen, off_t, int flags)
 {
 	struct fifonode *fn = VTOFN(vn);
-	return strread(fn->st, buf, buflen, flags);
+	return strread(fn->st, buf, buflen,
+	    (flags & O_NONBLOCK) ? STRRW_NONBLOCK : 0);
 }
 
 static int

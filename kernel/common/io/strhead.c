@@ -393,7 +393,7 @@ strpush(stdata_t *sh, struct streamtab *tab)
 }
 
 int
-strread(stdata_t *sh, void *buf, size_t len, int options)
+strread(stdata_t *sh, void *buf, size_t len, enum strrw_options options)
 {
 	size_t ncopied = 0;
 
@@ -417,7 +417,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 				return 0;
 			}
 
-			if (options & O_NONBLOCK) {
+			if (options & STRRW_NONBLOCK) {
 				str_req_end(sh);
 				return -EWOULDBLOCK;
 			}
@@ -456,7 +456,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 
 			ncopied += tocopy;
 
-			if ((options & MSG_PEEK) == 0) {
+			if ((options & STRRW_PEEK) == 0) {
 				bp->rptr += tocopy;
 				sh->rq->count -= tocopy;
 				if (sh->rq->full &&
@@ -468,7 +468,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 			}
 		}
 
-		if ((options & MSG_PEEK) == 0) {
+		if ((options & STRRW_PEEK) == 0) {
 			if (str_msgsize(mp) == 0) {
 				TAILQ_REMOVE(&sh->rq->msgq, mp, link);
 				str_freemsg(mp);
@@ -497,7 +497,7 @@ strread(stdata_t *sh, void *buf, size_t len, int options)
 }
 
 int
-strwrite(stdata_t *sh, const void *buf, size_t len, int)
+strwrite(stdata_t *sh, const void *buf, size_t len, enum strrw_options)
 {
 	int r;
 	mblk_t *mp;

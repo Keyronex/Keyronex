@@ -1036,14 +1036,16 @@ static int
 sock_read(vnode_t *vn, void *buf, size_t buflen, off_t, int flags)
 {
 	struct socknode *sn = VTOSN(vn);
-	return strread(sn->stream, (void *)buf, buflen, flags);
+	return strread(sn->stream, (void *)buf, buflen,
+	    (flags & O_NONBLOCK) ? STRRW_NONBLOCK : 0);
 }
 
 static int
 sock_write(vnode_t *vn, const void *buf, size_t buflen, off_t, int flags)
 {
 	struct socknode *sn = VTOSN(vn);
-	return strwrite(sn->stream, (void *)buf, buflen, flags);
+	return strwrite(sn->stream, (void *)buf, buflen,
+	    (flags & O_NONBLOCK) ? STRRW_NONBLOCK : 0);
 }
 
 static int
@@ -1236,14 +1238,15 @@ sys_recvmsg(int sockfd, struct msghdr *msg, int flags)
 	kassert(msg->msg_iovlen == 1 /* && msg->msg_controllen == 0 */);
 
 	if (flags & MSG_DONTWAIT)
-		readflags |= O_NONBLOCK;
+		readflags |= STRRW_NONBLOCK;
 	if (flags & MSG_PEEK)
-		readflags |= MSG_PEEK;
-	if (file->flags & O_NONBLOCK)
-		readflags |= O_NONBLOCK;
+		readflags |= STRRW_PEEK;
+	if (atomic_load_explicit(&file->flags, memory_order_relaxed) &
+	    O_NONBLOCK)
+		readflags |= STRRW_NONBLOCK;
 
-	r = strread(sn->stream, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len,
-	    readflags);
+	r = strread(sn->stream, msg->msg_iov[0].iov_base,
+	    msg->msg_iov[0].iov_len, readflags);
 
 	file_release(file);
 
@@ -1255,7 +1258,7 @@ sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 {
 	file_t *file;
 	struct socknode *sn;
-	int writeflags = 0;
+	enum strrw_options writeflags = 0;
 	int r = lookup_sockfd(sockfd, &file);
 
 	if (r < 0)
@@ -1268,13 +1271,13 @@ sys_sendmsg(int sockfd, const struct msghdr *msg, int flags)
 	kassert(msg->msg_iovlen == 1 && msg->msg_controllen == 0);
 
 	if (flags & MSG_DONTWAIT)
-		writeflags |= O_NONBLOCK;
+		writeflags |= STRRW_NONBLOCK;
 	if (atomic_load_explicit(&file->flags, memory_order_relaxed) &
 	    O_NONBLOCK)
-		writeflags |= O_NONBLOCK;
+		writeflags |= STRRW_NONBLOCK;
 
-	r = strwrite(sn->stream, msg->msg_iov[0].iov_base, msg->msg_iov[0].iov_len,
-	    writeflags);
+	r = strwrite(sn->stream, msg->msg_iov[0].iov_base,
+	    msg->msg_iov[0].iov_len, writeflags);
 
 	file_release(file);
 

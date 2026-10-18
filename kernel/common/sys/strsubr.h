@@ -92,11 +92,16 @@ struct str_per_cpu_scheduler {
 	kevent_t event;
 };
 
+enum strrw_options {
+	STRRW_NONBLOCK = 0x1,
+	STRRW_PEEK = 0x2,
+};
+
 stdata_t *stropen(struct streamtab *devtab, void *dev, enum str_head_kind);
 void strclose(stdata_t *);
 int strpush(stdata_t *, struct streamtab *);
-int strread(stdata_t *, void *buf, size_t len, int options);
-int strwrite(stdata_t *, const void *buf, size_t len, int options);
+int strread(stdata_t *, void *buf, size_t len, enum strrw_options);
+int strwrite(stdata_t *, const void *buf, size_t len, enum strrw_options);
 int strioctl(vnode_t *, stdata_t *, unsigned long cmd, void *arg);
 int strchpoll(stdata_t *, struct poll_entry *, enum chpoll_mode);
 

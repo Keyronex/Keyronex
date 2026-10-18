@@ -311,7 +311,8 @@ dev_spec_read(vnode_t *vn, void *buf, size_t length, off_t offset, int flags)
 		    offset, flags);
 
 	case DEV_KIND_STREAM:
-		return strread(dn->stdata, buf, length, flags);
+		return strread(dn->stdata, buf, length,
+		    (flags & O_NONBLOCK) ? STRRW_NONBLOCK : 0);
 
 	default:
 		kfatal("implement me");
