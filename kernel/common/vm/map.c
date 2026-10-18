@@ -10,6 +10,7 @@
 #include <sys/errno.h>
 #include <sys/k_log.h>
 #include <sys/kmem.h>
+#include <sys/vnode.h>
 
 #include <stdatomic.h>
 #include <vm/map.h>
@@ -77,20 +78,54 @@ vm_map_create(void)
 	return map;
 }
 
+static void
+vm_map_destroy(vm_map_t *map)
+{
+	/*
+	 * By now everything should be gone altogether and the map shouldn't be
+	 * loaded anywhere.
+	 */
+
+	kassert(RB_EMPTY(&map->entries), "map still has entries");
+	kassert(map->rs.valid_n == 0, "map still has valid pages");
+	kassert(map->rs.private_pages_n == 0, "map still has private pages");
+	kassert(TAILQ_EMPTY(&map->rs.active_leaf_tables),
+	    "map still has active leaf tables");
+	for (size_t i = 0; i < elementsof(map->aspace.active_cpus.mask); i++)
+		kassert(atomic_load_explicit(&map->aspace.active_cpus.mask[i],
+			    memory_order_acquire) == 0,
+		    "map still active on a CPU");
+
+	pmap_free_pgtable(map);
+	vmem_destroy(&map->vmem);
+	kmem_free(map, sizeof(vm_map_t));
+}
+
 void
 vm_map_release(vm_map_t *map)
 {
 	if (atomic_fetch_sub_explicit(&map->refcnt, 1, memory_order_acq_rel) ==
-	    1) {
-#if TRACE_TODO
-		kprintf_dbg("= TODO: vm_map_release freeing map %p\n", map);
-#endif
-	}
+	    1)
+		vm_map_destroy(map);
 }
 
 /*
  * mapping
  */
+
+static void
+object_retain(vm_object_t *object)
+{
+	if (object->kind == VM_OBJ_VNODE)
+		vn_retain(object->vnobj.vnode);
+}
+
+static void
+object_release(vm_object_t *object)
+{
+	if (object->kind == VM_OBJ_VNODE)
+		vn_release(object->vnobj.vnode);
+}
 
 static void
 object_map_list_insert(vm_object_t *object, struct vm_map_entry *map_entry)
@@ -156,8 +191,10 @@ vm_map(vm_map_t *map, vm_object_t *object, vaddr_t *vaddrp, size_t size,
 
 	RB_INSERT(vm_map_tree, &map->entries, map_entry);
 
-	if (object != NULL)
+	if (object != NULL) {
+		object_retain(object);
 		object_map_list_insert(object, map_entry);
+	}
 
 	ke_rwlock_exit_write(&map->map_lock);
 
@@ -463,6 +500,9 @@ int
 vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
 {
 	struct vm_map_entry *entry, *tmp;
+	LIST_HEAD(, vm_map_entry) removed = LIST_HEAD_INITIALIZER(removed);
+
+	/* we reuse the object_link field of entries to queue for freeing */
 
 	ke_rwlock_enter_write(&map->map_lock, "vm_unmap:map_lock");
 
@@ -483,12 +523,10 @@ vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
 
 			RB_REMOVE(vm_map_tree, &map->entries, entry);
 
-			if (entry->object != NULL) {
-				/* FIXME: also release object */
+			if (entry->object != NULL)
 				object_map_list_remove(entry->object, entry);
-			}
 
-			kmem_free(entry, sizeof(struct vm_map_entry));
+			LIST_INSERT_HEAD(&removed, entry, object_link);
 
 		} else if (entry->start < start && entry->end > start &&
 		    entry->end <= end) {
@@ -561,9 +599,9 @@ vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
 			kassert(r == 0);
 
 			if (right_entry->object != NULL) {
+				object_retain(right_entry->object);
 				object_map_list_insert(right_entry->object,
 				    right_entry);
-				/* FIXME: also retain object */
 			}
 
 			RB_INSERT(vm_map_tree, &map->entries, right_entry);
@@ -571,6 +609,13 @@ vm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
 	}
 
 	ke_rwlock_exit_write(&map->map_lock);
+
+	while ((entry = LIST_FIRST(&removed)) != NULL) {
+		LIST_REMOVE(entry, object_link);
+		if (entry->object != NULL)
+			object_release(entry->object);
+		kmem_free(entry, sizeof(struct vm_map_entry));
+	}
 
 	return 0;
 }

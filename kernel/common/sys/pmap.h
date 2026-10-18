@@ -94,6 +94,7 @@ void pmap_unwire_pte_batched(struct vm_map *map, struct vm_rs *rs,
 pte_t *pmap_fetch_pte(vm_map_t *map, vm_page_t **out_table_page, vaddr_t vaddr);
 
 paddr_t pmap_allocate_pgtable(struct vm_map *map);
+void pmap_free_pgtable(struct vm_map *map);
 
 /* New valid PTEs were created (where previously they were zero) */
 void pmap_new_leaf_valid_ptes_created(struct vm_rs *rs,

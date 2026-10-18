@@ -145,8 +145,10 @@ obj_wire_pte(vm_object_t *obj, struct obj_pte_wire_state *state, vaddr_t offset,
 		case kPTEKindZero: {
 			vm_page_t *page;
 
-			if (!create)
+			if (!create) {
+				/* todo unpin */
 				return -level;
+			}
 
 			ke_spinlock_exit_nospl(&obj->stealing_lock);
 

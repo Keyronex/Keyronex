@@ -329,6 +329,7 @@ vm_fork(vm_map_t *src_map, vm_map_t *dst_map)
 	ke_rwlock_enter_write(&dst_map->map_lock, "fork child");
 
 	kassert(forkstate.anonindex == forkstate.npriv);
+	kmem_free(forkstate.anons, forkstate.npriv * sizeof(struct vm_anon *));
 
 	src_map->rs.private_pages_n = 0;
 

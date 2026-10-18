@@ -52,8 +52,21 @@ pmap_wire_pte(vm_map_t *map, struct vm_rs *rs, struct pte_cursor *state,
 
 		switch (pmap_pte_characterise(pte)) {
 		case kPTEKindZero: {
-			if (!create)
+			if (!create) {
+				vm_page_queue_t freeq =
+				    TAILQ_HEAD_INITIALIZER(freeq);
+
+				for (pmap_level_t i = level; i < PMAP_LEVELS - 1;
+				    i++)
+					pmap_valid_ptes_zeroed(rs,
+					    state->pages[i], 1, &freeq);
+
+				/* since we weren't creating, should be none */
+				kassert(TAILQ_EMPTY(&freeq),
+				    "pin release emptied a page table");
+
 				return -level;
+			}
 
 #if DEBUG_WIRE_PTE
 			kprintf("At Level %d: ZERO, "
@@ -340,6 +353,22 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n,
 		#endif
 		}
 	}
+}
+
+void
+pmap_free_pgtable(vm_map_t *map)
+{
+	vm_page_t *root = VM_PAGE_FOR_PADDR(map->aspace.root);
+
+	kassert(root->use == VM_PAGE_TABLE, "");
+	kassert(root->proctable.is_root, "");
+	/* as in pmap_allocate_pgtable */
+	kassert(root->proctable.nonzero_ptes == 0x1000,
+	    "root table still has nonzero PTEs");
+	kassert(root->proctable.noswap_ptes == 0,
+	    "root page table still pinned");
+
+	vm_page_delete(root, true);
 }
 
 void
