@@ -211,7 +211,7 @@ void
 kep_m68k_thread_trampoline(void (*func)(void *), void *arg)
 {
 	kassert(ke_ipl() == IPL_DISP);
-	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
+	kep_thread_switch_finish();
 	splx(IPL_0);
 	func(arg);
 }

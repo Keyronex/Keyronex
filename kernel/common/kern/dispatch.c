@@ -91,6 +91,7 @@ ke_disp_global_init(void)
 		    memory_order_relaxed);
 	for (size_t i = 0; i < RT_PRIO_N; i++)
 		TAILQ_INIT(&global_rt_rq[i]);
+	kep_thread_global_init();
 }
 
 void
@@ -331,8 +332,7 @@ ke_dispatch(void)
 	} else if (oldt->state == TS_SLEEPING) {
 		/* going to sleep. account for sleep time here? */
 	} else if (oldt->state == TS_TERMINATED) {
-		/* queue it on a done queue, to be invoked from DPC... */
-		kdprintf("TODO: queue thread for destruction\n");
+		/* terminated, kep_thread_switch_finish() will retire duly */
 	}
 
 	nextt = next_thread(disp);
@@ -364,19 +364,7 @@ ke_dispatch(void)
 	thread_activate(oldt, nextt);
 
 	kep_arch_switch(oldt, nextt);
-
-	/*
-	 * We are now potentially on another CPU, so reload prevthread for the
-	 * new CPU.
-	 *
-	 * The  principle of this is that oldt->lock stays held across the
-	 * context switch. ke_thread_resume() interlocks with us by taking the
-	 * thread lock. This prevents anyone else running oldt until it is
-	 * definitively quiescent.
-	 *
-	 * (kep_thread_trampoline releases oldt->lock for newly-created theads.)
-	 */
-	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
+	kep_thread_switch_finish();
 }
 
 kpri_t

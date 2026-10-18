@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 struct limine_mp_info;
+struct kevent;
 
 typedef struct ksyncops ksyncops_t;
 typedef struct kturnstile kturnstile_t;
@@ -128,6 +129,11 @@ void ke_dispatch(void);
 void ke_thread_resume(kthread_t *, bool io_completion);
 void ke_thread_exit(void);
 
+void kep_thread_global_init(void);
+void kep_thread_switch_finish(void);
+kthread_t *ke_thread_retire_dequeue(void);
+void ke_thread_deinit(kthread_t *);
+
 void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
 void ke_set_tcb(uintptr_t value);
@@ -172,5 +178,6 @@ bool ke_mutex_tryenter(kmutex_t *);
 bool ke_mutex_held(kmutex_t *);
 
 extern ktask_t *ke_task0;
+extern struct kevent ke_thread_retire_event;
 
 #endif /* ECX_KERN_KTASK_H */

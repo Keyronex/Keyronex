@@ -219,6 +219,8 @@ exec_init(void)
 static void
 threaded_init(void *)
 {
+	proc_reaper_init();
+
 #if !defined(__m68k__)
 	if (rsdp_request.response != NULL)
 		dk_acpi_threaded_init();

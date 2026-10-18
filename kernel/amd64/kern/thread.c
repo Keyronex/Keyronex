@@ -34,7 +34,7 @@ ke_set_tcb(uintptr_t value)
 void
 kep_thread_trampoline(void (*func)(void *), void *arg)
 {
-	ke_spinlock_exit_nospl(&CPU_LOCAL_LOAD(prevthread)->lock);
+	kep_thread_switch_finish();
 	splx(IPL_0);
 	func(arg);
 }

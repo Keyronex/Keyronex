@@ -7,12 +7,13 @@
  * @brief Process & thread objects.
  */
 
+#include <sys/errno.h>
 #include <sys/k_log.h>
+#include <sys/k_wait.h>
 #include <sys/kmem.h>
 #include <sys/krx_user.h>
 #include <sys/libkern.h>
 #include <sys/pcb.h>
-#include <sys/errno.h>
 #include <sys/proc.h>
 #include <sys/wait.h>
 
@@ -172,6 +173,43 @@ proc_new_system_thread(void (*func)(void *), void *arg)
 	return proc_new_thread(&proc0, NULL, func, arg);
 }
 
+static void
+thread_destroy(thread_t *thread)
+{
+	kassert(thread->kthread.task == &proc0.ktask,
+	    "retired thread should belong to proc0");
+
+	ke_thread_deinit(&thread->kthread);
+	kmem_cache_free(turnstile_cache, thread->kthread.turnstile);
+	vm_kwired_free(thread->kthread.kstack_base, KSTACK_SIZE / PGSIZE);
+	kmem_cache_free(thread_cache, thread);
+}
+
+static void
+thread_reaper(void *)
+{
+	kthread_t *kthread;
+
+	for (;;) {
+		ke_wait1(&ke_thread_retire_event, "thread_reaper", false,
+		    ABSTIME_FOREVER);
+		ke_event_set_signalled(&ke_thread_retire_event, false);
+
+		while ((kthread = ke_thread_retire_dequeue()) != NULL)
+			thread_destroy((thread_t *)kthread);
+	}
+}
+
+void
+proc_reaper_init(void)
+{
+	thread_t *thread = proc_new_system_thread(thread_reaper, NULL);
+
+	if (thread == NULL)
+		kfatal("couldn't create thread reaper");
+	ke_thread_resume(&thread->kthread, false);
+}
+
 void
 thread_activate(thread_t *old, thread_t *new)
 {
@@ -233,8 +271,10 @@ sys_thread_exit(void)
 	}
 	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
 
+	/* reassociate with proc0 ahead of reaping */
 	curthread->vm_map = proc0.vm_map;
 	vm_map_activate(proc->vm_map, proc0.vm_map);
+	curthread->kthread.task = &proc0.ktask;
 
 	if (proc_exited) {
 #if TRACE_TODO

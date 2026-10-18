@@ -73,6 +73,7 @@ typedef struct proc {
 
 
 void proc_init(void);
+void proc_reaper_init(void);
 
 proc_t *proc_curproc(void);
 
