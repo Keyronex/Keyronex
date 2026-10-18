@@ -331,7 +331,8 @@ dev_spec_write(vnode_t *vn, const void *buf, size_t length, off_t offset,
 		    offset, flags);
 
 	case DEV_KIND_STREAM:
-		return strwrite(dn->stdata, buf, length, flags);
+		return strwrite(dn->stdata, buf, length,
+		    (flags & O_NONBLOCK) ? STRRW_NONBLOCK : 0);
 
 	default:
 		kfatal("implement me");

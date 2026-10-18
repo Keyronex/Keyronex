@@ -154,7 +154,8 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		return -ENOMEM;
 	}
 
-	r = uf_reserve_fd(curproc()->finfo, 0, flags & O_CLOEXEC);
+	r = uf_reserve_fd(curproc()->finfo, 0,
+	    (flags & O_CLOEXEC) ? FD_CLOEXEC : 0);
 	if (r < 0)
 		file_release(file);
 	else

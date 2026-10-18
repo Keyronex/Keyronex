@@ -547,7 +547,7 @@ sys_epoll_create(int flags)
 	ep->deleted = false;
 
 	r = uf_reserve_fd(curproc()->finfo, 0,
-	    (flags & EPOLL_CLOEXEC) ? O_CLOEXEC : 0);
+	    (flags & EPOLL_CLOEXEC) ? FD_CLOEXEC : 0);
 	if (r < 0)
 		file_release(file);
 	else

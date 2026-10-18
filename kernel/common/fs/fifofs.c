@@ -83,7 +83,7 @@ fifo_close(vnode_t *vn, int flags)
 
 	str_req_begin(sh);
 
-	flags &= ~(O_NONBLOCK);
+	flags &= O_ACCMODE;
 
 	if (flags == O_RDONLY) {
 		kassert(sh->nreaders > 0);
@@ -144,7 +144,8 @@ static int
 fifo_write(vnode_t *vn, const void *buf, size_t buflen, off_t, int flags)
 {
 	struct fifonode *fn = VTOFN(vn);
-	return strwrite(fn->st, buf, buflen, flags);
+	return strwrite(fn->st, buf, buflen,
+	    (flags & O_NONBLOCK) ? STRRW_NONBLOCK : 0);
 }
 
 static int

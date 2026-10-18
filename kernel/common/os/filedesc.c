@@ -143,12 +143,13 @@ uf_lookup(uf_info_t *info, int fd)
 }
 
 int
-uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int oflags)
+uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int fdflags)
 {
 	int error;
 	uint32_t fd = start_fd;
-	uint32_t flags = 0;
 	uf_list_t *list;
+
+	kassert((fdflags & ~FD_CLOEXEC) == 0);
 
 	ke_mutex_enter(&info->lock, "reserve_fd");
 	list = info->list;
@@ -165,10 +166,7 @@ uf_reserve_fd(uf_info_t *info, unsigned int start_fd, unsigned int oflags)
 		list = info->list;
 	}
 
-	if (oflags & O_CLOEXEC)
-		flags |= FD_CLOEXEC;
-
-	list->entries[fd].flags = flags;
+	list->entries[fd].flags = fdflags;
 	ke_rcu_assign_pointer(&list->entries[fd].file, FD_RESERVED);
 	ke_mutex_exit(&info->lock);
 
@@ -311,7 +309,7 @@ sys_dup3(int oldfd, int newfd, unsigned int flags)
 	if (newfd < 0)
 		return -EBADF;
 
-	if (oldfd == newfd)
+	if (oldfd == newfd || (flags & ~O_CLOEXEC) != 0)
 		return -EINVAL;
 
 	f = uf_lookup(info, oldfd);
@@ -336,7 +334,7 @@ sys_dup3(int oldfd, int newfd, unsigned int flags)
 		return -EBADF;
 	}
 
-	list->entries[newfd].flags = flags;
+	list->entries[newfd].flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
 	ke_rcu_assign_pointer(&list->entries[newfd].file, f);
 	ke_mutex_exit(&info->lock);
 
