@@ -264,6 +264,33 @@ sys_thread_exit(void)
 }
 
 
+/*
+ * @pre proctree_mutex MUST be held.
+ * @pre child->parent == parent && child->exited
+ */
+void
+proc_reap_locked(proc_t *parent, proc_t *child)
+{
+	kassert(ke_mutex_held(&proctree_mutex));
+	kassert(child->parent == parent);
+	kassert(child->exited);
+
+	TAILQ_REMOVE(&parent->children, child, sibling_qlink);
+	TAILQ_REMOVE(&allproc, child, allproc_qlink);
+
+	pgrp_remove_member(child);
+
+	if (child->procdesc != NULL) {
+		procdesc_orphan(child->procdesc);
+		child->procdesc = NULL;
+	}
+
+	/* (unref it! unalloc pid!) */
+#if TRACE_TODO
+	kprintf("= TODO: fully reap zombie..\n");
+#endif
+}
+
 pid_t
 sys_wait4(pid_t pid, int *out_ustatus, int flags,
     struct rusage *out_urusage)
@@ -291,23 +318,8 @@ sys_wait4(pid_t pid, int *out_ustatus, int flags,
 			int status = found->exit_status;
 			pid_t ret_pid = found->pid;
 
-			if (!(flags & WNOWAIT)) {
-				TAILQ_REMOVE(&proc->children, found,
-				    sibling_qlink);
-				TAILQ_REMOVE(&allproc, found, allproc_qlink);
-
-				pgrp_remove_member(found);
-
-				if (found->procdesc != NULL) {
-					procdesc_orphan(found->procdesc);
-					found->procdesc = NULL;
-				}
-
-				/* (unref it! unalloc pid!) */
-#if TRACE_TODO
-				kprintf("= TODO: fully reap zombie..\n");
-#endif
-			}
+			if (!(flags & WNOWAIT))
+				proc_reap_locked(proc, found);
 			ke_mutex_exit(&proctree_mutex);
 
 			*out_ustatus = status;

@@ -258,7 +258,7 @@ ke_platform_start_dispatching(void)
 void
 kep_arch_ipi_broadcast(void)
 {
-	uint32_t icr_low = 225 | (0 << 8) | (0 << 11) | (1 << 14) | (2 << 18);
+	uint32_t icr_low = 225 | (0 << 8) | (0 << 11) | (1 << 14) | (3 << 18);
 
 	lapic_write(LAPIC_REG_ICR0, icr_low);
 }

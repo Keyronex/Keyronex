@@ -32,23 +32,26 @@
 #include <sys/krx_user.h>
 #include <sys/libkern.h>
 #include <sys/proc.h>
+#include <sys/procdesc.h>
 #include <sys/vnode.h>
 #include <sys/wait.h>
-
-#define PD_CLOEXEC 0x1
 
 /*
  * (p) proctree_lock
  * (l) procdesc::lock
  * (~) invariant after creation
  *
- * proc is a non-owning back pointer. The process holds a reference to the
- * procdesc. It's set to NULL when the process exits or the procdesc is
- * orphaned.
+ * procdesc::proc is a non-owning back pointer. proc::procdesc is also
+ * non-owning.
+ *
+ * Both are set to NULL, under the proctree_mutex, when the process is reaped
+ * (i.e. by procdesc_orphan) or when the procdesc has no remaining opens
+ * (procdesc_inactive).
  */
 struct procdesc {
 	kspinlock_t lock;
 	pid_t	pid;		/* (~) pid of process */
+	int	flags;		/* (~) PD_* flags given to pdfork() */
 	bool	exited;		/* (l) whether process has exited  */
 	int	exit_status;	/* (l) if exited, status  */
 	proc_t	*proc;		/* (p) process referred to */
@@ -68,9 +71,10 @@ VTOPD(struct vnode *vnode)
 }
 
 static void
-procdesc_init(struct procdesc *pd, proc_t *child)
+procdesc_init(struct procdesc *pd, proc_t *child, int flags)
 {
 	ke_spinlock_init(&pd->lock);
+	pd->flags = flags;
 	pd->proc = child;
 	pd->pid = child->pid;
 	pollhead_init(&pd->pollhead);
@@ -107,9 +111,10 @@ procdesc_notify_exit(struct procdesc *pd, int exit_status)
 {
 	ipl_t ipl;
 
+	kassert(ke_mutex_held(&proctree_mutex));
+
 	ipl = ke_spinlock_enter(&pd->lock);
 
-	pd->proc = NULL;
 	pd->exited = true;
 	pd->exit_status = exit_status;
 
@@ -172,8 +177,18 @@ procdesc_inactive(vnode_t *vn)
 	struct procdesc *pd = VTOPD(vn);
 
 	ke_mutex_enter(&proctree_mutex, "procdesc_inactive");
-	if (pd->proc != NULL)
-		pd->proc->procdesc = NULL;
+	if (pd->proc != NULL) {
+		proc_t *child = pd->proc;
+
+		/*
+		 * TODO: kill (if not already exited) on last close if
+		 * ~PD_DAEMON
+		 */
+		if (child->exited)
+			proc_reap_locked(child->parent, child);
+		else
+			child->procdesc = NULL;
+	}
 	ke_mutex_exit(&proctree_mutex);
 
 	kmem_free(pd, sizeof(*pd));
@@ -204,6 +219,9 @@ pid_t sys_pdfork(karch_trapframe_t *frame, int *fdp, int flags)
 	int fd;
 	int r;
 
+	if (flags & ~(PD_DAEMON | PD_CLOEXEC))
+		return -EINVAL;
+
 	pd = kmem_alloc(sizeof(*pd));
 	if (pd == NULL)
 		return -ENOMEM;
@@ -230,7 +248,7 @@ pid_t sys_pdfork(karch_trapframe_t *frame, int *fdp, int flags)
 	}
 
 	pid = child_proc->pid;
-	procdesc_init(pd, child_proc);
+	procdesc_init(pd, child_proc, flags);
 
 	child_thread = proc_new_thread(child_proc, frame, fork_thread, NULL);
 	if (child_thread == NULL) {
@@ -288,13 +306,29 @@ sys_pdwait(int pd_fd, int *status, int options,
 			exit_status = pd->exit_status;
 			ke_spinlock_exit(&pd->lock, ipl);
 
+			/*
+			 * Zombie may have been reaped already by a wait4()
+			 * call, in which case pd->proc == NULL, and we can just
+			 * return the saved exit status. Otherwise we reap it.
+			 */
+			if (!(options & WNOWAIT)) {
+				proc_t *child;
+
+				ke_mutex_enter(&proctree_mutex, "sys_pdwait");
+				child = pd->proc;
+				if (child != NULL && child->parent == proc &&
+				    child->exited)
+					proc_reap_locked(proc, child);
+				ke_mutex_exit(&proctree_mutex);
+			}
+
+			file_release(file);
+
 			if (status != NULL) {
 				r = memcpy_to_user(status, &exit_status,
 				    sizeof(exit_status));
-				if (r != 0) {
-					file_release(file);
+				if (r != 0)
 					return -EFAULT;
-				}
 			}
 
 			return pid;

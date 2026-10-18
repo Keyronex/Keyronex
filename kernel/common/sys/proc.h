@@ -92,6 +92,8 @@ void pgrp_unref(struct pgrp *pgrp);
 void pgrp_add_member(struct pgrp *pgrp, struct proc *proc);
 void pgrp_remove_member(struct proc *proc);
 
+void proc_reap_locked(proc_t *parent, proc_t *child);
+
 void procdesc_notify_exit(struct procdesc *pd, int exit_status);
 void procdesc_orphan(struct procdesc *pd);
 
