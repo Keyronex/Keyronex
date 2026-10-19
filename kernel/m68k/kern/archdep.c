@@ -32,3 +32,9 @@ kep_arch_ipi_unicast(kcpunum_t)
 {
 	/* epsilon */
 }
+
+void
+kep_arch_ipi_multicast(const kcpumask_t *)
+{
+	/* epsilon */
+}

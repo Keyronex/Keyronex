@@ -3,7 +3,7 @@
  * Copyright (c) 2026 Cloudarox Solutions.
  */
 /*!
- * @file k_wait.h
+ * @file k_types.h
  * @brief Types used in the kernel.
  */
 

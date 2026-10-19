@@ -31,11 +31,10 @@
  */
 
 #include <sys/k_aspace.h>
+#include <sys/k_cpumask.h>
 #include <sys/k_log.h>
 #include <sys/k_xcall.h>
 #include <sys/vm.h>
-
-#define UINTPTR_BITS (sizeof(uintptr_t) * 8)
 
 #define KE_INVAL_PAGES_MAX 32 /* if more than this, invalidate everything */
 #define KE_INVAL_ALL ((size_t)-1)
@@ -52,10 +51,7 @@ ke_aspace_init(struct ke_aspace *as, paddr_t root, bool kernel)
 {
 	as->root = root;
 	as->kernel = kernel;
-	for (size_t i = 0; i < sizeof(as->active_cpus.mask) /
-	    sizeof(as->active_cpus.mask[0]); i++)
-		atomic_store_explicit(&as->active_cpus.mask[i], 0,
-		    memory_order_relaxed);
+	ke_atomic_cpumask_zero(&as->active_cpus);
 	atomic_store_explicit(&as->invalidate_gen, 0, memory_order_relaxed);
 }
 
@@ -70,14 +66,11 @@ ke_aspace_activate(struct ke_aspace *old, struct ke_aspace *new)
 
 	ipl = spldisp();
 	cpu = CPU_LOCAL_LOAD(cpu_num);
-	atomic_fetch_or_explicit(&new->active_cpus.mask[cpu / UINTPTR_BITS],
-	    (uintptr_t)1 << (cpu % UINTPTR_BITS), memory_order_seq_cst);
+	ke_atomic_cpumask_set(&new->active_cpus, cpu, memory_order_seq_cst);
 	kep_arch_aspace_load(new->root);
-	if (old != NULL) {
-		atomic_fetch_and_explicit(&old->active_cpus.mask[cpu /
-		    UINTPTR_BITS], ~((uintptr_t)1 << (cpu % UINTPTR_BITS)),
+	if (old != NULL)
+		ke_atomic_cpumask_clear(&old->active_cpus, cpu,
 		    memory_order_seq_cst);
-	}
 	splx(ipl);
 }
 

@@ -8,8 +8,10 @@
  */
 
 #include <sys/errno.h>
+#include <sys/k_cpumask.h>
 #include <sys/k_log.h>
 #include <sys/k_wait.h>
+#include <sys/k_xcall.h>
 #include <sys/kmem.h>
 #include <sys/krx_user.h>
 #include <sys/libkern.h>

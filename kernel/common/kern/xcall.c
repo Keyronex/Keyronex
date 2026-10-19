@@ -9,18 +9,17 @@
 
 #include <sys/cpulocal.h>
 #include <sys/k_cpu.h>
+#include <sys/k_cpumask.h>
 #include <sys/k_xcall.h>
 #include <sys/k_log.h>
 
-#define UINTPTR_BITS (sizeof(uintptr_t) * 8)
-
-void
-ke_xcall_broadcast(void (*func)(void *), void *arg)
+/* returns how many CPUs were armed */
+static unsigned
+xcall_arm(struct kcpu_data *local, void (*func)(void *), void *arg,
+    const kcpumask_t *targets)
 {
-	ipl_t ipl = splhigh();
-	struct kcpu_data *local = CPU_LOCAL_GET();
-	uint32_t index = local->cpu_num / UINTPTR_BITS;
-	uint32_t bit = local->cpu_num % UINTPTR_BITS;
+	kcpunum_t cpu;
+	unsigned n = 0;
 
 	local->func = func;
 	local->arg = arg;
@@ -29,25 +28,64 @@ ke_xcall_broadcast(void (*func)(void *), void *arg)
 
 	atomic_thread_fence(memory_order_release);
 
-	for (uint32_t i = 0; i < ke_ncpu; i++) {
-		katomic_cpumask_t *mask;
-
-		if (i == local->cpu_num)
-			continue;
-
-		mask = &ke_cpu_data[i]->xcalls_pending;
-		atomic_fetch_or_explicit(&mask->mask[index],
-		    (uintptr_t)1 << bit, memory_order_relaxed);
+	KE_CPUMASK_FOREACH(cpu, targets) {
+		kassert(cpu != local->cpu_num, "xcall to self");
+		ke_atomic_cpumask_set(&ke_cpu_data[cpu]->xcalls_pending,
+		    local->cpu_num, memory_order_relaxed);
+		n++;
 	}
 
-	kep_arch_ipi_broadcast();
+	return n;
+}
 
-	/* let others' xcalls in */
+/* wait for xcall completion at IPL_DISP (lets other xcalls in) on n CPUs */
+static void
+xcall_wait(struct kcpu_data *local, unsigned n)
+{
 	splx(IPL_DISP);
 
 	while (atomic_load_explicit(&local->xcalls_completed,
-		   memory_order_acquire) < ke_ncpu - 1)
+		   memory_order_acquire) < n)
 		ke_arch_pause();
+}
+
+void
+ke_xcall_broadcast(void (*func)(void *), void *arg)
+{
+	ipl_t ipl = splhigh();
+	struct kcpu_data *local = CPU_LOCAL_GET();
+	kcpumask_t targets;
+	unsigned n;
+
+	ke_cpumask_zero(&targets);
+	for (kcpunum_t i = 0; i < ke_ncpu; i++)
+		if (i != local->cpu_num)
+			ke_cpumask_set(&targets, i);
+
+	n = xcall_arm(local, func, arg, &targets);
+	if (n != 0) {
+		kep_arch_ipi_broadcast();
+		xcall_wait(local, n);
+	}
+
+	splx(ipl);
+}
+
+void
+ke_xcall_multicast(void (*func)(void *), void *arg, const kcpumask_t *cpus)
+{
+	ipl_t ipl = splhigh();
+	struct kcpu_data *local = CPU_LOCAL_GET();
+	kcpumask_t targets = *cpus;
+	unsigned n;
+
+	ke_cpumask_clear(&targets, local->cpu_num);
+
+	n = xcall_arm(local, func, arg, &targets);
+	if (n != 0) {
+		kep_arch_ipi_multicast(&targets);
+		xcall_wait(local, n);
+	}
 
 	splx(ipl);
 }
@@ -55,34 +93,13 @@ ke_xcall_broadcast(void (*func)(void *), void *arg)
 void
 ke_xcall_unicast(void (*func)(void *), void *arg, kcpunum_t cpu_num)
 {
-	ipl_t ipl = splhigh();
-	struct kcpu_data *local = CPU_LOCAL_GET();
-	katomic_cpumask_t *mask = &ke_cpu_data[cpu_num]->xcalls_pending;
-	uint32_t index = local->cpu_num / UINTPTR_BITS;
-	uint32_t bit = local->cpu_num % UINTPTR_BITS;
+	kcpumask_t targets;
 
-	kassert(cpu_num != local->cpu_num, "xcall unicast to self");
+	kassert(cpu_num != CPU_LOCAL_LOAD(cpu_num), "xcall unicast to self");
 
-	local->func = func;
-	local->arg = arg;
-	atomic_store_explicit(&local->xcalls_completed, 0,
-	    memory_order_relaxed);
-
-	atomic_thread_fence(memory_order_release);
-
-	atomic_fetch_or_explicit(&mask->mask[index], (uintptr_t)1 << bit,
-	    memory_order_relaxed);
-
-	kep_arch_ipi_unicast(cpu_num);
-
-	/* let others' xcalls in */
-	splx(IPL_DISP);
-
-	while (atomic_load_explicit(&local->xcalls_completed,
-		   memory_order_acquire) < 1)
-		ke_arch_pause();
-
-	splx(ipl);
+	ke_cpumask_zero(&targets);
+	ke_cpumask_set(&targets, cpu_num);
+	ke_xcall_multicast(func, arg, &targets);
 }
 
 void
@@ -95,6 +112,19 @@ ke_xcall_reschedule(kcpunum_t cpu_num)
 	atomic_store_explicit(&ke_cpu_data[cpu_num]->resched_ipi_pending, true,
 	    memory_order_release);
 	kep_arch_ipi_unicast(cpu_num);
+
+	splx(ipl);
+}
+
+void
+ke_xcall_nop_multicast(const kcpumask_t *cpus)
+{
+	ipl_t ipl = splhigh();
+	kcpumask_t targets = *cpus;
+
+	ke_cpumask_clear(&targets, CPU_LOCAL_LOAD(cpu_num));
+	if (!ke_cpumask_empty(&targets))
+		kep_arch_ipi_multicast(&targets);
 
 	splx(ipl);
 }

@@ -8,6 +8,7 @@
  */
 
 #include <sys/k_cpu.h>
+#include <sys/k_cpumask.h>
 #include <sys/k_intr.h>
 #include <sys/k_log.h>
 #include <sys/k_thread.h>
@@ -20,7 +21,6 @@
 #include <sched.h>
 #include <stdatomic.h>
 
-#define UINTPTR_BITS (sizeof(uintptr_t) * 8)
 
 #define elementsof(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -39,49 +39,6 @@ static struct ksched_class *kep_sched_class[3] = {
 	[SCHED_FIFO] = &kep_rt_class,
 	[SCHED_OTHER] = &kep_ts_class,
 };
-
-static void
-atomic_cpumask_set(katomic_cpumask_t *set, kcpunum_t cpunum, memory_order order)
-{
-	size_t idx = cpunum / UINTPTR_BITS;
-	size_t bit = cpunum % UINTPTR_BITS;
-
-	atomic_fetch_or_explicit(&set->mask[idx], 1UL << bit, order);
-}
-
-static void
-atomic_cpumask_clear(katomic_cpumask_t *set, kcpunum_t cpunum,
-    memory_order order)
-{
-	size_t idx = cpunum / UINTPTR_BITS;
-	size_t bit = cpunum % UINTPTR_BITS;
-
-	atomic_fetch_and_explicit(&set->mask[idx], ~(1UL << bit), order);
-}
-
-static bool
-atomic_cpumask_isset(katomic_cpumask_t *set, kcpunum_t cpunum,
-    memory_order order)
-{
-	size_t idx = cpunum / UINTPTR_BITS;
-	size_t bit = cpunum % UINTPTR_BITS;
-	uintptr_t mask = atomic_load_explicit(&set->mask[idx], order);
-	return (mask & (1UL << bit)) != 0;
-}
-
-static kcpunum_t
-atomic_cpumask_first_set(katomic_cpumask_t *set, memory_order order)
-{
-	size_t width = (ke_ncpu + UINTPTR_BITS - 1) / UINTPTR_BITS;
-	for (size_t i = 0; i < width; i++) {
-		uintptr_t mask = atomic_load_explicit(&set->mask[i], order);
-		if (mask != 0) {
-			kcpunum_t cpu = i * UINTPTR_BITS + __builtin_ctzl(mask);
-			return cpu < ke_ncpu ? cpu : KCPUNUM_NULL;
-		}
-	}
-	return KCPUNUM_NULL;
-}
 
 void
 ke_disp_global_init(void)
@@ -139,11 +96,11 @@ pick_cpu(kthread_t *thread)
 	if (thread->bound_cpu != KCPUNUM_NULL) {
 		return thread->bound_cpu;
 	} else if (thread->last_cpu_num != KCPUNUM_NULL &&
-	    atomic_cpumask_isset(&idle_cpu_mask, thread->last_cpu_num,
+	    ke_atomic_cpumask_isset(&idle_cpu_mask, thread->last_cpu_num,
 	    memory_order_relaxed)) {
 		return thread->last_cpu_num;
 	} else {
-		uint32_t cpu = atomic_cpumask_first_set(&idle_cpu_mask,
+		uint32_t cpu = ke_atomic_cpumask_first(&idle_cpu_mask,
 		    memory_order_relaxed);
 		if (cpu != KCPUNUM_NULL)
 			return cpu;
@@ -353,10 +310,10 @@ ke_dispatch(void)
 	CPU_LOCAL_STORE(prevthread, oldt);
 
 	if (nextt == disp->idle_thread)
-		atomic_cpumask_set(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
+		ke_atomic_cpumask_set(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
 		    memory_order_relaxed);
 	else if (oldt == disp->idle_thread)
-		atomic_cpumask_clear(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
+		ke_atomic_cpumask_clear(&idle_cpu_mask, CPU_LOCAL_LOAD(cpu_num),
 		    memory_order_relaxed);
 
 	ke_spinlock_exit_nospl(&disp->lock);

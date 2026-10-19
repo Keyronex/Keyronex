@@ -8,6 +8,7 @@
  */
 
 #include <sys/k_cpu.h>
+#include <sys/k_cpumask.h>
 #include <sys/k_intr.h>
 #include <sys/k_log.h>
 #include <sys/kmem.h>
@@ -271,4 +272,13 @@ kep_arch_ipi_unicast(uint32_t cpu_num)
 	uint32_t icr_high = ((uint32_t)lapic_id) << 24;
 	lapic_write(LAPIC_REG_ICR1, icr_high);
 	lapic_write(LAPIC_REG_ICR0, icr_low);
+}
+
+void
+kep_arch_ipi_multicast(const kcpumask_t *cpus)
+{
+	kcpunum_t cpu;
+
+	KE_CPUMASK_FOREACH(cpu, cpus)
+		kep_arch_ipi_unicast(cpu);
 }
