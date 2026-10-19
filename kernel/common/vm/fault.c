@@ -667,7 +667,14 @@ vm_fault(vaddr_t addr, vm_prot_t type)
 			}
 			break;
 		} else {
-			kfatal("Nothing to be done? type 0x%x\n", type);
+			/* either raced, or stale TLB entry */
+			kep_arch_tlb_invalidate(&info.map->aspace, info.vaddr,
+			    1, KE_INVAL_LEAF);
+			pmap_unwire_pte(info.map, info.rs, &info.cursor);
+			ke_spinlock_exit_nospl(&info.map->stealing_lock);
+			ke_spinlock_exit_nospl(&info.map->creation_lock);
+			ret = 0;
+			break;
 		}
 	}
 
