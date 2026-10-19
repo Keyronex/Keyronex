@@ -211,6 +211,7 @@ static void
 exec_init(void)
 {
 	proc1 = proc_create(&proc0, false);
+	initproc = proc1;
 	thread1 = proc_new_thread(proc1, NULL, runinit, NULL);
 	thread1->kthread.user = true;
 	ke_thread_resume(&thread1->kthread, false);

@@ -334,6 +334,11 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 	    (const char *const *)envp);
 	kassert(r == 0);
 
+	/* point of no return, other threads can go away */
+	r = proc_exec_begin(proc);
+	if (r < 0)
+		goto error;
+
 	ipl = spldisp();
 	curproc()->vm_map = newmap;
 	curthread()->vm_map = NULL; /* stop overriding */
@@ -342,6 +347,9 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 	vm_map_release(oldmap);
 
 	strncpy(curproc()->comm, argp[0], sizeof(curproc()->comm) - 1);
+
+	/* this return is not via the trap codepath, so we check for an AST */
+	ke_ast_check();
 
 	ke_md_enter_usermode(rtldpkg.entry, pkg.sp);
 

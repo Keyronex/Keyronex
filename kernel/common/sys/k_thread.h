@@ -117,7 +117,11 @@ typedef struct kthread {
 
 	kturnstile_t	*turnstile;	/* my turnstile */
 	void 		*waiting_on;	/* object waited on */
+
+	atomic_uint	ast_pending; /* pending user-mode ASTs */
 } kthread_t;
+
+#define AST_TERMINATE	(1u << 0)	/* thread must exit */
 
 typedef struct ktask {
 	kspinlock_t threads_lock;
@@ -134,8 +138,18 @@ void kep_thread_switch_finish(void);
 kthread_t *ke_thread_retire_dequeue(void);
 void ke_thread_deinit(kthread_t *);
 
+/* Initialise a thread; it must then be attached. */
 void ke_thread_init(kthread_t *, ktask_t *, kturnstile_t *ts, void *stack_base,
     struct karch_trapframe *forkframe, void (*func)(void *), void *arg);
+/* Attach a thread to a task. */
+void ke_task_attach_thread_locked(ktask_t *, kthread_t *);
+
+/* Cause a thread to act on pending ASTs by interrupting/unwaiting. */
+kcpunum_t ke_thread_interrupt(kthread_t *);
+
+/* Check for pending ASTs (must do at IPL 0 on every return to userland.) */
+void ke_ast_check(void);
+
 void ke_set_tcb(uintptr_t value);
 void ke_thread_set_affinity(kthread_t *, kcpunum_t);
 void ke_thread_copy_fpu_state(kthread_t *);

@@ -575,6 +575,26 @@ do_setctty(struct vnode *vn, stdata_t *sh)
 	return 0;
 }
 
+void
+str_tty_detach_session_locked(stdata_t *sh)
+{
+	struct session *sess = sh->tty_session;
+
+	kassert(ke_mutex_held(&proctree_mutex));
+	kassert(sess != NULL && sess->ctty_str == sh);
+
+	sess->ctty_str = NULL;
+	sess->ctty_vn = NULL;
+	sh->tty_session = NULL;
+
+	if (sh->tty_pgrp != NULL) {
+		pgrp_unref(sh->tty_pgrp);
+		sh->tty_pgrp = NULL;
+	}
+
+	session_unref(sess);
+}
+
 /* convert a muxed stream back into one with a normal head */
 static void
 unmux(stdata_t *lower_sh)

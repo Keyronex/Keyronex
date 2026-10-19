@@ -19,12 +19,18 @@
 #include <sys/proc.h>
 #include <sys/wait.h>
 
+#include <libkern/idalloc.h>
 #include <stdalign.h>
 
 void vm_map_activate(vm_map_t *old, vm_map_t *new);
 
+#define PID_MAX 65535
+
 kmem_cache_t *turnstile_cache, *proc_cache, *thread_cache;
-_Atomic(pid_t) last_pid = 1;
+static uint8_t pid_bitmap[(PID_MAX + 1) / 8];
+static struct id_allocator pid_allocator = IDALLOC_INITIALISER(pid_bitmap,
+    PID_MAX);
+proc_t *initproc;
 struct session session0;
 struct pgrp pgrp0;
 TAILQ_HEAD(, proc) allproc;
@@ -40,7 +46,11 @@ proc_init(void)
 	turnstile_cache = kmem_cache_create("Turnstile", sizeof(kturnstile_t),
 	    alignof(kturnstile_t), NULL);
 
-	proc0.pid = 0;
+	proc0.pid = idalloc_alloc(&pid_allocator);
+	kassert(proc0.pid == 0);
+	proc0.lifecycle = PROC_RUNNING;
+	ke_event_init(&proc0.child_ev, false);
+	ke_event_init(&proc0.thread_ev, false);
 
 	pgrp0.refcount = 1;
 	pgrp0.pgid = 0;
@@ -106,8 +116,13 @@ proc_create(proc_t *parent, bool fork)
 	else
 	 	strcpy(proc->comm, parent->comm);
 
+	proc->pid = idalloc_alloc(&pid_allocator);
+	if (proc->pid < 0) {
+		kmem_cache_free(proc_cache, proc);
+		return NULL;
+	}
+
 	proc->vm_map = vm_map_create();
-	proc->pid = atomic_fetch_add(&last_pid, 1);
 
 	if (fork) {
 		proc->finfo = uf_fork(parent->finfo);
@@ -121,9 +136,11 @@ proc_create(proc_t *parent, bool fork)
 	proc->parent = parent;
 	TAILQ_INIT(&proc->children);
 	proc->exited = false;
-	proc->exiting = false;
+	proc->lifecycle = PROC_RUNNING;
+	proc->exit_status = 0;
+	ke_event_init(&proc->child_ev, false);
+	ke_event_init(&proc->thread_ev, false);
 
-	proc->wait_ev = NULL;
 	proc->procdesc = NULL;
 
 	ke_mutex_enter(&proctree_mutex, "proc_create");
@@ -136,6 +153,8 @@ proc_create(proc_t *parent, bool fork)
 	return proc;
 }
 
+static void thread_destroy(thread_t *thread);
+
 thread_t *
 proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
     void (*func)(void *), void *arg)
@@ -143,6 +162,7 @@ proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
 	thread_t *thread;
 	void *stack;
 	kturnstile_t *ts;
+	ipl_t ipl;
 
 	thread = kmem_cache_alloc(thread_cache, 0);
 	if (thread == NULL)
@@ -166,6 +186,16 @@ proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
 	ke_thread_init(&thread->kthread, &proc->ktask, ts, stack,
 		fork_frame, func, arg);
 
+	ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
+	if (proc->lifecycle != PROC_RUNNING) {
+		/* process no longer accepting threads, give up */
+		ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+		thread_destroy(thread);
+		return NULL;
+	}
+	ke_task_attach_thread_locked(&proc->ktask, &thread->kthread);
+	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+
 	return thread;
 }
 
@@ -178,9 +208,6 @@ proc_new_system_thread(void (*func)(void *), void *arg)
 static void
 thread_destroy(thread_t *thread)
 {
-	kassert(thread->kthread.task == &proc0.ktask,
-	    "retired thread should belong to proc0");
-
 	ke_thread_deinit(&thread->kthread);
 	kmem_cache_free(turnstile_cache, thread->kthread.turnstile);
 	vm_kwired_free(thread->kthread.kstack_base, KSTACK_SIZE / PGSIZE);
@@ -197,8 +224,11 @@ thread_reaper(void *)
 		    ABSTIME_FOREVER);
 		ke_event_set_signalled(&ke_thread_retire_event, false);
 
-		while ((kthread = ke_thread_retire_dequeue()) != NULL)
+		while ((kthread = ke_thread_retire_dequeue()) != NULL) {
+			kassert(kthread->task == &proc0.ktask,
+			    "retired threads must belong to proc0");
 			thread_destroy((thread_t *)kthread);
+		}
 	}
 }
 
@@ -245,7 +275,7 @@ int sys_fork_thread(uintptr_t entry, uintptr_t stack)
 	thread = proc_new_thread(curproc(), NULL, user_thread_trampoline, info);
 	if (thread == NULL) {
 		kmem_free(info, sizeof(*info));
-		return -ENOMEM;
+		return -EAGAIN;
 	}
 
 	tid = thread->kthread.tid;
@@ -254,58 +284,216 @@ int sys_fork_thread(uintptr_t entry, uintptr_t stack)
 	return tid;
 }
 
+/*
+ * thread termination
+ */
+
+/*
+ * Deliver a termination AST to every thread of this process except the caller.
+ *
+ * @pre proc->ktask.threads_lock held
+ */
+static void
+terminate_threads_locked(proc_t *proc, kcpumask_t *pokes)
+{
+	kthread_t *self = ke_curthread(), *thread;
+
+	kassert(ke_spinlock_held(&proc->ktask.threads_lock));
+
+	LIST_FOREACH(thread, &proc->ktask.threads, proc_link) {
+		kcpunum_t cpu;
+
+		if (thread == self)
+			continue;
+
+		atomic_fetch_or_explicit(&thread->ast_pending, AST_TERMINATE,
+		    memory_order_release);
+		cpu = ke_thread_interrupt(thread);
+		if (cpu != KCPUNUM_NULL)
+			ke_cpumask_set(pokes, cpu);
+	}
+}
+
+void
+ke_ast_check(void)
+{
+	kthread_t *thread = ke_curthread();
+
+	kassert(ke_ipl() == IPL_0);
+
+	if (atomic_load_explicit(&thread->ast_pending, memory_order_acquire) &
+	    AST_TERMINATE)
+		sys_thread_exit();
+}
+
+/* last thread exit, zombify the process */
+static void
+proc_exit_last(proc_t *proc)
+{
+	proc_t *child, *tmp;
+	struct session *sess;
+
+	if (proc == initproc)
+		kfatal("init exited (status %#x)\n", proc->exit_status);
+
+	vm_unmap(proc->vm_map, LOWER_HALF, LOWER_HALF + LOWER_HALF_SIZE);
+	vm_map_release(proc->vm_map);
+	proc->vm_map = NULL;
+
+	uf_destroy(proc->finfo);
+	proc->finfo = NULL;
+
+	ke_mutex_enter(&proctree_mutex, "proc_exit_last");
+
+	TAILQ_FOREACH_SAFE(child, &proc->children, sibling_qlink, tmp) {
+		TAILQ_REMOVE(&proc->children, child, sibling_qlink);
+		child->parent = initproc;
+		TAILQ_INSERT_TAIL(&initproc->children, child, sibling_qlink);
+		if (child->exited)
+			ke_event_set_signalled(&initproc->child_ev, true);
+	}
+
+	sess = proc->pgrp->session;
+	if (sess->leader == proc) {
+		sess->leader = NULL;
+		if (sess->ctty_str != NULL)
+			str_tty_detach_session_locked(sess->ctty_str);
+	}
+
+	pgrp_remove_member(proc);
+
+	proc->exited = true;
+	ke_event_set_signalled(&proc->parent->child_ev, true);
+	if (proc->procdesc != NULL)
+		procdesc_notify_exit(proc->procdesc, proc->exit_status);
+
+	ke_mutex_exit(&proctree_mutex);
+}
+
 void
 sys_thread_exit(void)
 {
 	thread_t *curthread = curthread();
 	proc_t *proc = curproc();
-	bool proc_exited = false;
+	bool last;
 	ipl_t ipl;
+
+	curthread->vm_map = proc0.vm_map;
+	vm_map_activate(proc->vm_map, proc0.vm_map);
 
 	ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
 	LIST_REMOVE(&curthread->kthread, proc_link);
-	if (--proc->ktask.threads_count == 0) {
-		if (!proc->exiting) {
-			proc->exiting = true;
+	last = --proc->ktask.threads_count == 0;
+	if (last) {
+		/* we are the last to leave */
+		if (proc->lifecycle != PROC_EXITING) {
+			proc->lifecycle = PROC_EXITING;
 			proc->exit_status = W_EXITCODE(0, 0);
 		}
-		proc_exited = true;
+	} else if (proc->lifecycle != PROC_RUNNING) {
+		/*
+		 * possibly being ended via execve() - wake it in case */
+		ke_event_set_signalled(&proc->thread_ev, true);
 	}
 	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
 
-	/* reassociate with proc0 ahead of reaping */
-	curthread->vm_map = proc0.vm_map;
-	vm_map_activate(proc->vm_map, proc0.vm_map);
+	/* reassociate to proc0 before reap, but stay off its threads list */
 	curthread->kthread.task = &proc0.ktask;
 
-	if (proc_exited) {
-#if TRACE_TODO
-		kprintf("= TODO: proper process teardown...\n");
-#endif
-
-		/* tear down what's not needed to wait on */
-		vm_unmap(proc->vm_map, LOWER_HALF,
-		    LOWER_HALF + LOWER_HALF_SIZE);
-		vm_map_release(proc->vm_map);
-		proc->vm_map = NULL;
-
-		uf_destroy(proc->finfo);
-		proc->finfo = NULL;
-
-		ke_mutex_enter(&proctree_mutex, "sys_thread_exit");
-		proc->exited = true;
-		if (proc->parent->wait_ev != NULL)
-			ke_event_set_signalled(proc->parent->wait_ev, true);
-		if (proc->procdesc != NULL)
-			procdesc_notify_exit(proc->procdesc, proc->exit_status);
-		ke_mutex_exit(&proctree_mutex);
-	}
+	if (last)
+		proc_exit_last(proc);
 
 	ke_thread_exit();
 }
 
+void
+sys_exit(int status)
+{
+	proc_t *proc = curproc();
+	kcpumask_t pokes;
+	ipl_t ipl;
+
+	ke_cpumask_zero(&pokes);
+
+	ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
+	if (proc->lifecycle != PROC_EXITING) {
+		/* first to exit wins; the status is ours */
+		proc->lifecycle = PROC_EXITING;
+		proc->exit_status = W_EXITCODE(status & 0xff, 0);
+		terminate_threads_locked(proc, &pokes);
+	}
+	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+
+	ke_xcall_nop_multicast(&pokes);
+
+	sys_thread_exit();
+}
+
+int
+proc_exec_begin(proc_t *proc)
+{
+	kcpumask_t pokes;
+	ipl_t ipl;
+	int r;
+
+	ke_cpumask_zero(&pokes);
+
+	ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
+
+	if (proc->lifecycle != PROC_RUNNING) {
+		ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+		return -EINTR;
+	}
+
+	if (proc->ktask.threads_count == 1) {
+		ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+		return 0;
+	}
+
+	/* ban further new threads, make away with what others still exist */
+	proc->lifecycle = PROC_EXECING;
+	terminate_threads_locked(proc, &pokes);
+	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+
+	ke_xcall_nop_multicast(&pokes);
+
+	for (;;) {
+		ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
+		if (proc->ktask.threads_count == 1)
+			break;
+		ke_event_set_signalled(&proc->thread_ev, false);
+		ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+		ke_wait1(&proc->thread_ev, "execve: threads draining", false,
+		    ABSTIME_FOREVER);
+	}
+
+	/* if another thread called exit() meanwhile, make away ourselves too */
+	if (proc->lifecycle == PROC_EXECING) {
+		proc->lifecycle = PROC_RUNNING;
+		r = 0;
+	} else {
+		r = -EINTR;
+	}
+	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
+
+	return r;
+}
+
+static void
+proc_free(proc_t *proc)
+{
+	kassert(proc->vm_map == NULL && proc->finfo == NULL);
+	kassert(proc->pgrp == NULL && proc->procdesc == NULL);
+	kassert(TAILQ_EMPTY(&proc->children));
+	kassert(proc->ktask.threads_count == 0);
+
+	idalloc_free(&pid_allocator, proc->pid);
+	kmem_cache_free(proc_cache, proc);
+}
 
 /*
+ * Reap a zombie process - must have no threads left associated with it.
+ *
  * @pre proctree_mutex MUST be held.
  * @pre child->parent == parent && child->exited
  */
@@ -326,10 +514,30 @@ proc_reap_locked(proc_t *parent, proc_t *child)
 		child->procdesc = NULL;
 	}
 
-	/* (unref it! unalloc pid!) */
-#if TRACE_TODO
-	kprintf("= TODO: fully reap zombie..\n");
-#endif
+	proc_free(child);
+}
+
+/* Destroy a process that never ran (i.e. fork() failed) */
+void
+proc_destroy_unstarted(proc_t *proc)
+{
+	kassert(proc->ktask.threads_count == 0);
+
+	vm_unmap(proc->vm_map, LOWER_HALF, LOWER_HALF + LOWER_HALF_SIZE);
+	vm_map_release(proc->vm_map);
+	proc->vm_map = NULL;
+
+	uf_destroy(proc->finfo);
+	proc->finfo = NULL;
+
+	ke_mutex_enter(&proctree_mutex, "proc_destroy_unstarted");
+	TAILQ_REMOVE(&proc->parent->children, proc, sibling_qlink);
+	TAILQ_REMOVE(&allproc, proc, allproc_qlink);
+	pgrp_remove_member(proc);
+	kassert(proc->procdesc == NULL);
+	ke_mutex_exit(&proctree_mutex);
+
+	proc_free(proc);
 }
 
 pid_t
@@ -337,19 +545,23 @@ sys_wait4(pid_t pid, int *out_ustatus, int flags,
     struct rusage *out_urusage)
 {
 	proc_t *proc = curproc();
-	kevent_t event;
 
-	kassert(pid == -1 || pid > 0);
+	/* TODO pgrp waits */
+	if (!(pid == -1 || pid > 0))
+		return -EINVAL;
 
 	ke_mutex_enter(&proctree_mutex, "sys_wait4: proctree_mutex");
 	while (true) {
 		proc_t *child;
 		proc_t *found = NULL;
+		bool any = false;
+		int r;
 
 		TAILQ_FOREACH(child, &proc->children, sibling_qlink) {
-			if (!child->exited)
+			if (pid > 0 && child->pid != pid)
 				continue;
-			if (pid == -1 || child->pid == pid) {
+			any = true;
+			if (child->exited) {
 				found = child;
 				break;
 			}
@@ -363,8 +575,16 @@ sys_wait4(pid_t pid, int *out_ustatus, int flags,
 				proc_reap_locked(proc, found);
 			ke_mutex_exit(&proctree_mutex);
 
-			*out_ustatus = status;
+			if (out_ustatus != NULL &&
+			    memcpy_to_user(out_ustatus, &status,
+			    sizeof(status)) != 0)
+				return -EFAULT;
 			return ret_pid;
+		}
+
+		if (!any) {
+			ke_mutex_exit(&proctree_mutex);
+			return -ECHILD;
 		}
 
 		if (flags & WNOHANG) {
@@ -372,14 +592,15 @@ sys_wait4(pid_t pid, int *out_ustatus, int flags,
 			return 0;
 		}
 
-		/* if no event yet */
-		ke_event_init(&event, false);
-		proc->wait_ev = &event;
+		ke_event_set_signalled(&proc->child_ev, false);
 		ke_mutex_exit(&proctree_mutex);
 
-		ke_wait1(&event, "sys_wait4", false, ABSTIME_FOREVER);
+		r = ke_wait1(&proc->child_ev, "sys_wait4", true,
+		    ABSTIME_FOREVER);
+		if (r == -EINTR)
+			return -EINTR;
+
 		ke_mutex_enter(&proctree_mutex, "sys_wait4");
-		proc->wait_ev = NULL;
 	}
 }
 
@@ -405,7 +626,7 @@ sys_fork(karch_trapframe_t *frame)
 
 	child_thread = proc_new_thread(child_proc, frame, fork_thread, NULL);
 	if (child_thread == NULL) {
-		kfatal("todo: cleanup proc!\n");
+		proc_destroy_unstarted(child_proc);
 		return -ENOMEM;
 	}
 

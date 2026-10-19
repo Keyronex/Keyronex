@@ -76,12 +76,16 @@ sys_clock_nanosleep(int clock_id, int flags, const struct timespec *rqtp,
 {
 	kabstime_t til;
 	kevent_t ev;
+	int r;
 
 	kassert(!(flags & ~TIMER_ABSTIME));
 
 	ke_event_init(&ev, false);
 	til = ke_time() + ts_to_ns(rqtp);
-	kassert(ke_wait1(&ev, "clock_nanosleep", false, til) == -ETIMEDOUT);
+	r = ke_wait1(&ev, "clock_nanosleep", true, til);
+	if (r == -EINTR)
+		return -EINTR;
+	kassert(r == -ETIMEDOUT);
 
 	return 0;
 }
@@ -115,8 +119,10 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	 */
 
 	case SYS_thread_exit:
-	case SYS_exit:
 		sys_thread_exit();
+
+	case SYS_exit:
+		sys_exit((int)arg1);
 
 	case SYS_fork:
 		return sys_fork(frame);

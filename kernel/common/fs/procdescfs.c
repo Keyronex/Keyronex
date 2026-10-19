@@ -252,7 +252,11 @@ pid_t sys_pdfork(karch_trapframe_t *frame, int *fdp, int flags)
 
 	child_thread = proc_new_thread(child_proc, frame, fork_thread, NULL);
 	if (child_thread == NULL) {
-		kfatal("todo: cleanup proc!\n");
+		child_proc->procdesc = NULL;
+		pd->proc = NULL;
+		proc_destroy_unstarted(child_proc);
+		uf_unreserve_fd(curproc()->finfo, fd);
+		file_release(file);
 		return -ENOMEM;
 	}
 
@@ -342,7 +346,7 @@ sys_pdwait(int pd_fd, int *status, int options,
 
 		ke_spinlock_exit(&pd->lock, ipl);
 
-		r = ke_wait1(&pd->wait_event, "pdwait", false,
+		r = ke_wait1(&pd->wait_event, "pdwait", true,
 		    ABSTIME_FOREVER);
 		if (r == -EINTR) {
 			file_release(file);

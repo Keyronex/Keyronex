@@ -76,7 +76,7 @@ ke_thread_retire_dequeue(void)
 void
 ke_thread_deinit(kthread_t *thread)
 {
-	kassert(thread->state == TS_TERMINATED);
+	kassert(thread->state == TS_TERMINATED || thread->state == TS_CREATED);
 	kassert(!ke_spinlock_held(&thread->lock));
 	kassert(thread->waiting_on == NULL,
 	    "retired thread waiting on turnstile");
@@ -92,8 +92,6 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
     void *stack_base, struct karch_trapframe *forkframe, void (*func)(void *),
     void *arg)
 {
-	ipl_t ipl;
-
 	ke_spinlock_init(&thread->lock);
 
 	thread->kstack_base = stack_base;
@@ -129,12 +127,18 @@ ke_thread_init(kthread_t *thread, ktask_t *task, kturnstile_t *ts,
 	thread->turnstile = ts;
 	thread->waiting_on = NULL;
 
-	kep_arch_thread_init(thread, stack_base, forkframe, func, arg);
+	atomic_store_explicit(&thread->ast_pending, 0, memory_order_relaxed);
 
-	ipl = ke_spinlock_enter(&task->threads_lock);
+	kep_arch_thread_init(thread, stack_base, forkframe, func, arg);
+}
+
+void
+ke_task_attach_thread_locked(ktask_t *task, kthread_t *thread)
+{
+	kassert(ke_spinlock_held(&task->threads_lock));
+	kassert(thread->task == task);
 	LIST_INSERT_HEAD(&task->threads, thread, proc_link);
 	task->threads_count++;
-	ke_spinlock_exit(&task->threads_lock, ipl);
 }
 
 void

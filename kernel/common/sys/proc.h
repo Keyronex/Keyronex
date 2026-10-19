@@ -12,6 +12,7 @@
 
 #include <sys/types.h>
 #include <sys/k_thread.h>
+#include <sys/k_wait.h>
 #include <sys/pcb.h>
 #include <stdbool.h>
 
@@ -42,6 +43,20 @@ struct pgrp {
 };
 
 /*
+ * Process lifecycle state
+ *
+ * RUNNING: new threads may be created
+ * EXECING: a thread is in execve() and draining other threads.
+ * EXITING: process is dying, last one to go zombifies the process.
+ *
+ */
+enum proc_lifecycle {
+	PROC_RUNNING,
+	PROC_EXECING,
+	PROC_EXITING,
+};
+
+/*
  * ~: invariant from creation
  * T: proctree_mutex
  * t: proc->ktask.threads_lock
@@ -59,9 +74,11 @@ typedef struct proc {
 	TAILQ_HEAD(, proc)	children;	/* T: child processes */
 	TAILQ_ENTRY(proc)	sibling_qlink;	/* T: links parent's children */
 	bool		exited;	 	/* T: process exited, needs wait()'d */
-	bool		exiting;	/* t: is process exiting? */
-	int		exit_status; 	/* effectively T: set after 'exited' */
-	kevent_t	*wait_ev;	/* T: signalled if child exits */
+	enum proc_lifecycle lifecycle;	/* t */
+	int		exit_status; 	/* t: set in EXITING
+					 * read after `exited` */
+	kevent_t	child_ev;	/* T: set whenever a child exits */
+	kevent_t	thread_ev;	/* t: set when thread exits in EXECING */
 
 	char comm[32];			/* belongs in user */
 	struct vm_map *vm_map;		/* ~? virtual memory map */
@@ -74,6 +91,11 @@ typedef struct proc {
 
 void proc_init(void);
 void proc_reaper_init(void);
+
+/* drain sibling threads after execve() commits; -EINTR if proc should exit */
+int proc_exec_begin(proc_t *proc);
+/* destroy a process that never run (i.e. fork() failed) */
+void proc_destroy_unstarted(proc_t *proc);
 
 proc_t *proc_curproc(void);
 
@@ -98,6 +120,9 @@ void proc_reap_locked(proc_t *parent, proc_t *child);
 void procdesc_notify_exit(struct procdesc *pd, int exit_status);
 void procdesc_orphan(struct procdesc *pd);
 
+/* (move me) strhead.c detach tty from its session (session leader exiting) */
+void str_tty_detach_session_locked(struct stdata *sh);
+
 int sys_fork_thread(uintptr_t stack, uintptr_t entry);
 void sys_thread_exit(void);
 void sys_exit(int status);
@@ -115,6 +140,7 @@ int sys_setpgid(pid_t pid, pid_t pgid);
 pid_t sys_setsid(void);
 
 extern proc_t proc0;
+extern proc_t *initproc;
 
 #define thread_proc(THR) ((proc_t *)((THR)->kthread.task))
 #define kthread_proc(KTHR) ((proc_t *)((KTHR)->task))

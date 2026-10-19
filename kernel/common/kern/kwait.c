@@ -55,6 +55,11 @@ ke_waitn(size_t obj_n, void **objs, const char *reason, bool signallable,
 	stat = &thread->wait_status;
 	waitblocks = thread->integral_waitblocks;
 
+	/*skip trying to wait at all if any AST pending */
+	if (signallable && atomic_load_explicit(&thread->ast_pending,
+	    memory_order_acquire) != 0)
+		return -EINTR;
+
 	thread->wait_signallable = signallable;
 	atomic_store_explicit(stat, SYNCH_PRE_WAIT, memory_order_release);
 
@@ -126,8 +131,22 @@ ke_waitn(size_t obj_n, void **objs, const char *reason, bool signallable,
 
 		ke_spinlock_enter_nospl(&thread->lock);
 
-		if (atomic_compare_exchange_strong_explicit(stat, &expected,
-		    SYNCH_WAIT, memory_order_acq_rel, memory_order_acquire)) {
+		/*
+		 * Before committing we check again for an AST under the thread
+		 * lock. ke_thread_interrupt() takes it, so either we see an AST
+		 * set after the check, or the AST raiser observes us after
+		 * commit.
+		 */
+		if (signallable && atomic_load_explicit(&thread->ast_pending,
+		    memory_order_acquire) != 0 &&
+		    atomic_compare_exchange_strong_explicit(stat, &expected,
+		    SYNCH_POST_WAIT, memory_order_acq_rel,
+		    memory_order_acquire)) {
+			/* AST interrupted us pre sleeping */
+			ke_spinlock_exit_nospl(&thread->lock);
+		} else if (atomic_compare_exchange_strong_explicit(stat,
+		    &expected, SYNCH_WAIT, memory_order_acq_rel,
+		    memory_order_acquire)) {
 			kassert(ipl < IPL_DISP, "ipl high in ke_wait");
 			thread->wait_reason = reason;
 			thread->state = TS_SLEEPING;
@@ -169,13 +188,48 @@ ke_waitn(size_t obj_n, void **objs, const char *reason, bool signallable,
 		ke_spinlock_exit_nospl(&obj->lock);
 	}
 
-	kassert(satisfier != -1, "expected a satisfier");
 	splx(ipl);
 
-	if (satisfier == obj_n)
+	if (satisfier == -1) {
+		/* then it must have been interrupted by an AST */
+		kassert(signallable, "wait unsatisfied, but not signallable");
+		return -EINTR;
+	} else if (satisfier == obj_n) {
 		return -ETIMEDOUT;
-	else
+	} else {
 		return satisfier;
+	}
+}
+
+kcpunum_t
+ke_thread_interrupt(kthread_t *thread)
+{
+	kcpunum_t running_on = KCPUNUM_NULL;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&thread->lock);
+
+	if (thread->state == TS_RUNNING) {
+		running_on = thread->last_cpu_num;
+	} else if (thread->state == TS_SLEEPING && thread->wait_signallable) {
+		enum kwait_internal_status expected = SYNCH_WAIT;
+
+		/*
+		 * Try to end the wait ourselves. If we win then the wait ends
+		 * with no satisfier. Otherwise the satisfier wakes the thread
+		 * anyway, and the AST gets caught at the next checkpoint.
+		 */
+		if (atomic_compare_exchange_strong_explicit(&thread->wait_status,
+		    &expected, SYNCH_POST_WAIT, memory_order_acq_rel,
+		    memory_order_acquire)) {
+			ke_spinlock_exit(&thread->lock, ipl);
+			ke_thread_resume(thread, false);
+			return KCPUNUM_NULL;
+		}
+	}
+
+	ke_spinlock_exit(&thread->lock, ipl);
+	return running_on;
 }
 
 int

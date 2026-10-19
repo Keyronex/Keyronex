@@ -21,6 +21,7 @@
 #include "goldfish.h"
 
 #define M68K_SR_IPL_MASK 0x0700u
+#define M68K_SR_S 0x2000u	/* supervisor state */
 
 void vm_fault(vaddr_t va, vm_prot_t prot);
 void kep_dispatch_softints(ipl_t newipl);
@@ -198,6 +199,12 @@ c_trap(karch_trapframe_t *frame)
 	}
 
 	splx(oldipl);
+
+	if ((frame->sr & M68K_SR_S) == 0) {
+		kassert(ke_ipl() == IPL_0, "return to usermode at raised ipl");
+		ke_arch_enable(true);
+		ke_ast_check();
+	}
 }
 
 void

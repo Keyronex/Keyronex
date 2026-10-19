@@ -558,10 +558,13 @@ sys_epoll_wait(int epdesc, struct epoll_event *events,
 	else
 		deadline = ke_time() + (knanosecs_t)millisecs * NS_PER_MS;
 
-	r = ke_wait1(&ep->event, "epoll_wait:ep->event", false, deadline);
+	r = ke_wait1(&ep->event, "epoll_wait:ep->event", true, deadline);
 	if (r == -ETIMEDOUT) {
 		file_release(ep_file);
 		return 0;
+	} else if (r == -EINTR) {
+		file_release(ep_file);
+		return -EINTR;
 	}
 
 	ke_mutex_enter(&ep->mutex, "epoll_wait:ep->mutex 2");

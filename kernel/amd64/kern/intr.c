@@ -245,6 +245,13 @@ kep_amd64_interrupt(karch_trapframe_t *frame, uintptr_t num)
 		}
 		kfatal("int %lu\n", num);
 	}
+
+	if ((frame->cs & 3) == 3) {
+		kassert(ke_ipl() == IPL_0, "return to usermode at raised IPL");
+		ke_arch_enable(true);
+		ke_ast_check();
+		ke_arch_disable();
+	}
 }
 
 int
