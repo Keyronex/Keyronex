@@ -11,6 +11,7 @@
  * @brief File object
  */
 
+#include <sys/krx_epoll.h>
 #include <sys/krx_file.h>
 #include <sys/krx_vfs.h>
 #include <sys/kmem.h>
@@ -82,6 +83,8 @@ file_release(file_t *file)
 	uint32_t old = __atomic_fetch_sub(&file->refcnt, 1, __ATOMIC_ACQ_REL);
 
 	if (old == 1) {
+		poll_watched_file_did_close(file);
+
 		if (file->nch.nc != NULL) {
 			if (file->nch.nc->vp->ops->close != NULL)
 				VOP_CLOSE(file->nch.nc->vp,
