@@ -81,6 +81,22 @@ proc_curproc(void)
 	return curproc();
 }
 
+/* @pre proctree_mutex held */
+proc_t *
+proc_find_locked(pid_t pid)
+{
+	proc_t *proc;
+
+	kassert(ke_mutex_held(&proctree_mutex));
+
+	TAILQ_FOREACH(proc, &allproc, allproc_qlink) {
+		if (proc->pid == pid)
+			return proc;
+	}
+
+	return NULL;
+}
+
 thread_t *
 proc_alloc_idle_thread(void)
 {
@@ -406,10 +422,11 @@ sys_thread_exit(void)
 	ke_thread_exit();
 }
 
+/* Terminate a process with given wait status, if not already terminating. */
 void
-sys_exit(int status)
+proc_terminate(proc_t *proc, int status)
 {
-	proc_t *proc = curproc();
+	kthread_t *self = ke_curthread();
 	kcpumask_t pokes;
 	ipl_t ipl;
 
@@ -417,15 +434,22 @@ sys_exit(int status)
 
 	ipl = ke_spinlock_enter(&proc->ktask.threads_lock);
 	if (proc->lifecycle != PROC_EXITING) {
-		/* first to exit wins; the status is ours */
 		proc->lifecycle = PROC_EXITING;
-		proc->exit_status = W_EXITCODE(status & 0xff, 0);
+		proc->exit_status = status;
 		terminate_threads_locked(proc, &pokes);
+		if (kthread_proc(self) == proc)
+			atomic_fetch_or_explicit(&self->ast_pending,
+			    AST_TERMINATE, memory_order_release);
 	}
 	ke_spinlock_exit(&proc->ktask.threads_lock, ipl);
 
 	ke_xcall_nop_multicast(&pokes);
+}
 
+void
+sys_exit(int status)
+{
+	proc_terminate(curproc(), W_EXITCODE(status & 0xff, 0));
 	sys_thread_exit();
 }
 

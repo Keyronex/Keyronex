@@ -190,6 +190,12 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	/*
 	 * signals
 	 */
+	case SYS_kill:
+		return sys_kill((pid_t)arg1, (int)arg2);
+
+	case SYS_pdkill:
+		return sys_pdkill((int)arg1, (int)arg2);
+
 	case SYS_sigaction:
 		return sys_sigaction((int)arg1, (const struct sigaction *)arg2,
 		    (struct sigaction *)arg3);

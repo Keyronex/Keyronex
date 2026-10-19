@@ -29,6 +29,7 @@
 #include <sys/k_log.h>
 #include <sys/kmem.h>
 #include <sys/krx_file.h>
+#include <sys/krx_signal.h>
 #include <sys/krx_user.h>
 #include <sys/libkern.h>
 #include <sys/proc.h>
@@ -180,14 +181,13 @@ procdesc_inactive(vnode_t *vn)
 	if (pd->proc != NULL) {
 		proc_t *child = pd->proc;
 
-		/*
-		 * TODO: kill (if not already exited) on last close if
-		 * ~PD_DAEMON
-		 */
-		if (child->exited)
+		if (child->exited) {
 			proc_reap_locked(child->parent, child);
-		else
+		} else {
 			child->procdesc = NULL;
+			if (!(pd->flags & PD_DAEMON))
+				proc_terminate(child, W_EXITCODE(0, SIGKILL));
+		}
 	}
 	ke_mutex_exit(&proctree_mutex);
 
@@ -275,6 +275,37 @@ pid_t sys_pdfork(karch_trapframe_t *frame, int *fdp, int flags)
 	ke_thread_resume(&child_thread->kthread, false);
 
 	return pid;
+}
+
+int
+sys_pdkill(int pd_fd, int sig)
+{
+	proc_t *proc = curproc();
+	struct file *file;
+	struct procdesc *pd;
+	int r;
+
+	if (sig < 0 || sig > SIGRTMAX)
+		return -EINVAL;
+
+	file = uf_lookup(proc->finfo, pd_fd);
+	if (file == NULL)
+		return -EBADF;
+
+	if (file->vnode->ops != &procdesc_vnops) {
+		file_release(file);
+		return -EBADF;
+	}
+
+	pd = VTOPD(file->vnode);
+
+	ke_mutex_enter(&proctree_mutex, "sys_pdkill");
+	r = pd->proc != NULL ? proc_signal_locked(pd->proc, sig) : -ESRCH;
+	ke_mutex_exit(&proctree_mutex);
+
+	file_release(file);
+
+	return r;
 }
 
 pid_t

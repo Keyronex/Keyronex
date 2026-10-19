@@ -98,6 +98,8 @@ int proc_exec_begin(proc_t *proc);
 void proc_destroy_unstarted(proc_t *proc);
 
 proc_t *proc_curproc(void);
+proc_t *proc_find_locked(pid_t pid);
+void proc_terminate(proc_t *proc, int status);
 
 proc_t *proc_create(proc_t *parent, bool fork);
 
@@ -132,6 +134,7 @@ int sys_execve(const char *upath, char *const uarpg[], char *const uenvp[]);
 pid_t sys_pdfork(karch_trapframe_t *frame, int *fdp, int flags);
 pid_t sys_pdwait(int pd, int *status, int options, struct rusage *ru,
     siginfo_t *si);
+int sys_pdkill(int pd, int sig);
 
 pid_t sys_getppid(proc_t *proc);
 pid_t sys_getpgid(pid_t pid);

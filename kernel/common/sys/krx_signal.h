@@ -16,6 +16,18 @@
 
 #include <sys/signal.h>
 
+struct proc;
+
+/*
+ * @brief Post a signal to a process.
+ *
+ * (Only the default action is applied for now.)
+ *
+ * @pre proctree_mutex held
+ */
+int proc_signal_locked(struct proc *proc, int sig);
+
+int sys_kill(pid_t pid, int sig);
 int sys_sigaction(int signum, const struct sigaction *act,
     struct sigaction *oldact);
 int sys_sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
