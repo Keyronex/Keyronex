@@ -305,12 +305,16 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			if (table_page != NULL) {
 				/* commit accounting for previous table */
 				if (!entry->is_phys) {
-					table_page->proctable
-					    .valid_pageable_leaf_ptes -=
+					table_page->proctable.valid_pageable_leaf_ptes -=
 					    n_zeroed;
-					if (table_page->proctable
-						.valid_pageable_leaf_ptes ==
-					    0) {
+					/*
+					 * can be on the active list only if it
+					 * had valid leaves before
+					 */
+					if (n_zeroed > 0 &&
+					    table_page->proctable.valid_pageable_leaf_ptes == 0) {
+						VM_PAGE_QTAG_CLEAR(table_page,
+						    VM_PAGE_QTAG_LEAF);
 						TAILQ_REMOVE(
 						    &map->rs.active_leaf_tables,
 						    table_page, qlink);
@@ -479,6 +483,8 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			    n_zeroed;
 			if (table_page->proctable.valid_pageable_leaf_ptes ==
 			    0 && n_zeroed > 0) {
+				VM_PAGE_QTAG_CLEAR(table_page,
+				    VM_PAGE_QTAG_LEAF);
 				TAILQ_REMOVE(&map->rs.active_leaf_tables,
 				    table_page, qlink);
 			}

@@ -23,6 +23,15 @@
 typedef TAILQ_HEAD(vm_page_queue, vm_page) vm_page_queue_t;
 typedef struct vm_domain vm_domain_t;
 
+/* On which queue is a page linked? (for debug builds) */
+enum vm_page_qtag {
+	VM_PAGE_QTAG_NONE,	/* on no queue */
+	VM_PAGE_QTAG_PAGING,	/* on a paging queue */
+	VM_PAGE_QTAG_LEAF,	/* on a vm_rs::active_leaf_tables */
+	VM_PAGE_QTAG_FREEQ,	/* on a 'page tables to be freed' batch queue */
+};
+
+
 /*
  * The page struct.
  * Locking:
@@ -40,7 +49,7 @@ struct vm_page {
 	    domain : 4,
 	    spare_1: 11;
 	uint16_t ref_count;
-	uint16_t spare_2;
+	uint16_t qtag;		/* on which queue is this page linked? */
 
 	/* Some use specific state (o) */
 	union {
@@ -152,6 +161,17 @@ struct pagein_wait {
 	atomic_uint_fast32_t refcount;
 	kevent_t event;
 };
+
+#define VM_PAGE_QTAG_SET(page, tag) do {				\
+	kassert((page)->qtag == VM_PAGE_QTAG_NONE,			\
+	    "page already on a queue");			\
+	(page)->qtag = (tag);						\
+} while (0)
+
+#define VM_PAGE_QTAG_CLEAR(page, tag) do {				\
+	kassert((page)->qtag == (tag), "page on unexpected queue");	\
+	(page)->qtag = VM_PAGE_QTAG_NONE;				\
+} while (0)
 
 /*! @brief get the pfn some vm_page describes */
 #define VM_PAGE_PFN(page) (page - vm_pages)

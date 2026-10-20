@@ -246,6 +246,7 @@ dom_page_alloc(vm_domain_t *dom, vm_page_t **out, size_t order,
 	page->ref_count = 1;
 	page->use = use;
 	page->dirty = 0;
+	page->qtag = VM_PAGE_QTAG_NONE;
 
 	dom->use_n[use] += npages;
 	dom->active_n += npages;
@@ -305,6 +306,9 @@ vm_page_alloc(vm_page_use_t use, size_t order, vm_domid_t domid,
 	return NULL;
 }
 
+#define PAGE_ON_QUEUE_CHECK(page) \
+	kassert(*(page)->qlink.tqe_prev == (page), "page not on a paging queue")
+
 static vm_page_t *
 page_buddy(vm_page_t *page)
 {
@@ -315,6 +319,10 @@ page_buddy(vm_page_t *page)
 static void
 dom_page_free(vm_domain_t *dom, vm_page_t *page)
 {
+	kassert(!page->on_freelist, "dom_page_free: page already free");
+	kassert(page->qtag == VM_PAGE_QTAG_NONE,
+	    "dom_page_free: page on a queue");
+
 	memset((void *)vm_page_hhdm_addr(page), 0,
 	    (1 << page->order) << PGSHIFT);
 
@@ -363,6 +371,7 @@ vm_page_delete(vm_page_t *page, bool unref)
 	ipl = ke_spinlock_enter(&dom->queues_lock);
 
 	kassert(page->use != VM_PAGE_DELETED, "page already deleted");
+	kassert(!page->on_freelist, "vm_page_delete: page already free");
 
 	dom->use_n[page->use] -= npages;
 
@@ -376,9 +385,13 @@ vm_page_delete(vm_page_t *page, bool unref)
 			/* then page must be on one of the paging queues */
 
 			if (page->dirty) {
+				PAGE_ON_QUEUE_CHECK(page);
+				VM_PAGE_QTAG_CLEAR(page, VM_PAGE_QTAG_PAGING);
 				TAILQ_REMOVE(&dom->dirty_q, page, qlink);
 				dom->dirty_n -= npages;
 			} else {
+				PAGE_ON_QUEUE_CHECK(page);
+				VM_PAGE_QTAG_CLEAR(page, VM_PAGE_QTAG_PAGING);
 				TAILQ_REMOVE(&dom->stby_q, page, qlink);
 				dom->stby_n -= npages;
 			}
@@ -404,6 +417,8 @@ vm_page_retain(vm_page_t *page)
 
 	ipl = ke_spinlock_enter(&dom->queues_lock);
 
+	kassert(!page->on_freelist, "vm_page_retain: page is free");
+
 	if (page->ref_count++ == 0) {
 		/* inactive -> active state */
 
@@ -412,9 +427,13 @@ vm_page_retain(vm_page_t *page)
 		}
 
 		if (page->dirty) {
+			PAGE_ON_QUEUE_CHECK(page);
+			VM_PAGE_QTAG_CLEAR(page, VM_PAGE_QTAG_PAGING);
 			TAILQ_REMOVE(&dom->dirty_q, page, qlink);
 			dom->dirty_n -= npages;
 		} else {
+			PAGE_ON_QUEUE_CHECK(page);
+			VM_PAGE_QTAG_CLEAR(page, VM_PAGE_QTAG_PAGING);
 			TAILQ_REMOVE(&dom->stby_q, page, qlink);
 			dom->stby_n -= npages;
 		}
@@ -430,6 +449,9 @@ vm_page_release_dom_locked(vm_page_t *page)
 {
 	vm_domain_t *dom = &vm_domains[page->domain];
 	size_t npages = 1 << page->order;
+
+	kassert(!page->on_freelist, "vm_page_release: page is free");
+	kassert(page->ref_count > 0, "vm_page_release: page not referenced");
 
 	if (page->ref_count -- == 1) {
 		/* active -> inactive state */
@@ -452,9 +474,11 @@ vm_page_release_dom_locked(vm_page_t *page)
 			dom->active_n -= npages;
 
 			if (page->dirty) {
+				VM_PAGE_QTAG_SET(page, VM_PAGE_QTAG_PAGING);
 				TAILQ_INSERT_TAIL(&dom->dirty_q, page, qlink);
 				dom->dirty_n += npages;
 			} else {
+				VM_PAGE_QTAG_SET(page, VM_PAGE_QTAG_PAGING);
 				TAILQ_INSERT_TAIL(&dom->stby_q, page, qlink);
 				dom->stby_n += npages;
 			}
@@ -536,6 +560,9 @@ retry:
 	if (page == NULL)
 		return NULL;
 
+	PAGE_ON_QUEUE_CHECK(page);
+
+	VM_PAGE_QTAG_CLEAR(page, VM_PAGE_QTAG_PAGING);
 	TAILQ_REMOVE(&dom->stby_q, page, qlink);
 
 	kassert_dbg(page->ref_count == 0, "page refcount not 0");

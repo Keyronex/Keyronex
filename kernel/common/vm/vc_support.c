@@ -56,9 +56,12 @@ vm_vc_unmap(vaddr_t addr, size_t size)
 	/* x-ref valid_pageable_leaf_ptes */
 	table_page->proctable.valid_pageable_leaf_ptes -= (n_unmapped);
 
-	if (table_page->proctable.valid_pageable_leaf_ptes == 0) {
+	/* should be on the active list only if it had valid PTEs before */
+	if (table_page->proctable.valid_pageable_leaf_ptes == 0 &&
+	    n_unmapped > 0) {
 		kdprintf("vm_vc_unmap: inactive leaf page table page %p\n",
 		    table_page);
+		VM_PAGE_QTAG_CLEAR(table_page, VM_PAGE_QTAG_LEAF);
 		TAILQ_REMOVE(&proc0.vm_map->rs.active_leaf_tables, table_page,
 		    qlink);
 	}

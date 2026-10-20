@@ -291,6 +291,7 @@ pmap_new_leaf_valid_ptes_created(vm_rs_t *rs, struct pte_cursor *cursor,
 #if TRACE_LEAF_TABLE_TRACKING
 		kprintf("Adding leaf table page to active list\n");
 #endif
+		VM_PAGE_QTAG_SET(cursor->pages[0], VM_PAGE_QTAG_LEAF);
 		TAILQ_INSERT_TAIL(&rs->active_leaf_tables, cursor->pages[0],
 		    qlink);
 	}
@@ -315,6 +316,7 @@ pmap_anon_ptes_converted_to_leaf_valid_pte(struct vm_rs *rs,
 #if TRACE_LEAF_TABLE_TRACKING
 		kprintf("Adding leaf table page to active list\n");
 #endif
+		VM_PAGE_QTAG_SET(cursor->pages[0], VM_PAGE_QTAG_LEAF);
 		TAILQ_INSERT_TAIL(&rs->active_leaf_tables, cursor->pages[0],
 		    qlink);
 	}
@@ -339,6 +341,7 @@ pmap_valid_ptes_zeroed(vm_rs_t *rs, vm_page_t *page, size_t n,
 		pmap_pte_zerodir_create(page->pte, dir_page->proctable.level);
 		page->proctable.unlink_gen =
 		    (uint16_t)ke_aspace_gen(&rs->map->aspace);
+		VM_PAGE_QTAG_SET(page, VM_PAGE_QTAG_FREEQ);
 		TAILQ_INSERT_TAIL(freeq, page, qlink);
 		pmap_valid_ptes_zeroed(rs, dir_page, 1, freeq);
 	} else {
@@ -380,6 +383,7 @@ pmap_free_tables(vm_map_t *map, vm_page_queue_t *queue)
 	TAILQ_FOREACH_SAFE(page, queue, qlink, next) {
 		kassert(page->proctable.unlink_gen != gen,
 		    "no invalidation since unlink for page-table page");
+		VM_PAGE_QTAG_CLEAR(page, VM_PAGE_QTAG_FREEQ);
 		TAILQ_REMOVE(queue, page, qlink);
 		vm_page_delete(page, true);
 	}
