@@ -368,10 +368,16 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 			bool dirty;
 
 			if (entry->is_phys) {
-				/* physical mapping: just zero the PTE */
+				/*
+				 * Physical mapping: just zero the PTE.
+				 * (note: may want to stop counting physical
+				 * PTEs in valid_n? they're not applicable for
+				 * the paging dynamics that is mainly kept for)
+				 */
 				pmap_pte_zeroleaf_create(ppte, PMAP_L0);
 				n_zeroed++;
 				vm_unmap_batch_extend(&batch, addr);
+				map->rs.valid_n--;
 				break;
 			}
 
