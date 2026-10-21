@@ -47,9 +47,20 @@ sys_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t offset)
 			return (void *)-EINVAL;
 	} else {
 		file_t *file = uf_lookup(curproc()->finfo, fildes);
+		int fflags;
+
 		if (file == NULL)
 			return (void *)-EBADF;
-		vn = file->vnode;
+
+		fflags = atomic_load_explicit(&file->flags,
+		    memory_order_relaxed);
+		if ((flags & MAP_SHARED) && (prot & PROT_WRITE) &&
+		    (fflags & O_ACCMODE) == O_RDONLY) {
+			file_release(file);
+			return (void *)-EACCES;
+		}
+
+		vn = vn_retain(file->vnode);
 		file_release(file);
 	}
 
@@ -76,6 +87,9 @@ sys_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t offset)
 		    len, offset, vmprot, vmprot, false, true,
 		    flags & MAP_FIXED);
 	}
+
+	if (vn != NULL)
+		vn_release(vn);
 
 	if (r == 0)
 		return (void *)hint;

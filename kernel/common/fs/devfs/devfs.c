@@ -111,10 +111,11 @@ dev_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 	ke_rwlock_enter_write(&dn->open_lock, "dev_lookup node");
 	if (dn->vn == NULL)
 		dn->vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
-		    (uintptr_t)dn, 0);
-	ke_rwlock_exit_write(&dn->open_lock);
-
+		    (uintptr_t)dn, 0); /* takes vn_alloc()'s initial retain */
+	else
+		vn_retain(dn->vn);
 	*out = dn->vn;
+	ke_rwlock_exit_write(&dn->open_lock);
 
 	return 0;
 }

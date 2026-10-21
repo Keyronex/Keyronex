@@ -172,6 +172,11 @@ watch_add(struct epoll *ep, int desc, struct file *watch_file,
 		}
 	}
 
+	if (watch_file->vnode->ops->chpoll == NULL) {
+		ke_mutex_exit(&ep->mutex);
+		return -EPERM;
+	}
+
 	entry = kmem_alloc(sizeof(*entry));
 	if (entry == NULL) {
 		ke_mutex_exit(&ep->mutex);
@@ -187,7 +192,6 @@ watch_add(struct epoll *ep, int desc, struct file *watch_file,
 
 	LIST_INSERT_HEAD(&ep->watches, entry, epoll_watch_link);
 
-	kassert(entry->file->vnode->ops->chpoll != NULL);
 	r =  VOP_CHPOLL(watch_file->vnode, entry, CHPOLL_POLL);
 
 	/*
