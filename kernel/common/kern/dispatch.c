@@ -259,6 +259,8 @@ kep_disp_hardclock(void)
 		do_reschedule(NULL);
 }
 
+void kep_rcu_quiet(void);
+
 void
 ke_dispatch(void)
 {
@@ -271,7 +273,7 @@ ke_dispatch(void)
 	    "current thread lock not held in ke_dispatch");
 	CPU_LOCAL_STORE(redispatch_requested, false);
 
-	// rcu_quiet();
+	kep_rcu_quiet();
 
 	ke_spinlock_enter_nospl(&disp->lock);
 

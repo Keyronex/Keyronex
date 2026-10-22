@@ -8,11 +8,12 @@
  */
 /*!
  * @file rcu.c
- * @brief Brief explanation.
+ * @brief Read-copy-update.
  */
 
 #include <sys/cpulocal.h>
 #include <sys/k_cpu.h>
+#include <sys/k_cpumask.h>
 #include <sys/k_intr.h>
 #include <sys/k_rcu.h>
 
@@ -20,72 +21,70 @@
 
 struct rcu_state {
 	kspinlock_t lock;
-	uint64_t quiesced;
+	katomic_cpumask_t quiesced;
 	uintptr_t generation, highest_generation;
 };
 
 static struct rcu_state rcu = {
 	.lock = KSPINLOCK_INITIALISER,
-	.quiesced = 0,
 	.generation = 0,
 	.highest_generation = 0,
 };
 
 static void
-start_generation()
+start_gp(void)
+{
+	kassert(ke_ncpu > 0, "RCU generation before smp_init");
+
+	for (kcpunum_t i = 0; i < ke_ncpu; i++)
+		ke_atomic_cpumask_set(&rcu.quiesced, i, memory_order_relaxed);
+}
+
+static bool
+gp_pending(void)
+{
+	return ke_atomic_cpumask_first(&rcu.quiesced, memory_order_relaxed) !=
+	    KCPUNUM_NULL;
+}
+
+static void
+complete_gp(void)
 {
 	/*
-	 * "A new generation is initiated by setting all CPU’s bits in the
-	 * bitmask, by incrementing the global current generation, and by
-	 * setting the global maximum generation to one greater than the current
-	 * value."
+	 * Pair with kep_rcu_quiet()'s acquire
+	 * so existing reader accesses finish before callbacks run
 	 */
-	rcu.quiesced = (1ULL << ke_ncpu) - 1;
-	rcu.generation++;
-	rcu.highest_generation = rcu.generation;
+	__atomic_store_n(&rcu.generation, rcu.generation + 1, __ATOMIC_RELEASE);
+
+	if (rcu.generation <= rcu.highest_generation)
+		start_gp();
 }
 
 void
-kep_rcu_quiet()
+kep_rcu_quiet(void)
 {
 	struct kep_rcu_per_cpu_data *rcpu = CPU_LOCAL_ADDROF(rcu_cpustate);
-	int cpunum = CPU_LOCAL_LOAD(cpu_num);
+	kcpunum_t cpunum = CPU_LOCAL_LOAD(cpu_num);
+
+	kassert(ke_ipl() >= IPL_DISP);
 
 	/*
-	 * "As each CPU notices that its bit is set, it copies its counters to
-	 * corresponding “snapshot” counters. Later, when the CPU notices that
-	 * any of the counters differs from the snapshot, it clears its bit.
+	 * only we clear our own bit, so this is fine. If we miss a concurrent
+	 * GP start then we still report at the next quiescent state.
 	 */
-
-	if ((rcu.quiesced & 1 << cpunum)) {
+	if (ke_atomic_cpumask_isset(&rcu.quiesced, cpunum,
+	    memory_order_relaxed)) {
 		ke_spinlock_enter_nospl(&rcu.lock);
-
-		rcu.quiesced &= ~((uint64_t)1 << cpunum);
-		if (rcu.quiesced == 0) {
-			/*
-			 * "If its bit is the last one set, it increments the
-			 * global current generation."
-			 */
-			rcu.generation++;
-			/*
-			 * "If the global current generation does not then
-			 * exceed the global maximum generation, the CPU
-			 * initiates a new generation."
-			 */
-			if (rcu.generation <= rcu.highest_generation)
-				start_generation();
-		}
-
+		ke_atomic_cpumask_clear(&rcu.quiesced, cpunum,
+		    memory_order_relaxed);
+		if (!gp_pending())
+			complete_gp();
 		ke_spinlock_exit_nospl(&rcu.lock);
 	}
 
-	/*
-	 * "As each CPU notices that the global current generation has advanced
-	 * past its generation number, it appends the contents of its current
-	 * list to its intr list, and schedules a tasklet to process it."
-	 */
 	if (!TAILQ_EMPTY(&rcpu->current_callbacks) &&
-	    rcu.generation > rcpu->generation) {
+	    __atomic_load_n(&rcu.generation, __ATOMIC_ACQUIRE) >
+	    rcpu->generation) {
 		TAILQ_CONCAT(&rcpu->past_callbacks, &rcpu->current_callbacks,
 		    queue_entry);
 		ke_dpc_schedule(&rcpu->past_callbacks_dpc);
@@ -93,38 +92,47 @@ kep_rcu_quiet()
 
 	if (TAILQ_EMPTY(&rcpu->current_callbacks) &&
 	    !TAILQ_EMPTY(&rcpu->next_callbacks)) {
-		/*
-		 * "If the CPU’s next list is nonempty, the CPU moves it to its
-		 * current list..."
-		 * */
+		bool pending;
 
 		TAILQ_CONCAT(&rcpu->current_callbacks, &rcpu->next_callbacks,
 		    queue_entry);
 
 		ke_spinlock_enter_nospl(&rcu.lock);
-		/*
-		 * "... and sets its per-CPU generation number to be one greater
-		 * than the global generation number."
-		 */
-		rcpu->generation = rcu.generation + 1;
 
-		if (rcu.quiesced != 0) {
-			/*
-			 * If a generation is already in progress, the CPU sets
-			 * the global maximum generation number to be one
-			 * greater than its per-CPU generation number...
-			 */
-			kassert(rcu.highest_generation <= rcpu->generation);
-			rcu.highest_generation = rcpu->generation + 1;
-		} else
-			/* ... otherwise, it starts a new generation. */
-			start_generation();
+		pending = gp_pending();
+		rcpu->generation = pending ? rcu.generation + 1 :
+		    rcu.generation;
+
+		kassert(rcu.highest_generation <= rcpu->generation,
+		    "rcu generation target regressed");
+		rcu.highest_generation = rcpu->generation;
+
+		if (!pending)
+			start_gp();
 
 		ke_spinlock_exit_nospl(&rcu.lock);
 	}
 }
 
+static void
+quiet_dpc(void *, void *)
+{
+	kep_rcu_quiet();
+}
+
 void
+kep_rcu_hardclock(void)
+{
+	struct kep_rcu_per_cpu_data *rcpu = CPU_LOCAL_ADDROF(rcu_cpustate);
+
+	if (ke_atomic_cpumask_isset(&rcu.quiesced, CPU_LOCAL_LOAD(cpu_num),
+	    memory_order_relaxed) ||
+	    !TAILQ_EMPTY(&rcpu->current_callbacks) ||
+	    !TAILQ_EMPTY(&rcpu->next_callbacks))
+		ke_dpc_schedule(&rcpu->quiet_dpc);
+}
+
+static void
 process_past_callbacks(void *arg, void *)
 {
 	struct kep_rcu_per_cpu_data *rcpu = arg;
@@ -145,6 +153,7 @@ kep_rcu_per_cpu_init(struct kep_rcu_per_cpu_data *data)
 	TAILQ_INIT(&data->next_callbacks);
 	ke_dpc_init(&data->past_callbacks_dpc, process_past_callbacks, data,
 	    NULL);
+	ke_dpc_init(&data->quiet_dpc, quiet_dpc, NULL, NULL);
 }
 
 void
@@ -170,6 +179,9 @@ ke_rcu_synchronise(void)
 {
 	kevent_t ev;
 	krcu_entry_t head;
+
+	kassert(ke_ipl() < IPL_DISP);
+
 	ke_event_init(&ev, false);
 	ke_rcu_call(&head, set_event, &ev);
 	ke_wait1(&ev, "ke_rcu_synchronise", false, ABSTIME_FOREVER);

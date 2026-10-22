@@ -94,10 +94,7 @@ uf_info_expand(uf_info_t *info, unsigned int min)
 	    sizeof(uf_entry_t) * (new_max - old_list->capacity));
 
 	ke_rcu_assign_pointer(&info->list, new_list);
-
-#if 0
-	ke_rcu_call(&old_entries->rcu, uf_list_free_rcu, old_entries);
-#endif
+	ke_rcu_call(&old_list->rcu, uf_list_free_rcu, old_list);
 
 	return 0;
 }

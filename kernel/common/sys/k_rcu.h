@@ -23,6 +23,7 @@ struct kep_rcu_per_cpu_data {
 	struct ki_krcu_entry_queue past_callbacks, current_callbacks,
 	    next_callbacks;
 	kdpc_t past_callbacks_dpc;
+	kdpc_t quiet_dpc;
 };
 
 void ke_rcu_call(krcu_entry_t *head, krcu_callback_t callback, void *arg);
