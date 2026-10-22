@@ -248,7 +248,7 @@ static void dpc_handler(void *, void *);
 
 - (void)notifyQueue:(struct virtio_queue *)queue
 {
-	uint32_t *addr = (uint32_t *)(m_notify +
+	volatile uint32_t *addr = (typeof(addr))(m_notify +
 	    queue->notify_off * m_notifyOffMultiplier);
 	uint32_t value = queue->index;
 	*addr = value;
@@ -424,6 +424,12 @@ intx_handler(void * arg)
 	if ((isr_status & 3) == 0)
 		/* not for us */
 		return false;
+
+	if ((isr_status & VIRTIO_CONFIG_ISR_CONFIG_CHANGE) &&
+	    (self->m_commonCfg->device_status &
+	    VIRTIO_CONFIG_DEVICE_STATUS_DEVICE_NEEDS_RESET))
+		kfatal("virtio-pci: device needs reset (device status 0x%x)\n",
+		    self->m_commonCfg->device_status);
 
 	ke_dpc_schedule(&self->m_dpc);
 

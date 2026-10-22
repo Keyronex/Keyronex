@@ -356,6 +356,14 @@ int_handler(void *arg)
 	DKDevLog(self, "virtio-mmio interrupt (status 0x%x)\n", stat);
 #endif
 	MMIO_WRITE32(self->m_mmio, VIRTIO_MMIO_INTERRUPT_ACK, stat);
+
+	if (stat & VIRTIO_CONFIG_ISR_CONFIG_CHANGE) {
+		uint32_t status = MMIO_READ32(self->m_mmio, VIRTIO_MMIO_STATUS);
+		if (status & VIRTIO_CONFIG_DEVICE_STATUS_DEVICE_NEEDS_RESET)
+			kfatal("virtio-mmio: device needs reset "
+			    "(device status 0x%x)\n", status);
+	}
+
 	ke_dpc_schedule(&self->m_dpc);
 	return true;
 }
