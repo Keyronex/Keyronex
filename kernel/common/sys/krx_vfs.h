@@ -22,6 +22,7 @@ typedef struct namecache {
 	atomic_uint refcnt;
 	uint32_t mounts_over_n : 8, busy: 1, unused : 23;
 	struct vnode *vp;
+	LIST_ENTRY(namecache) vn_link; /* on vp->nc_refs */
 	TAILQ_ENTRY(namecache) standby_qlink;
 	struct namecache *parent;
 	RB_ENTRY(namecache) sib_rblink;

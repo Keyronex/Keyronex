@@ -221,6 +221,38 @@ nc_release(namecache_t *nc)
 	}
 }
 
+/* vn must be retained (the retain is taken) */
+static void
+nc_set_vp(namecache_t *nc, vnode_t *vn)
+{
+	ipl_t ipl;
+
+	kassert(nc->vp == NULL);
+
+	ipl = ke_spinlock_enter(&vn->nc_lock);
+	nc->vp = vn;
+	LIST_INSERT_HEAD(&vn->nc_refs, nc, vn_link);
+	vn->nc_refs_n++;
+	ke_spinlock_exit(&vn->nc_lock, ipl);
+}
+
+/* returns the vnode for release */
+static vnode_t *
+nc_clear_vp(namecache_t *nc)
+{
+	vnode_t *vn = nc->vp;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&vn->nc_lock);
+	LIST_REMOVE(nc, vn_link);
+	kassert(vn->nc_refs_n > 0);
+	vn->nc_refs_n--;
+	nc->vp = NULL;
+	ke_spinlock_exit(&vn->nc_lock, ipl);
+
+	return vn;
+}
+
 /*
  * Free an entry. (If there is a vnode, i.e. not a negative entry, then the
  * topology lock musn't be held as vnode release can block on writeback,
@@ -237,10 +269,8 @@ nc_free(namecache_t *nc)
 	if (nc->name != NULL)
 		kmem_free((void *)nc->name, nc_namelen(nc) + 1);
 
-	if (nc->vp != NULL) {
-		vn_release(nc->vp);
-		nc->vp = NULL;
-	}
+	if (nc->vp != NULL)
+		vn_release(nc_clear_vp(nc));
 
 	kmem_free(nc, sizeof(namecache_t));
 
@@ -335,10 +365,11 @@ nc_makeroot(vfs_t *vfs, vnode_t *root_vn)
 	atomic_store_explicit(&root_nc->refcnt, 1, memory_order_relaxed);
 	root_nc->mounts_over_n = 0;
 	root_nc->busy = false;
-	root_nc->vp = root_vn;
+	root_nc->vp = NULL;
 	root_nc->parent = NULL;
 	RB_INIT(&root_nc->children);
 	ke_waitq_init(&root_nc->busy_waitq);
+	nc_set_vp(root_nc, root_vn);
 	root_nc->name = NULL;
 	root_nc->key = nc_hash(root_nc->name, 0);
 
@@ -365,10 +396,11 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 	atomic_store_explicit(&rootnc->refcnt, 1, memory_order_relaxed);
 	rootnc->mounts_over_n = 0;
 	rootnc->busy = false;
-	rootnc->vp = rootvn;
+	rootnc->vp = NULL;
 	rootnc->parent = NULL;
 	RB_INIT(&rootnc->children);
 	ke_waitq_init(&rootnc->busy_waitq);
+	nc_set_vp(rootnc, rootvn);
 	rootnc->name = NULL;
 	rootnc->key = nc_hash(rootnc->name, 0);
 	vfs->root_nc = rootnc;
@@ -489,7 +521,7 @@ retry:
 	ke_rwlock_enter_write(&topology_lock, "nc_lookup: relock");
 
 	if (r == 0) {
-		found->vp = vn;
+		nc_set_vp(found, vn);
 		*out = found;
 	} else if (r == -ENOENT && allow_neg) {
 		*out = found;
@@ -578,7 +610,7 @@ retry:
 	ke_rwlock_enter_write(&topology_lock, "nc_create: relock");
 
 	if (r == 0) {
-		nc->vp = new_vn;
+		nc_set_vp(nc, new_vn);
 		nc->busy = false;
 		nc_wake_busy_waiters(nc);
 		*out = nc; /* retained */
@@ -938,7 +970,7 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_link: relock topology_rwlock");
 	if (r == 0) {
-		dst.nc->vp = vn_retain(target_vn);
+		nc_set_vp(dst.nc, vn_retain(target_vn));
 	} else if (r == -EEXIST) {
 		nc_dissociate(dst.nc); /* the negative entry seems stale */
 	}

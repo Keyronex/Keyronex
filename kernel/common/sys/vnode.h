@@ -72,6 +72,11 @@ typedef struct vnode {
 	vtype_t		type;
 	struct vnode_ops *ops;
 	TAILQ_ENTRY(vnode) vfs_vnlistentry; /* entry in vfs::vnode_list */
+
+	kspinlock_t	nc_lock;
+	uint32_t	nc_refs_n;	/* (nc_lock) */
+	LIST_HEAD(, namecache) nc_refs; /* (nc_lock) */
+
 	union {
 		struct {
 			struct vn_vc_state	*vc_state;

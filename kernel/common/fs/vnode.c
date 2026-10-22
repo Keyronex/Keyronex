@@ -32,6 +32,9 @@ vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1,
 	vn->ops = ops;
 	vn->fsprivate_1 = fsprivate_1;
 	vn->fsprivate_2 = fsprivate_2;
+	ke_spinlock_init(&vn->nc_lock);
+	LIST_INIT(&vn->nc_refs);
+	vn->nc_refs_n = 0;
 
 	if (vn->type == VREG) {
 		vn->file.vc_state = viewcache_alloc_vnode_state(vn);
@@ -72,6 +75,7 @@ vn_release(vnode_t *vn)
 			int r;
 
 			kassert(old == 1);
+			kassert(vn->nc_refs_n == 0);
 
 			kassert(vn->ops->inactive != NULL);
 			r = vn->ops->inactive(vn);
