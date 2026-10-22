@@ -12,6 +12,7 @@
 
 #include <sys/types.h>
 #include <sys/k_intr.h>
+#include <sys/k_waitq.h>
 #include <sys/krx_atomic.h>
 #include <sys/tree.h>
 
@@ -29,11 +30,10 @@ typedef struct namecache {
 	uint64_t key; /*!< rb key: len(name) << 32 | hash(name) */
 
 	/*
-	 * TODO: maybe union these with something to save space?
+	 * TODO: maybe union this with something to save space?
 	 * since we retain the namecache across operations, maybe standby link?
 	 */
-	kspinlock_t waiters_lock;
-	LIST_HEAD(,namecache_waiter) waiters;
+	kwaitq_t busy_waitq;
 } namecache_t;
 
 typedef struct namecache_handle {

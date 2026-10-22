@@ -76,9 +76,6 @@ typedef struct vnode {
 		struct {
 			struct vn_vc_state	*vc_state;
 			struct vm_object	*vmobj;
-			kspinlock_t 		dpw_lock;
-			size_t 			dpw_writers;
-			SLIST_HEAD(, dpw_waiter) dpw_waiters;
 		} file;
 		struct {
 			struct vnode *sockvn;

@@ -18,6 +18,7 @@
 #include <sys/k_thread.h>
 #include <sys/libkern.h>
 
+/* TODO: consider a hashed wait queue with kwaiters */
 struct futex_waiter {
 	TAILQ_ENTRY(futex_waiter) tq_entry;
 	struct vm_voaddr voaddr;

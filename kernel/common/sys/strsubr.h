@@ -16,15 +16,11 @@
 
 #include <sys/k_thread.h>
 #include <sys/k_wait.h>
+#include <sys/k_waitq.h>
 #include <sys/stropts.h>
 #include <sys/stream.h>
 
 struct thread;
-
-struct req_waiter {
-	TAILQ_ENTRY(req_waiter) link;
-	kevent_t event;
-};
 
 enum {
 	ST_FROZEN = (1 << 0),	/* stream is frozen */
@@ -48,7 +44,7 @@ typedef struct stdata {
 	enum str_head_kind kind;
 
 	bool req_locked;
-	TAILQ_HEAD(, req_waiter) req_waiters;
+	kwaitq_t req_waitq;
 
 	kspinlock_t ingress_lock;
 	mblk_q_t ingress_head;

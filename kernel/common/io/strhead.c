@@ -56,7 +56,7 @@ str_enter(stdata_t *sh, const char *reason)
 void
 str_req_begin(stdata_t *sh)
 {
-	struct req_waiter waiter;
+	kwaiter_t waiter;
 
 	ke_mutex_enter(sh->mutex, "str_req_begin");
 
@@ -65,11 +65,12 @@ str_req_begin(stdata_t *sh)
 		return;
 	}
 
-	ke_event_init(&waiter.event, 0);
-	TAILQ_INSERT_TAIL(&sh->req_waiters, &waiter, link);
+	ke_waitq_prepare(&sh->req_waitq, &waiter);
 	str_exit(sh);
 
-	ke_wait1(&waiter.event, "str_req_begin", false, ABSTIME_FOREVER);
+	/* woken with req_locked handed over to us */
+	ke_waitq_wait(&sh->req_waitq, &waiter, "str_req_begin", false,
+	    ABSTIME_FOREVER);
 
 	str_enter(sh, "str_req_begin 2");
 	return;
@@ -93,14 +94,8 @@ str_req_trybegin(stdata_t *sh)
 void
 str_req_end(stdata_t *sh)
 {
-	if (!TAILQ_EMPTY(&sh->req_waiters)) {
-		struct req_waiter *waiter;
-		waiter = TAILQ_FIRST(&sh->req_waiters);
-		TAILQ_REMOVE(&sh->req_waiters, waiter, link);
-		ke_event_set_signalled(&waiter->event, true);
-	} else {
+	if (!ke_waitq_wake_one(&sh->req_waitq))
 		sh->req_locked = false;
-	}
 	str_exit(sh);
 }
 
@@ -204,7 +199,7 @@ str_head_alloc(enum str_head_kind kind)
 	sh->home_cpu = CPU_LOCAL_LOAD(cpu_num);
 
 	sh->req_locked = false;
-	TAILQ_INIT(&sh->req_waiters);
+	ke_waitq_init(&sh->req_waitq);
 	sh->hanged_up = false;
 	ke_event_init(&sh->data_readable, 0);
 	ke_event_init(&sh->ioctl_done_ev, 0);
@@ -301,7 +296,7 @@ void strclose(stdata_t *sh)
 	atomic_fetch_or(&sh->flags, ST_FROZEN | ST_DEAD);
 
 	kassert(!sh->req_locked);
-	kassert(TAILQ_EMPTY(&sh->req_waiters));
+	kassert(TAILQ_EMPTY(&sh->req_waitq.waiters));
 
 	for (queue_t *nextwq, *wq = sh->wq->next; wq != NULL; wq = nextwq) {
 		queue_t *rq = wq->other;

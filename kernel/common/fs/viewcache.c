@@ -10,13 +10,6 @@
  *
  * while a view has refcnt > 0, it's in the kernel map. so just having refcnt
  * > 0 on a view stabilises its existence in the virtual address space.
- *
- * If we need a wait to wait for a view without holding a spinlock, for example,
- * to wait for a view to be written back, we could have a
- * struct view_waiter { TAILQ_ENTRY(view_waiter) queue_entry; kevent_t ev; };
- * and have a TAILQ_HEAD(view_waiter_list, view_waiter) waiters; in struct view.
- * and then when the view is written back, chase that list and wake up the
- * waiters who tied themselves to the chain.
  */
 
 #include <sys/vm.h>
@@ -24,6 +17,7 @@
 #include <sys/tree.h>
 #include <sys/vnode.h>
 #include <sys/k_wait.h>
+#include <sys/k_waitq.h>
 
 #include <stdint.h>
 
@@ -33,11 +27,6 @@
 #include "sys/proc.h"
 
 #define VIEW_SIZE (64 * 1024) /* 64 KiB views */
-
-struct view_waiter {
-	TAILQ_ENTRY(view_waiter) tqentry;
-	kevent_t ev;
-};
 
 struct view {
 	size_t refcnt;
@@ -50,7 +39,7 @@ struct view {
 	enum view_dirtiness { VIEW_CLEAN, VIEW_DIRTY, VIEW_WRITEBACK } dirty;
 	kabstime_t dirty_time; /* time when marked dirty after being clean */
 
-	TAILQ_HEAD(, view_waiter) waiters;
+	kwaitq_t writeback_waitq; /* waiters for VIEW_WRITEBACK to end */
 };
 
 TAILQ_HEAD(view_tq, view);
@@ -109,7 +98,6 @@ viewcache_writeback_thread(void *)
 	while (true) {
 		ipl_t ipl;
 		struct view *view;
-		struct view_waiter *waiter;
 
 		ke_wait1(&ev, "viewcache_writeback_thread", false,
 		    ke_time() + NS_PER_S);
@@ -147,10 +135,7 @@ viewcache_writeback_thread(void *)
 			TAILQ_INSERT_TAIL(&lru_queue, view, queue_entry);
 		}
 
-		while ((waiter = TAILQ_FIRST(&view->waiters)) != NULL) {
-			TAILQ_REMOVE(&view->waiters, waiter, tqentry);
-			ke_event_set_signalled(&waiter->ev, true);
-		}
+		ke_waitq_wake_all(&view->writeback_waitq);
 
 		ke_spinlock_exit(&vc_lock, ipl);
 	}
@@ -166,7 +151,7 @@ viewcache_init(void)
 	for (size_t i = 0; i < view_count; i++) {
 		struct view *v = &views[i];
 		TAILQ_INSERT_TAIL(&free_queue, v, queue_entry);
-		TAILQ_INIT(&v->waiters);
+		ke_waitq_init(&v->writeback_waitq);
 	}
 
 	thread_t *thread = proc_new_system_thread(viewcache_writeback_thread, NULL);
@@ -353,23 +338,21 @@ viewcache_vmm_get_fault_info(vaddr_t addr, struct vm_object **out_object,
 
 /*
  * Wait for a view to leave VIEW_WRITEBACK state.
- * Requires vc_lock held (drops & reacquires it).
+ * Requires vc_lock held, entered at \p ipl; returns with it released.
  */
 static void
-view_wait_writeback(struct view *view)
+view_wait_writeback(struct view *view, ipl_t ipl)
 {
-	struct view_waiter waiter;
+	kwaiter_t waiter;
 
 	kassert(ke_spinlock_held(&vc_lock));
 	kassert(view->dirty == VIEW_WRITEBACK);
 
-	ke_event_init(&waiter.ev, false);
-	TAILQ_INSERT_TAIL(&view->waiters, &waiter, tqentry);
-	ke_spinlock_exit(&vc_lock, IPL_0);
+	ke_waitq_prepare(&view->writeback_waitq, &waiter);
+	ke_spinlock_exit(&vc_lock, ipl);
 
-	ke_wait1(&waiter.ev, "view_wait_writeback", false, ABSTIME_FOREVER);
-
-	ke_spinlock_enter(&vc_lock);
+	ke_waitq_wait(&view->writeback_waitq, &waiter, "view_wait_writeback",
+	    false, ABSTIME_FOREVER);
 }
 
 /*
@@ -401,7 +384,7 @@ retry:
 			vaddr_t from, len;
 
 			if (view->dirty == VIEW_WRITEBACK) {
-				view_wait_writeback(view);
+				view_wait_writeback(view, ipl);
 				goto retry;
 			}
 
@@ -417,9 +400,9 @@ retry:
 
 	key.offset = first_discard_off;
 
+retry_2:
 	ipl = ke_spinlock_enter(&vc_lock);
 
-retry_2:
 	/*
 	 * Now make away with any views wholly beyond the new size.
 	 */
@@ -432,7 +415,7 @@ retry_2:
 		kassert(view->refcnt == 0); /* because vnode rwlock held */
 
 		if (view->dirty == VIEW_WRITEBACK) {
-			view_wait_writeback(view);
+			view_wait_writeback(view, ipl);
 			goto retry_2;
 		}
 
@@ -447,7 +430,6 @@ retry_2:
 
 		view->vnode = NULL;
 		view->offset = 0;
-		TAILQ_INIT(&view->waiters);
 		TAILQ_INSERT_TAIL(&free_queue, view, queue_entry);
 
 		view = next;

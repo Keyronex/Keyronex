@@ -73,6 +73,7 @@ kernel_sources += [
     'kern/rwlock.c',
     'kern/thread.c',
     'kern/turnstil.c',
+    'kern/waitq.c',
     'kern/xcall.c',
 
     'libkern/objc/OSArray.m',

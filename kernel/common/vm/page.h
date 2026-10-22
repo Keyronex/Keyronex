@@ -155,7 +155,7 @@ struct vm_domain {
  * The refcount, on the other hand, is atomic. So waiters can release it while
  * holding no locks.
  *
- * TODO - maybe use chained stack waiters (as in other parts) instead?
+ * TODO - maybe use hashed wait queue of kwaiters (like futexes might want?)
  */
 struct pagein_wait {
 	atomic_uint_fast32_t refcount;

@@ -43,11 +43,6 @@
 #include <libkern/queue.h>
 #include <stdatomic.h>
 
-struct namecache_waiter {
-	LIST_ENTRY(namecache_waiter) entry;
-	kevent_t event;
-};
-
 static void nc_free(namecache_t *nc);
 
 #define MNT_HASH_NBUCKETS 16
@@ -343,6 +338,7 @@ nc_makeroot(vfs_t *vfs, vnode_t *root_vn)
 	root_nc->vp = root_vn;
 	root_nc->parent = NULL;
 	RB_INIT(&root_nc->children);
+	ke_waitq_init(&root_nc->busy_waitq);
 	root_nc->name = NULL;
 	root_nc->key = nc_hash(root_nc->name, 0);
 
@@ -372,6 +368,7 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 	rootnc->vp = rootvn;
 	rootnc->parent = NULL;
 	RB_INIT(&rootnc->children);
+	ke_waitq_init(&rootnc->busy_waitq);
 	rootnc->name = NULL;
 	rootnc->key = nc_hash(rootnc->name, 0);
 	vfs->root_nc = rootnc;
@@ -387,17 +384,11 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 static void
 nc_wait_for_busy(struct namecache *nc)
 {
-	struct namecache_waiter waiter;
-	ipl_t ipl;
+	kwaiter_t waiter;
 
-	ke_event_init(&waiter.event, false);
-
-	ipl = ke_spinlock_enter(&nc->waiters_lock);
-	LIST_INSERT_HEAD(&nc->waiters, &waiter, entry);
-	ke_spinlock_exit(&nc->waiters_lock, ipl);
-
+	ke_waitq_prepare(&nc->busy_waitq, &waiter);
 	ke_rwlock_exit_read(&topology_lock);
-	ke_wait1(&waiter.event, "nc_wait_for_busy()", false,
+	ke_waitq_wait(&nc->busy_waitq, &waiter, "nc_wait_for_busy()", false,
 	    ABSTIME_FOREVER);
 	ke_rwlock_enter_read(&topology_lock, "after nc_wait_for_busy");
 }
@@ -405,15 +396,7 @@ nc_wait_for_busy(struct namecache *nc)
 static void
 nc_wake_busy_waiters(struct namecache *nc)
 {
-	struct namecache_waiter *waiter, *tmp;
-	ipl_t ipl;
-
-	ipl = ke_spinlock_enter(&nc->waiters_lock);
-	LIST_FOREACH_SAFE(waiter, &nc->waiters, entry, tmp) {
-		ke_event_set_signalled(&waiter->event, true);
-		LIST_REMOVE(waiter, entry);
-	}
-	ke_spinlock_exit(&nc->waiters_lock, ipl);
+	ke_waitq_wake_all(&nc->busy_waitq);
 }
 
 static void
@@ -430,8 +413,6 @@ static void
 nc_busy(namecache_t *nc)
 {
 	nc->busy = true;
-	ke_spinlock_init(&nc->waiters_lock);
-	LIST_INIT(&nc->waiters);
 }
 
 int
@@ -497,6 +478,7 @@ retry:
 	found->mounts_over_n = 0;
 	found->vp = NULL;
 	RB_INIT(&found->children);
+	ke_waitq_init(&found->busy_waitq);
 	RB_INSERT(namecache_rb, &nc->children, found);
 
 	nc_busy(found);
@@ -581,6 +563,7 @@ retry:
 		nc->mounts_over_n = 0;
 		nc->vp = NULL;
 		RB_INIT(&nc->children);
+		ke_waitq_init(&nc->busy_waitq);
 		atomic_store(&nc->refcnt, 1);
 
 		RB_INSERT(namecache_rb, &parent->children, nc);

@@ -35,9 +35,6 @@ vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1,
 
 	if (vn->type == VREG) {
 		vn->file.vc_state = viewcache_alloc_vnode_state(vn);
-		ke_spinlock_init(&vn->file.dpw_lock);
-		vn->file.dpw_writers = 0;
-		SLIST_INIT(&vn->file.dpw_waiters);
 		vn->file.vmobj = vm_obj_new_vnode(vn);
 	}
 
