@@ -18,7 +18,7 @@
 #define RW_1READER	0x4UL		/* one reader = 1 << 2 */
 
 #define RW_READERS(V)	((V) >> 2)
-#define RW_OWNER(V) ((V & RW_WLOCKED) ? (kthread_t*)(val & ~RW_FLAGMASK) : NULL)
+#define RW_OWNER(V) (((V) & RW_WLOCKED) ? (kthread_t *)((V) & ~RW_FLAGMASK) : NULL)
 
 void
 ke_rwlock_init(krwlock_t *rw)
@@ -118,6 +118,7 @@ ke_rwlock_enter_write(krwlock_t *rw, const char *reason)
 void
 ke_rwlock_exit_read(krwlock_t *rw)
 {
+	kthread_t *writer;
 	kturnstile_t *ts;
 	uintptr_t val, new;
 	ipl_t ipl;
@@ -146,14 +147,15 @@ ke_rwlock_exit_read(krwlock_t *rw)
 		ipl = ke_turnstile_lookup(rw, &ts);
 		kassert(ts != NULL && ts->nwaiters[1] > 0);
 
-		new = (uintptr_t)ke_turnstile_waiter(ts, true) | RW_WLOCKED;
+		writer = ke_turnstile_waiter(ts, true);
+		new = (uintptr_t)writer | RW_WLOCKED;
 		if ((ts->nwaiters[0] + ts->nwaiters[1]) > 1)
 			new |= RW_WAITERS;
 
 		/* CAS in case another reader arrived meanwhile. */
 		if (__atomic_compare_exchange_n(&rw->val, &val, new, false,
 			__ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
-			ke_turnstile_wakeup(ts, true, 1, NULL, ipl);
+			ke_turnstile_wakeup(ts, true, 1, writer, ipl);
 			return;
 		}
 
@@ -195,12 +197,14 @@ ke_rwlock_exit_write(krwlock_t *rw)
 		ke_turnstile_wakeup(ts, false, nreaders, NULL, ipl);
 	} else {
 		/* Direct handoff to the first writer. */
-		new = (uintptr_t)ke_turnstile_waiter(ts, true) | RW_WLOCKED;
+		kthread_t *writer = ke_turnstile_waiter(ts, true);
+
+		new = (uintptr_t)writer | RW_WLOCKED;
 		if (ts->nwaiters[1] > 1)
 			new |= RW_WAITERS;
 
 		__atomic_store_n(&rw->val, new, __ATOMIC_RELEASE);
-		ke_turnstile_wakeup(ts, true, 1, NULL, ipl);
+		ke_turnstile_wakeup(ts, true, 1, writer, ipl);
 	}
 }
 
@@ -242,7 +246,7 @@ ke_rwlock_downgrade(krwlock_t *rw)
 		 */
 		new = RW_1READER | RW_WAITERS;
 		__atomic_store_n(&rw->val, new, __ATOMIC_RELEASE);
-		ke_turnstile_exit(rw, ipl);
+		ke_turnstile_wakeup(ts, false, 0, NULL, ipl); /* change owner */
 	}
 }
 
@@ -261,8 +265,15 @@ ke_rwlock_tryupgrade(krwlock_t *rw)
 		if (RW_READERS(val) > 1)
 			return false;
 
-		/* Sole reader. CAS to write-locked, preserving WAITERS. */
-		new = (uintptr_t)self | RW_WLOCKED | (val & RW_WAITERS);
+		/*
+		 * (If we want to allow barging then we would need to allow
+		 * ownership takeover. Revisit?)
+		 */
+		if (val & RW_WAITERS)
+			return false;
+
+		/* Sole reader. CAS to write-locked. */
+		new = (uintptr_t)self | RW_WLOCKED;
 		if (__atomic_compare_exchange_n(&rw->val, &val, new,
 		    false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
 			return true;

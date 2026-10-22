@@ -245,7 +245,7 @@ ke_turnstile_block(kturnstile_t *ts, bool writer, void *obj, kthread_t *owner,
 }
 
 static void
-wake_waiter(kturnstile_t *ts, bool writer, struct kturnstile_waiter *wb)
+detach_waiter(kturnstile_t *ts, bool writer, struct kturnstile_waiter *wb)
 {
 	kthread_t *thread = wb->thread;
 
@@ -272,7 +272,12 @@ wake_waiter(kturnstile_t *ts, bool writer, struct kturnstile_waiter *wb)
 	ts->nwaiters[writer]--;
 
 	thread->waiting_on = NULL;
+}
 
+static void
+wake_waiter(kturnstile_t *ts, bool writer, struct kturnstile_waiter *wb)
+{
+	detach_waiter(ts, writer, wb);
 	ke_event_set_signalled(&wb->event, true);
 }
 
@@ -306,6 +311,8 @@ ke_turnstile_wakeup(kturnstile_t *ts, bool writer, int count,
 		revoke_priority(ts);
 
 	if (newowner != NULL) {
+		kassert(count == 1, "ownership can only be given to 1 waiter");
+
 		TAILQ_FOREACH( wb, &ts->waiters[writer], qentry)
 			if (wb->thread == newowner)
 				break;
@@ -313,9 +320,8 @@ ke_turnstile_wakeup(kturnstile_t *ts, bool writer, int count,
 		if (wb == NULL)
 			kfatal("no such waiter on turnstile");
 
-		wake_waiter(ts, writer, wb);
-
 		ts->owner = newowner;
+		detach_waiter(ts, writer, wb);
 
 		if ((ts->nwaiters[0] + ts->nwaiters[1]) > 0) {
 			kpri_t donate = max_waiter_pri(ts);
@@ -325,14 +331,16 @@ ke_turnstile_wakeup(kturnstile_t *ts, bool writer, int count,
 				ke_spinlock_exit_nospl(&newowner->lock);
 			}
 		}
+
+		ke_event_set_signalled(&wb->event, true);
 	} else {
+		ts->owner = NULL;
+
 		while (count-- > 0) {
 			wb = TAILQ_FIRST(&ts->waiters[writer]);
 			kassert(wb != NULL);
 			wake_waiter(ts, writer, wb);
 		}
-
-		ts->owner = NULL;
 	}
 
 	ke_spinlock_exit(&chain->lock, ipl);
