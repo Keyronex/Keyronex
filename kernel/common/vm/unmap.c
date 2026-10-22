@@ -69,14 +69,24 @@ release_page(vm_page_t *page, bool dirty)
 
 	case VM_PAGE_ANON_FORKED: {
 		struct vm_anon *anon = page->owner_anon;
+		bool last;
 
+		/* TODO: dirtiness? */
+		/*
+		 * TODO: dedup the anon release logic?
+		 * see unmap_ptes()'s fork PTE case;
+		 * do_dirty_fork_fault()
+		 */
 		ke_spinlock_enter_nospl(&anon_creation_lock);
-		page->shared.share_count--;
+		last = --page->shared.share_count == 0;
 		if (--anon->refcount == 0) {
+			kassert(last);
 			ke_spinlock_exit_nospl(&anon_creation_lock);
 			vm_page_delete(page, true);
 			kmem_free(anon, sizeof(struct vm_anon));
 		} else {
+			if (last)
+				vm_page_release(page);
 			ke_spinlock_exit_nospl(&anon_creation_lock);
 		}
 		break;

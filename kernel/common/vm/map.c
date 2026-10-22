@@ -453,7 +453,12 @@ unmap_ptes(vm_map_t *map, vaddr_t start, vaddr_t end,
 					vm_page_t *page =
 					    pmap_pte_hwleaf_page(anonpte,
 					    PMAP_L0);
-					vm_page_delete(page, true);
+					/*
+					 * with no mappings, must be 0 (cf
+					 * unmap.c release_page())
+					 */
+					kassert(page->shared.share_count == 0);
+					vm_page_delete(page, false);
 					break;
 				}
 				case kPTEKindSwap:

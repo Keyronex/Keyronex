@@ -440,6 +440,9 @@ do_dirty_fork_fault(struct fault_info *info, vm_page_t *old_page)
 	if (anon->refcount == 1) {
 		vm_domain_t *dom = &vm_domains[old_page->domain];
 
+		/* should be no other mappings */
+		kassert_dbg(old_page->shared.share_count == 1);
+
 		ke_spinlock_enter_nospl(&dom->queues_lock);
 
 		dom->use_n[VM_PAGE_ANON_FORKED]--;
