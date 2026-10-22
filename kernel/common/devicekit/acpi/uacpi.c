@@ -96,13 +96,6 @@ uacpi_kernel_io_unmap(uacpi_handle handle)
 	kfatal("Implement me\n");
 }
 
-/* fixme */
-static bool
-vm_paddr_is_ram(paddr_t)
-{
-	return true;
-}
-
 void *
 uacpi_kernel_map(uacpi_phys_addr pa, uacpi_size len)
 {
