@@ -401,7 +401,8 @@ vm_page_delete(vm_page_t *page, bool unref)
 
 		dom_page_free(dom, page);
 	} else {
-		dom->use_n[VM_PAGE_DELETED] += 1 << page->order;
+		page->use = VM_PAGE_DELETED;
+		dom->use_n[VM_PAGE_DELETED] += npages;
 	}
 
 	ke_spinlock_exit(&dom->queues_lock, ipl);
