@@ -18,6 +18,9 @@ ninep_buf_alloc_bytes(size_t size)
 {
 	struct ninep_buf *buf;
 
+	if (size < sizeof(uint32_t))
+		size = sizeof(uint32_t); /* minimum size for Rlerror */
+
 	buf = kmem_alloc(sizeof(*buf));
 	buf->bufsize = size + sizeof(struct ninep_hdr);
 	buf->data = kmem_alloc(buf->bufsize);
