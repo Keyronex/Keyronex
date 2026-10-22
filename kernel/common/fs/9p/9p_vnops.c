@@ -227,6 +227,7 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	if (found->vattr.type == VREG)
 		vm_vnobj_set_valid_length(found->vnode->file.vmobj,
 		    found->vattr.size);
+	vn_publish(found->vnode);
 
 	ke_rwlock_enter_write(&found->rwlock, "");
 

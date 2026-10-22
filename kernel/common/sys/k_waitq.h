@@ -21,6 +21,10 @@
  * Otherwise the waiter has to take the kwaitq::lock to unlink itself, so the
  * waiter has to have some existence guarantee on the object. If there is a race
  * between wakeup and interruption then the wake is returned.
+ *
+ * If a woken waiter wants to free the object embedding the queue it should
+ * call ke_waitq_quiesce() (which takes the kwaitq::lock) in case the waker is
+ * still inside it when the waiter has run.
  */
 
 #ifndef ECX_KEYRONEX_K_WAITQ_H
@@ -52,5 +56,6 @@ int ke_waitq_wait(kwaitq_t *wq, kwaiter_t *waiter, const char *reason,
     bool alertable, kabstime_t deadline);
 void ke_waitq_wake_all(kwaitq_t *wq);
 bool ke_waitq_wake_one(kwaitq_t *wq);
+void ke_waitq_quiesce(kwaitq_t *wq);
 
 #endif /* ECX_KEYRONEX_K_WAITQ_H */

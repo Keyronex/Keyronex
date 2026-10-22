@@ -167,6 +167,21 @@ viewcache_alloc_vnode_state(vnode_t *vn)
 	return state;
 }
 
+void
+viewcache_free_vnode_state(vnode_t *vn)
+{
+	struct vn_vc_state *state = vn->file.vc_state;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&vc_lock);
+	kassert(RB_EMPTY(&state->view_tree),
+	    "viewcache_free_vnode_state: no views should remain");
+	ke_spinlock_exit(&vc_lock, ipl);
+
+	kmem_free(state, sizeof(*state));
+	vn->file.vc_state = NULL;
+}
+
 static void
 view_retain_locked(struct view *view)
 {

@@ -50,6 +50,7 @@ void dk_platform_threaded_init(void);
 
 /* to be sorted */
 void viewcache_init(void);
+void vnode_init(void);
 void console_init(void);
 void mount_devfs(void);
 void str_sched_init(void);
@@ -231,6 +232,7 @@ threaded_init(void *)
 	dk_platform_threaded_init();
 #endif
 
+	vnode_init();
 	viewcache_init();
 	str_sched_init();
 	ip_init();

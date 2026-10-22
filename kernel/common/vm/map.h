@@ -15,6 +15,7 @@
 #include <sys/vmem_impl.h>
 #include <sys/k_aspace.h>
 #include <sys/pmap.h>
+#include <sys/k_rcu.h>
 #include <sys/vm.h>
 
 #include <vm/page.h>
@@ -63,6 +64,7 @@ struct vm_map {
 
 
 typedef struct vm_object {
+	krcu_entry_t rcu_entry;
 	kspinlock_t creation_lock;
 	kspinlock_t stealing_lock;
 	enum {

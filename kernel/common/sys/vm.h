@@ -82,6 +82,7 @@ void vm_voaddr_release(struct vm_map *, struct vm_voaddr *);
 intptr_t vm_voaddr_cmp(const struct vm_voaddr *a, const struct vm_voaddr *b);
 
 vm_object_t *vm_obj_new_vnode(struct vnode *);
+void vm_obj_vnode_destroy(vm_object_t *);
 void vm_vnobj_set_valid_length(vm_object_t *, size_t);
 void vm_obj_truncate(vm_object_t *, size_t oldsize, size_t newsize);
 

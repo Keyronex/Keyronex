@@ -44,6 +44,11 @@ typedef struct namecache_handle {
 
 #define NCH_NULL ((namecache_handle_t) { NULL, NULL })
 
+/*
+ * A virtual file system
+ *
+ * v: vnode_list_lock
+ */
 typedef struct vfs {
 	atomic_uint opencnt; /*!< bits 31..1 for count; bit 0 for umounting */
 
@@ -52,7 +57,8 @@ typedef struct vfs {
 	LIST_ENTRY(vfs) mountpoint_hash_entry;
 
 	kspinlock_t vnode_list_lock;
-	TAILQ_HEAD(, vnode) vnode_list;
+	TAILQ_HEAD(, vnode) vnode_list; /* (v) vnodes */
+	kwaitq_t vnode_waitq; /* vn_free of a published vnode wakes */
 
 	uintptr_t fsprivate_1;
 } vfs_t;

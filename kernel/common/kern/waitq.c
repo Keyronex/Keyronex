@@ -78,6 +78,16 @@ ke_waitq_wake_all(kwaitq_t *wq)
 	ke_spinlock_exit(&wq->lock, ipl);
 }
 
+void
+ke_waitq_quiesce(kwaitq_t *wq)
+{
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&wq->lock);
+	kassert(TAILQ_EMPTY(&wq->waiters), "quiescing a waitq with waiters");
+	ke_spinlock_exit(&wq->lock, ipl);
+}
+
 bool
 ke_waitq_wake_one(kwaitq_t *wq)
 {

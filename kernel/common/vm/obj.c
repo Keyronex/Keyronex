@@ -61,6 +61,29 @@ vm_obj_new_vnode(vnode_t *vnode)
 	return obj;
 }
 
+static void
+obj_free_rcu(void *arg)
+{
+	kmem_free(arg, sizeof(vm_object_t));
+}
+
+void
+vm_obj_vnode_destroy(vm_object_t *obj)
+{
+	kassert(obj->kind == VM_OBJ_VNODE);
+	kassert(LIST_EMPTY(&obj->map_entries),
+	    "vm_obj_vnode_destroy: still has map entries");
+	for (size_t i = 0; i < OBJ_N_DIRECT; i++)
+		kassert(pmap_pte_characterise(pmap_load_pte(&obj->direct[i])) ==
+		    kPTEKindZero, "vm_obj_vnode_destroy: still has a page");
+	for (size_t i = 0; i < OBJ_LEVELS; i++)
+		kassert(pmap_pte_characterise(
+		    pmap_load_pte(&obj->indirect[i])) == kPTEKindZero,
+		    "vm_obj_vnode_destroy: still has a table");
+
+	obj->vnobj.vnode = NULL;
+	ke_rcu_call(&obj->rcu_entry, obj_free_rcu, obj);
+}
 
 void
 vm_vnobj_set_valid_length(vm_object_t *obj, size_t length)

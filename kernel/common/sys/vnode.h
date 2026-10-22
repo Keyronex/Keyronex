@@ -66,12 +66,19 @@ typedef struct vattr {
 	.dsize = -1,					\
 };
 
+/*
+ * A virtual node
+ */
 typedef struct vnode {
 	atomic_uint	refcount;
 	struct vfs	*vfs;
 	vtype_t		type;
 	struct vnode_ops *ops;
 	TAILQ_ENTRY(vnode) vfs_vnlistentry; /* entry in vfs::vnode_list */
+	bool		published;	/* on vfs::vnode_list */
+
+	uint32_t	release_pending;
+	TAILQ_ENTRY(vnode) release_link;
 
 	kspinlock_t	nc_lock;
 	uint32_t	nc_refs_n;	/* (nc_lock) */
@@ -147,14 +154,57 @@ struct vnode_ops {
 #define VOP_PAGING_ENTER(VN) (VN)->ops->paging_enter(VN)
 #define VOP_PAGING_EXIT(VN) (VN)->ops->paging_exit(VN)
 
-vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, uintptr_t fspriv2);
+void vnode_init(void);
 
+vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, uintptr_t fspriv2);
+/*!
+ * @brief Publish a vnode into it's VFS' vnode list.
+ */
+void vn_publish(vnode_t *);
+
+/*!
+ * @brief Free a frozen vnode.
+ *
+ * Its viewcache state and VM object must be empty already. If it was published,
+ * the VFS waitq is woken after this.
+ */
+void vn_free(vnode_t *);
+
+/*!
+ * @brief Retain a reference on a vnode (must already have a reference.)
+ */
 vnode_t *vn_retain(vnode_t *);
+
+/*!
+ * @brief Try to retain a reference on a vnode. Fails if it's frozen.
+ *
+ * @retval true vnode retained.
+ * @retval false vnode was frozen, can't be retained.
+ */
+bool vn_tryretain(vnode_t *);
+
+/*!
+ * @brief Try to freeze a vnode given caller holds the last retain.
+ *
+ * @retval true vnode frozen
+ * @retval false vnode not frozen as other references remain.
+ */
+bool vn_tryfreeze(vnode_t *);
+
+/*!
+ * @brief Release a reference on a vnode, potentially tearing it down.
+ */
 void vn_release(vnode_t *);
+
+/*!
+ * @brief Queue (from an unsuitable context) a vnode for deferred release.
+ */
+void vn_release_async(vnode_t *);
 
 int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
     void *buf);
 void viewcache_truncate(vnode_t *, uint64_t newsize);
 struct vn_vc_state *viewcache_alloc_vnode_state(vnode_t *vn);
+void viewcache_free_vnode_state(vnode_t *vn);
 
 #endif /* ECX_SYS_VNODE_H */
