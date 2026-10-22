@@ -10,6 +10,7 @@
 /* FIXME: Old code, needs review!! */
 
 #include <sys/errno.h>
+#include <sys/fcntl.h>
 #include <sys/k_thread.h>
 #include <sys/kmem.h>
 #include <sys/krx_vfs.h>
@@ -26,10 +27,26 @@
 
 typedef uint32_t fid_t;
 
+#define NOFID ((fid_t)~0u)
+
+/*
+ * A 9p 'inode'
+ *
+ * Locking:
+ * (N) node_cache_lock
+ *
+ * open_fid_lock serialises lazy opening of the paging_fid.
+ * Pager I/O and getattr read it atomically without taking the
+ */
 struct ninep_node {
 	RB_ENTRY(ninep_node) rb_entry;
 	struct ninep_qid qid;
-	fid_t fid, paging_fid;
+	fid_t	fid,		/* unopened FID identifying the node */
+		paging_fid;	/* open FID (for file I/O and readdir) or 0 */
+	kmutex_t open_fid_lock;
+	bool paging_fid_rdonly;	/* open fid open only for read */
+	bool unlinked;		/* node unlinked/node_evict()'d as stale */
+	bool in_cache;		/* (N) in fs->node_cache  */
 	vnode_t *vnode;
 	krwlock_t rwlock, paging_rwlock;
 	vattr_t vattr;
@@ -41,13 +58,20 @@ struct ninep_node {
 
 struct ninepfs_state {
 	vfs_t *vfs;
-	uint16_t req_tag;
-	fid_t fid_counter;
+	atomic_ushort req_tag;
+	atomic_uint fid_counter;
 	RB_HEAD(ninep_node_rb, ninep_node) node_cache;
 	kmutex_t node_cache_lock;
 	struct ninep_node *root_node;
 	struct vnode *provider;
+
+	/* debug counters */
+	atomic_uint fids_allocated, fids_clunked;
+	atomic_uint nodes_created, nodes_freed;
 };
+
+/* TODO get rid of me when not needed for debugging */
+struct ninepfs_state *ninep_debug_state;
 
 #define VTO9(VNODE)   ((struct ninep_node *)(VNODE)->fsprivate_1)
 #define VTO9FS(VNODE) ((struct ninepfs_state *)(VNODE)->vfs->fsprivate_1)
@@ -59,7 +83,11 @@ static int do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr);
 static int64_t
 node_cmp(struct ninep_node *x, struct ninep_node *y)
 {
-	return x->qid.path - y->qid.path;
+	if (x->qid.path < y->qid.path)
+		return -1;
+	else if (x->qid.path > y->qid.path)
+		return 1;
+	return 0;
 }
 
 RB_GENERATE(ninep_node_rb, ninep_node, rb_entry, node_cmp);
@@ -67,7 +95,66 @@ RB_GENERATE(ninep_node_rb, ninep_node, rb_entry, node_cmp);
 static fid_t
 fid_allocate(struct ninepfs_state *fs)
 {
-	return fs->fid_counter++;
+	fid_t fid;
+
+	do {
+		fid = atomic_fetch_add_explicit(&fs->fid_counter, 1,
+		    memory_order_relaxed);
+	} while (fid == 0 || fid == NOFID);
+
+	atomic_fetch_add_explicit(&fs->fids_allocated, 1,
+	    memory_order_relaxed);
+
+	return fid;
+}
+
+/*! Clunk a fid. (even if there is an error the FID is now invalid.) */
+static int
+fid_clunk(struct ninepfs_state *fs, fid_t fid)
+{
+	iop_t *iop;
+	struct ninep_buf *buf_in, *buf_out;
+	int r;
+
+	kassert(fid != 0 && fid != NOFID);
+
+	/* size[4] Tclunk tag[2] fid[4] */
+	buf_in = ninep_buf_alloc("F");
+	/* size[4] Rclunk tag[2] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pClunk;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pClunk + 1:
+		r = 0;
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		kdprintf("9pfs: Tclunk of fid %u failed: %u\n", fid, err);
+		r = -err;
+		break;
+	}
+
+	default:
+		kfatal("9p error\n");
+	}
+
+	ninep_buf_free(buf_out);
+
+	atomic_fetch_add_explicit(&fs->fids_clunked, 1, memory_order_relaxed);
+
+	return r;
 }
 
 /*!
@@ -105,9 +192,15 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	found->qid = qid;
 	found->fid = fid;
 	found->paging_fid = 0;
+	found->paging_fid_rdonly = false;
+	found->unlinked = false;
+	found->in_cache = true;
+	found->name = NULL;
 	RB_INSERT(ninep_node_rb, &fs->node_cache, found);
 	ke_rwlock_init(&found->rwlock);
 	ke_rwlock_init(&found->paging_rwlock);
+	ke_mutex_init(&found->open_fid_lock);
+	atomic_fetch_add_explicit(&fs->nodes_created, 1, memory_order_relaxed);
 
 	r = do_getattr(fs, fid, &found->vattr);
 
@@ -147,6 +240,18 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	*out = found;
 
 	return 0;
+}
+
+static void
+node_evict(struct ninepfs_state *fs, struct ninep_node *node)
+{
+	ke_mutex_enter(&fs->node_cache_lock, "node_evict");
+	if (node->in_cache) {
+		RB_REMOVE(ninep_node_rb, &fs->node_cache, node);
+		node->in_cache = false;
+	}
+	node->unlinked = true;
+	ke_mutex_exit(&fs->node_cache_lock);
 }
 
 static int
@@ -199,25 +304,17 @@ fid_clone(struct ninepfs_state *fs, ninep_fid_t fid, ninep_fid_t new_fid)
 	return r;
 }
 
+/*!
+ * Open an unopened FID
+ * @retval 0 FID now opened
+ * @retval -errno failed, FID unchanged, not opened
+ */
 static int
-node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
+fid_open(struct ninepfs_state *fs, fid_t fid, uint32_t flags)
 {
 	iop_t *iop;
 	struct ninep_buf *buf_in, *buf_out;
-	ninep_fid_t new_fid;
 	int r;
-
-	if (node->paging_fid != 0)
-		return 0;
-
-	if (node->vnode->type != VREG && node->vnode->type != VDIR)
-		return -1; /* EBADF */
-
-	new_fid = fid_allocate(fs);
-
-	r = fid_clone(fs, node->fid, new_fid);
-	if (r != 0)
-		kfatal("Failed to clone fid (%s) for paging: %d\n", node->name, r);
 
 	/* size[4] Tlopen tag[2] fid[4] flags[4] */
 	buf_in = ninep_buf_alloc("Fd");
@@ -226,32 +323,82 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 
 	buf_in->data->tag = to_leu16(fs->req_tag++);
 	buf_in->data->kind = k9pLopen;
-	ninep_buf_addfid(buf_in, new_fid);
-	ninep_buf_addu32(buf_in,
-	    node->vnode->type == VDIR ? P9_DOTL_RDONLY | P9_DOTL_DIRECTORY :
-				      P9_DOTL_RDWR);
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addu32(buf_in, flags);
 	ninep_buf_close(buf_in);
 
 	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
 	iop_send_sync(iop);
 	iop_free(iop);
-
 	ninep_buf_free(buf_in);
 
 	switch (buf_out->data->kind) {
-	case k9pLopen + 1: {
+	case k9pLopen + 1:
 		r = 0;
-		node->paging_fid = new_fid;
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		kassert(err != 0);
+		r = -err;
+		break;
+	}
+
+	default:
+		kfatal("9p error\n");
+	}
+
+	ninep_buf_free(buf_out);
+
+	return r;
+}
+
+static int
+fid_walk1(struct ninepfs_state *fs, fid_t fid, fid_t new_fid, const char *name,
+    struct ninep_qid *qid_out)
+{
+	iop_t *iop;
+	struct ninep_buf *buf_in, *buf_out;
+	int r;
+
+	/* size[4] Twalk tag[2] fid[4] newfid[4] nwname[2] nwname*(wname[s]) */
+	buf_in = ninep_buf_alloc("FFhS64");
+	/* size[4] Rwalk tag[2] nwqid[2] nwqid*(wqid[13]) */
+	buf_out = ninep_buf_alloc("hQ");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pWalk;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addfid(buf_in, new_fid);
+	ninep_buf_addu16(buf_in, 1);
+	ninep_buf_addstr(buf_in, name);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pWalk + 1: {
+		uint16_t nwqid;
+		struct ninep_qid qid;
+
+		ninep_buf_getu16(buf_out, &nwqid);
+		kassert(nwqid == 1);
+		ninep_buf_getqid(buf_out, &qid);
+		if (qid_out != NULL)
+			*qid_out = qid;
+		r = 0;
 		break;
 	}
 
 	case k9pLerror + 1: {
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
-		kdprintf("Failed to clone node id: %d (file %s)\n", err,
-		    node->name);
-		kassert(err != 0);
 		r = -err;
+		kassert(r != 0);
 		break;
 	}
 
@@ -263,6 +410,80 @@ node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
 	ninep_buf_free(buf_out);
 
 	return r;
+}
+
+static int
+node_make_paging_fid(struct ninepfs_state *fs, struct ninep_node *node)
+{
+	ninep_fid_t new_fid;
+	bool rdonly = false;
+	int r;
+
+	if (node->vnode->type != VREG && node->vnode->type != VDIR)
+		return -EBADF;
+
+	ke_mutex_enter(&node->open_fid_lock, "node_make_paging_fid");
+
+	if (node->paging_fid != 0) {
+		ke_mutex_exit(&node->open_fid_lock);
+		return 0;
+	}
+
+	new_fid = fid_allocate(fs);
+
+	r = fid_clone(fs, node->fid, new_fid);
+	if (r != 0) {
+		kdprintf("9pfs: failed to clone fid for %s: %d\n", node->name,
+		    r);
+		ke_mutex_exit(&node->open_fid_lock);
+		return r;
+	}
+
+	if (node->vnode->type == VDIR) {
+		r = fid_open(fs, new_fid, P9_DOTL_RDONLY | P9_DOTL_DIRECTORY);
+	} else {
+		r = fid_open(fs, new_fid, P9_DOTL_RDWR);
+		if (r == -EACCES || r == -EROFS || r == -EPERM) {
+			r = fid_open(fs, new_fid, P9_DOTL_RDONLY);
+			rdonly = true;
+		}
+	}
+
+	if (r != 0) {
+		kdprintf("9pfs: failed to open fid for %s: %d\n", node->name,
+		    r);
+		fid_clunk(fs, new_fid);
+		ke_mutex_exit(&node->open_fid_lock);
+		return r;
+	}
+
+	node->paging_fid_rdonly = rdonly;
+	atomic_store_explicit(&node->paging_fid, new_fid, memory_order_release);
+
+	ke_mutex_exit(&node->open_fid_lock);
+
+	return 0;
+}
+
+static int
+ninep_open(vnode_t **vnp, int flags)
+{
+	vnode_t *vn = *vnp;
+	struct ninep_node *node = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+	int r;
+
+	if (vn->type != VREG)
+		return 0;
+
+	r = node_make_paging_fid(fs, node);
+	if (r != 0)
+		return r;
+
+	if ((flags & O_ACCMODE) != O_RDONLY && node->paging_fid_rdonly)
+		return -EACCES;
+
+	return 0;
 }
 
 enum vtype
@@ -334,7 +555,6 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
 		ninep_buf_free(buf_out);
-		kdprintf(" * ninep: oddly, do_getattr failed with %d\n", err);
 		return -err;
 		break;
 	}
@@ -383,83 +603,48 @@ ninep_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 {
 	struct ninep_node *dn = VTO9(dvn);
 	struct ninepfs_state *fs = VTO9FS(dvn);
-	fid_t new_fid = fid_allocate(fs);
-	struct ninep_buf *buf_in, *buf_out;
-	iop_t *iop;
+	fid_t new_fid;
+	struct ninep_qid qid;
+	struct ninep_node *node;
 	int r;
 
-	/* size[4] Twalk tag[2] fid[4] newfid[4] nwname[2] nwname*(wname[s]) */
-	buf_in = ninep_buf_alloc("FFhS64");
-	/* size[4] Rwalk tag[2] nwqid[2] nwqid*(wqid[13]) */
-	buf_out = ninep_buf_alloc("hQ");
+	if (dn->unlinked)
+		return -ENOENT;
 
-	buf_in->data->tag = to_leu16(fs->req_tag++);
-	buf_in->data->kind = k9pWalk;
-	ninep_buf_addfid(buf_in, dn->fid);
-	ninep_buf_addfid(buf_in, new_fid);
-	ninep_buf_addu16(buf_in, 1);
-	ninep_buf_addstr(buf_in, name);
-	ninep_buf_close(buf_in);
+	new_fid = fid_allocate(fs);
 
-	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
-	iop_send_sync(iop);
-	iop_free(iop);
-	ninep_buf_free(buf_in);
+	r = fid_walk1(fs, dn->fid, new_fid, name, &qid);
+	if (r != 0)
+		return r;
 
-	switch (buf_out->data->kind) {
-	case k9pWalk + 1: {
-		uint16_t nwqid;
-		struct ninep_qid qid;
-		struct ninep_node *node;
-
-		ninep_buf_getu16(buf_out, &nwqid);
-		kassert(nwqid == 1);
-		ninep_buf_getqid(buf_out, &qid);
-		ninep_buf_free(buf_out);
-
-		r = node_for_qid(fs, &node, qid, new_fid, VNON);
-		if (r == 1) {
-			/* todo: clunk the new_fid - don't need it!! */
-			r = 0;
-		} else if (r == 0) {
-			node->name = kmem_strdup(name);
-		} else if (r < 0) {
-			kfatal("node_for_qid failed?\n");
-		}
-
-		*out = node->vnode;
-
-		break;
+	r = node_for_qid(fs, &node, qid, new_fid, VNON);
+	if (r == 1) {
+		fid_clunk(fs, new_fid);
+	} else if (r == 0) {
+		node->name = kmem_strdup(name);
+	} else {
+		kfatal("node_for_qid failed?\n");
 	}
 
-	case k9pLerror + 1: {
-		uint32_t err;
-		ninep_buf_getu32(buf_out, &err);
-		ninep_buf_free(buf_out);
-		r = -err;
-		kassert(r != 0);
-		goto out;
-	}
+	*out = node->vnode;
 
-	default: {
-		kfatal("9p error\n");
-	}
-	}
-
-out:
-	return r;
+	return 0;
 }
 
 static int
 ninep_mkdir(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 {
-	struct ninep_node *dn = VTO9(dvn);
+	struct ninep_node *dn = VTO9(dvn), *node;
 	struct ninepfs_state *fs = VTO9FS(dvn);
 	struct ninep_buf *buf_in, *buf_out;
 	iop_t *iop;
 	struct ninep_qid qid;
 	uint32_t mode;
+	fid_t walkfid;
 	int r = 0;
+
+	if (dn->unlinked)
+		return -ENOENT;
 
 	mode = 0755;
 
@@ -504,7 +689,23 @@ ninep_mkdir(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	}
 	}
 
-	r = ninep_lookup(dvn, name, out);
+	walkfid = fid_allocate(fs);
+
+	r = fid_walk1(fs, dn->fid, walkfid, name, &qid);
+	if (r != 0)
+		goto out;
+
+	/* as in create, if an existing node matches, get rid of it */
+	r = node_for_qid(fs, &node, qid, walkfid, VNON);
+	if (r == 1) {
+		node_evict(fs, node);
+		vn_release(node->vnode);
+		r = node_for_qid(fs, &node, qid, walkfid, VNON);
+		kassert(r == 0);
+	}
+	node->name = kmem_strdup(name);
+	*out = node->vnode;
+	r = 0;
 
 out:
 	return r;
@@ -517,19 +718,22 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	struct ninepfs_state *fs = VTO9FS(dvn);
 	struct ninep_buf *buf_in, *buf_out;
 	iop_t *iop;
-	ninep_fid_t newfid;
+	ninep_fid_t newfid, walkfid;
 	struct ninep_qid qid;
-	vattr_t vattr_out;
 	int nineplmode = 0;
+	bool keep_create_fid;
 	int r = 0;
+
+	if (dn->unlinked)
+		return -ENOENT;
 
 	switch (attr->type) {
 	case VREG:
-		nineplmode = 0755 | S_IFREG;
+		nineplmode = (attr->mode & 07777) | S_IFREG;
 		break;
 
 	case VSOCK:
-		nineplmode = 0755 | S_IFSOCK;
+		nineplmode = (attr->mode & 07777) | S_IFSOCK;
 		break;
 
 	case VDIR:
@@ -539,9 +743,20 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 		kfatal("Unexpected vattr type %d\n", attr->type);
 	}
 
+	/*
+	 * Tlcreate replaces the directory FID with an open FID for the new file
+	 * so clone the FID directory.
+	 *
+	 * and for regular-files with no owner-write permission keep the
+	 * writable FID from create, otherwise reopening it later can fail.
+	 * Otherwise it can go and separate FID opened as needed.
+	 */
+	keep_create_fid = attr->type == VREG && (nineplmode & S_IWUSR) == 0;
+
 	newfid = fid_allocate(fs);
 	r = fid_clone(fs, dn->fid, newfid);
-	kassert(r == 0);
+	if (r != 0)
+		return r;
 
 	/* size[4] Tlcreate tag[2] fid[4] name[s] flags[4] mode[4] gid[4] */
 	buf_in = ninep_buf_alloc("FS64ddd");
@@ -552,7 +767,8 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	buf_in->data->kind = k9pLcreate;
 	ninep_buf_addfid(buf_in, newfid);
 	ninep_buf_addstr(buf_in, name);
-	ninep_buf_addu32(buf_in, P9_DOTL_CREATE); /* flags */
+	ninep_buf_addu32(buf_in,
+	    P9_DOTL_RDWR | P9_DOTL_CREATE | P9_DOTL_EXCL); /* flags */
 	ninep_buf_addu32(buf_in, nineplmode);
 	ninep_buf_addu32(buf_in, 0); /* gid */
 	ninep_buf_close(buf_in);
@@ -565,11 +781,7 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	switch (buf_out->data->kind) {
 	case k9pLcreate + 1: {
 		ninep_buf_getqid(buf_out, &qid);
-
 		ninep_buf_free(buf_out);
-
-		r = do_getattr(fs, newfid, &vattr_out);
-		kassert(r == 0);
 		break;
 	}
 
@@ -579,8 +791,11 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 		ninep_buf_free(buf_out);
 		r = -err;
 		kassert(r != 0);
-		kdprintf("Create failed: %d\n", r);
-		goto out;
+		if (r != -EEXIST)
+			kdprintf("9pfs: Tlcreate of %s failed: %d\n", name, r);
+		/* creation failed, the FID is still unopened */
+		fid_clunk(fs, newfid);
+		return r;
 	}
 
 	default: {
@@ -588,19 +803,39 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	}
 	}
 
-	r = node_for_qid(fs, &res, qid, newfid, attr->type);
-	if (r < 0) {
-		kdprintf("oddly, node_for_qid failed with %d\n", r);
-		return -r;
-	} else if (r == 1) {
-		kdprintf("9p: warning: lcreate for %s - exists??\n", name);
-		r = 0;
+	/* get an unopened FID for node->fid */
+	walkfid = fid_allocate(fs);
+	r = fid_walk1(fs, dn->fid, walkfid, name, NULL);
+	if (r != 0) {
+		kdprintf("9pfs: walk of just-created %s failed: %d\n", name, r);
+		fid_clunk(fs, newfid);
+		return r;
+	}
+
+	if (!keep_create_fid)
+		fid_clunk(fs, newfid);
+
+	/*
+	 * Given Tlcreate with O_EXCL should make a fresh inode, make away with
+	 * any cached node that somehow has the same identity.
+	 */
+	r = node_for_qid(fs, &res, qid, walkfid, attr->type);
+	if (r == 1) {
+		node_evict(fs, res);
+		vn_release(res->vnode); /* node_for_qid's retain */
+		r = node_for_qid(fs, &res, qid, walkfid, attr->type);
+		kassert(r == 0);
+	}
+
+	res->name = kmem_strdup(name);
+	if (keep_create_fid) {
+		res->paging_fid = newfid;
+		res->paging_fid_rdonly = false;
 	}
 
 	*out = res->vnode;
 
-out:
-	return r;
+	return 0;
 }
 
 int
@@ -613,6 +848,9 @@ ninep_link(vnode_t *dvn, vnode_t *vn, const char *name)
 	int r = 0;
 
 	kassert(dvn->vfs->fsprivate_1 == vn->vfs->fsprivate_1);
+
+	if (dn->unlinked)
+		return -ENOENT;
 
 	/* size[4] Tlink tag[2] dfid[4] fid[4] name[s] */
 	buf_in = ninep_buf_alloc("FFS64");
@@ -653,25 +891,17 @@ ninep_link(vnode_t *dvn, vnode_t *vn, const char *name)
 	return r;
 }
 
-int
-ninep_remove(vnode_t *dvn, const char *name)
+static int
+ninep_unlinkat(vnode_t *dvn, const char *name, vnode_t *vn, bool removedir)
 {
-	struct ninep_node *node = VTO9(dvn);
+	struct ninep_node *dn = VTO9(dvn), *node = VTO9(vn);
 	struct ninepfs_state *fs = VTO9FS(dvn);
-	ninep_fid_t dirfid;
 	struct ninep_buf *buf_in, *buf_out;
 	iop_t *iop;
 	int r;
 
-	if (node->paging_fid == 0) {
-		/*
-		 * maybe we need two here to fix the 'reused after remove' bug?
-		 * and clean up the last one only after we've hit inactive()
-		 */
-		int r = node_make_paging_fid(fs, node);
-		kassert(r == 0);
-	}
-	dirfid = node->paging_fid;
+	if (dn->unlinked)
+		return -ENOENT;
 
 	/* size[4] Tunlinkat tag[2] dirfd[4] name[s] flags[4] */
 	buf_in = ninep_buf_alloc("FS64d");
@@ -680,9 +910,9 @@ ninep_remove(vnode_t *dvn, const char *name)
 
 	buf_in->data->tag = to_leu16(fs->req_tag++);
 	buf_in->data->kind = k9pUnlinkAt;
-	ninep_buf_addfid(buf_in, dirfid);
+	ninep_buf_addfid(buf_in, dn->fid); /* a dirfid need not be open */
 	ninep_buf_addstr(buf_in, name);
-	ninep_buf_addu32(buf_in, 0);
+	ninep_buf_addu32(buf_in, removedir ? P9_DOTL_AT_REMOVEDIR : 0);
 	ninep_buf_close(buf_in);
 
 	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
@@ -708,7 +938,25 @@ ninep_remove(vnode_t *dvn, const char *name)
 	}
 	}
 
+	ninep_buf_free(buf_out);
+
+	/* since directories can't have hard links, make away with it */
+	if (r == 0 && removedir) /* TODO for regular files */
+		node_evict(fs, node);
+
 	return r;
+}
+
+int
+ninep_remove(vnode_t *dvn, const char *name, vnode_t *vn)
+{
+	return ninep_unlinkat(dvn, name, vn, false);
+}
+
+int
+ninep_rmdir(vnode_t *dvn, const char *name, vnode_t *vn)
+{
+	return ninep_unlinkat(dvn, name, vn, true);
 }
 
 int
@@ -721,6 +969,9 @@ ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
 	iop_t *iop;
 	struct ninep_buf *buf_in, *buf_out;
 	int r = 0;
+
+	if (old_dirnode->unlinked || new_dirnode->unlinked)
+		return -ENOENT;
 
 	/*
 	 * size[4] Trenameat tag[2] olddirfid[4] oldname[s] newdirfid[4]
@@ -768,14 +1019,32 @@ ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
 int
 ninep_getattr(vnode_t *vn, vattr_t *attr)
 {
-	struct ninep_node *dn = VTO9(vn);
-#if 0
-	struct ninepfs_state *fs = VTO9FS(dvn);
-	return do_getattr(fs, dn->fid, vattr);
-#else
-	*attr = dn->vattr;
+	struct ninep_node *node = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+	vattr_t fresh;
+	fid_t fid;
+	int r;
+
+	/* open FID is preferable as, with qemu, it still works after unlink  */
+	fid = atomic_load_explicit(&node->paging_fid, memory_order_acquire);
+	if (fid == 0)
+		fid = node->fid;
+
+	r = do_getattr(fs, fid, &fresh);
+	if (r != 0) {
+		/* FIXME: reasonable for dangling walk FID? other errors? */
+		*attr = node->vattr;
+		return 0;
+	}
+
+	/* not-yet-written-back writes might have extended it already */
+	fresh.size = node->vattr.size;
+	/* since e.g. sockets override the type, keep ours */
+	fresh.type = node->vattr.type;
+	node->vattr = fresh;
+	*attr = fresh;
+
 	return 0;
-#endif
 }
 
 static int
@@ -842,6 +1111,12 @@ ninep_truncate(vnode_t *vn, size_t size)
 	if (vn->type != VREG)
 		return -EINVAL;
 
+	r = node_make_paging_fid(fs, node);
+	if (r != 0)
+		return r;
+	if (node->paging_fid_rdonly)
+		return -EACCES;
+
 	/* blocks all read/write calls, blocking all viewcache io */
 	ke_rwlock_enter_write(&node->rwlock, "9p truncate");
 
@@ -863,7 +1138,7 @@ ninep_truncate(vnode_t *vn, size_t size)
 	 * page that exists? could have junk in it from shared mappings.
 	 */
 
-	r = ninep_do_setattr_size(fs, node->fid, size);
+	r = ninep_do_setattr_size(fs, node->paging_fid, size);
 	if (r == 0) {
 		node->vattr.size = size;
 	} else {
@@ -910,13 +1185,12 @@ ninep_readdir(vnode_t *dvn, void *buf, size_t buflen, off_t *offset)
 	off_t r = 0;
 	char *buf_limit = (char*)buf + buflen;
 
-	if (node->paging_fid == 0) {
-		r = node_make_paging_fid(fs, node);
-		if (r != 0) {
-			kdprintf("9pfs: Failed to get a pager Fid! Error %ld\n", r);
-			return r;
-		}
-	}
+	if (node->unlinked)
+		return -ENOENT;
+
+	r = node_make_paging_fid(fs, node);
+	if (r != 0)
+		return r;
 
 	/* size[4] Treaddir tag[2] fid[4] offset[8] count[4] */
 	buf_in = ninep_buf_alloc("Fld");
@@ -1121,7 +1395,7 @@ attach(struct ninepfs_state *state)
 
 	buf_in->data->tag = to_leu16(state->req_tag++);
 	buf_in->data->kind = k9pAttach;
-	ninep_buf_addfid(buf_in, state->fid_counter++);
+	ninep_buf_addfid(buf_in, fid_allocate(state));
 	ninep_buf_addfid(buf_in, ~0);
 	ninep_buf_addstr(buf_in, "root");
 	ninep_buf_addstr(buf_in,
@@ -1168,9 +1442,14 @@ ninep_mount(vnode_t *provider)
 	struct ninepfs_state *state = kmem_alloc(sizeof(struct ninepfs_state));
 	int r;
 
-	state->fid_counter = 1;
-	state->req_tag = 0;
+	atomic_store(&state->fid_counter, 1);
+	atomic_store(&state->req_tag, 0);
+	atomic_store(&state->fids_allocated, 0);
+	atomic_store(&state->fids_clunked, 0);
+	atomic_store(&state->nodes_created, 0);
+	atomic_store(&state->nodes_freed, 0);
 	state->provider = provider;
+	ninep_debug_state = state;
 	RB_INIT(&state->node_cache);
 	ke_mutex_init(&state->node_cache_lock);
 	state->vfs = vfs;
@@ -1224,12 +1503,22 @@ ninep_dispatch_iop(vnode_t *, iop_t *iop)
 	}
 #endif
 
-	if (node->paging_fid == 0) {
+	/* paging FID may not exist yet, e.g. exec */
+	if (atomic_load_explicit(&node->paging_fid, memory_order_acquire) ==
+	    0) {
 		int r = node_make_paging_fid(m_state, node);
 		if (r != 0)
 			kfatal("9pfs: (%s) failed to make paging FID: %d\n",
 			    node->name, r);
 	}
+
+	/*
+	 * TODO: as well as not panicking, is it ever worth re-checking if this
+	 * can be opened read-write?
+	 */
+	if (frame->op == kIOPWrite && node->paging_fid_rdonly)
+		kfatal("9pfs: (%s) pager write through a read-only fid\n",
+		    node->name);
 
 	/* size[4] Tread tag[2] fid[4] offset[8] count[4] */
 	buf_in = ninep_buf_alloc("Fld");
@@ -1316,6 +1605,15 @@ static int
 ninep_read(vnode_t *vn, void *buf, size_t buflen, off_t offset, int)
 {
 	struct ninep_node *node = VTO9(vn);
+	int r;
+
+	r = node_make_paging_fid(VTO9FS(vn), node);
+	if (r != 0)
+		return r;
+
+	if (offset >= node->vattr.size)
+		return 0;
+
 	buflen = MIN2(buflen, node->vattr.size - offset);
 	return viewcache_io(vn, offset, buflen, false, buf);
 }
@@ -1325,6 +1623,13 @@ ninep_write(vnode_t *vn, const void *buf, size_t buflen, off_t offset, int)
 {
 	struct ninep_node *node = VTO9(vn);
 	int r;
+
+	r = node_make_paging_fid(VTO9FS(vn), node);
+	if (r != 0)
+		return r;
+	if (node->paging_fid_rdonly)
+		return -EBADF;
+
 	ke_rwlock_enter_write(&node->rwlock, "ninep_write");
 	if (offset + buflen > node->vattr.size) {
 		ke_rwlock_enter_read(&node->paging_rwlock,
@@ -1352,11 +1657,13 @@ ninep_ioctl(vnode_t *vn, unsigned long cmd, void *arg)
 }
 
 static struct vnode_ops ninep_vnops = {
+	.open = ninep_open,
 	.inactive = ninep_inactive,
 	.lookup = ninep_lookup,
 	.create = ninep_create,
 	.link = ninep_link,
 	.remove = ninep_remove,
+	.rmdir = ninep_rmdir,
 	.rename = ninep_rename,
 	.getattr = ninep_getattr,
 	.setattr = ninep_setattr,

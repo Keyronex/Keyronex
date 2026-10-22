@@ -61,6 +61,7 @@ enum lookup_flags {
 	LOOKUP_2NDLAST = 1 << 1,
 	LOOKUP_CREATE = 1 << 2,
 	LOOKUP_ALLOW_NEG = 1 << 3,
+	LOOKUP_EXCL = 1 << 4, /* with LOOKUP_CREATE, EEXIST if already exists */
 };
 
 struct lookup_info {

@@ -100,7 +100,8 @@ struct vnode_ops {
 	int (*close)(vnode_t *, int);
 	int (*create)(vnode_t *, const char *, vattr_t *, vnode_t **);
 	int (*link)(vnode_t *, vnode_t *, const char *);
-	int (*remove)(vnode_t *, const char *);
+	int (*remove)(vnode_t *dvn, const char *name, vnode_t *vn);
+	int (*rmdir)(vnode_t *dvn, const char *name, vnode_t *vn);
 	int (*rename)(vnode_t *, const char *, vnode_t *,
 	    const char *);
 	int (*ioctl)(vnode_t *, unsigned long cmd, void *data);

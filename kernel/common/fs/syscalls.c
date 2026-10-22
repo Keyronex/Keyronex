@@ -67,8 +67,6 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	    curproc()->comm, dirfd, path, flags, mode);
 #endif
 
-	if (flags & O_TRUNC)
-		kdprintf(" !! sys_openat: O_TRUNC not implemented! (ignored)\n");
 
 	r = get_dirfd_nch(dirfd, &dirnch);
 	if (r != 0) {
@@ -91,6 +89,8 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		/* TODO: umask here */
 
 		info.flags |= LOOKUP_CREATE;
+		if (flags & O_EXCL)
+			info.flags |= LOOKUP_EXCL;
 		info.create_attr = &create_attr;
 	}
 
@@ -115,14 +115,19 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		return -ENOTDIR;
 	}
 
-	vn = vn_retain(result.nc->vp);
+	vn = result.nc->vp;
 
-	if (result.nc->vp->ops->open != NULL) {
-		r = VOP_OPEN(&vn, flags);
+	if (vn->ops->open != NULL) {
+		vnode_t *openvn = vn_retain(vn);
+
+		r = VOP_OPEN(&openvn, flags);
 		if (r != 0) {
+			vn_release(openvn);
 			nchandle_release(result);
 			return r;
 		}
+
+		vn = openvn;
 
 		if (vn != result.nc->vp) {
 			/*
@@ -148,9 +153,27 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 
 	}
 
+	if ((flags & O_TRUNC) && vn->type == VREG &&
+	    (flags & O_ACCMODE) != O_RDONLY && vn->ops->setattr != NULL) {
+		vattr_t attr = VATTR_NULL;
+
+		attr.size = 0;
+		r = VOP_SETATTR(vn, &attr);
+		if (r != 0) {
+			if (result.nc != NULL)
+				nchandle_release(result);
+			else
+				vn_release(vn);
+			return r;
+		}
+	}
+
 	file = file_new(result, vn, flags);
 	if (file == NULL) {
-		nchandle_release(result);
+		if (result.nc != NULL)
+			nchandle_release(result);
+		else
+			vn_release(vn);
 		return -ENOMEM;
 	}
 
@@ -786,10 +809,15 @@ sys_fstatat(int fd, const char *upath, int flags, struct stat *sb)
 	if (pathlen < 0)
 		return pathlen;
 
-	if (fd == AT_FDCWD) {
-		namecache_handle_t nch;
+	if (fd == AT_FDCWD || *path != '\0') {
+		namecache_handle_t dirnch, nch;
 
-		r = vfs_lookup_simple(root_nch, &nch, path, lookup_flags);
+		r = get_dirfd_nch(fd, &dirnch);
+		if (r != 0)
+			goto out;
+
+		r = vfs_lookup_simple(dirnch, &nch, path, lookup_flags);
+		nchandle_release(dirnch);
 		if (r != 0)
 			goto out;
 
@@ -797,9 +825,6 @@ sys_fstatat(int fd, const char *upath, int flags, struct stat *sb)
 		r = VOP_GETATTR(nch.nc->vp, &vattr);
 		nchandle_release(nch);
 	} else {
-		kassert(fd >= 0);
-		kassert(flags & AT_EMPTY_PATH || *path == '\0');
-
 		file = uf_lookup(curproc()->finfo, fd);
 		if (file == NULL) {
 			r = -EBADF;

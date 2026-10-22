@@ -48,7 +48,12 @@ enum ninep_open_flags {
 	P9_DOTL_RDONLY = 00000000,
 	P9_DOTL_RDWR = 00000002,
 	P9_DOTL_CREATE = 00000100,
+	P9_DOTL_EXCL = 00000200,
 	P9_DOTL_DIRECTORY = 00200000,
+};
+
+enum ninep_unlinkat_flags {
+	P9_DOTL_AT_REMOVEDIR = 0x200,
 };
 
 enum ninep_getattr_mask {

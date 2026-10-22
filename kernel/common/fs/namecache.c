@@ -226,6 +226,11 @@ nc_release(namecache_t *nc)
 	}
 }
 
+/*
+ * Free an entry. (If there is a vnode, i.e. not a negative entry, then the
+ * topology lock musn't be held as vnode release can block on writeback,
+ * network, etc.)
+ */
 static void
 nc_free(namecache_t *nc)
 {
@@ -453,6 +458,15 @@ retry:
 
 			nc_retain(found);
 			nc_wait_for_busy(found);
+			/*
+			 * While we waited the entry might have been dissociated
+			 * and ours might be the last reference, so we drop the
+			 * topology lock around this in case there's a vnode
+			 * release.
+			 */
+			ke_rwlock_exit_read(&topology_lock);
+			nc_release(found);
+			ke_rwlock_enter_read(&topology_lock, "nc_lookup: relock");
 			goto retry;
 
 		} else if (found->vp == NULL && !allow_neg) {
@@ -498,11 +512,18 @@ retry:
 	} else if (r == -ENOENT && allow_neg) {
 		*out = found;
 		r = 0;
+	} else {
+		nc_dissociate(found);
 	}
 
 	found->busy = false;
 	nc_wake_busy_waiters(found);
 	ke_rwlock_downgrade(&topology_lock);
+
+	if (r != 0) {
+		/* no vnode - fine with the topology lock */
+		nc_release(found);
+	}
 
 	return r;
 }
@@ -750,10 +771,22 @@ vfs_lookup(struct lookup_info *info)
 		if (r == -ENOENT && is_final && (info->flags & LOOKUP_CREATE)) {
 			r = nc_create(nch.nc, &next_nch.nc, np->name,
 			    info->create_attr);
-			if (r == 0)
+			if (r == 0) {
 				info->did_create = true;
-			else
+			} else if (r == -EEXIST &&
+			    !(info->flags & LOOKUP_EXCL)) {
+				/*
+				 * Stale negative. nc_create() has already made
+				 * away with it so try again.
+				 */
+				r = nc_lookup(nch.nc, &next_nch.nc, np->name,
+				    is_final &&
+					(info->flags & LOOKUP_ALLOW_NEG));
+				if (r != 0)
+					break;
+			} else {
 				break;
+			}
 		} else if (r != 0) {
 			break;
 		}
@@ -944,7 +977,8 @@ nc_remove(namecache_handle_t dirnch, const char *name, bool isdir)
 	if (dirnch.nc->vp->type != VDIR)
 		return -ENOTDIR;
 
-	if (dirnch.nc->vp->ops->remove == NULL)
+	if ((isdir ? dirnch.nc->vp->ops->rmdir : dirnch.nc->vp->ops->remove) ==
+	    NULL)
 		return -ENOTSUP;
 
 retry:
@@ -984,18 +1018,42 @@ retry:
 		goto out;
 	}
 
-	if (isdir && !RB_EMPTY(&targnch.nc->children)) {
-		r = -ENOTEMPTY;
-		goto out;
+	if (isdir) {
+		/* TODO: consider a count of positive and negative children? */
+		namecache_t *child;
+
+		RB_FOREACH(child, namecache_rb, &targnch.nc->children) {
+			if (child->vp != NULL) {
+				r = -ENOTEMPTY;
+				goto out;
+			}
+		}
 	}
 
 	nc_busy(targnch.nc);
 	ke_rwlock_exit_write(&topology_lock);
 
-	r = dirnch.nc->vp->ops->remove(dirnch.nc->vp, name);
+	if (isdir)
+		r = dirnch.nc->vp->ops->rmdir(dirnch.nc->vp, name,
+		    targnch.nc->vp);
+	else
+		r = dirnch.nc->vp->ops->remove(dirnch.nc->vp, name,
+		    targnch.nc->vp);
 
 	ke_rwlock_enter_write(&topology_lock, "nc_remove: relock topology_lock");
 	if (r == 0) {
+		namecache_t *child;
+
+		/* empty directory can still have negative children */
+
+		while ((child = RB_MIN(namecache_rb, &targnch.nc->children)) !=
+		    NULL) {
+			kassert(child->vp == NULL);
+			nc_retain(child);
+			nc_dissociate(child);
+			nc_release(child);
+		}
+
 		nc_dissociate(targnch.nc);
 	} else if (r == -ENOENT) {
 		kdprintf("warning: nc_remove: remove failed in vfs layer");

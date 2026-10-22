@@ -15,11 +15,15 @@
 
 #include <stdatomic.h>
 
+atomic_uint vnodes_allocated, vnodes_freed;
+
 vnode_t *
 vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1,
     uintptr_t fsprivate_2)
 {
 	vnode_t *vn;
+
+	atomic_fetch_add_explicit(&vnodes_allocated, 1, memory_order_relaxed);
 
 	vn = kmem_alloc(sizeof(vnode_t));
 	atomic_store_explicit(&vn->refcount, 1, memory_order_relaxed);
