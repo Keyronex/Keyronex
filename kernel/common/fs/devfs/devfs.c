@@ -55,6 +55,23 @@ devfs_create_node(enum dev_kind kind, dev_ops_t *ops, void *private,
 	kdprintf("devfs_create_node: created %s\n", node->name);
 }
 
+static vnode_t *
+dev_node_getvnode(dev_node_t *dn)
+{
+	vnode_t *vn;
+
+	ke_rwlock_enter_write(&dn->open_lock, "dev_node_getvnode");
+	if (dn->vn == NULL)
+		dn->vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
+		    (uintptr_t)dn, 0); /* takes vn_alloc()'s initial retain */
+	else
+		vn_retain(dn->vn);
+	vn = dn->vn;
+	ke_rwlock_exit_write(&dn->open_lock);
+
+	return vn;
+}
+
 vnode_t *
 devfs_lookup_early(const char *name)
 {
@@ -69,7 +86,7 @@ devfs_lookup_early(const char *name)
 	if (node == NULL)
 		return NULL;
 
-	return vn_alloc(NULL, VCHR, &dev_spec_vnops, (uintptr_t)node, 0);
+	return dev_node_getvnode(node);
 }
 
 stdata_t *
@@ -108,14 +125,7 @@ dev_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 	if (dn == NULL)
 		return -ENOENT;
 
-	ke_rwlock_enter_write(&dn->open_lock, "dev_lookup node");
-	if (dn->vn == NULL)
-		dn->vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
-		    (uintptr_t)dn, 0); /* takes vn_alloc()'s initial retain */
-	else
-		vn_retain(dn->vn);
-	*out = dn->vn;
-	ke_rwlock_exit_write(&dn->open_lock);
+	*out = dev_node_getvnode(dn);
 
 	return 0;
 }
@@ -247,16 +257,23 @@ dev_spec_inactive(vnode_t *vn)
 	dev_node_t *dn = VTODN(vn);
 
 	ke_rwlock_enter_write(&dn->open_lock, "dev_spec_inactive");
-	kassert(dn->vn != NULL);
-	if (vn->refcount != 1) {
+	if (!vn_tryfreeze(vn)) {
 		ke_rwlock_exit_write(&dn->open_lock);
 		return -EAGAIN;
 	}
-
+	kassert(dn->vn == vn, "dev_spec_inactive: vnode doesn't match node");
 	dn->vn = NULL;
-	vn->fsprivate_1 = 0;
-
 	ke_rwlock_exit_write(&dn->open_lock);
+
+	if (dn->is_anon_clone) {
+		/* only path to an anon clone's node is via its own vnode */
+		if (dn->open_count != 0 || dn->stdata != NULL)
+			kfatal("dev_spec_inactive: anonymous clone %s still "
+			    "open\n", dn->name);
+		kmem_free(dn, sizeof(*dn));
+	}
+
+	vn_free(vn);
 
 	return 0;
 }
