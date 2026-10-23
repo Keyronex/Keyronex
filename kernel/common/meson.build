@@ -22,6 +22,7 @@ kernel_sources += [
     'fs/sockfs.c',
     'fs/syscalls.c',
     'fs/viewcache.c',
+    'fs/vn_idcache.c',
     'fs/vnode.c',
 
     'inet/arp.c',

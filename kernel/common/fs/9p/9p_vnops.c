@@ -5,6 +5,8 @@
 /*!
  * @file 9p_vnops.c
  * @brief Vnode operations for 9p.
+ *
+ * The vcache is used - indexed by qid.path. (qemu's qid.version is just mtim!)
  */
 
 /* FIXME: Old code, needs review!! */
@@ -15,7 +17,7 @@
 #include <sys/kmem.h>
 #include <sys/krx_vfs.h>
 #include <sys/stat.h>
-#include <sys/tree.h>
+#include <sys/vn_idcache.h>
 #include <sys/vnode.h>
 
 #include <dirent.h>
@@ -32,21 +34,17 @@ typedef uint32_t fid_t;
 /*
  * A 9p 'inode'
  *
- * Locking:
- * (N) node_cache_lock
- *
  * open_fid_lock serialises lazy opening of the paging_fid.
  * Pager I/O and getattr read it atomically without taking the
  */
 struct ninep_node {
-	RB_ENTRY(ninep_node) rb_entry;
-	struct ninep_qid qid;
+	vn_idcache_entry_t idc_entry;
+	struct ninep_qid qid;	/* immutable, qid.path is the idcache key */
 	fid_t	fid,		/* unopened FID identifying the node */
 		paging_fid;	/* open FID (for file I/O and readdir) or 0 */
 	kmutex_t open_fid_lock;
 	bool paging_fid_rdonly;	/* open fid open only for read */
-	bool unlinked;		/* node unlinked/node_evict()'d as stale */
-	bool in_cache;		/* (N) in fs->node_cache  */
+	bool unlinked;		/* set by node_evict(), no lock to read */
 	vnode_t *vnode;
 	krwlock_t rwlock, paging_rwlock;
 	vattr_t vattr;
@@ -60,8 +58,7 @@ struct ninepfs_state {
 	vfs_t *vfs;
 	atomic_ushort req_tag;
 	atomic_uint fid_counter;
-	RB_HEAD(ninep_node_rb, ninep_node) node_cache;
-	kmutex_t node_cache_lock;
+	vn_idcache_t idcache;
 	struct ninep_node *root_node;
 	struct vnode *provider;
 
@@ -79,18 +76,6 @@ struct ninepfs_state *ninep_debug_state;
 static struct vnode_ops ninep_vnops;
 
 static int do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr);
-
-static int64_t
-node_cmp(struct ninep_node *x, struct ninep_node *y)
-{
-	if (x->qid.path < y->qid.path)
-		return -1;
-	else if (x->qid.path > y->qid.path)
-		return 1;
-	return 0;
-}
-
-RB_GENERATE(ninep_node_rb, ninep_node, rb_entry, node_cmp);
 
 static fid_t
 fid_allocate(struct ninepfs_state *fs)
@@ -158,101 +143,126 @@ fid_clunk(struct ninepfs_state *fs, fid_t fid)
 }
 
 /*!
- * Finds the ninep_node corresponding to a QID if it exists in the cache, adding
- * a reference to its vnode if so, or, if not found, ceeates one.
- * @retval 1 if an extant node was found
- * @retval 0 if a node was created
+ * Frees a never published node (i.e. raced to insert into vcache or getattr
+ * failed.)
+ */
+static void
+node_free_unpublished(struct ninepfs_state *fs, struct ninep_node *node)
+{
+	bool frozen;
+
+	frozen = vn_tryfreeze(node->vnode);
+	kassert(frozen, "node_free_unpublished: vnode has references");
+	vn_free(node->vnode);
+	kmem_free(node, sizeof(*node));
+	atomic_fetch_add_explicit(&fs->nodes_freed, 1, memory_order_relaxed);
+}
+
+/*!
+ * Finds the ninep_node corresponding to a QID if it exists in the cache,
+ * retaining its vnode if so, or, if not found, creates one.
+ *
+ * @retval 1 if an extant node was found; caller should clunk \p fid.
+ * @retval 0 if a node was created; the node took over \p fid.
+ * @retval <0 getattr of new node failed
  */
 static int
 node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
     struct ninep_qid qid, fid_t fid, vtype_t override_vtype)
 {
-	struct ninep_node key, *found;
-#if 0
-	vtype_t vtype;
-#endif
+	struct ninep_node *node;
+	vnode_t *vn;
 	int r;
 
-	key.qid = qid;
-
-	ke_mutex_enter(&fs->node_cache_lock, "9p node_for_qid");
-
-	found = RB_FIND(ninep_node_rb, &fs->node_cache, &key);
-	if (found != NULL) {
+	r = vn_idcache_find(&fs->idcache, &qid.path, sizeof(qid.path), &vn);
+	if (r == 0) {
+		node = VTO9(vn);
 		/* don't check version, it's just mtime... */
-		kassert(found->qid.path == qid.path &&
-		    found->qid.type == qid.type);
-		vn_retain(found->vnode);
-		ke_mutex_exit(&fs->node_cache_lock);
-		*out = found;
+		kassert(node->qid.path == qid.path &&
+		    node->qid.type == qid.type);
+		*out = node;
 		return 1;
 	}
+	kassert(r == -ENOENT);
 
-	found = kmem_alloc(sizeof(struct ninep_node));
-	found->qid = qid;
-	found->fid = fid;
-	found->paging_fid = 0;
-	found->paging_fid_rdonly = false;
-	found->unlinked = false;
-	found->in_cache = true;
-	found->name = NULL;
-	RB_INSERT(ninep_node_rb, &fs->node_cache, found);
-	ke_rwlock_init(&found->rwlock);
-	ke_rwlock_init(&found->paging_rwlock);
-	ke_mutex_init(&found->open_fid_lock);
+	node = kmem_alloc(sizeof(struct ninep_node));
+	node->qid = qid;
+	node->fid = fid;
+	node->paging_fid = 0;
+	node->paging_fid_rdonly = false;
+	node->unlinked = false;
+	node->name = NULL;
+	ke_rwlock_init(&node->rwlock);
+	ke_rwlock_init(&node->paging_rwlock);
+	ke_mutex_init(&node->open_fid_lock);
 	atomic_fetch_add_explicit(&fs->nodes_created, 1, memory_order_relaxed);
 
-	r = do_getattr(fs, fid, &found->vattr);
-
-#if 0
-	switch (qid.type) {
-	case 0x80: /* QTDIR */
-		vtype = VDIR;
-		break;
-
-	case 0x0: /* QTFILE */
-		vtype = VREG;
-		break;
-
-	default:
-		kfatal("Unhandled qid type %x\n", qid.type);
+	r = do_getattr(fs, fid, &node->vattr);
+	if (r != 0) {
+		kdprintf("9p: node_for_qid: getattr failed: %d\n", r);
+		kmem_free(node, sizeof(*node));
+		atomic_fetch_add_explicit(&fs->nodes_freed, 1,
+		    memory_order_relaxed);
+		return r;
 	}
-#endif
 
 	if (override_vtype != VNON)
-		found->vattr.type = override_vtype;
+		node->vattr.type = override_vtype;
 
-	found->vnode = vn_alloc(fs->vfs, found->vattr.type, &ninep_vnops,
-	    (uintptr_t)found, 0);
-	if (found->vattr.type == VREG)
-		vm_vnobj_set_valid_length(found->vnode->file.vmobj,
-		    found->vattr.size);
-	vn_publish(found->vnode);
+	node->vnode = vn_alloc(fs->vfs, node->vattr.type, &ninep_vnops,
+	    (uintptr_t)node, 0);
+	if (node->vattr.type == VREG)
+		vm_vnobj_set_valid_length(node->vnode->file.vmobj,
+		    node->vattr.size);
 
-	ke_rwlock_enter_write(&found->rwlock, "");
+	vn_idcache_entry_init(&node->idc_entry, node->vnode, &node->qid.path,
+	    sizeof(node->qid.path));
+	r = vn_idcache_insert(&fs->idcache, &node->idc_entry, &vn);
+	if (r == -EEXIST) {
+		node_free_unpublished(fs, node);
+		node = VTO9(vn);
+		kassert(node->qid.path == qid.path &&
+		    node->qid.type == qid.type);
+		*out = node;
+		return 1;
+	}
+	kassert(r == 0);
 
-	/* todo: mark the vnode bad so waiters can see... */
-	if (r != 0)
-		kfatal("node_for_qid: getattr fail\n");
-
-	ke_rwlock_exit_write(&found->rwlock);
-	ke_mutex_exit(&fs->node_cache_lock);
-
-	*out = found;
+	*out = node;
 
 	return 0;
 }
 
+/*!
+ * Take a node out of the vcache so that future lookup of the same qid.path make
+ * a new node. Existing references to the old node remain (which might be
+ * problematic.)
+ */
 static void
 node_evict(struct ninepfs_state *fs, struct ninep_node *node)
 {
-	ke_mutex_enter(&fs->node_cache_lock, "node_evict");
-	if (node->in_cache) {
-		RB_REMOVE(ninep_node_rb, &fs->node_cache, node);
-		node->in_cache = false;
-	}
+	vn_idcache_remove(&fs->idcache, &node->idc_entry);
 	node->unlinked = true;
-	ke_mutex_exit(&fs->node_cache_lock);
+}
+
+/*!
+ * As node_for_qid() but for a newly-created node. If there is an existing node
+ * matching its identity then it must be stale so it is evicted.
+ */
+static int
+node_for_new_qid(struct ninepfs_state *fs, struct ninep_node **out,
+    struct ninep_qid qid, fid_t fid, vtype_t override_vtype)
+{
+	int r;
+
+	r = node_for_qid(fs, out, qid, fid, override_vtype);
+	if (r == 1) {
+		node_evict(fs, *out);
+		vn_release((*out)->vnode); /* node_for_qid's retain */
+		r = node_for_qid(fs, out, qid, fid, override_vtype);
+	}
+
+	return r;
 }
 
 static int
@@ -624,7 +634,8 @@ ninep_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 	} else if (r == 0) {
 		node->name = kmem_strdup(name);
 	} else {
-		kfatal("node_for_qid failed?\n");
+		fid_clunk(fs, new_fid);
+		return r;
 	}
 
 	*out = node->vnode;
@@ -696,15 +707,15 @@ ninep_mkdir(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	if (r != 0)
 		goto out;
 
-	/* as in create, if an existing node matches, get rid of it */
-	r = node_for_qid(fs, &node, qid, walkfid, VNON);
-	if (r == 1) {
-		node_evict(fs, node);
-		vn_release(node->vnode);
-		r = node_for_qid(fs, &node, qid, walkfid, VNON);
-		kassert(r == 0);
+	r = node_for_new_qid(fs, &node, qid, walkfid, VNON);
+	if (r < 0) {
+		fid_clunk(fs, walkfid);
+		goto out;
+	} else if (r == 1) {
+		fid_clunk(fs, walkfid);
+	} else {
+		node->name = kmem_strdup(name);
 	}
-	node->name = kmem_strdup(name);
 	*out = node->vnode;
 	r = 0;
 
@@ -820,18 +831,22 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	 * Given Tlcreate with O_EXCL should make a fresh inode, make away with
 	 * any cached node that somehow has the same identity.
 	 */
-	r = node_for_qid(fs, &res, qid, walkfid, attr->type);
-	if (r == 1) {
-		node_evict(fs, res);
-		vn_release(res->vnode); /* node_for_qid's retain */
-		r = node_for_qid(fs, &res, qid, walkfid, attr->type);
-		kassert(r == 0);
-	}
-
-	res->name = kmem_strdup(name);
-	if (keep_create_fid) {
-		res->paging_fid = newfid;
-		res->paging_fid_rdonly = false;
+	r = node_for_new_qid(fs, &res, qid, walkfid, attr->type);
+	if (r < 0) {
+		fid_clunk(fs, walkfid);
+		if (keep_create_fid)
+			fid_clunk(fs, newfid);
+		return r;
+	} else if (r == 1) {
+		fid_clunk(fs, walkfid);
+		if (keep_create_fid)
+			fid_clunk(fs, newfid);
+	} else {
+		res->name = kmem_strdup(name);
+		if (keep_create_fid) {
+			res->paging_fid = newfid;
+			res->paging_fid_rdonly = false;
+		}
 	}
 
 	*out = res->vnode;
@@ -1451,8 +1466,7 @@ ninep_mount(vnode_t *provider)
 	atomic_store(&state->nodes_freed, 0);
 	state->provider = provider;
 	ninep_debug_state = state;
-	RB_INIT(&state->node_cache);
-	ke_mutex_init(&state->node_cache_lock);
+	vn_idcache_init(&state->idcache, 1024);
 	state->vfs = vfs;
 
 	vfs_init(vfs);

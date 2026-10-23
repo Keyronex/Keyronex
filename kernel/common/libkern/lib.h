@@ -12,6 +12,7 @@
 #define ECX_LIBKERN_LIB_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 /* sys/param.h */
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
@@ -48,6 +49,8 @@ char *strchr(const char *str, int c);
 char *strrchr(const char *str, int c);
 
 char *strtok_r(char *s, const char *delim, char **last);
+
+uint32_t fnv1a_hash32(const void *data, size_t len);
 
 /* os/copyinout.c */
 int memcpy_from_user(void *dst, const void *src, size_t len);

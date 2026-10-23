@@ -257,6 +257,21 @@ strncpy(char *restrict dst, const char *restrict src, size_t n)
 	return (dst);
 }
 
+uint32_t
+fnv1a_hash32(const void *data, size_t len)
+{
+	static const uint32_t fnv_prime = 0x01000193, fnv_basis = 0x811C9DC5;
+	const uint8_t *bytes = data;
+	uint32_t hash = fnv_basis;
+
+	for (size_t i = 0; i < len; i++) {
+		hash ^= bytes[i];
+		hash *= fnv_prime;
+	}
+
+	return hash;
+}
+
 size_t
 strlen(const char *str)
 {
