@@ -83,8 +83,54 @@ intptr_t vm_voaddr_cmp(const struct vm_voaddr *a, const struct vm_voaddr *b);
 
 vm_object_t *vm_obj_new_vnode(struct vnode *);
 void vm_obj_vnode_destroy(vm_object_t *);
+
+/*!
+ * @brief Set the valid data length of a vnode VM object. Doesn't do any actual
+ * truncation.
+ */
 void vm_vnobj_set_valid_length(vm_object_t *, size_t);
-void vm_obj_truncate(vm_object_t *, size_t oldsize, size_t newsize);
+
+/*!
+ * Discard any mappings and pages of a VM object beyond \p newsize.
+ * @returns number of pages discarded that were dirty and unwritten.
+ */
+size_t vm_obj_truncate(vm_object_t *, size_t oldsize, size_t newsize);
+
+/*!
+ * @brief Hold a vnode VM object back from teardown.
+ *
+ * The vnode of the object remains valid until the matching vm_obj_io_exit().
+ *
+ * @pre you must either:
+ * 1. hold domain's queue lock, and hold a non-deleted page of the object;
+ * 2. hold an I/O pin on the object already;
+ * 3. retain a reference to the object's vnode;
+ * 4. otherwise be holding off vnode teardown (e.g. viewcache writer with a view
+ *    in VIEW_WRITEBACK.)
+ */
+void vm_obj_io_enter(vm_object_t *);
+
+/*!
+ * Release an I/O pin on a vnode VM object gotten by vm_obj_io_enter().
+ */
+void vm_obj_io_exit(vm_object_t *);
+
+/*!
+ * @brief Wait until all I/O io_pins on a VM object are released.
+ *
+ * There must be an existence guarantee on the object gotten by some other means
+ * while waiting.
+ */
+void vm_obj_drain_io(vm_object_t *);
+
+/*!
+ * @brief Write back every dirty page of a vnode VM object.
+ *
+ * Existing MAP_SHARED mappings of the VM object first get their dirty bits
+ * pushed out, then every dirty page is written, finally any other writes by
+ * other writes are waited for before returning.
+ */
+void vm_obj_flush(vm_object_t *);
 
 vm_page_t *vm_page_alloc(vm_page_use_t, size_t order, vm_domid_t,
     vm_alloc_flags_t);

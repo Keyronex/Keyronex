@@ -38,11 +38,14 @@ rs_evict_leaf_pte(vm_rs_t *rs, vaddr_t vaddr, vm_page_t *page, pte_t *ppte)
 		// dcache flush?
 		/* factor: share count drop */
 
-		ke_spinlock_enter_nospl(&page->owner_obj->stealing_lock);
-		page->shared.dirty |= dirty;
+		vm_object_t *obj = page->owner_obj;
+
+		ke_spinlock_enter_nospl(&obj->stealing_lock);
+		if (dirty)
+			vm_obj_page_dirtied(obj, page);
 		if (--page->shared.share_count == 0)
 			vm_page_release_and_dirty(page, page->shared.dirty);
-		ke_spinlock_exit_nospl(&page->owner_obj->stealing_lock);
+		ke_spinlock_exit_nospl(&obj->stealing_lock);
 
 		break;
 	}

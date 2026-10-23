@@ -16,9 +16,12 @@
 #include <sys/k_aspace.h>
 #include <sys/pmap.h>
 #include <sys/k_rcu.h>
+#include <sys/k_waitq.h>
 #include <sys/vm.h>
 
 #include <vm/page.h>
+
+#include <stdatomic.h>
 
 struct vm_map_entry {
 	RB_ENTRY(vm_map_entry) rb_link;
@@ -62,7 +65,13 @@ struct vm_map {
 	struct vm_rs rs;
 };
 
-
+/*
+ * A mappable VM object.
+ *
+ * Locking:
+ *
+ * (s) stealing_lock
+ */
 typedef struct vm_object {
 	krcu_entry_t rcu_entry;
 	kspinlock_t creation_lock;
@@ -83,6 +92,10 @@ typedef struct vm_object {
 	pte_t indirect[4]; /* [0] = indirect, [1] = doubly indirect, etc */
 	kmutex_t map_entries_lock;
 	LIST_HEAD(, vm_map_entry) map_entries;
+
+	atomic_uint io_pins;	/* number of I/Os currently underway */
+	kwaitq_t drain_waitq;	/* wait for io_pins to reach 0 */
+	size_t dirty_pages;	/* (s) number of pages with shared.dirty set */
 } vm_object_t;
 
 struct vm_anon {
@@ -109,9 +122,46 @@ void obj_unwire_pte(vm_object_t *obj, struct obj_pte_wire_state *state);
 
 pte_t *obj_fetch_pte(vm_object_t *obj, vaddr_t offset);
 
+/*!
+ * As obj_fetch_pte(), but if there is no PTE at \p offset, then the next offset
+ * at which a leaf PTE might exist is written out to \p *next .
+ */
+pte_t *obj_fetch_pte_skip(vm_object_t *obj, uint64_t offset, uint64_t *next);
+
 void obj_page_zeroed(vm_object_t *obj, vm_page_t *page);
 void obj_page_swapped(vm_object_t *obj, vm_page_t *page);
 void obj_table_pte_did_become_swap(vm_object_t *obj, vm_page_t *table_page);
+
+/*!
+ * Set shared.dirty = 1 in \p page of \p obj and increment obj->dirty_pages.
+ *
+ * The mapping should still exist at the time this is called since only
+ * shared.dirty is set, so nothing is done as far as paging queues go.
+ *
+ * @pre obj->stealing_lock held.
+ */
+void vm_obj_page_dirtied(vm_object_t *obj, vm_page_t *page);
+
+/*!
+ * Claim the dirty flags in \p page (both shared.dirty and pmm dirty) ahead of a
+ * write.
+ *
+ * @pre obj->stealing_lock held
+ * @pre page retained by caller.
+ *
+ * @retval true if caller should write the page (dirty flags are cleared if so)
+ * @retval false if page isn't dirty.
+ */
+bool vm_obj_page_claim_dirty(vm_object_t *obj, vm_page_t *page);
+
+/*!
+ * Synchronously write \p npages of contignuous pages of a vnode VM object
+ * starting from \p offset .
+ *
+ * @pre VM object's vnode's paging lock held.
+ */
+void vm_obj_write_pages(vm_object_t *obj, vm_page_t **pages, size_t npages,
+    uint64_t offset);
 
 void vm_map_activate(struct vm_map *old, struct vm_map *new);
 
@@ -137,6 +187,8 @@ void vm_unmap_batch_flush(struct vm_unmap_batch *batch);
 void rs_evict_leaf_pte(struct vm_rs *rs, vaddr_t vaddr, vm_page_t *page,
     pte_t *pte);
 
+extern const uint64_t obj_max_offset;	/* first offset beyond last page an
+					 * object can have */
 extern kspinlock_t anon_creation_lock, anon_stealing_lock;
 extern vm_map_t kernel_map;
 

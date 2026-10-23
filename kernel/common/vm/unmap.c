@@ -60,7 +60,8 @@ release_page(vm_page_t *page, bool dirty)
 		vm_object_t *obj = page->owner_obj;
 
 		ke_spinlock_enter_nospl(&obj->stealing_lock);
-		page->shared.dirty |= dirty;
+		if (dirty)
+			vm_obj_page_dirtied(obj, page);
 		if (--page->shared.share_count == 0)
 			vm_page_release_and_dirty(page, page->shared.dirty);
 		ke_spinlock_exit_nospl(&obj->stealing_lock);

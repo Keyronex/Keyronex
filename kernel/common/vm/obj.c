@@ -38,6 +38,9 @@
 
 typedef uintptr_t pgoff_t;
 
+const uint64_t obj_max_offset = ((uint64_t)FIRST_QUADLY_INDIRECT +
+    ((uint64_t)1 << (4 * OBJ_LEVEL_SHIFT))) << PGSHIFT;
+
 _Static_assert(OBJ_PTES_PER_TABLE == (1 << OBJ_LEVEL_SHIFT),
     "OBJ_PTES_PER_TABLE must be 2^OBJ_LEVEL_SHIFT");
 
@@ -57,6 +60,9 @@ vm_obj_new_vnode(vnode_t *vnode)
 		obj->indirect[i].value = 0;
 	ke_mutex_init(&obj->map_entries_lock);
 	LIST_INIT(&obj->map_entries);
+	atomic_store_explicit(&obj->io_pins, 0, memory_order_relaxed);
+	ke_waitq_init(&obj->drain_waitq);
+	obj->dirty_pages = 0;
 
 	return obj;
 }
@@ -80,9 +86,104 @@ vm_obj_vnode_destroy(vm_object_t *obj)
 		kassert(pmap_pte_characterise(
 		    pmap_load_pte(&obj->indirect[i])) == kPTEKindZero,
 		    "vm_obj_vnode_destroy: still has a table");
+	kassert(atomic_load_explicit(&obj->io_pins, memory_order_acquire) == 0,
+	    "vm_obj_vnode_destroy: I/O pins exist");
+	kassert(obj->dirty_pages == 0,
+	    "vm_obj_vnode_destroy: dirty pages count nonzero but no pages");
 
 	obj->vnobj.vnode = NULL;
 	ke_rcu_call(&obj->rcu_entry, obj_free_rcu, obj);
+}
+
+void
+vm_obj_io_enter(vm_object_t *obj)
+{
+	atomic_fetch_add_explicit(&obj->io_pins, 1, memory_order_relaxed);
+}
+
+void
+vm_obj_io_exit(vm_object_t *obj)
+{
+	unsigned old;
+	ipl_t ipl = ke_rcu_read_lock();
+
+	old = atomic_fetch_sub_explicit(&obj->io_pins, 1, memory_order_release);
+	kassert(old != 0, "vm_obj_io_exit:  not pinned");
+
+	if (old == 1) {
+		/* to order after vm_obj_drain_io()'s check */
+		ke_spinlock_enter_nospl(&obj->stealing_lock);
+		ke_waitq_wake_all(&obj->drain_waitq);
+		ke_spinlock_exit_nospl(&obj->stealing_lock);
+	}
+
+	ke_rcu_read_unlock(ipl);
+
+	/* obj might be gone by now */
+}
+
+void
+vm_obj_drain_io(vm_object_t *obj)
+{
+	for (;;) {
+		kwaiter_t waiter;
+		ipl_t ipl;
+
+		ipl = ke_spinlock_enter(&obj->stealing_lock);
+		if (atomic_load_explicit(&obj->io_pins, memory_order_acquire) ==
+		    0) {
+			ke_spinlock_exit(&obj->stealing_lock, ipl);
+			return;
+		}
+		ke_waitq_prepare(&obj->drain_waitq, &waiter);
+		ke_spinlock_exit(&obj->stealing_lock, ipl);
+
+		ke_waitq_wait(&obj->drain_waitq, &waiter, "vm_obj_drain_io", false,
+		    ABSTIME_FOREVER);
+	}
+}
+
+void
+vm_obj_page_dirtied(vm_object_t *obj, vm_page_t *page)
+{
+	kassert(ke_spinlock_held(&obj->stealing_lock));
+	kassert(page->owner_obj == obj);
+	kassert(page->use == VM_PAGE_FILE || page->use == VM_PAGE_ANON_SHARED);
+
+	if (!page->shared.dirty) {
+		page->shared.dirty = 1;
+		obj->dirty_pages++;
+	}
+}
+
+bool
+vm_obj_page_claim_dirty(vm_object_t *obj, vm_page_t *page)
+{
+	kassert(ke_spinlock_held(&obj->stealing_lock));
+
+	if (page->use != VM_PAGE_FILE || page->owner_obj != obj)
+		return false;
+
+	if (!page->shared.dirty)
+		return false;
+
+	/*
+	 * If the page is beyond the valid length then truncation is underway
+	 * so skip it.
+	 */
+	if (((uint64_t)page->shared.offset << PGSHIFT) >=
+	    obj->vnobj.valid_length)
+		return false;
+
+	page->shared.dirty = 0;
+	obj->dirty_pages--;
+
+	ke_spinlock_enter_nospl(&vm_domains[page->domain].queues_lock);
+	kassert(page->ref_count > 0, "vm_obj_page_claim_dirty: page inactive");
+	page->dirty = 0;
+	ke_spinlock_exit_nospl(&vm_domains[page->domain].queues_lock);
+
+	return true;
 }
 
 void
@@ -325,6 +426,57 @@ obj_fetch_pte(vm_object_t *obj, vaddr_t offset)
 
 		if (pmap_pte_characterise(pte) != kPTEKindHW)
 			return NULL;
+
+		table = (pte_t *)p2v(pmap_pte_hwleaf_paddr(pte, PMAP_L0));
+	}
+}
+
+pte_t *
+obj_fetch_pte_skip(vm_object_t *obj, uint64_t offset, uint64_t *next)
+{
+	static const uint64_t region_base[OBJ_LEVELS] = {
+		FIRST_SINGLY_INDIRECT,
+		FIRST_DOUBLY_INDIRECT,
+		FIRST_TRIPLY_INDIRECT,
+		FIRST_QUADLY_INDIRECT,
+	};
+	size_t indexes[OBJ_LEVELS + 1];
+	int indirection_level;
+	uint64_t pn = offset >> PGSHIFT;
+	pte_t *table;
+
+	kassert(ke_spinlock_held(&obj->stealing_lock));
+	kassert(ke_ipl() == IPL_DISP);
+	kassert(offset % PGSIZE == 0);
+	kassert(offset < obj_max_offset);
+
+	*next = offset + PGSIZE;
+
+	if (pn < OBJ_N_DIRECT)
+		return &obj->direct[pn];
+
+	obj_pte_indexes(offset, indexes, &indirection_level);
+
+	table = &obj->indirect[indirection_level];
+	indexes[indirection_level + 1] = 0;
+
+	for (size_t level = indirection_level + 1;; level--) {
+		pte_t *ppte = &table[indexes[level]], pte;
+
+		if (level == 0)
+			return ppte;
+
+		pte = pmap_load_pte(ppte);
+
+		if (pmap_pte_characterise(pte) != kPTEKindHW) {
+			uint64_t span = (uint64_t)1
+			    << (OBJ_LEVEL_SHIFT * level);
+			uint64_t rel = pn - region_base[indirection_level];
+
+			*next = (region_base[indirection_level] +
+			    (rel & ~(span - 1)) + span) << PGSHIFT;
+			return NULL;
+		}
 
 		table = (pte_t *)p2v(pmap_pte_hwleaf_paddr(pte, PMAP_L0));
 	}
@@ -632,14 +784,14 @@ vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize)
 void pagein_wait_retain(struct pagein_wait *);
 void pagein_wait_release(struct pagein_wait *);
 
-void
+size_t
 vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
 {
 	uint64_t newsize_pg = roundup2(newsize, PGSIZE),
 		 oldsize_pg = roundup2(oldsize, PGSIZE);
 	uint64_t offset;
+	size_t dirty_discarded = 0;
 	ipl_t ipl;
-
 
 	offset = newsize_pg;
 
@@ -685,6 +837,12 @@ vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
 			kassert(page->use == VM_PAGE_FILE);
 			kassert(page->shared.share_count == 0);
 			kassert(page->owner_obj == obj);
+
+			if (page->shared.dirty) {
+				page->shared.dirty = 0;
+				obj->dirty_pages--;
+				dirty_discarded++;
+			}
 
 			pmap_pte_zeroleaf_create(ppte, PMAP_L0);
 			obj_page_zeroed(obj, page);
@@ -735,11 +893,13 @@ vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
 		if (offset >= oldsize_pg)
 			break;
 	}
+
+	return dirty_discarded;
 }
 
-void
+size_t
 vm_obj_truncate(vm_object_t *obj, size_t oldsize, size_t newsize)
 {
 	vm_obj_truncate_mappings(obj, newsize);
-	vm_obj_truncate_pages(obj, oldsize, newsize);
+	return vm_obj_truncate_pages(obj, oldsize, newsize);
 }

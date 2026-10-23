@@ -401,7 +401,9 @@ vm_page_delete(vm_page_t *page, bool unref)
 
 		dom_page_free(dom, page);
 	} else {
+		/* last release will free it */
 		page->use = VM_PAGE_DELETED;
+		page->owner_obj = NULL;
 		dom->use_n[VM_PAGE_DELETED] += npages;
 	}
 
@@ -507,36 +509,9 @@ vm_page_release_and_dirty(vm_page_t *page, bool dirty)
 {
 	vm_domain_t *dom = &vm_domains[page->domain];
 	ipl_t ipl = ke_spinlock_enter(&dom->queues_lock);
-	if (dirty) {
-#if 0
-		if (!page->dirty && page->use == VM_PAGE_FILE)
-			vn_retain(page->owner_obj->vnode);
-#endif
-
+	if (dirty)
 		page->dirty = 1;
-	}
 	vm_page_release_dom_locked(page);
-	ke_spinlock_exit(&dom->queues_lock, ipl);
-}
-
-void
-vm_page_dirty(vm_page_t *page)
-{
-	vm_domain_t *dom = &vm_domains[page->domain];
-	ipl_t ipl = ke_spinlock_enter(&dom->queues_lock);
-
-	/* this function isn't for pages on paging queues */
-	kassert(page->ref_count > 0, "vm_pageD_irty: page refcount = 0");
-
-	if (!page->dirty) {
-#if 0
-		if (page->use == VM_PAGE_FILE)
-			vn_retain(page->owner_obj->vnode);
-#endif
-
-		page->dirty = 1;
-	}
-
 	ke_spinlock_exit(&dom->queues_lock, ipl);
 }
 

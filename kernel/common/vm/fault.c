@@ -226,6 +226,7 @@ do_object_fault(struct fault_info *info,
 			page[i]->owner_obj = info->object;
 			page[i]->shared.offset = obj_pgoff + i;
 			page[i]->shared.share_count = 1;
+			page[i]->shared.dirty = 0;
 			page[i]->pagein_wait = pagewait;
 
 			pmap_pte_soft_create(objcursor.pte + i, kPTEKindBusy,

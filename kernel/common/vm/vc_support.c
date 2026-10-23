@@ -84,15 +84,28 @@ void
 vm_vc_clean(vm_object_t *vmobj, size_t offset, vaddr_t addr, size_t size)
 {
 	vm_page_t *pages[VIEWCACHE_VIEW_PAGES] = { 0 };
+	bool written[VIEWCACHE_VIEW_PAGES] = { 0 };
 	bool dirty[VIEWCACHE_VIEW_PAGES] = { 0 };
+	bool bridge[VIEWCACHE_VIEW_PAGES] = { 0 };
+	size_t npages = size >> PGSHIFT;
+	pte_t *ppte;
 	ipl_t ipl;
+
+	/*
+	 * No replacement of the view (being in VIEW_WRITEBACK state) nor
+	 * truncation of the vnode (or its teardown) is possible until we
+	 * return.
+	 */
+
+	kassert(npages <= VIEWCACHE_VIEW_PAGES);
+
+	vm_obj_io_enter(vmobj);
 
 	ipl = spldisp();
 
-
 	/* collect the pages, covered by the view, from the vm object */
 	ke_spinlock_enter_nospl(&vmobj->stealing_lock);
-	for (size_t i = 0; i < size >> PGSHIFT; i++) {
+	for (size_t i = 0; i < npages; i++) {
 		pte_t *ppte = obj_fetch_pte(vmobj, offset + (i << PGSHIFT)),
 			pte;
 
@@ -108,108 +121,104 @@ vm_vc_clean(vm_object_t *vmobj, size_t offset, vaddr_t addr, size_t size)
 	}
 	ke_spinlock_exit_nospl(&vmobj->stealing_lock);
 
-	ke_spinlock_enter_nospl(&proc0.vm_map->stealing_lock);
-	{
-		pte_t *ppte = pmap_fetch_pte(proc0.vm_map, NULL, addr);
-		if (ppte == NULL)
-			goto out;
-
-		for (size_t i = 0; i < size >> PGSHIFT; i++) {
-			pte_t pte = pmap_load_pte(&ppte[i]);
-			if (pmap_pte_characterise(pte) != kPTEKindHW)
-				continue;
-
-			if (pmap_pte_hwleaf_writeable(pte)) {
-				kassert(pages[i] ==
-				  pmap_pte_hwleaf_page(pte, PMAP_L0));
-
-				/* make non-writeable */
-				pmap_pte_hwleaf_clear_writeable(&ppte[i]);
-				ke_aspace_invalidate(&kernel_map.aspace,
-				    addr + (i << PGSHIFT), PGSIZE,
-				    KE_INVAL_LEAF);
-				vm_page_dirty(pages[i]);
-			}
-		}
-	}
-out:
-	ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
-
 	/*
-	 * Clear the dirty status. Have to do before the I/O as they can be
-	 * dirtied again.
+	 * Write-protect any writeable PTEs and note them as dirty. Future
+	 * writes will fault and mark the pages dirty again.
+	 * (TODO: consider invalidation batching?)
 	 */
-	for (size_t i = 0; i < size >> PGSHIFT; i++) {
-		if (pages[i] == NULL || !pages[i]->dirty)
+	ke_spinlock_enter_nospl(&proc0.vm_map->stealing_lock);
+
+	ppte = pmap_fetch_pte(proc0.vm_map, NULL, addr);
+	if (ppte == NULL)
+		goto collected;
+
+	for (size_t i = 0; i < npages; i++) {
+		pte_t pte = pmap_load_pte(&ppte[i]);
+		if (pmap_pte_characterise(pte) != kPTEKindHW)
 			continue;
 
-		vm_domain_t *dom = &vm_domains[pages[i]->domain];
-		ke_spinlock_enter_nospl(&dom->queues_lock);
-		if (pages[i]->dirty) {
-			pages[i]->dirty = false;
-			dirty[i] = true;
+		if (pmap_pte_hwleaf_writeable(pte)) {
+			kassert(pages[i] == pmap_pte_hwleaf_page(pte, PMAP_L0));
+
+			pmap_pte_hwleaf_clear_writeable(&ppte[i]);
+			ke_aspace_invalidate(&kernel_map.aspace,
+			    addr + (i << PGSHIFT), PGSIZE, KE_INVAL_LEAF);
+			written[i] = true;
 		}
-		ke_spinlock_exit_nospl(&dom->queues_lock);
 	}
 
+	ke_spinlock_enter_nospl(&vmobj->stealing_lock);
+	for (size_t i = 0; i < npages; i++) {
+		if (written[i])
+			vm_obj_page_dirtied(vmobj, pages[i]);
+	}
+	ke_spinlock_exit_nospl(&vmobj->stealing_lock);
+
+collected:
+	ke_spinlock_exit_nospl(&proc0.vm_map->stealing_lock);
 	splx(ipl);
 
-	for (size_t i = 0; i < VIEWCACHE_VIEW_PAGES;) {
-		sg_seg_t sg_segs[VIEWCACHE_VIEW_PAGES];
-		sg_list_t sgl;
-		size_t run_start, run_len;
-		iop_t *iop;
+	VOP_PAGING_ENTER(vmobj->vnobj.vnode);
+
+	/*
+	 * Claim the dirtiness of all the dirty pages covered by the view (and
+	 * any pages dirtied by other means). Has to be done before I/O as the
+	 * pages can be dirtied again meanwhile.
+	 *
+	 * We allow pages that weren't claimed to join runs for the sake of more
+	 * contiguous I/O - but we must avoid any above the valid length in case
+	 * we reextend a file being truncated.
+	 */
+	ipl = spldisp();
+	ke_spinlock_enter_nospl(&vmobj->stealing_lock);
+	for (size_t i = 0; i < npages; i++) {
+		if (pages[i] == NULL)
+			continue;
+
+		dirty[i] = vm_obj_page_claim_dirty(vmobj, pages[i]);
+		if (!dirty[i])
+			bridge[i] = pages[i]->use == VM_PAGE_FILE &&
+			    pages[i]->owner_obj == vmobj &&
+			    offset + (i << PGSHIFT) < vmobj->vnobj.valid_length;
+	}
+	ke_spinlock_exit_nospl(&vmobj->stealing_lock);
+	splx(ipl);
+
+	for (size_t i = 0; i < npages;) {
+		size_t run_start, run_end;
 
 		if (pages[i] == NULL || !dirty[i]) {
 			i++;
 			continue;
 		}
 
-		/* page is resident and dirty, start a run */
-		run_start = i;
-		run_len = 0;
+		run_start = run_end = i;
 
-		while (i < VIEWCACHE_VIEW_PAGES && pages[i] != NULL) {
-			sg_segs[run_len].paddr = VM_PAGE_PADDR(pages[i]);
-			sg_segs[run_len].length = PGSIZE;
-			run_len++;
-			i++;
+		for (;;) {
+			size_t k = run_end + 1;
 
-			/*
-			 * next page isn't resident, or there are 2 clean pages
-			 * in a row, stop the run.
-			 */
-			if (i < VIEWCACHE_VIEW_PAGES && pages[i] != NULL &&
-			    !dirty[i]) {
-				size_t clean_run = 0;
-				for (size_t j = i; j < VIEWCACHE_VIEW_PAGES &&
-				    pages[j] != NULL && !dirty[j];
-				    j++)
-					clean_run++;
+			while (k < npages && k - run_end <= 2 &&
+			    pages[k] != NULL && !dirty[k] && bridge[k])
+				k++;
 
-				if (clean_run > 2)
-					break;
-			}
+			if (k < npages && pages[k] != NULL && dirty[k])
+				run_end = k;
+			else
+				break;
 		}
 
-		sgl.elems = sg_segs;
-		sgl.elems_n = run_len;
+		vm_obj_write_pages(vmobj, &pages[run_start],
+		    run_end - run_start + 1, offset + (run_start << PGSHIFT));
 
-		VOP_PAGING_ENTER(vmobj->vnobj.vnode);
-		iop = iop_new_write(vmobj->vnobj.vnode, &sgl, 0,
-		    run_len << PGSHIFT, offset + (run_start << PGSHIFT));
-		iop_send_sync(iop);
-		VOP_PAGING_EXIT(vmobj->vnobj.vnode);
-		iop_free(iop);
-
-#if 0
-		kprintf("vm_vc_clean: wrote %zu pages at offset 0x%zx\n",
-		    run_len, offset + (run_start << PGSHIFT));
-#endif
+		i = run_end + 1;
 	}
 
-	for (size_t i = 0; i < VIEWCACHE_VIEW_PAGES; i++) {
+	VOP_PAGING_EXIT(vmobj->vnobj.vnode);
+
+	for (size_t i = 0; i < npages; i++) {
 		if (pages[i] != NULL)
 			vm_page_release(pages[i]);
 	}
+
+	vm_obj_io_exit(vmobj);
 }

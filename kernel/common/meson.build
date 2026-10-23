@@ -113,6 +113,7 @@ kernel_sources += [
     'vm/unmap.c',
     'vm/vc_support.c',
     'vm/vmem.c',
+    'vm/writeback.c',
 ]
 
 objfwrt_sources = files(
