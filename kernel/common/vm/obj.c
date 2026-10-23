@@ -186,6 +186,15 @@ vm_obj_page_claim_dirty(vm_object_t *obj, vm_page_t *page)
 	return true;
 }
 
+size_t
+vm_obj_dirty_pages(vm_object_t *obj)
+{
+	ipl_t ipl = ke_spinlock_enter(&obj->stealing_lock);
+	size_t n = obj->dirty_pages;
+	ke_spinlock_exit(&obj->stealing_lock, ipl);
+	return n;
+}
+
 void
 vm_vnobj_set_valid_length(vm_object_t *obj, size_t length)
 {
@@ -687,10 +696,17 @@ obj_max_readahead(struct obj_pte_wire_state *cursor, pgoff_t pgoff,
 	return obj_zero_n;
 }
 
-void
+void vm_obj_truncate_mappings(vm_object_t *obj, uint64_t newsize);
+size_t vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize,
+    uint64_t newsize);
+
+size_t
 vm_obj_purge(vm_object_t *obj)
 {
-	kfatal("implement me");
+	kassert(obj->kind == VM_OBJ_VNODE);
+
+	vm_obj_truncate_mappings(obj, 0);
+	return vm_obj_truncate_pages(obj, obj_max_offset, 0);
 }
 
 void
@@ -793,29 +809,29 @@ vm_obj_truncate_pages(vm_object_t *obj, uint64_t oldsize, uint64_t newsize)
 	size_t dirty_discarded = 0;
 	ipl_t ipl;
 
+	if (oldsize_pg > obj_max_offset)
+		oldsize_pg = obj_max_offset; /* unlikely? */
+	if (newsize_pg >= oldsize_pg)
+		return 0;
+
 	offset = newsize_pg;
 
 	while (true) {
 		pte_t *ppte;
+		uint64_t next;
 
 		ipl = spldisp();
 		ke_spinlock_enter_nospl(&obj->creation_lock);
 		ke_spinlock_enter_nospl(&obj->stealing_lock);
 
-		/*
-		 * TODO:
-		 * - don't fetch PTE if in same table
-		 * - skip appropriate levels
-		 */
-
-		ppte = obj_fetch_pte(obj, offset);
+		ppte = obj_fetch_pte_skip(obj, offset, &next);
 
 		if (ppte == NULL) {
 			ke_spinlock_exit_nospl(&obj->stealing_lock);
 			ke_spinlock_exit_nospl(&obj->creation_lock);
 			splx(ipl);
 
-			offset += PGSIZE;
+			offset = next;
 
 			if (offset >= oldsize_pg)
 				break;

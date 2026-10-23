@@ -40,6 +40,7 @@ vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1,
 	vn->fsprivate_2 = fsprivate_2;
 	vn->published = false;
 	vn->release_pending = 0;
+	vn->sync_queued = false;
 	ke_spinlock_init(&vn->nc_lock);
 	LIST_INIT(&vn->nc_refs);
 	vn->nc_refs_n = 0;
@@ -201,6 +202,7 @@ vn_release_thread(void *)
 			TAILQ_REMOVE(&vn_release_queue, vn, release_link);
 			n = vn->release_pending;
 			vn->release_pending = 0;
+			vn->sync_queued = false;
 			ke_spinlock_exit(&vn_release_lock, ipl);
 
 			while (n-- > 0)

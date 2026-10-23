@@ -97,6 +97,12 @@ void vm_vnobj_set_valid_length(vm_object_t *, size_t);
 size_t vm_obj_truncate(vm_object_t *, size_t oldsize, size_t newsize);
 
 /*!
+ * Discard every page and mapping of a VM object.
+ * @returns number of pages discarded that were dirty and unwritten.
+ */
+size_t vm_obj_purge(vm_object_t *);
+
+/*!
  * @brief Hold a vnode VM object back from teardown.
  *
  * The vnode of the object remains valid until the matching vm_obj_io_exit().
@@ -130,6 +136,11 @@ void vm_obj_drain_io(vm_object_t *);
  * Writers will thus see at least all the dirtiness preceding the call.
  */
 void vm_obj_collect_dirty_mappings(vm_object_t *);
+
+/*!
+ * @brief Number of pages of a vnode VM object with unwritten dirty data.
+ */
+size_t vm_obj_dirty_pages(vm_object_t *);
 
 /*!
  * @brief Write back every dirty page of a vnode VM object.

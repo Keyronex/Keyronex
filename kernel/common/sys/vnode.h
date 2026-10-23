@@ -79,6 +79,8 @@ typedef struct vnode {
 
 	uint32_t	release_pending;
 	TAILQ_ENTRY(vnode) release_link;
+	TAILQ_ENTRY(vnode) sync_link;	/* on viewcache sync queue */
+	bool		sync_queued;	/* (vc_lock) */
 
 	kspinlock_t	nc_lock;
 	uint32_t	nc_refs_n;	/* (nc_lock) */
@@ -162,7 +164,9 @@ struct vnode_ops {
 
 void vnode_init(void);
 
-vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1, uintptr_t fspriv2);
+vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1,
+    uintptr_t fspriv2);
+
 /*!
  * @brief Publish a vnode into it's VFS' vnode list.
  */
@@ -209,12 +213,27 @@ void vn_release_async(vnode_t *);
 
 int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
     void *buf);
+
 void viewcache_truncate(vnode_t *, uint64_t newsize);
+
 /*!
  * @brief Write back every dirty view of a vnode, waiting for any in writeback.
  */
 void viewcache_sync_vnode(vnode_t *);
+
+/*!
+ * @brief Does the vnode have any dirty or mid-writeback views?
+ */
+bool viewcache_vnode_dirty(vnode_t *);
+
+/*!
+ * @brief Queue a retained vnode for fsync by the writeback thread, after which
+ * it's released.
+ */
+void viewcache_request_sync(vnode_t *);
+
 struct vn_vc_state *viewcache_alloc_vnode_state(vnode_t *vn);
+
 void viewcache_free_vnode_state(vnode_t *vn);
 
 #endif /* ECX_SYS_VNODE_H */

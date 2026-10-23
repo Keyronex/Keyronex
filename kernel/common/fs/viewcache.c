@@ -45,8 +45,12 @@ struct view {
 TAILQ_HEAD(view_tq, view);
 RB_HEAD(view_tree, view);
 
+/*
+ * Both fields guarded by vc_lock
+ */
 struct vn_vc_state {
-	struct view_tree view_tree; /* views of this vnode; vc_lock guards it */
+	struct view_tree view_tree;	/* views of this vnode  */
+	size_t dirty_views;		/* views VIEW_DIRTY or VIEW_WRITEBACK */
 };
 
 static size_t view_count;
@@ -59,10 +63,13 @@ static kspinlock_t vc_lock = KSPINLOCK_INITIALISER;
  * dirty_queue stores dirty views, ordered by time they were marked dirty; their
  * refcnt can be 0 or greater.
  */
-
 static struct view_tq free_queue = TAILQ_HEAD_INITIALIZER(free_queue),
 		      lru_queue = TAILQ_HEAD_INITIALIZER(lru_queue),
 		      dirty_queue = TAILQ_HEAD_INITIALIZER(dirty_queue);
+
+/* vnodes for syncing in the writeback thread (vc_lock) */
+static TAILQ_HEAD(, vnode) sync_queue = TAILQ_HEAD_INITIALIZER(sync_queue);
+static kevent_t writeback_event;
 
 static inline int
 view_cmp(struct view *x, struct view *y)
@@ -118,6 +125,7 @@ view_writeback(struct view *view, ipl_t ipl)
 	} else {
 		/* now clean */
 		view->dirty = VIEW_CLEAN;
+		view->vnode->file.vc_state->dirty_views--;
 		if (view->refcnt == 0)
 			TAILQ_INSERT_TAIL(&lru_queue, view, queue_entry);
 	}
@@ -128,15 +136,39 @@ view_writeback(struct view *view, ipl_t ipl)
 static void
 viewcache_writeback_thread(void *)
 {
-	kevent_t ev;
-	ke_event_init(&ev, false);
-
 	while (true) {
 		ipl_t ipl;
 		struct view *view;
+		vnode_t *vn;
+		int r;
 
-		ke_wait1(&ev, "viewcache_writeback_thread", false,
+		ke_wait1(&writeback_event, "viewcache_writeback_thread", false,
 		    ke_time() + NS_PER_S);
+		ke_event_set_signalled(&writeback_event, false);
+
+		for (;;) {
+			ipl = ke_spinlock_enter(&vc_lock);
+			vn = TAILQ_FIRST(&sync_queue);
+			if (vn != NULL) {
+				TAILQ_REMOVE(&sync_queue, vn, sync_link);
+				vn->sync_queued = false;
+			}
+			ke_spinlock_exit(&vc_lock, ipl);
+
+			if (vn == NULL)
+				break;
+
+			/*
+			 * If there is a failure then the vnode remains dirty
+			 * and gets handed back again.
+			 * TODO pager error propagation to solve this.
+			 */
+			r = VOP_FSYNC(vn, 0);
+			if (r != 0)
+				kdprintf("viewcache: sync of vnode %p failed: "
+				    "%d\n", vn, r);
+			vn_release_async(vn);
+		}
 
 		ipl = ke_spinlock_enter(&vc_lock);
 		view = TAILQ_FIRST(&dirty_queue);
@@ -147,10 +179,25 @@ viewcache_writeback_thread(void *)
 }
 
 void
+viewcache_request_sync(vnode_t *vn)
+{
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&vc_lock);
+	kassert(!vn->sync_queued, "viewcache_request_sync: already queued");
+	vn->sync_queued = true;
+	TAILQ_INSERT_TAIL(&sync_queue, vn, sync_link);
+	ke_spinlock_exit(&vc_lock, ipl);
+
+	ke_event_set_signalled(&writeback_event, true);
+}
+
+void
 viewcache_init(void)
 {
 	view_count = 1024;
 
+	ke_event_init(&writeback_event, false);
 	views = kmem_alloc(view_count * sizeof(*views));
 
 	for (size_t i = 0; i < view_count; i++) {
@@ -169,6 +216,7 @@ viewcache_alloc_vnode_state(vnode_t *vn)
 	struct vn_vc_state *state;
 	state = kmem_alloc(sizeof(*state));
 	RB_INIT(&state->view_tree);
+	state->dirty_views = 0;
 	return state;
 }
 
@@ -181,6 +229,8 @@ viewcache_free_vnode_state(vnode_t *vn)
 	ipl = ke_spinlock_enter(&vc_lock);
 	kassert(RB_EMPTY(&state->view_tree),
 	    "viewcache_free_vnode_state: no views should remain");
+	kassert(state->dirty_views == 0,
+	    "viewcache_free_vnode_state: no dirty views should remain");
 	ke_spinlock_exit(&vc_lock, ipl);
 
 	kmem_free(state, sizeof(*state));
@@ -215,6 +265,7 @@ view_dirty_and_release(struct view *view)
 	if (view->dirty == VIEW_CLEAN) {
 		view->dirty_time = ke_time();
 		view->dirty = VIEW_DIRTY;
+		view->vnode->file.vc_state->dirty_views++;
 		TAILQ_INSERT_TAIL(&dirty_queue, view, queue_entry);
 	} else if (view->dirty == VIEW_WRITEBACK) {
 		/* this lets the writeback thread know it's dirty again */
@@ -313,6 +364,8 @@ viewcache_io(vnode_t *vn, uint64_t offset, size_t length, bool write, void *buf)
 	 *
 	 * note re above comment: we don't do the writeback of other vnodes from
 	 * this context, we kick the writeback thread to do that.
+	 *
+	 * TODO: parts of this are grossly out of date
 	 */
 	VOP_VC_ENTER(vn, write);
 
@@ -439,10 +492,12 @@ retry_2:
 			goto retry_2;
 		}
 
-		if (view->dirty == VIEW_DIRTY)
+		if (view->dirty == VIEW_DIRTY) {
 			TAILQ_REMOVE(&dirty_queue, view, queue_entry);
-		else
+			vc_state->dirty_views--;
+		} else {
 			TAILQ_REMOVE(&lru_queue, view, queue_entry);
+		}
 
 		RB_REMOVE(view_tree, &vc_state->view_tree, view);
 
@@ -494,47 +549,11 @@ viewcache_sync_vnode(vnode_t *vn)
 	ke_spinlock_exit(&vc_lock, ipl);
 }
 
-void
-viewcache_purge_vnode(vnode_t *vn)
+bool
+viewcache_vnode_dirty(vnode_t *vn)
 {
-	struct vn_vc_state *vc_state = vn->file.vc_state;
-	struct view *view;
-	ipl_t ipl;
-
-	/*
-	 * We assume no one else bar the FS logic, namecache, or dirty page
-	 * writer is able to do anything with the vnode, therefore no one is
-	 * going to do viewcache I/O on it. So all windows must have a 0 refcnt.
-	 *
-	 * Note we don't initiate viewcache directed writeback here, because
-	 * this function is only called when the vnode is being reclaimed; the
-	 * FS logic will have to call on the VMM to write back the dirty pages
-	 * of the VM object associated with the vnode after it's called us; we
-	 * just use vm_vc_unmap() which pushes out the dirty bits to the VM
-	 * pages.
-	 */
-
-	ipl = ke_spinlock_enter(&vc_lock);
-
-	while ((view = RB_MIN(view_tree, &vc_state->view_tree)) != NULL) {
-		kassert(view->refcnt == 0);
-
-	waited:
-		if (view->dirty == VIEW_WRITEBACK) {
-			kfatal("wait for writeback...");
-			goto waited;
-		} else if (view->dirty == VIEW_DIRTY) {
-			TAILQ_REMOVE(&dirty_queue, view, queue_entry);
-		} else {
-			TAILQ_REMOVE(&lru_queue, view, queue_entry);
-		}
-
-		RB_REMOVE(view_tree, &vc_state->view_tree, view);
-
-		vm_vc_unmap(view_addr(view), VIEW_SIZE);
-
-		TAILQ_INSERT_TAIL(&free_queue, view, queue_entry);
-	}
-
+	ipl_t ipl = ke_spinlock_enter(&vc_lock);
+	bool dirty = vn->file.vc_state->dirty_views != 0;
 	ke_spinlock_exit(&vc_lock, ipl);
+	return dirty;
 }

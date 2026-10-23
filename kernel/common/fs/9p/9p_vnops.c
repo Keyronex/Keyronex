@@ -64,7 +64,7 @@ struct ninepfs_state {
 
 	/* debug counters */
 	atomic_uint fids_allocated, fids_clunked;
-	atomic_uint nodes_created, nodes_freed;
+	atomic_uint nodes_created, nodes_freed, nodes_torn_down;
 };
 
 /* TODO get rid of me when not needed for debugging */
@@ -601,12 +601,99 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
 	return 0;
 }
 
+static enum vn_idcache_decision
+ninep_decide(vnode_t *vn, void *)
+{
+	struct ninep_node *node = VTO9(vn);
+
+	/*
+	 * Node was evicted (unlinked, renamed over, or stale) so nobody can
+	 * ever reach it again and it can go away altogether.
+	 */
+	if (!node->idc_entry.inserted)
+		return kVcacheInactiveProceed;
+
+	if (vn->type == VREG && (viewcache_vnode_dirty(vn) ||
+	    vm_obj_dirty_pages(vn->file.vmobj) != 0))
+		return kVcacheInactiveRetain;
+
+	/* no other metadata to deal with in 9p. */
+	return kVcacheInactiveProceed;
+}
+
+static void
+node_teardown(struct ninepfs_state *fs, struct ninep_node *node)
+{
+	vnode_t *vn = node->vnode;
+
+	kassert(node != fs->root_node, "tearing down the 9p root");
+
+	ke_rwlock_enter_write(&node->rwlock, "node_teardown");
+
+	if (vn->type == VREG) {
+		vm_object_t *obj = vn->file.vmobj;
+		size_t discarded;
+
+		/* wait for any writebacks to finish and clear off any views */
+		viewcache_truncate(vn, 0);
+
+		/* paging barrier */
+		ke_rwlock_enter_write(&node->paging_rwlock, "node_teardown");
+		vm_vnobj_set_valid_length(obj, 0);
+		ke_rwlock_exit_write(&node->paging_rwlock);
+
+		/* make away with every page, irrespective of vattr.size */
+		discarded = vm_obj_purge(obj);
+		vm_obj_drain_io(obj);
+
+		/* only evicted nodes should have any data left to discard */
+		kassert(discarded == 0 || !node->idc_entry.inserted,
+		    "node_teardown: dirty pages were left in a clean vnode");
+	}
+
+	/* now that all paging I/O is done, the paging fid can go away */
+	if (node->paging_fid != 0) {
+		fid_clunk(fs, node->paging_fid);
+		node->paging_fid = 0;
+	}
+	fid_clunk(fs, node->fid);
+	node->fid = 0;
+
+	ke_rwlock_exit_write(&node->rwlock);
+
+	if (node->name != NULL)
+		kmem_strfree(node->name);
+
+	vn_idcache_inactive_end(&fs->idcache, &node->idc_entry);
+	vn_free(vn);
+	kmem_free(node, sizeof(*node));
+	atomic_fetch_add_explicit(&fs->nodes_freed, 1, memory_order_relaxed);
+	atomic_fetch_add_explicit(&fs->nodes_torn_down, 1,
+	    memory_order_relaxed);
+}
+
 static int
 ninep_inactive(vnode_t *vn)
 {
-	/* todo... */
-	atomic_fetch_add(&vn->refcount, 1);
-	return 0;
+	struct ninep_node *node = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+
+	switch (vn_idcache_inactive_begin(&fs->idcache, &node->idc_entry,
+	    ninep_decide, NULL)) {
+	case kVcacheInactiveEAGAIN:
+		return -EAGAIN;
+
+	case kVcacheInactiveRetain:
+		/* inactive_begin() took the writer's reference so send it */
+		viewcache_request_sync(vn);
+		return -EAGAIN;
+
+	case kVcacheInactiveProceed:
+		node_teardown(fs, node);
+		return 0;
+	}
+
+	kunreachable();
 }
 
 int
@@ -844,8 +931,19 @@ ninep_create(vnode_t *dvn, const char *name, vattr_t *attr, vnode_t **out)
 	} else {
 		res->name = kmem_strdup(name);
 		if (keep_create_fid) {
-			res->paging_fid = newfid;
-			res->paging_fid_rdonly = false;
+			/*
+			 * The vnode having been published, a concurrent holder
+			 * might have opened an FID, so get rid of ours if so.
+			 */
+			ke_mutex_enter(&res->open_fid_lock, "ninep_create");
+			if (res->paging_fid == 0) {
+				res->paging_fid = newfid;
+				res->paging_fid_rdonly = false;
+				newfid = 0;
+			}
+			ke_mutex_exit(&res->open_fid_lock);
+			if (newfid != 0)
+				fid_clunk(fs, newfid);
 		}
 	}
 
@@ -1047,18 +1145,24 @@ ninep_getattr(vnode_t *vn, vattr_t *attr)
 		fid = node->fid;
 
 	r = do_getattr(fs, fid, &fresh);
+
+	/*
+	 * Take the rwlock so the size can't race with extension by a write,
+	 * which updates it under the rwlock as writer.
+	 */
+	ke_rwlock_enter_read(&node->rwlock, "ninep_getattr");
 	if (r != 0) {
 		/* FIXME: reasonable for dangling walk FID? other errors? */
 		*attr = node->vattr;
-		return 0;
+	} else {
+		/* not-yet-written-back writes might have extended it already */
+		fresh.size = node->vattr.size;
+		/* since e.g. sockets override the type, keep ours */
+		fresh.type = node->vattr.type;
+		node->vattr = fresh;
+		*attr = fresh;
 	}
-
-	/* not-yet-written-back writes might have extended it already */
-	fresh.size = node->vattr.size;
-	/* since e.g. sockets override the type, keep ours */
-	fresh.type = node->vattr.type;
-	node->vattr = fresh;
-	*attr = fresh;
+	ke_rwlock_exit_read(&node->rwlock);
 
 	return 0;
 }
@@ -1539,6 +1643,7 @@ ninep_mount(vnode_t *provider)
 	atomic_store(&state->fids_clunked, 0);
 	atomic_store(&state->nodes_created, 0);
 	atomic_store(&state->nodes_freed, 0);
+	atomic_store(&state->nodes_torn_down, 0);
 	state->provider = provider;
 	ninep_debug_state = state;
 	vn_idcache_init(&state->idcache, 1024);
