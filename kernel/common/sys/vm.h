@@ -124,11 +124,19 @@ void vm_obj_io_exit(vm_object_t *);
 void vm_obj_drain_io(vm_object_t *);
 
 /*!
+ * @brief Collect dirtiness from any MAP_SHARED mappings of a vnode VM object.
+ *
+ * Any writeable PTEs are write-protected and their pages recorded as dirty.
+ * Writers will thus see at least all the dirtiness preceding the call.
+ */
+void vm_obj_collect_dirty_mappings(vm_object_t *);
+
+/*!
  * @brief Write back every dirty page of a vnode VM object.
  *
- * Existing MAP_SHARED mappings of the VM object first get their dirty bits
- * pushed out, then every dirty page is written, finally any other writes by
- * other writes are waited for before returning.
+ * Any writes by other writers are waited for before returning.
+ *
+ * @pre VM object's vnode should be retained.
  */
 void vm_obj_flush(vm_object_t *);
 

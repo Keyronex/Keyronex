@@ -1118,6 +1118,81 @@ ninep_do_setattr_size(struct ninepfs_state *fs, fid_t fid, uint64_t new_size)
 }
 
 static int
+ninep_do_fsync(struct ninepfs_state *fs, fid_t fid, bool datasync)
+{
+	struct ninep_buf *buf_in, *buf_out;
+	iop_t *iop;
+	int r = 0;
+
+	/* size[4] Tfsync tag[2] fid[4] datasync[4] */
+	buf_in = ninep_buf_alloc("Fd");
+	/* size[4] Rfsync tag[2] */
+	buf_out = ninep_buf_alloc("d");
+
+	buf_in->data->tag = to_leu16(fs->req_tag++);
+	buf_in->data->kind = k9pFsync;
+	ninep_buf_addfid(buf_in, fid);
+	ninep_buf_addu32(buf_in, datasync ? 1 : 0);
+	ninep_buf_close(buf_in);
+
+	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
+	iop_send_sync(iop);
+	iop_free(iop);
+	ninep_buf_free(buf_in);
+
+	switch (buf_out->data->kind) {
+	case k9pFsync + 1:
+		r = 0;
+		break;
+
+	case k9pLerror + 1: {
+		uint32_t err;
+		ninep_buf_getu32(buf_out, &err);
+		r = -err;
+		break;
+	}
+
+	default:
+		kfatal("9p: unexpected Tfsync response\n");
+	}
+
+	ninep_buf_free(buf_out);
+	return r;
+}
+
+
+static int
+ninep_fsync(vnode_t *vn, int flags)
+{
+	struct ninep_node *node = VTO9(vn);
+	struct ninepfs_state *fs = VTO9FS(vn);
+	int r;
+
+	if (vn->type != VREG && vn->type != VDIR)
+		return 0;
+
+	if (vn->type == VREG) {
+		/* protect against truncation */
+		ke_rwlock_enter_read(&node->rwlock, "ninep_fsync");
+		/* collecting before viewcache sync avoids some extra writes */
+		vm_obj_collect_dirty_mappings(vn->file.vmobj);
+		viewcache_sync_vnode(vn);
+		vm_obj_flush(vn->file.vmobj);
+		ke_rwlock_exit_read(&node->rwlock);
+	}
+
+	if (!(flags & VN_FSYNC_DURABLE))
+		return 0;
+
+	r = node_make_paging_fid(fs, node);
+	if (r != 0)
+		return r;
+
+	return ninep_do_fsync(fs, node->paging_fid,
+	    (flags & VN_FSYNC_DATAONLY) != 0);
+}
+
+static int
 ninep_truncate(vnode_t *vn, size_t size)
 {
 	struct ninep_node *node = VTO9(vn);
@@ -1682,6 +1757,7 @@ static struct vnode_ops ninep_vnops = {
 	.rename = ninep_rename,
 	.getattr = ninep_getattr,
 	.setattr = ninep_setattr,
+	.fsync = ninep_fsync,
 	.readdir = ninep_readdir,
 	.readlink = ninep_readlink,
 	.stack_depth = 2,

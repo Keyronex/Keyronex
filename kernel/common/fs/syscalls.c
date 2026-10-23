@@ -918,6 +918,44 @@ out:
 	return r;
 }
 
+/*
+ * fsync(2) (datasync == 0)
+ * fdatasync(2) (datasync != 0)
+ */
+int
+sys_fsync(int fd, int datasync)
+{
+	file_t *file;
+	vnode_t *vn;
+	int r;
+
+	file = uf_lookup(curproc()->finfo, fd);
+	if (file == NULL)
+		return -EBADF;
+
+	vn = file->vnode;
+
+	switch (vn->type) {
+	case VREG:
+	case VDIR:
+	case VBLK:
+	case VCHR:
+		if (vn->ops->fsync == NULL)
+			r = 0; /* FS doesn't cache */
+		else
+			r = VOP_FSYNC(vn, VN_FSYNC_DURABLE |
+			    (datasync ? VN_FSYNC_DATAONLY : 0));
+		break;
+
+	default:
+		r = -EINVAL;
+		break;
+	}
+
+	file_release(file);
+	return r;
+}
+
 int
 sys_flock(int fd, int op)
 {

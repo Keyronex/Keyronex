@@ -58,15 +58,14 @@ vm_obj_write_pages(vm_object_t *obj, vm_page_t **pages, size_t npages,
 }
 
 /*
- * Collect dirtiness from any live MAP_SHARED mappings of the object. Any
- * writeable PTEs are write-protected and the page is recorded as dirty.
- *
  * TODO: both this and vm_obj_truncate_mappings() fetch every PTE individually!
  */
-static void
-collect_dirty_mappings(vm_object_t *obj)
+void
+vm_obj_collect_dirty_mappings(vm_object_t *obj)
 {
 	struct vm_map_entry *entry;
+
+	kassert(obj->kind == VM_OBJ_VNODE);
 
 	ke_mutex_enter(&obj->map_entries_lock, "collect_dirty_mappings");
 
@@ -225,8 +224,6 @@ void
 vm_obj_flush(vm_object_t *obj)
 {
 	kassert(obj->kind == VM_OBJ_VNODE);
-
-	collect_dirty_mappings(obj);
 
 	/*
 	 * Anyone else that tries to flush will wait for our writes to finish.

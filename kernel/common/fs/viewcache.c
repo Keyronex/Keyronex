@@ -89,6 +89,42 @@ addr_to_view(vaddr_t addr)
 	return &views[(addr - FILE_MAP_BASE) / VIEW_SIZE];
 }
 
+/*
+ * Write back a VIEW_DIRTY view.
+ *
+ * vc_lock must be held on entry with ipl being the saved IPL.
+ * It is dropped during I/O and reacquired before return.
+ */
+static void
+view_writeback(struct view *view, ipl_t ipl)
+{
+	kassert(ke_spinlock_held(&vc_lock));
+	kassert(view->dirty == VIEW_DIRTY);
+
+	view->dirty = VIEW_WRITEBACK;
+	view->dirty_time = ABSTIME_NEVER;
+	TAILQ_REMOVE(&dirty_queue, view, queue_entry);
+	ke_spinlock_exit(&vc_lock, ipl);
+
+	vm_vc_clean(view->vnode->file.vmobj, view->offset, view_addr(view),
+	    VIEW_SIZE);
+
+	(void)ke_spinlock_enter(&vc_lock);
+	kassert(view->dirty == VIEW_WRITEBACK);
+	if (view->dirty_time != ABSTIME_NEVER) {
+		/* dirtied again while writeback was ongoing */
+		view->dirty = VIEW_DIRTY;
+		TAILQ_INSERT_TAIL(&dirty_queue, view, queue_entry);
+	} else {
+		/* now clean */
+		view->dirty = VIEW_CLEAN;
+		if (view->refcnt == 0)
+			TAILQ_INSERT_TAIL(&lru_queue, view, queue_entry);
+	}
+
+	ke_waitq_wake_all(&view->writeback_waitq);
+}
+
 static void
 viewcache_writeback_thread(void *)
 {
@@ -104,39 +140,8 @@ viewcache_writeback_thread(void *)
 
 		ipl = ke_spinlock_enter(&vc_lock);
 		view = TAILQ_FIRST(&dirty_queue);
-		if (view == NULL) {
-			ke_spinlock_exit(&vc_lock, ipl);
-			continue;
-		}
-
-#if 0
-		kprintf("viewcache_writeback_thread: writing back view "
-		    "offset 0x%zx of vnode %p\n",
-		    view->offset, view->vnode);
-#endif
-
-		view->dirty = VIEW_WRITEBACK;
-		view->dirty_time = ABSTIME_NEVER;
-		TAILQ_REMOVE(&dirty_queue, view, queue_entry);
-		ke_spinlock_exit(&vc_lock, ipl);
-
-		vm_vc_clean(view->vnode->file.vmobj, view->offset,
-		    view_addr(view), VIEW_SIZE);
-
-		ipl = ke_spinlock_enter(&vc_lock);
-		kassert(view->dirty == VIEW_WRITEBACK);
-		if (view->dirty_time != ABSTIME_NEVER) {
-			/* dirtied again while writeback was ongoing */
-			view->dirty = VIEW_DIRTY;
-			TAILQ_INSERT_TAIL(&dirty_queue, view, queue_entry);
-		} else {
-			/* now clean */
-			view->dirty = VIEW_CLEAN;
-			TAILQ_INSERT_TAIL(&lru_queue, view, queue_entry);
-		}
-
-		ke_waitq_wake_all(&view->writeback_waitq);
-
+		if (view != NULL)
+			view_writeback(view, ipl);
 		ke_spinlock_exit(&vc_lock, ipl);
 	}
 }
@@ -450,6 +455,42 @@ retry_2:
 		view = next;
 	}
 
+	ke_spinlock_exit(&vc_lock, ipl);
+}
+
+/* Write back every dirty view of a vnode. */
+void
+viewcache_sync_vnode(vnode_t *vn)
+{
+	struct vn_vc_state *vc_state = vn->file.vc_state;
+	struct view key, *view;
+	ipl_t ipl;
+
+	key.offset = 0;
+
+	ipl = ke_spinlock_enter(&vc_lock);
+	while ((view = RB_NFIND(view_tree, &vc_state->view_tree, &key)) !=
+	    NULL) {
+		kassert(view->vnode == vn);
+
+		switch (view->dirty) {
+		case VIEW_WRITEBACK:
+			/* check if it's dirty again afterwards */
+			key.offset = view->offset;
+			view_wait_writeback(view, ipl);
+			ipl = ke_spinlock_enter(&vc_lock);
+			break;
+
+		case VIEW_DIRTY:
+			key.offset = view->offset + VIEW_SIZE;
+			view_writeback(view, ipl);
+			break;
+
+		case VIEW_CLEAN:
+			key.offset = view->offset + VIEW_SIZE;
+			break;
+		}
+	}
 	ke_spinlock_exit(&vc_lock, ipl);
 }
 

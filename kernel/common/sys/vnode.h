@@ -120,6 +120,7 @@ struct vnode_ops {
 	int (*readdir)(vnode_t *, void *buf, size_t length, off_t *offset);
 	int (*readlink)(vnode_t *, char *buf, size_t buflen);
 	int (*inactive)(vnode_t *);
+	int (*fsync)(vnode_t *, int flags);
 	int (*read)(vnode_t *, void *buf, size_t length, off_t offset,
 	    int flags);
 	int (*write)(vnode_t *, const void *buf, size_t length, off_t offset,
@@ -136,7 +137,12 @@ struct vnode_ops {
 	void (*paging_exit)(vnode_t *);
 };
 
+/* for vnode_ops::fsync */
+#define VN_FSYNC_DURABLE	0x1	/* fsync(2) semantics*/
+#define VN_FSYNC_DATAONLY	0x2	/* fdatasync(2) semantics */
+
 #define VOP_OPEN(VN, FLAGS) (*(VN))->ops->open(VN, FLAGS);
+#define VOP_FSYNC(VN, FLAGS) (VN)->ops->fsync(VN, (FLAGS))
 #define VOP_CLOSE(VN, FLAGS) (VN)->ops->close(VN, FLAGS)
 #define VOP_RENAME(SVN, SNAME, DVN, DNAME) \
     (SVN)->ops->rename(SVN, SNAME, DVN, DNAME)
@@ -204,6 +210,10 @@ void vn_release_async(vnode_t *);
 int viewcache_io(vnode_t *, uint64_t offset, size_t length, bool write,
     void *buf);
 void viewcache_truncate(vnode_t *, uint64_t newsize);
+/*!
+ * @brief Write back every dirty view of a vnode, waiting for any in writeback.
+ */
+void viewcache_sync_vnode(vnode_t *);
 struct vn_vc_state *viewcache_alloc_vnode_state(vnode_t *vn);
 void viewcache_free_vnode_state(vnode_t *vn);
 

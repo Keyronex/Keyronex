@@ -55,6 +55,7 @@ int sys_lseek(int fd, off_t offset, int whence, off_t *out);
 int sys_ioctl(int fd, unsigned long cmd, intptr_t arg);
 int sys_fstatat(int fd, const char *upath, int flags, struct stat *sb);
 int sys_ftruncate(int fd, off_t length);
+int sys_fsync(int fd, int datasync);
 int sys_flock(int fd, int op);
 
 int sys_fcntl(int fd, int cmd, unsigned long arg);
