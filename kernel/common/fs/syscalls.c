@@ -885,6 +885,10 @@ sys_fstatat(int fd, const char *upath, int flags, struct stat *sb)
 	sb->st_mtim = vattr.mtim;
 	sb->st_ino = vattr.fileid;
 	sb->st_dev = vattr.fsid;
+	sb->st_nlink = vattr.nlink;
+	sb->st_uid = vattr.uid;
+	sb->st_gid = vattr.gid;
+	sb->st_rdev = vattr.rdev;
 
 out:
 	if (path != NULL)

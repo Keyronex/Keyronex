@@ -978,9 +978,12 @@ ninep_link(vnode_t *dvn, vnode_t *vn, const char *name)
 	ninep_buf_addstr(buf_in, name);
 	ninep_buf_close(buf_in);
 
+	/* serialise against unlink's check of the link count */
+	ke_rwlock_enter_write(&n->rwlock, "ninep_link");
 	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
 	iop_send_sync(iop);
 	iop_free(iop);
+	ke_rwlock_exit_write(&n->rwlock);
 	ninep_buf_free(buf_in);
 
 	switch (buf_out->data->kind) {
@@ -1005,6 +1008,57 @@ ninep_link(vnode_t *dvn, vnode_t *vn, const char *name)
 	return r;
 }
 
+/*
+ * We make sure there's a paging FID before removing a name of the given node
+ * so that anyone with that vnode keeps working and so that the 9p server
+ * doesn't reuse the inode before teardown.
+ *
+ * We check the link count so we know whether this removal would take the last
+ * link (or if the node is a directory) and if so return true to indicate that
+ * the node must be evicted on success.
+ *
+ * The node rwlock stays held and must be dropped by the caller with
+ * node_remove_end().
+ */
+static bool
+node_remove_begin(struct ninepfs_state *fs, struct ninep_node *node)
+{
+	vattr_t attr;
+	fid_t fid;
+	int r;
+
+	if (node->vnode->type == VREG || node->vnode->type == VDIR) {
+		r = node_make_paging_fid(fs, node);
+		if (r != 0)
+			kdprintf("9pfs: can't pin %s before removal: %d\n",
+			    node->name, r);
+	}
+
+	ke_rwlock_enter_write(&node->rwlock, "node_remove_begin");
+
+	if (node->vnode->type == VDIR)
+		return true;
+
+	fid = node->paging_fid != 0 ? node->paging_fid : node->fid;
+	r = do_getattr(fs, fid, &attr);
+	if (r != 0) {
+		kdprintf("9pfs: getattr of %s before removal failed: %d; "
+		    "evicting\n", node->name, r);
+		return true;
+	}
+
+	return attr.nlink <= 1;
+}
+
+static void
+node_remove_end(struct ninepfs_state *fs, struct ninep_node *node, bool evict,
+    bool removed)
+{
+	if (removed && evict)
+		node_evict(fs, node);
+	ke_rwlock_exit_write(&node->rwlock);
+}
+
 static int
 ninep_unlinkat(vnode_t *dvn, const char *name, vnode_t *vn, bool removedir)
 {
@@ -1012,10 +1066,13 @@ ninep_unlinkat(vnode_t *dvn, const char *name, vnode_t *vn, bool removedir)
 	struct ninepfs_state *fs = VTO9FS(dvn);
 	struct ninep_buf *buf_in, *buf_out;
 	iop_t *iop;
+	bool evict;
 	int r;
 
 	if (dn->unlinked)
 		return -ENOENT;
+
+	evict = node_remove_begin(fs, node);
 
 	/* size[4] Tunlinkat tag[2] dirfd[4] name[s] flags[4] */
 	buf_in = ninep_buf_alloc("FS64d");
@@ -1054,9 +1111,7 @@ ninep_unlinkat(vnode_t *dvn, const char *name, vnode_t *vn, bool removedir)
 
 	ninep_buf_free(buf_out);
 
-	/* since directories can't have hard links, make away with it */
-	if (r == 0 && removedir) /* TODO for regular files */
-		node_evict(fs, node);
+	node_remove_end(fs, node, evict, r == 0);
 
 	return r;
 }
@@ -1074,18 +1129,25 @@ ninep_rmdir(vnode_t *dvn, const char *name, vnode_t *vn)
 }
 
 int
-ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
-    const char *new_name)
+ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *svn,
+    vnode_t *new_dvn, const char *new_name, vnode_t *tvn)
 {
 	struct ninepfs_state *self = VTO9FS(old_dvn);
 	struct ninep_node *old_dirnode = VTO9(old_dvn),
-			  *new_dirnode = VTO9(new_dvn);
+			  *new_dirnode = VTO9(new_dvn),
+			  *snode = VTO9(svn),
+			  *tnode = tvn != NULL ? VTO9(tvn) : NULL;
 	iop_t *iop;
 	struct ninep_buf *buf_in, *buf_out;
+	bool evict_target = false;
 	int r = 0;
 
 	if (old_dirnode->unlinked || new_dirnode->unlinked)
 		return -ENOENT;
+
+	/* give the displaced node the same treatment as if unlinked */
+	if (tnode != NULL)
+		evict_target = node_remove_begin(self, tnode);
 
 	/*
 	 * size[4] Trenameat tag[2] olddirfid[4] oldname[s] newdirfid[4]
@@ -1126,6 +1188,18 @@ ninep_rename(vnode_t *old_dvn, const char *old_name, vnode_t *new_dvn,
 	}
 
 	ninep_buf_free(buf_out);
+
+	if (tnode != NULL)
+		node_remove_end(self, tnode, evict_target, r == 0);
+
+	if (r == 0) {
+		/* source keeps its walk FID - server changes the path */
+		ke_rwlock_enter_write(&snode->rwlock, "ninep_rename");
+		if (snode->name != NULL)
+			kmem_strfree(snode->name);
+		snode->name = kmem_strdup(new_name);
+		ke_rwlock_exit_write(&snode->rwlock);
+	}
 
 	return r;
 }

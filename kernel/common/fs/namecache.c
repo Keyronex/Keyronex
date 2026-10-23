@@ -1192,8 +1192,9 @@ retry:
 	nc_busy(dst.nc);
 	ke_rwlock_exit_write(&topology_lock);
 
-	r = VOP_RENAME(old_dirnch.nc->vp, old_name, new_dirnch.nc->vp,
-	    new_name);
+	/* (if dst is negative, then its vp is NULL, nothing displaced) */
+	r = VOP_RENAME(old_dirnch.nc->vp, old_name, src.nc->vp,
+	    new_dirnch.nc->vp, new_name, dst.nc->vp);
 
 	ke_rwlock_enter_write(&topology_lock, "nc_rename: relock");
 	if (r == 0) {

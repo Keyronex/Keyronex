@@ -113,8 +113,8 @@ struct vnode_ops {
 	int (*link)(vnode_t *, vnode_t *, const char *);
 	int (*remove)(vnode_t *dvn, const char *name, vnode_t *vn);
 	int (*rmdir)(vnode_t *dvn, const char *name, vnode_t *vn);
-	int (*rename)(vnode_t *, const char *, vnode_t *,
-	    const char *);
+	int (*rename)(vnode_t *sdvn, const char *sname, vnode_t *svn,
+	    vnode_t *tdvn, const char *tname, vnode_t *tvn);
 	int (*ioctl)(vnode_t *, unsigned long cmd, void *data);
 	int (*getattr)(vnode_t *, vattr_t*);
 	int (*setattr)(vnode_t *, vattr_t*);
@@ -146,8 +146,8 @@ struct vnode_ops {
 #define VOP_OPEN(VN, FLAGS) (*(VN))->ops->open(VN, FLAGS);
 #define VOP_FSYNC(VN, FLAGS) (VN)->ops->fsync(VN, (FLAGS))
 #define VOP_CLOSE(VN, FLAGS) (VN)->ops->close(VN, FLAGS)
-#define VOP_RENAME(SVN, SNAME, DVN, DNAME) \
-    (SVN)->ops->rename(SVN, SNAME, DVN, DNAME)
+#define VOP_RENAME(SDVN, SNAME, SVN, TDVN, TNAME, TVN) \
+    (SDVN)->ops->rename(SDVN, SNAME, SVN, TDVN, TNAME, TVN)
 #define VOP_CHPOLL(VN, POLL, MODE) (VN)->ops->chpoll(VN, (POLL), (MODE));
 #define VOP_READLINK(VN, BUF, LEN) (VN)->ops->readlink(VN, (BUF), (LEN));
 #define VOP_GETATTR(VN, VATTR) (VN)->ops->getattr(VN, (VATTR));
