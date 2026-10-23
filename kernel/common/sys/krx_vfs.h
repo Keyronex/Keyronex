@@ -83,11 +83,26 @@ struct lookup_info {
 
 
 void nc_makeroot(vfs_t *vfs, struct vnode *root_vn);
+
 int nc_link(namecache_handle_t dirnch, struct vnode *target_vn,
     const char *name);
+
 int nc_remove(namecache_handle_t dirnch, const char *name, bool isdir);
+
 int nc_rename(namecache_handle_t old_dirnch, const char *old_name,
     namecache_handle_t new_dirnch, const char *new_name);
+
+/*!
+ * @brief Try to find a live name of a vnode from its namecache links.
+ *
+ * If successful then a retained vnode to the directory holding the name is
+ * written to \p *parent_out , and the name to \p name.
+ *
+ * @retval 0 successful
+ * @retval -ENOENT no live name for vnode
+ */
+int nc_vnode_live_name(struct vnode *vn, struct vnode **parent_out, char *name,
+    size_t namelen);
 
 int vfs_lookup_init(struct lookup_info *info, namecache_handle_t start,
     const char *path, enum lookup_flags flags);

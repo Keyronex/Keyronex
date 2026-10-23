@@ -245,6 +245,43 @@ nc_clear_vp(namecache_t *nc)
 	return vn;
 }
 
+int
+nc_vnode_live_name(vnode_t *vn, vnode_t **parent_out, char *name,
+    size_t namelen)
+{
+	namecache_t *nc;
+	ipl_t ipl;
+	int r = -ENOENT;
+
+	/* stabilise parent and name fields */
+	ke_rwlock_enter_read(&topology_lock, "nc_vnode_live_name");
+	/* stabilise the vnode's nc list */
+	ipl = ke_spinlock_enter(&vn->nc_lock);
+	LIST_FOREACH(nc, &vn->nc_refs, vn_link) {
+		size_t len;
+
+		/* roots and dissociated entries aren't names */
+		if (nc->parent == NULL || nc->parent->vp == NULL)
+			continue;
+
+		len = nc_namelen(nc);
+		if (len >= namelen)
+			continue;
+
+		memcpy(name, nc->name, len);
+		name[len] = '\0';
+
+		/* fine, the child namecache retains the parent namecache */
+		*parent_out = vn_retain(nc->parent->vp);
+		r = 0;
+		break;
+	}
+	ke_spinlock_exit(&vn->nc_lock, ipl);
+	ke_rwlock_exit_read(&topology_lock);
+
+	return r;
+}
+
 /*
  * Free an entry. (If there is a vnode, i.e. not a negative entry, then the
  * topology lock musn't be held as vnode release can block on writeback,
