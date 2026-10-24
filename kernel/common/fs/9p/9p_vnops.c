@@ -2003,7 +2003,7 @@ ninep_mountroot(vnode_t *provider)
 	struct ninepfs_state *state = ninep_attach(provider, vfs);
 
 	ninep_debug_state = state;
-	nc_makeroot(vfs, state->root_node->vnode);
+	nc_mount(NCH_NULL, vfs, state->root_node->vnode);
 }
 
 int
@@ -2012,7 +2012,7 @@ ninep_mount(vnode_t *provider, namecache_handle_t overnch)
 	vfs_t *vfs = kmem_alloc(sizeof(vfs_t));
 	struct ninepfs_state *state = ninep_attach(provider, vfs);
 
-	nc_domount(overnch, vfs, state->root_node->vnode);
+	nc_mount(overnch, vfs, state->root_node->vnode);
 	return 0;
 }
 

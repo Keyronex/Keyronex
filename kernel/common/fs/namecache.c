@@ -445,44 +445,40 @@ mountpoint_find(namecache_handle_t nch)
 }
 
 void
-nc_makeroot(vfs_t *vfs, vnode_t *root_vn)
+nc_init(void)
 {
-	namecache_t *root_nc;
-
-	root_nc = nc_alloc(NULL, nc_hash(NULL, 0));
-	nc_set_vp(root_nc, root_vn);
-
-	kassert(root_nch.nc == NULL);
-	kassert(root_nch.vfs == NULL);
-
-	vfs->root_nc = root_nc;
-	vfs->nchcovered = (namecache_handle_t) { .nc = NULL, .vfs = NULL };
-
-	root_nch.nc = root_nc;
-	root_nch.vfs = vfs; /* consumes the initial vfs refcount */
-
 	ke_rwlock_init(&topology_lock);
 	ke_mutex_init(&lru_mutex);
 	ke_mutex_init(&vfs_mount_lock);
-	TAILQ_INSERT_TAIL(&vfs_mount_list, vfs, mount_link);
 }
 
 void
-nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
+nc_mount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 {
 	namecache_t *rootnc;
 
 	rootnc = nc_alloc(NULL, nc_hash(NULL, 0));
 	nc_set_vp(rootnc, rootvn);
 	vfs->root_nc = rootnc;
+	vfs->nchcovered = overnch; /* consume - can be NCH_NULL for root */
 
-	ke_mutex_enter(&vfs_mount_lock, "nc_domount");
-	ke_rwlock_enter_write(&topology_lock, "nc_domount");
-	atomic_fetch_add_explicit(&overnch.nc->flags, 1u << NC_MOUNTS_SHIFT,
-	    memory_order_relaxed);
-	LIST_INSERT_HEAD(&vfs_hash[nchandle_hash(overnch)], vfs,
-	    mountpoint_hash_entry);
-	vfs->nchcovered = overnch; /* consumed */
+	ke_mutex_enter(&vfs_mount_lock, "nc_mount");
+	ke_rwlock_enter_write(&topology_lock, "nc_mount");
+	if (overnch.nc != NULL) {
+		atomic_fetch_add_explicit(&overnch.nc->flags,
+		    1u << NC_MOUNTS_SHIFT, memory_order_relaxed);
+		LIST_INSERT_HEAD(&vfs_hash[nchandle_hash(overnch)], vfs,
+		    mountpoint_hash_entry);
+	} else {
+		int r;
+
+		kassert(root_nch.nc == NULL, "nc_mount: root already mounted");
+		root_nch.nc = nc_retain(rootnc);
+		r = vfs_tryretain(vfs);
+		kassert(r == 0);
+		(void)r;
+		root_nch.vfs = vfs;
+	}
 	TAILQ_INSERT_TAIL(&vfs_mount_list, vfs, mount_link);
 	ke_rwlock_exit_write(&topology_lock);
 	ke_mutex_exit(&vfs_mount_lock);
@@ -575,7 +571,8 @@ vfs_unmount(namecache_handle_t nch)
 		nchandle_release(nch);
 		return -EINVAL;
 	}
-	if (vfs == root_nch.vfs || vfs->ops == NULL) {
+	if (vfs->nchcovered.nc == NULL || vfs->ops == NULL) {
+		/* only shutdown unmounts this */
 		nchandle_release(nch);
 		return -EBUSY;
 	}
@@ -593,7 +590,8 @@ vfs_unmount(namecache_handle_t nch)
 		nchandle_release(nch);
 		return -EBUSY;
 	}
-	LIST_REMOVE(vfs, mountpoint_hash_entry);
+	if (vfs->nchcovered.nc != NULL)
+		LIST_REMOVE(vfs, mountpoint_hash_entry);
 	ke_rwlock_exit_write(&topology_lock);
 	ke_mutex_exit(&vfs_mount_lock);
 
@@ -620,13 +618,15 @@ vfs_unmount(namecache_handle_t nch)
 
 	ke_mutex_enter(&vfs_mount_lock, "vfs_unmount: covered");
 	ke_rwlock_enter_write(&topology_lock, "vfs_unmount: covered");
-	atomic_fetch_sub_explicit(&vfs->nchcovered.nc->flags,
-	    1u << NC_MOUNTS_SHIFT, memory_order_relaxed);
+	if (vfs->nchcovered.nc != NULL)
+		atomic_fetch_sub_explicit(&vfs->nchcovered.nc->flags,
+		    1u << NC_MOUNTS_SHIFT, memory_order_relaxed);
 	TAILQ_REMOVE(&vfs_mount_list, vfs, mount_link);
 	ke_rwlock_exit_write(&topology_lock);
 	ke_mutex_exit(&vfs_mount_lock);
 
-	nchandle_release(vfs->nchcovered);
+	if (vfs->nchcovered.nc != NULL)
+		nchandle_release(vfs->nchcovered);
 	kmem_free(vfs, sizeof(*vfs));
 
 	return 0;

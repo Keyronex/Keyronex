@@ -125,14 +125,18 @@ struct lookup_info {
 };
 
 
-void nc_makeroot(vfs_t *vfs, struct vnode *root_vn);
+/*!
+ * @brief Initialise the namecache.
+ */
+void nc_init(void);
 
 /*!
  * @brief Mount vfs (with root vnode rootvn) over directory overnch.
  *
- * Consumes \p overnch
+ * If  \p overnchs is not NCH_NULL then it is consumed and the mount is over
+ * that handle. Otherwise this will be the root mount.
  */
-void nc_domount(namecache_handle_t overnch, vfs_t *vfs, struct vnode *rootvn);
+void nc_mount(namecache_handle_t overnch, vfs_t *vfs, struct vnode *rootvn);
 
 int nc_link(namecache_handle_t dirnch, struct vnode *target_vn,
     const char *name);

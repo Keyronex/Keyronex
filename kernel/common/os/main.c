@@ -241,6 +241,7 @@ threaded_init(void *)
 
 	vnode_init();
 	viewcache_init();
+	nc_init();
 	str_sched_init();
 	ip_init();
 	mount_root();
