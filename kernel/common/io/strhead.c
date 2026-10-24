@@ -345,6 +345,7 @@ void strclose(stdata_t *sh)
 	if (sh->flags & ST_QUEUED)
 		TAILQ_REMOVE(&sc->runq, sh, sched_link);
 	TAILQ_INSERT_TAIL(&sc->freeq, sh, sched_link);
+	ke_event_set_signalled(&sc->event, true);
 	ke_spinlock_exit(&sc->lock, ipl);
 }
 

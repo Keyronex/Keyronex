@@ -722,6 +722,7 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr, bool want_gen)
 	ninep_buf_getu64(buf_out, &btime); /* (btime_sec) */
 	ninep_buf_getu64(buf_out, &btime); /* (btime_nsec) */
 	ninep_buf_getu64(buf_out, &gen_val);
+	ninep_buf_free(buf_out);
 
 	vattr->gen = (valid & k9pGetattrGen) != 0 ? gen_val :
 	    NOGEN;
@@ -1700,6 +1701,7 @@ ninep_readdir(vnode_t *dvn, void *buf, size_t buflen, off_t *offset)
 	case k9pLerror + 1: {
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
+		ninep_buf_free(buf_out);
 		r = -err;
 		kassert(r != 0);
 		goto out;

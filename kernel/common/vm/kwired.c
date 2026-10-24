@@ -125,8 +125,6 @@ vm_kwired_free(void *ptr, size_t npages)
 	ke_spinlock_enter_nospl(&proc0.vm_map->creation_lock);
 	ke_spinlock_enter_nospl(&proc0.vm_map->stealing_lock);
 
-	/* TODO: FREE THE VMEM AREA! Maybe do Mach style deferred release? */
-
 	for (size_t i = 0; i < npages; i++) {
 		vm_page_t *page;
 		pte_t pte;
@@ -161,6 +159,10 @@ vm_kwired_free(void *ptr, size_t npages)
 	ke_spinlock_exit(&kwired_lock, ipl);
 
 	vm_unmap_batch_flush(&batch);
+
+	ipl = ke_spinlock_enter(&kwired_lock);
+	vmem_xfree(&kwired_arena, addr, npages << PGSHIFT, 0);
+	ke_spinlock_exit(&kwired_lock, ipl);
 }
 
 int
