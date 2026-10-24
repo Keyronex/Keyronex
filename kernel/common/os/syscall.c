@@ -221,7 +221,7 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 #endif
 
 	case SYS_munmap:
-		return 0;
+		return sys_munmap((void *)arg1, arg2);
 
 	/*
 	 * vfs ops

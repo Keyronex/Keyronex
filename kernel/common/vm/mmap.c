@@ -96,3 +96,19 @@ sys_mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t offset)
 	else
 		return (void *)(uintptr_t)r;
 }
+
+int
+sys_munmap(void *addr, size_t len)
+{
+	vaddr_t start = (vaddr_t)addr, end;
+
+	if (len == 0 || start % PGSIZE != 0)
+		return -EINVAL;
+	len = roundup2(len, PGSIZE);
+	end = start + len;
+	if (end < start || start < LOWER_HALF ||
+	    end > LOWER_HALF + LOWER_HALF_SIZE)
+		return -EINVAL;
+
+	return vm_unmap(thread_vm_map(curthread()), start, end);
+}

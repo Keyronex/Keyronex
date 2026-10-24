@@ -162,5 +162,6 @@ paddr_t vm_translate(vaddr_t);
 
 void *sys_mmap(void *addr, size_t len, int prot, int flags, int fildes,
     off_t offset);
+int sys_munmap(void *addr, size_t len);
 
 #endif /* ECX_KEYRONEX_VM_H */
