@@ -11,6 +11,7 @@
 #include <sys/k_cpu.h>
 #include <sys/kmem.h>
 #include <sys/k_thread.h>
+#include <sys/k_wait.h>
 #include <sys/limine.h>
 #include <sys/vm.h>
 
@@ -168,13 +169,20 @@ uacpi_u64 uacpi_kernel_get_nanoseconds_since_boot(void)
 void
 uacpi_kernel_stall(uacpi_u8 usec)
 {
-	kfatal("Implement me\n");
+	kabstime_t end = ke_time() + (kabstime_t)usec * 1000;
+
+	while (ke_time() < end)
+		__asm__ volatile("pause");
 }
 
 void
 uacpi_kernel_sleep(uacpi_u64 msec)
 {
-	kfatal("Implement me\n");
+	kevent_t never;
+
+	ke_event_init(&never, false);
+	ke_wait1(&never, "uacpi_kernel_sleep", false,
+	    ke_time() + msec * 1000000);
 }
 
 uacpi_handle
