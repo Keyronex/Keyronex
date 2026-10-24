@@ -98,7 +98,7 @@ struct linkblk {
 	int	index;	/* link index (for I_[P]UNLINK) */
 
 	TAILQ_ENTRY(linkblk) link;
-	struct file *lowerfp;	/* lower stream file pointer (retained) */
+	struct vnode *lowervn;	/* lower stream vnode (retained) */
 	struct streamtab *tabtop; /* streamtab of upper stream (if I_PLINK) */
 };
 

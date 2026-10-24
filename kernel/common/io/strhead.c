@@ -24,6 +24,7 @@
 #include <sys/stropts.h>
 #include <sys/strsubr.h>
 #include <sys/termios.h>
+#include <sys/vnode.h>
 
 #include <net/if.h>
 
@@ -420,8 +421,10 @@ strread(stdata_t *sh, void *buf, size_t len, enum strrw_options options)
 			ke_event_set_signalled(&sh->data_readable, false);
 			str_req_end(sh);
 
-			ke_wait1(&sh->data_readable, "sth_read", true,
+			r = ke_wait1(&sh->data_readable, "sth_read", true,
 			    ABSTIME_FOREVER);
+			if (r == -EINTR)
+				return -EINTR;
 
 			str_req_begin(sh);
 		}
@@ -707,7 +710,13 @@ do_link_common(stdata_t *upper_sh, int fd, int cmd)
 	str_enter(upper_sh, "do_link_common post-ioctl");
 
 	if (iocmp->db->type == M_IOCACK) {
-		linkp->lowerfp = file_retain(lowerfp);
+		vnode_t *lowervn = vn_retain(lowerfp->vnode);
+		int err;
+
+		err = VOP_OPEN(&lowervn, O_RDWR);
+		kassert(err == 0 && lowervn == lowerfp->vnode,
+		    "do_link_common: reopening the linked device");
+		linkp->lowervn = lowervn;
 
 		if (cmd == I_PLINK) {
 			ke_mutex_enter(&mux_links_lock,
@@ -758,7 +767,7 @@ link_teardown(struct linkblk *linkp)
 {
 	stdata_t *lower_sh;
 
-	lower_sh = devfs_spec_get_stream(linkp->lowerfp->vnode);
+	lower_sh = devfs_spec_get_stream(linkp->lowervn);
 	kassert(lower_sh != NULL);
 	kassert(lower_sh->req_locked);
 
@@ -782,7 +791,8 @@ link_teardown(struct linkblk *linkp)
 	str_thaw(lower_sh);
 	str_req_end(lower_sh);
 
-	file_release(linkp->lowerfp);
+	VOP_CLOSE(linkp->lowervn, O_RDWR);
+	vn_release(linkp->lowervn);
 }
 
 static int
@@ -856,14 +866,14 @@ retry:
 		return -EINVAL;
 	}
 
-	lower_sh = devfs_spec_get_stream(linkp->lowerfp->vnode);
+	lower_sh = devfs_spec_get_stream(linkp->lowervn);
 	kassert(lower_sh != NULL);
 	kassert(lower_sh != upper_sh);
 
 	if (lower_sh > upper_sh) {
 		str_req_begin(lower_sh);
 	} else if (!str_req_trybegin(lower_sh)) {
-		file_t *fp = file_retain(linkp->lowerfp);
+		vnode_t *vn = vn_retain(linkp->lowervn);
 		int saved_index = linkp->index;
 		struct linkblk *var;
 
@@ -874,19 +884,19 @@ retry:
 
 		TAILQ_FOREACH(var, &upper_sh->links, link) {
 			if (var->index == saved_index &&
-			    var->lowerfp == fp)
+			    var->lowervn == vn)
 				break;
 		}
 
 		if (var == NULL) {
 			str_req_end(upper_sh);
 			str_req_end(lower_sh);
-			file_release(fp);
+			vn_release(vn);
 			goto retry;
 		}
 
 		linkp = var;
-		file_release(fp);
+		vn_release(vn);
 	}
 
 	r = do_unlink_common(upper_sh, lower_sh, linkp, I_UNLINK);
@@ -928,7 +938,7 @@ do_punlink(stdata_t *upper_sh, int index)
 	TAILQ_REMOVE(&mux_links, linkp, link);
 	ke_mutex_exit(&mux_links_lock);
 
-	lower_sh = devfs_spec_get_stream(linkp->lowerfp->vnode);
+	lower_sh = devfs_spec_get_stream(linkp->lowervn);
 	kassert(lower_sh != NULL);
 	kassert(lower_sh != upper_sh);
 
