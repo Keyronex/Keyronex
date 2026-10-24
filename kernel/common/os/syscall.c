@@ -298,6 +298,13 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_sync:
 		return sys_sync();
 
+	case SYS_mount:
+		return sys_mount((const char *)arg1, (const char *)arg2,
+		    (const char *)arg3, (unsigned long)arg4, (const void *)arg5);
+
+	case SYS_umount:
+		return sys_umount((const char *)arg1, (int)arg2);
+
 	case SYS_flock:
 		return sys_flock((int)arg1, (int)arg2);
 

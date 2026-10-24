@@ -22,6 +22,7 @@ extern kmutex_t proctree_mutex;
 
 #define VTODN(VN) ((dev_node_t *)(VN)->fsprivate_1)
 static struct vnode_ops dev_spec_vnops, dev_vnops;
+static const struct vfs_ops devfs_vfs_ops;
 static TAILQ_HEAD(, dev_node) hash = TAILQ_HEAD_INITIALIZER(hash);
 static krwlock_t hash_lock;
 
@@ -433,6 +434,7 @@ mount_devfs(void)
 	if (r != 0)
 		kfatal("devfs_mount: /dev not found\n");
 
+	vfs->ops = &devfs_vfs_ops;
 	vn = vn_alloc(NULL, VDIR, &dev_vnops, 0);
 
 	nc_domount(overnch, vfs, vn); /* consumes overnch */
@@ -453,7 +455,39 @@ static struct vnode_ops dev_spec_vnops = {
 	.iop_complete = dev_spec_iop_complete,
 };
 
+static int
+dev_root_inactive(vnode_t *vn)
+{
+	bool frozen = vn_tryfreeze(vn);
+
+	/* only applicable to the root vnode */
+
+	kassert(frozen, "dev_root_inactive: root vnode was retained");
+	(void)frozen;
+	vn_free(vn);
+	return 0;
+}
+
+
 static struct vnode_ops dev_vnops = {
 	.lookup = dev_lookup,
 	.getattr = dev_getattr,
+	.inactive = dev_root_inactive,
+};
+
+static void
+devfs_unmount(vfs_t *vfs)
+{
+	(void)vfs;
+}
+
+static void
+devfs_freevfs(vfs_t *vfs)
+{
+	(void)vfs;
+}
+
+static const struct vfs_ops devfs_vfs_ops = {
+	.unmount = devfs_unmount,
+	.freevfs = devfs_freevfs,
 };

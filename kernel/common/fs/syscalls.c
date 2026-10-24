@@ -907,6 +907,98 @@ sys_sync(void)
 	return vfs_sync_all(0);
 }
 
+int
+sys_umount(const char *utarget, int flags)
+{
+	namecache_handle_t nch;
+	char *path;
+	int r, len;
+
+	if (flags != 0)
+		return -EINVAL;
+
+	len = strldup_user(&path, utarget, 4095);
+	if (len < 0)
+		return len;
+
+	r = vfs_lookup_simple(root_nch, &nch, path, 0);
+	kmem_free(path, len + 1);
+	if (r != 0)
+		return r;
+
+	return vfs_unmount(nch); /* consumes nch */
+}
+
+int
+sys_mount(const char *usource, const char *utarget, const char *ufstype,
+    unsigned long flags, const void *udata)
+{
+	int ninep_mount(vnode_t *provider, namecache_handle_t overnch);
+	namecache_handle_t src, tgt;
+	vnode_t *provider;
+	char *source = NULL, *target = NULL, *fstype = NULL;
+	int r, slen, tlen = 0, flen = 0;
+
+	/* only 9p at the moment, where "source" is an 9p transport dev path */
+
+	(void)flags;
+	(void)udata;
+
+	slen = strldup_user(&source, usource, 4095);
+	if (slen < 0)
+		return slen;
+	tlen = strldup_user(&target, utarget, 4095);
+	if (tlen < 0) {
+		r = tlen;
+		target = NULL;
+		goto out;
+	}
+	flen = strldup_user(&fstype, ufstype, 64);
+	if (flen < 0) {
+		r = flen;
+		fstype = NULL;
+		goto out;
+	}
+
+	if (strcmp(fstype, "9p") != 0) {
+		r = -ENODEV;
+		goto out;
+	}
+
+	r = vfs_lookup_simple(root_nch, &src, source, 0);
+	if (r != 0)
+		goto out;
+	if (src.nc->vp->type != VCHR) {
+		nchandle_release(src);
+		r = -ENOTBLK;
+		goto out;
+	}
+	provider = vn_retain(src.nc->vp);
+	nchandle_release(src);
+
+	r = vfs_lookup_simple(root_nch, &tgt, target, 0);
+	if (r != 0) {
+		vn_release(provider);
+		goto out;
+	}
+	if (tgt.nc->vp->type != VDIR) {
+		nchandle_release(tgt);
+		vn_release(provider);
+		r = -ENOTDIR;
+		goto out;
+	}
+
+	r = ninep_mount(provider, tgt); /* both consumed */
+
+out:
+	if (fstype != NULL)
+		kmem_free(fstype, flen + 1);
+	if (target != NULL)
+		kmem_free(target, tlen + 1);
+	kmem_free(source, slen + 1);
+	return r;
+}
+
 /*
  * fsync(2) (datasync == 0)
  * fdatasync(2) (datasync != 0)

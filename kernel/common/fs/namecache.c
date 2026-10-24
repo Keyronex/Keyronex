@@ -56,6 +56,7 @@
 #include <stdatomic.h>
 
 static void nc_free(namecache_t *nc);
+static void nc_detach(namecache_t *nc);
 
 #define MNT_HASH_NBUCKETS 16
 static LIST_HEAD(vfs_hash_bucket, vfs) vfs_hash[MNT_HASH_NBUCKETS];
@@ -487,6 +488,150 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 	ke_mutex_exit(&vfs_mount_lock);
 }
 
+/*
+ * Move all non-root entries below nc from the LRU queues to batch, in
+ * post-order. The retain an LRU queue held on the namecache is retained.
+ *
+ * (topology_lock must be held for writing, and lru_mutex held)
+ */
+static void
+nc_sweep_collect(namecache_t *nc, struct namecache_lru_queue *batch)
+{
+	struct namecache_lru_queue *queue;
+	namecache_t *child;
+	size_t *n;
+
+	RB_FOREACH(child, namecache_rb, &nc->children)
+		nc_sweep_collect(child, batch);
+
+	if (nc->parent == NULL)
+		return; /* the root */
+
+	kassert(!nc_test(nc, NC_BUSY), "unmount: entry busy");
+	kassert(nc_test(nc, NC_ON_LRU));
+	queue = lru_queue_for(nc, &n);
+	TAILQ_REMOVE(queue, nc, lru_qlink);
+	(*n)--;
+	nc_clear(nc, NC_ON_LRU);
+	TAILQ_INSERT_TAIL(batch, nc, lru_qlink); /* the queue's reference */
+}
+
+/* assert the LRU queues contain no namecache entry associated with vfs */
+static void
+nc_assert_vfs_no_lru_entries(vfs_t *vfs)
+{
+	struct namecache_lru_queue *queues[] = {
+		&lru_pos_queue,
+		&lru_neg_queue
+	};
+	namecache_t *nc, *top;
+
+	ke_rwlock_enter_read(&topology_lock, "nc_assert_vfs_no_lru_entries");
+	ke_mutex_enter(&lru_mutex, "nc_assert_vfs_no_lru_entries");
+	for (size_t i = 0; i < 2; i++) {
+		TAILQ_FOREACH(nc, queues[i], lru_qlink) {
+			for (top = nc; top->parent != NULL; top = top->parent)
+				;
+			kassert(top != vfs->root_nc,
+			    "unmount: vfs still has an entry on an LRU queue");
+		}
+	}
+	ke_mutex_exit(&lru_mutex);
+	ke_rwlock_exit_read(&topology_lock);
+}
+
+/*
+ * Remove all entries (except the root) for a given VFS from the hierarchy.
+ * They are released in post-order, so children go away before their parents and
+ * thus vn_release() can be called without topology_lock or lru_mutex held.
+ */
+static void
+nc_sweep_vfs(vfs_t *vfs)
+{
+	struct namecache_lru_queue batch = TAILQ_HEAD_INITIALIZER(batch);
+	namecache_t *nc, *tmp;
+
+	ke_rwlock_enter_write(&topology_lock, "nc_sweep_vfs");
+	ke_mutex_enter(&lru_mutex, "nc_sweep_vfs");
+	nc_sweep_collect(vfs->root_nc, &batch);
+	ke_mutex_exit(&lru_mutex);
+	TAILQ_FOREACH(nc, &batch, lru_qlink)
+		nc_detach(nc);
+	ke_rwlock_exit_write(&topology_lock);
+
+	TAILQ_FOREACH_SAFE(nc, &batch, lru_qlink, tmp)
+		nc_release(nc);
+
+	nc_assert_vfs_no_lru_entries(vfs);
+}
+
+int
+vfs_unmount(namecache_handle_t nch)
+{
+	vfs_t *vfs = nch.vfs;
+	uint32_t expected;
+
+	if (nch.nc != vfs->root_nc) {
+		nchandle_release(nch);
+		return -EINVAL;
+	}
+	if (vfs == root_nch.vfs || vfs->ops == NULL) {
+		nchandle_release(nch);
+		return -EBUSY;
+	}
+
+	ke_mutex_enter(&vfs_mount_lock, "vfs_unmount");
+	ke_rwlock_enter_write(&topology_lock, "vfs_unmount");
+	/* 2 for the mount's reference, and 2 for our handle's */
+	expected = 4;
+	if (!atomic_compare_exchange_strong_explicit(&vfs->opencnt, &expected,
+		1, memory_order_acq_rel, memory_order_relaxed)) {
+		ke_rwlock_exit_write(&topology_lock);
+		ke_mutex_exit(&vfs_mount_lock);
+		kdprintf("vfs_unmount: busy: %u additional references\n",
+		    (expected - 4) / 2);
+		nchandle_release(nch);
+		return -EBUSY;
+	}
+	LIST_REMOVE(vfs, mountpoint_hash_entry);
+	ke_rwlock_exit_write(&topology_lock);
+	ke_mutex_exit(&vfs_mount_lock);
+
+	/* not nchandle_release, that would try to release the VFS too */
+	nc_release(nch.nc);
+
+	vfs_sync(vfs, VN_FSYNC_DURABLE);
+
+	nc_sweep_vfs(vfs);
+	vfs_wait_vnodes(vfs, 1);
+
+	vfs->ops->unmount(vfs);
+
+	/* only the VFS should be retainining root by now */
+	kassert(atomic_load_explicit(&vfs->root_nc->refcnt,
+	    memory_order_relaxed) == 1,
+	    "vfs_unmount: root entry has references");
+	nc_release(vfs->root_nc);
+	vfs->root_nc = NULL;
+	vfs_wait_vnodes(vfs, 0);
+
+	vfs->ops->freevfs(vfs);
+	ke_waitq_quiesce(&vfs->vnode_waitq);
+
+	ke_mutex_enter(&vfs_mount_lock, "vfs_unmount: covered");
+	ke_rwlock_enter_write(&topology_lock, "vfs_unmount: covered");
+	atomic_fetch_sub_explicit(&vfs->nchcovered.nc->flags,
+	    1u << NC_MOUNTS_SHIFT, memory_order_relaxed);
+	TAILQ_REMOVE(&vfs_mount_list, vfs, mount_link);
+	ke_rwlock_exit_write(&topology_lock);
+	ke_mutex_exit(&vfs_mount_lock);
+
+	nchandle_release(vfs->nchcovered);
+	kmem_free(vfs, sizeof(*vfs));
+
+	return 0;
+}
+
 int
 vfs_sync_all(int fsync_flags)
 {
@@ -539,6 +684,18 @@ nc_wake_busy_waiters(struct namecache *nc)
 	ke_waitq_wake_all(&nc->busy_waitq);
 }
 
+static void
+nc_detach(namecache_t *nc)
+{
+	kassert(nc->parent != NULL); /* can't dissociate twice */
+
+	RB_REMOVE(namecache_rb, &nc->parent->children, nc);
+	nc_release(nc->parent);
+	nc->parent = NULL;
+	nc_set(nc, NC_DISSOCIATED);
+	atomic_fetch_add_explicit(&nc_dissociated_n, 1, memory_order_relaxed);
+}
+
 /*
  * Dissociate a namecache entry from the tree and take it off any LRU queue it
  * may be on.
@@ -548,14 +705,7 @@ nc_wake_busy_waiters(struct namecache *nc)
 static void
 nc_dissociate(namecache_t *nc)
 {
-	kassert(nc->parent != NULL); /* can't dissociate twice */
-
-	RB_REMOVE(namecache_rb, &nc->parent->children, nc);
-	nc_release(nc->parent);
-	nc->parent = NULL;
-	nc_set(nc, NC_DISSOCIATED);
-	atomic_fetch_add_explicit(&nc_dissociated_n, 1, memory_order_relaxed);
-
+	nc_detach(nc);
 	lru_remove(nc);
 }
 

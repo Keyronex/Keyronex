@@ -8,6 +8,7 @@
  */
 
 #include <sys/errno.h>
+#include <sys/k_cpu.h>
 #include <sys/k_intr.h>
 #include <sys/kmem.h>
 #include <sys/krx_vfs.h>
@@ -298,8 +299,45 @@ vfs_sync(vfs_t *vfs, int fsync_flags)
 }
 
 void
+vfs_wait_vnodes(vfs_t *vfs, size_t remaining)
+{
+	kabstime_t deadline = ke_time() + (kabstime_t)30 * NS_PER_S;
+
+	for (;;) {
+		kwaiter_t waiter;
+		vnode_t *vn;
+		size_t n = 0;
+		ipl_t ipl;
+
+		ipl = ke_spinlock_enter(&vfs->vnode_list_lock);
+		TAILQ_FOREACH(vn, &vfs->vnode_list, vfs_vnlistentry)
+			if (vn->type != VITER_MARKER)
+				n++;
+		if (n <= remaining) {
+			ke_spinlock_exit(&vfs->vnode_list_lock, ipl);
+			return;
+		}
+		if (ke_time() > deadline) {
+			TAILQ_FOREACH(vn, &vfs->vnode_list, vfs_vnlistentry)
+				if (vn->type != VITER_MARKER)
+					kdprintf("vnode %p type %d refs %u nc_refs "
+					    "%u pending %u\n", vn, vn->type,
+					    vn->refcount, vn->nc_refs_n,
+					    vn->release_pending);
+			kfatal("vfs_wait_vnodes: %zu vnodes remain (want <= %zu)"
+			    "\n", n, remaining);
+		}
+		ke_waitq_prepare(&vfs->vnode_waitq, &waiter);
+		ke_spinlock_exit(&vfs->vnode_list_lock, ipl);
+		ke_waitq_wait(&vfs->vnode_waitq, &waiter, "vfs_wait_vnodes",
+		    false, ke_time() + NS_PER_S);
+	}
+}
+
+void
 vfs_init(vfs_t *vfs)
 {
+	vfs->ops = NULL;
 	ke_spinlock_init(&vfs->vnode_list_lock);
 	TAILQ_INIT(&vfs->vnode_list);
 	ke_waitq_init(&vfs->vnode_waitq);

@@ -810,6 +810,23 @@ ninep_inactive(vnode_t *vn)
 	struct ninep_node *node = VTO9(vn);
 	struct ninepfs_state *fs = VTO9FS(vn);
 
+	if (node == fs->root_node) {
+		bool frozen;
+
+		kassert(node->unlinked, "ninep_inactive: root before umount");
+		frozen = vn_tryfreeze(vn);
+		kassert(frozen, "ninep_inactive: root is retained");
+		(void)frozen;
+		fs->root_node = NULL;
+		if (node->name != NULL)
+			kmem_strfree(node->name);
+		vn_free(vn);
+		kmem_free(node, sizeof(*node));
+		atomic_fetch_add_explicit(&fs->nodes_freed, 1,
+		    memory_order_relaxed);
+		return 0;
+	}
+
 	switch (vn_idcache_inactive_begin(&fs->idcache, &node->idc_entry,
 	    ninep_decide, NULL)) {
 	case kVcacheInactiveEAGAIN:
@@ -1903,10 +1920,53 @@ attach(struct ninepfs_state *state)
 	return r;
 }
 
-void
-ninep_mount(vnode_t *provider)
+static void
+ninep_unmount(vfs_t *vfs)
 {
-	vfs_t *vfs = kmem_alloc(sizeof(vfs_t));
+	struct ninepfs_state *fs = (struct ninepfs_state *)vfs->fsprivate_1;
+	struct ninep_node *root = fs->root_node;
+
+	/*
+	 * By now every vnode except the root is gone, so remove it from the
+	 * idcache, clunk its FIDs, and then the root's inactive will just be
+	 * a free.
+	 */
+
+	node_evict(fs, root);
+
+	ke_rwlock_enter_write(&root->rwlock, "ninep_unmount");
+	if (root->paging_fid != 0) {
+		fid_clunk(fs, root->paging_fid);
+		root->paging_fid = 0;
+	}
+	if (root->fid != NOFID) {
+		fid_clunk(fs, root->fid);
+		root->fid = NOFID;
+	}
+	ke_rwlock_exit_write(&root->rwlock);
+}
+
+static void
+ninep_freevfs(vfs_t *vfs)
+{
+	struct ninepfs_state *fs = (struct ninepfs_state *)vfs->fsprivate_1;
+
+	kassert(fs->root_node == NULL, "ninep_free: root still exists");
+	vn_idcache_fini(&fs->idcache);
+	vn_release(fs->provider);
+	if (ninep_debug_state == fs)
+		ninep_debug_state = NULL;
+	kmem_free(fs, sizeof(*fs));
+}
+
+static const struct vfs_ops ninep_vfs_ops = {
+	.unmount = ninep_unmount,
+	.freevfs = ninep_freevfs,
+};
+
+static struct ninepfs_state *
+ninep_attach(vnode_t *provider, vfs_t *vfs)
+{
 	struct ninepfs_state *state = kmem_alloc(sizeof(struct ninepfs_state));
 	int r;
 
@@ -1918,11 +1978,11 @@ ninep_mount(vnode_t *provider)
 	atomic_store(&state->nodes_freed, 0);
 	atomic_store(&state->nodes_torn_down, 0);
 	state->provider = provider;
-	ninep_debug_state = state;
 	vn_idcache_init(&state->idcache, 1024);
 	state->vfs = vfs;
 
 	vfs_init(vfs);
+	vfs->ops = &ninep_vfs_ops;
 	vfs->fsprivate_1 = (uintptr_t)state;
 
 	r = negotiate_version(state);
@@ -1933,8 +1993,27 @@ ninep_mount(vnode_t *provider)
 	if (r != 0)
 		kfatal("ninep_mount: attach failed\n");
 
+	return state;
+}
 
+void
+ninep_mountroot(vnode_t *provider)
+{
+	vfs_t *vfs = kmem_alloc(sizeof(vfs_t));
+	struct ninepfs_state *state = ninep_attach(provider, vfs);
+
+	ninep_debug_state = state;
 	nc_makeroot(vfs, state->root_node->vnode);
+}
+
+int
+ninep_mount(vnode_t *provider, namecache_handle_t overnch)
+{
+	vfs_t *vfs = kmem_alloc(sizeof(vfs_t));
+	struct ninepfs_state *state = ninep_attach(provider, vfs);
+
+	nc_domount(overnch, vfs, state->root_node->vnode);
+	return 0;
 }
 
 static void

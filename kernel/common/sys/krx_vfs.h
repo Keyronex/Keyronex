@@ -57,6 +57,8 @@ typedef struct namecache_handle {
 
 #define NCH_NULL ((namecache_handle_t) { NULL, NULL })
 
+struct vfs_ops;
+
 /*
  * A virtual file system
  *
@@ -64,6 +66,7 @@ typedef struct namecache_handle {
  */
 typedef struct vfs {
 	atomic_uint opencnt; /*!< bits 31..1 for count; bit 0 for umounting */
+	const struct vfs_ops *ops;
 
 	namecache_t *root_nc;
 	namecache_handle_t nchcovered;
@@ -76,6 +79,27 @@ typedef struct vfs {
 
 	uintptr_t fsprivate_1;
 } vfs_t;
+
+/*!
+ * Virtual filesystem operations
+ */
+struct vfs_ops {
+	/*!
+	 * @brief Prepare root vnode for inactivation.
+	 *
+	 * Called during unmount after every vnode except root has gone. The FS
+	 * can clean up anything needful before the root namecache entry is
+	 * released and the root vnode's inactive routine is thus called.
+	 */
+	void (*unmount)(vfs_t *);
+	/*!
+	 * @brief Free filesystem state.
+	 *
+	 * By now all vnodes of the VFS are gone, so the FS can do any remaining
+	 * cleanup and finally free the VFS itself.
+	 */
+	void (*freevfs)(vfs_t *);
+};
 
 enum lookup_flags {
 	LOOKUP_NOFOLLOW_FINAL = 1 << 0,
@@ -146,10 +170,30 @@ void vfs_init(vfs_t *);
  */
 int vfs_tryretain(vfs_t *vfs);
 
+/*!
+ * @brief Release a reference to a VFS.
+ */
 void vfs_release(vfs_t *vfs);
 
-int vfs_sync_all(int fsync_flags);
 int vfs_sync(struct vfs *, int fsync_flags);
+int vfs_sync_all(int fsync_flags);
+
+/*!
+ * @brief Unmount the VFS with root \p nch .
+ *
+ * @retval 0 unmounted successfully.
+ * @retval -EBUSY others reference the VFS, or it is root (not unmountable).
+ * @retval -EINVAL \p nch is not the root nch of a VFS.
+ */
+int vfs_unmount(namecache_handle_t nch);
+
+/*!
+ * @brief Wait for a given VFS to have at most \p remaining vnodes.
+ *
+ * i.e. for unmount.
+ * TODO: this currently waits for at most 30s and then panics.
+ */
+void vfs_wait_vnodes(struct vfs *, size_t remaining);
 
 namecache_handle_t nchandle_retain(namecache_handle_t in);
 namecache_handle_t nchandle_release(namecache_handle_t in);
@@ -169,6 +213,9 @@ int sys_fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group,
     int flags);
 
 int sys_sync(void);
+int sys_mount(const char *usource, const char *utarget, const char *ufstype,
+    unsigned long flags, const void *udata);
+int sys_umount(const char *utarget, int flags);
 
 extern namecache_handle_t root_nch;
 

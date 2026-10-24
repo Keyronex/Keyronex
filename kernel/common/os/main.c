@@ -167,7 +167,7 @@ static void
 mount_root(void)
 {
 	struct vnode;
-	void ninep_mount(struct vnode *provider);
+	void ninep_mountroot(struct vnode *provider);
 	struct vnode *devfs_lookup_early(const char *name);
 
 	struct vnode *vn = devfs_lookup_early("vio9p:sysroot");
@@ -175,7 +175,7 @@ mount_root(void)
 	if (vn == NULL)
 		kfatal("mount_root: no such device viop9p:sysroot");
 
-	ninep_mount(vn);
+	ninep_mountroot(vn);
 }
 
 static void
