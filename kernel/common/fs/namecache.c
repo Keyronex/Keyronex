@@ -247,11 +247,11 @@ nc_set_vp(namecache_t *nc, vnode_t *vn)
 		ke_mutex_exit(&lru_mutex);
 	}
 
-	ipl = ke_spinlock_enter(&vn->nc_lock);
+	ipl = ke_spinlock_enter(&vn->lock);
 	nc->vp = vn;
 	LIST_INSERT_HEAD(&vn->nc_refs, nc, vn_link);
 	vn->nc_refs_n++;
-	ke_spinlock_exit(&vn->nc_lock, ipl);
+	ke_spinlock_exit(&vn->lock, ipl);
 }
 
 /* returns the vnode for release */
@@ -261,12 +261,12 @@ nc_clear_vp(namecache_t *nc)
 	vnode_t *vn = nc->vp;
 	ipl_t ipl;
 
-	ipl = ke_spinlock_enter(&vn->nc_lock);
+	ipl = ke_spinlock_enter(&vn->lock);
 	LIST_REMOVE(nc, vn_link);
 	kassert(vn->nc_refs_n > 0);
 	vn->nc_refs_n--;
 	nc->vp = NULL;
-	ke_spinlock_exit(&vn->nc_lock, ipl);
+	ke_spinlock_exit(&vn->lock, ipl);
 
 	return vn;
 }
@@ -282,7 +282,7 @@ nc_vnode_live_name(vnode_t *vn, vnode_t **parent_out, char *name,
 	/* stabilise parent and name fields */
 	ke_rwlock_enter_read(&topology_lock, "nc_vnode_live_name");
 	/* stabilise the vnode's nc list */
-	ipl = ke_spinlock_enter(&vn->nc_lock);
+	ipl = ke_spinlock_enter(&vn->lock);
 	LIST_FOREACH(nc, &vn->nc_refs, vn_link) {
 		size_t len;
 
@@ -302,7 +302,7 @@ nc_vnode_live_name(vnode_t *vn, vnode_t **parent_out, char *name,
 		r = 0;
 		break;
 	}
-	ke_spinlock_exit(&vn->nc_lock, ipl);
+	ke_spinlock_exit(&vn->lock, ipl);
 	ke_rwlock_exit_read(&topology_lock);
 
 	return r;

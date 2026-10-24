@@ -594,7 +594,7 @@ sys_epoll_create(int flags)
 	if (ep == NULL)
 		return -ENOMEM;
 
-	vnode = vn_alloc(NULL, VCHR, &epoll_vnops, (uintptr_t)ep, 0);
+	vnode = vn_alloc(NULL, VCHR, &epoll_vnops, (uintptr_t)ep);
 	if (vnode == NULL) {
 		kmem_free(ep, sizeof(struct epoll));
 		return -ENOMEM;

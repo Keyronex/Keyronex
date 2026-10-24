@@ -244,7 +244,7 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 		node->vattr.type = override_vtype;
 
 	node->vnode = vn_alloc(fs->vfs, node->vattr.type, &ninep_vnops,
-	    (uintptr_t)node, 0);
+	    (uintptr_t)node);
 	if (node->vattr.type == VREG)
 		vm_vnobj_set_valid_length(node->vnode->file.vmobj,
 		    node->vattr.size);

@@ -93,7 +93,7 @@ procdesc_create(struct procdesc *pd, int flags)
 	file_t *file;
 	int fileflags = 0;
 
-	vnode = vn_alloc(NULL, VCHR, &procdesc_vnops, (uintptr_t)pd, 0);
+	vnode = vn_alloc(NULL, VCHR, &procdesc_vnops, (uintptr_t)pd);
 	if (vnode == NULL)
 		return NULL;
 

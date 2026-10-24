@@ -191,7 +191,7 @@ sys_pipe(int ufd[2], int flags)
 
 	fn->st = st;
 
-	vn = vn_alloc(NULL, VFIFO, &fifo_vnops, (uintptr_t)fn, 0);
+	vn = vn_alloc(NULL, VFIFO, &fifo_vnops, (uintptr_t)fn);
 	if (vn == NULL) {
 		kmem_free(fn, sizeof(*fn));
 		strclose(st);

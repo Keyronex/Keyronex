@@ -19,13 +19,12 @@
 atomic_uint vnodes_allocated, vnodes_freed;
 
 static kspinlock_t vn_release_lock = KSPINLOCK_INITIALISER;
-static TAILQ_HEAD(, vnode) vn_release_queue =
-    TAILQ_HEAD_INITIALIZER(vn_release_queue);
+static STAILQ_HEAD(, vnode) vn_release_queue =
+    STAILQ_HEAD_INITIALIZER(vn_release_queue);
 static kevent_t vn_release_event;
 
 vnode_t *
-vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1,
-    uintptr_t fsprivate_2)
+vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1)
 {
 	vnode_t *vn;
 
@@ -37,11 +36,10 @@ vn_alloc(vfs_t *vfs, vtype_t type, struct vnode_ops *ops, uintptr_t fsprivate_1,
 	vn->type = type;
 	vn->ops = ops;
 	vn->fsprivate_1 = fsprivate_1;
-	vn->fsprivate_2 = fsprivate_2;
 	vn->published = false;
 	vn->release_pending = 0;
 	vn->sync_queued = false;
-	ke_spinlock_init(&vn->nc_lock);
+	ke_spinlock_init(&vn->lock);
 	LIST_INIT(&vn->nc_refs);
 	vn->nc_refs_n = 0;
 
@@ -176,7 +174,7 @@ vn_release_async(vnode_t *vn)
 
 	ipl = ke_spinlock_enter(&vn_release_lock);
 	if (vn->release_pending++ == 0)
-		TAILQ_INSERT_TAIL(&vn_release_queue, vn, release_link);
+		STAILQ_INSERT_TAIL(&vn_release_queue, vn, release_link);
 	ke_spinlock_exit(&vn_release_lock, ipl);
 
 	ke_event_set_signalled(&vn_release_event, true);
@@ -196,13 +194,13 @@ vn_release_thread(void *)
 			ipl_t ipl;
 
 			ipl = ke_spinlock_enter(&vn_release_lock);
-			vn = TAILQ_FIRST(&vn_release_queue);
+			vn = STAILQ_FIRST(&vn_release_queue);
 			if (vn == NULL) {
 				ke_spinlock_exit(&vn_release_lock, ipl);
 				break;
 			}
 
-			TAILQ_REMOVE(&vn_release_queue, vn, release_link);
+			STAILQ_REMOVE_HEAD(&vn_release_queue, release_link);
 			n = vn->release_pending;
 			vn->release_pending = 0;
 			vn->sync_queued = false;

@@ -72,24 +72,23 @@ typedef struct vattr {
  * A virtual node
  *
  * Locking:
- * (l) nc_lock
+ * (l) lock
  */
 typedef struct vnode {
 	atomic_uint	refcount;
-	struct vfs	*vfs;
+	kspinlock_t	lock;
 	vtype_t		type;
-	struct vnode_ops *ops;
-	TAILQ_ENTRY(vnode) vfs_vnlistentry; /* entry in vfs::vnode_list */
+	uint32_t	nc_refs_n;	/* (l) */
+	uint32_t	release_pending; /* (vn_release_lock) */
 	bool		published;	/* on vfs::vnode_list */
-
-	uint32_t	release_pending;
-	TAILQ_ENTRY(vnode) release_link;
-	TAILQ_ENTRY(vnode) sync_link;	/* on viewcache sync queue */
 	bool		sync_queued;	/* (vc_lock) */
 
-	kspinlock_t	nc_lock;
-	uint32_t	nc_refs_n;	/* (nc_lock) */
-	LIST_HEAD(, namecache) nc_refs; /* (nc_lock) */
+	struct vfs	*vfs;
+	struct vnode_ops *ops;
+	TAILQ_ENTRY(vnode) vfs_vnlistentry; /* entry in vfs::vnode_list */
+	STAILQ_ENTRY(vnode) release_link; /* on vn_release_queue (FIFO) */
+	TAILQ_ENTRY(vnode) sync_link;	/* on viewcache sync queue */
+	LIST_HEAD(, namecache) nc_refs; /* (l) */
 
 	union {
 		struct {
@@ -100,8 +99,7 @@ typedef struct vnode {
 			struct vnode *sockvn; /* (l) weak pointer */
 		} sock;
 	};
-	uintptr_t	fsprivate_1,
-			fsprivate_2;
+	uintptr_t	fsprivate_1;
 } vnode_t;
 
 typedef struct vfs_vn_iter {
@@ -169,8 +167,7 @@ struct vnode_ops {
 
 void vnode_init(void);
 
-vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1,
-    uintptr_t fspriv2);
+vnode_t *vn_alloc(struct vfs *, vtype_t, struct vnode_ops *, uintptr_t fspriv1);
 
 /*!
  * @brief Publish a vnode into it's VFS' vnode list.

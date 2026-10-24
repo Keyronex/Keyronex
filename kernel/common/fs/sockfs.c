@@ -262,7 +262,7 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 
 	sh->wq->next->ptr = sh->wq->next->other->ptr = sn; /* sockmod's ptr */
 
-	vn = vn_alloc(NULL, VSOCK, &sock_vnops, (uintptr_t)sn, 0);
+	vn = vn_alloc(NULL, VSOCK, &sock_vnops, (uintptr_t)sn);
 	if (vn == NULL) {
 		r = -ENOMEM;
 		goto err;
@@ -614,10 +614,10 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 			kassert(li.result.nc->vp->type == VSOCK,
 			    "so_bind: node wasn't created as socket");
 
-			ipl = ke_spinlock_enter(&li.result.nc->vp->nc_lock);
+			ipl = ke_spinlock_enter(&li.result.nc->vp->lock);
 			kassert(li.result.nc->vp->sock.sockvn == NULL);
 			li.result.nc->vp->sock.sockvn = vn;
-			ke_spinlock_exit(&li.result.nc->vp->nc_lock, ipl);
+			ke_spinlock_exit(&li.result.nc->vp->lock, ipl);
 
 			/* bound_nch consumes the reference from the lookup */
 			sn->bound_nch = li.result;
@@ -797,19 +797,18 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 
 		/*
 		 * The filesystem vnode is strongly held from lookup, and
-		 * vnode::nc_lock stabilises the socket vnode (cf
-		 * sock_inactive.)
+		 * vnode::lock stabilises the socket vnode (cf sock_inactive.)
 		 *
 		 * By retaining the peervn we keep the peer's sux_rq alive
 		 * until connect completes as the UX transport needs.
 		 */
 		boundvn = li.result.nc->vp;
 		if (boundvn->type == VSOCK) {
-			ipl_t ipl = ke_spinlock_enter(&boundvn->nc_lock);
+			ipl_t ipl = ke_spinlock_enter(&boundvn->lock);
 			peervn = boundvn->sock.sockvn;
 			if (peervn != NULL && !vn_tryretain(peervn))
 				peervn = NULL;
-			ke_spinlock_exit(&boundvn->nc_lock, ipl);
+			ke_spinlock_exit(&boundvn->lock, ipl);
 		}
 		nchandle_release(li.result);
 
@@ -1041,15 +1040,15 @@ sock_inactive(vnode_t *vn)
 		vnode_t *fsvn = bound.nc->vp;
 		ipl_t ipl;
 
-		ipl = ke_spinlock_enter(&fsvn->nc_lock);
+		ipl = ke_spinlock_enter(&fsvn->lock);
 		if (!vn_tryfreeze(vn)) {
 			/* raced by a connect, which now retains us */
-			ke_spinlock_exit(&fsvn->nc_lock, ipl);
+			ke_spinlock_exit(&fsvn->lock, ipl);
 			return -EAGAIN;
 		}
 		kassert(fsvn->sock.sockvn == vn);
 		fsvn->sock.sockvn = NULL;
-		ke_spinlock_exit(&fsvn->nc_lock, ipl);
+		ke_spinlock_exit(&fsvn->lock, ipl);
 	} else {
 		bool frozen = vn_tryfreeze(vn);
 		kassert(frozen, "sock_inactive: unbound socket retained");

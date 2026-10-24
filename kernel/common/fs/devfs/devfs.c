@@ -63,7 +63,7 @@ dev_node_getvnode(dev_node_t *dn)
 	ke_rwlock_enter_write(&dn->open_lock, "dev_node_getvnode");
 	if (dn->vn == NULL)
 		dn->vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
-		    (uintptr_t)dn, 0); /* takes vn_alloc()'s initial retain */
+		    (uintptr_t)dn); /* consumes vn_alloc()'s initial retain */
 	else
 		vn_retain(dn->vn);
 	vn = dn->vn;
@@ -171,7 +171,7 @@ dev_spec_open(vnode_t **vn, int flags)
 		    clone_dn->devprivate, STR_HEAD_KIND_NONE);
 
 		clone_vn = vn_alloc(NULL, VCHR, &dev_spec_vnops,
-		    (uintptr_t)clone_dn, 0);
+		    (uintptr_t)clone_dn);
 		clone_dn->vn = clone_vn;
 
 		ke_rwlock_exit_write(&dn->open_lock);
@@ -433,7 +433,7 @@ mount_devfs(void)
 	if (r != 0)
 		kfatal("devfs_mount: /dev not found\n");
 
-	vn = vn_alloc(NULL, VDIR, &dev_vnops, 0, 0);
+	vn = vn_alloc(NULL, VDIR, &dev_vnops, 0);
 
 	void nc_domount(namecache_handle_t overnch, vfs_t * vfs,
 	    vnode_t * rootvn);
