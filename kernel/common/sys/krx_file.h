@@ -12,6 +12,7 @@
 
 #include <sys/types.h>
 #include <sys/fcntl.h>
+#include <sys/k_rcu.h>
 #include <sys/k_thread.h>
 #include <sys/krx_vfs.h>
 
@@ -26,6 +27,7 @@ enum file_mode {
 
 typedef struct file {
 	uint32_t refcnt;
+	krcu_entry_t rcu;
 	namecache_handle_t nch;
 	struct vnode *vnode;
 	kmutex_t offset_mutex;

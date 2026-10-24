@@ -72,15 +72,13 @@ strv_free(strv_t strv)
 {
 	size_t cnt = 1;
 
-	if (*strv == NULL)
+	if (strv == NULL)
 		return;
 
 	for (char **ptr = strv; *ptr != NULL; ptr++) {
 		kmem_strfree(*ptr);
 		cnt++;
 	}
-
-	/* cnt mismatches that in copyin_strv!! needs to be fixed */
 
 	kmem_free(strv, sizeof(*strv) * cnt);
 }
@@ -278,6 +276,7 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 	proc_t *proc = curproc();
 	vm_map_t *newmap = NULL, *oldmap = proc->vm_map;
 	struct exec_package pkg, rtldpkg;
+	char comm[sizeof(proc->comm)];
 	ipl_t ipl;
 
 	r = strldup_user(&path, upath, strlen(upath) + 1);
@@ -334,6 +333,16 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 	    (const char *const *)envp);
 	kassert(r == 0);
 
+	strncpy(comm, argp[0], sizeof(comm) - 1);
+	comm[sizeof(comm) - 1] = '\0';
+	exe_nch = nchandle_release(exe_nch);
+	ld_nch = nchandle_release(ld_nch);
+	kmem_free(path, strlen(path) + 1);
+	path = NULL;
+	strv_free(argp);
+	strv_free(envp);
+	argp = envp = NULL;
+
 	/* point of no return, other threads can go away */
 	r = proc_exec_begin(proc);
 	if (r < 0)
@@ -346,7 +355,7 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 	vm_unmap(oldmap, LOWER_HALF, LOWER_HALF + LOWER_HALF_SIZE);
 	vm_map_release(oldmap);
 
-	strncpy(curproc()->comm, argp[0], sizeof(curproc()->comm) - 1);
+	memcpy(curproc()->comm, comm, sizeof(comm));
 
 	/* this return is not via the trap codepath, so we check for an AST */
 	ke_ast_check();
@@ -356,10 +365,10 @@ sys_execve(const char *upath, char *const uarpg[], char *const uenvp[])
 	kfatal("unreachable\n");
 
 error:
-	/* FIXME: (or in nchandle_release()) - if unset, null deref... */
 	nchandle_release(exe_nch);
 	nchandle_release(ld_nch);
-	kmem_free(path, strlen(path) + 1);
+	if (path != NULL)
+		kmem_free(path, strlen(path) + 1);
 	strv_free(argp);
 	strv_free(envp);
 	if (newmap != NULL) {

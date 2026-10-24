@@ -19,6 +19,8 @@
 
 #include <stdbool.h>
 
+atomic_uint files_allocated, files_freed;
+
 file_t *
 file_new(namecache_handle_t nch, vnode_t *vn, int flags)
 {
@@ -29,6 +31,8 @@ file_new(namecache_handle_t nch, vnode_t *vn, int flags)
 	if (file == NULL) {
 		return NULL;
 	}
+
+	atomic_fetch_add_explicit(&files_allocated, 1, memory_order_relaxed);
 
 	__atomic_store_n(&file->refcnt, 1, __ATOMIC_RELAXED);
 	file->nch = nch;
@@ -61,7 +65,7 @@ file_tryretain_rcu(file_t *f)
 	while (true) {
 		uint32_t count = __atomic_load_n(&f->refcnt, __ATOMIC_RELAXED);
 		if (count == 0)
-			return f;
+			return NULL;
 		if (__atomic_compare_exchange_n(&f->refcnt, &count, count + 1,
 			false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
 			return f;
@@ -77,10 +81,21 @@ file_retain(file_t *fp)
 	return fp;
 }
 
+static void
+file_free_rcu(void *arg)
+{
+	file_t *file = arg;
+
+	kmem_free(file, sizeof(*file));
+	atomic_fetch_add_explicit(&files_freed, 1, memory_order_relaxed);
+}
+
 void
 file_release(file_t *file)
 {
 	uint32_t old = __atomic_fetch_sub(&file->refcnt, 1, __ATOMIC_ACQ_REL);
+
+	kassert(old != 0, "file_release: refcount of file already 0");
 
 	if (old == 1) {
 		poll_watched_file_did_close(file);
@@ -98,5 +113,7 @@ file_release(file_t *file)
 					memory_order_relaxed));
 			vn_release(file->vnode);
 		}
+
+		ke_rcu_call(&file->rcu, file_free_rcu, file);
 	}
 }
