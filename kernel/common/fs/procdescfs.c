@@ -86,6 +86,10 @@ procdesc_init(struct procdesc *pd, proc_t *child, int flags)
 	child->procdesc = pd;
 }
 
+/*
+ * Make a procdesc's file and vnode.
+ * Consumes \p pd, which the vnode then owns (so on failure it is freed.)
+ */
 static file_t *
 procdesc_create(struct procdesc *pd, int flags)
 {
@@ -94,12 +98,14 @@ procdesc_create(struct procdesc *pd, int flags)
 	int fileflags = 0;
 
 	vnode = vn_alloc(NULL, VCHR, &procdesc_vnops, (uintptr_t)pd);
-	if (vnode == NULL)
+	if (vnode == NULL) {
+		kmem_free(pd, sizeof(*pd));
 		return NULL;
+	}
 
 	file = file_new((namecache_handle_t) { NULL, NULL }, vnode, fileflags);
 	if (file == NULL) {
-		vn_release(vnode);
+		vn_release(vnode); /* procdesc_inactive() frees pd */
 		return NULL;
 	}
 
@@ -176,6 +182,11 @@ static int
 procdesc_inactive(vnode_t *vn)
 {
 	struct procdesc *pd = VTOPD(vn);
+	bool frozen;
+
+	frozen = vn_tryfreeze(vn); /* not reachable any other way */
+	kassert(frozen, "procdesc_inactive: vnode was retained");
+	(void)frozen;
 
 	ke_mutex_enter(&proctree_mutex, "procdesc_inactive");
 	if (pd->proc != NULL) {
@@ -192,6 +203,7 @@ procdesc_inactive(vnode_t *vn)
 	ke_mutex_exit(&proctree_mutex);
 
 	kmem_free(pd, sizeof(*pd));
+	vn_free(vn);
 	return 0;
 }
 
@@ -225,25 +237,23 @@ pid_t sys_pdfork(karch_trapframe_t *frame, int *fdp, int flags)
 	pd = kmem_alloc(sizeof(*pd));
 	if (pd == NULL)
 		return -ENOMEM;
+	pd->proc = NULL;
 
 	file = procdesc_create(pd, flags);
-	if (file == NULL) {
-		kmem_free(pd, sizeof(*pd));
+	if (file == NULL)
 		return -ENOMEM;
-	}
 
 	fd = uf_reserve_fd(curproc()->finfo, 0,
 	    (flags & PD_CLOEXEC) ? FD_CLOEXEC : 0);
 	if (fd < 0) {
 		file_release(file);
-		kmem_free(pd, sizeof(*pd));
 		return fd;
 	}
 
 	child_proc = proc_create(curproc(), true);
 	if (child_proc == NULL) {
+		uf_unreserve_fd(curproc()->finfo, fd);
 		file_release(file);
-		kmem_free(pd, sizeof(*pd));
 		return -ENOMEM;
 	}
 

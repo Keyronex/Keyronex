@@ -68,8 +68,15 @@ static int
 fifo_inactive(vnode_t *vn)
 {
 	struct fifonode *fn = VTOFN(vn);
+	bool frozen;
+
+	frozen = vn_tryfreeze(vn); /* not reachable any other way */
+	kassert(frozen, "fifo_inactive: vnode was retained");
+	(void)frozen;
+
 	strclose(fn->st);
 	kmem_free(fn, sizeof(*fn));
+	vn_free(vn);
 	return 0;
 }
 
@@ -210,6 +217,7 @@ sys_pipe(int ufd[2], int flags)
 	if (wf == NULL) {
 		vn_release(vn);
 		file_release(rf);
+		return -ENOMEM;
 	}
 
 	fd[0] = uf_reserve_fd(curproc()->finfo, 0,

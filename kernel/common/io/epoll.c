@@ -594,6 +594,13 @@ sys_epoll_create(int flags)
 	if (ep == NULL)
 		return -ENOMEM;
 
+	ke_mutex_init(&ep->mutex);
+	ke_spinlock_init(&ep->ready_lock);
+	LIST_INIT(&ep->watches);
+	LIST_INIT(&ep->ready);
+	ke_event_init(&ep->event, false);
+	ep->deleted = false;
+
 	vnode = vn_alloc(NULL, VCHR, &epoll_vnops, (uintptr_t)ep);
 	if (vnode == NULL) {
 		kmem_free(ep, sizeof(struct epoll));
@@ -603,17 +610,9 @@ sys_epoll_create(int flags)
 	/* fixme: flags */
 	file = file_new((namecache_handle_t) { NULL, NULL }, vnode, 0);
 	if (file == NULL) {
-		kmem_free(ep, sizeof(struct epoll));
 		vn_release(vnode);
 		return -ENOMEM;
 	}
-
-	ke_mutex_init(&ep->mutex);
-	ke_spinlock_init(&ep->ready_lock);
-	LIST_INIT(&ep->watches);
-	LIST_INIT(&ep->ready);
-	ke_event_init(&ep->event, false);
-	ep->deleted = false;
 
 	r = uf_reserve_fd(curproc()->finfo, 0,
 	    (flags & EPOLL_CLOEXEC) ? FD_CLOEXEC : 0);
@@ -629,7 +628,15 @@ static int
 epoll_inactive(vnode_t *vn)
 {
 	struct epoll *ep = VTOEP(vn);
+	bool frozen;
+
+	frozen = vn_tryfreeze(vn); /* not reachable any other way */
+	kassert(frozen, "epoll_inactive: vnode was retained");
+	(void)frozen;
+
 	epoll_delete(ep);
+	kmem_free(ep, sizeof(*ep));
+	vn_free(vn);
 	return 0;
 }
 
