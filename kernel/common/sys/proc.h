@@ -101,6 +101,17 @@ proc_t *proc_curproc(void);
 proc_t *proc_find_locked(pid_t pid);
 void proc_terminate(proc_t *proc, int status);
 
+/*!
+ * @brief Try to terminate every process (except \p ignore )
+ * @returns number of processes found to remain alive.
+ */
+size_t proc_terminate_all(proc_t *ignore);
+
+/*!
+ * @brief Dump every process and why it's waiting (except \p ignore )
+ */
+void debug_proc_dump_all(proc_t *ignore);
+
 proc_t *proc_create(proc_t *parent, bool fork);
 
 thread_t *proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,

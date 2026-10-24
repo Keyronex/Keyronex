@@ -17,6 +17,7 @@
 #include <sys/krx_vfs.h>
 #include <sys/libkern.h>
 #include <sys/pcb.h>
+#include <sys/krx_reboot.h>
 #include <sys/proc.h>
 #include <sys/socket.h>
 #include <sys/utsname.h>
@@ -429,6 +430,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 		return memcpy_to_user((struct utsname *)arg1, &name,
 		   sizeof(struct utsname)) ? -EFAULT : 0;
 	}
+
+	case SYS_reboot:
+		return sys_reboot((int)arg1);
 
 	default:
 		kfatal("Unhandled syscall number %d", syscall);

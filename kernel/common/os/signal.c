@@ -17,6 +17,7 @@
 #include <sys/errno.h>
 #include <sys/k_log.h>
 #include <sys/k_wait.h>
+#include <sys/krx_reboot.h>
 #include <sys/krx_signal.h>
 #include <sys/proc.h>
 #include <sys/wait.h>
@@ -78,7 +79,9 @@ proc_signal_locked(proc_t *proc, int sig)
 
 	case SIG_DEFAULT_TERMINATE:
 		/* ignore init until there are proper signals */
-		if (proc == initproc || proc->exited)
+		if ((proc == initproc &&
+		    !atomic_load_explicit(&os_rebooting,
+		    memory_order_relaxed)) || proc->exited)
 			return 0;
 		proc_terminate(proc, W_EXITCODE(0, sig));
 		return 0;

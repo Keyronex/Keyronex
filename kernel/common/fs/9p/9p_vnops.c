@@ -1952,6 +1952,12 @@ ninep_freevfs(vfs_t *vfs)
 	struct ninepfs_state *fs = (struct ninepfs_state *)vfs->fsprivate_1;
 
 	kassert(fs->root_node == NULL, "ninep_free: root still exists");
+	kdprintf("9p: unmounted: fids alloc=%u clunked=%u nodes created=%u "
+	    "freed=%u\n",
+	    atomic_load_explicit(&fs->fids_allocated, memory_order_relaxed),
+	    atomic_load_explicit(&fs->fids_clunked, memory_order_relaxed),
+	    atomic_load_explicit(&fs->nodes_created, memory_order_relaxed),
+	    atomic_load_explicit(&fs->nodes_freed, memory_order_relaxed));
 	vn_idcache_fini(&fs->idcache);
 	vn_release(fs->provider);
 	if (ninep_debug_state == fs)

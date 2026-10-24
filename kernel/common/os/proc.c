@@ -13,6 +13,7 @@
 #include <sys/k_wait.h>
 #include <sys/k_xcall.h>
 #include <sys/kmem.h>
+#include <sys/krx_reboot.h>
 #include <sys/krx_user.h>
 #include <sys/libkern.h>
 #include <sys/pcb.h>
@@ -122,6 +123,9 @@ proc_t *
 proc_create(proc_t *parent, bool fork)
 {
 	proc_t *proc;
+
+	if (atomic_load_explicit(&os_rebooting, memory_order_relaxed))
+		return NULL;
 
 	proc = kmem_cache_alloc(proc_cache, VM_SLEEP);
 	if (proc == NULL)
@@ -346,10 +350,11 @@ ke_ast_check(void)
 static void
 proc_exit_last(proc_t *proc)
 {
-	proc_t *child, *tmp;
+	proc_t *child, *tmp, *inheritor;
 	struct session *sess;
 
-	if (proc == initproc)
+	if (proc == initproc &&
+	    !atomic_load_explicit(&os_rebooting, memory_order_relaxed))
 		kfatal("init exited (status %#x)\n", proc->exit_status);
 
 	vm_unmap(proc->vm_map, LOWER_HALF, LOWER_HALF + LOWER_HALF_SIZE);
@@ -361,12 +366,16 @@ proc_exit_last(proc_t *proc)
 
 	ke_mutex_enter(&proctree_mutex, "proc_exit_last");
 
+	/* when rebooting, reparent to the kernel instead */
+	inheritor = (proc == initproc ||
+	    atomic_load_explicit(&os_rebooting, memory_order_relaxed)) ?
+	    &proc0 : initproc;
 	TAILQ_FOREACH_SAFE(child, &proc->children, sibling_qlink, tmp) {
 		TAILQ_REMOVE(&proc->children, child, sibling_qlink);
-		child->parent = initproc;
-		TAILQ_INSERT_TAIL(&initproc->children, child, sibling_qlink);
+		child->parent = inheritor;
+		TAILQ_INSERT_TAIL(&inheritor->children, child, sibling_qlink);
 		if (child->exited)
-			ke_event_set_signalled(&initproc->child_ev, true);
+			ke_event_set_signalled(&inheritor->child_ev, true);
 	}
 
 	sess = proc->pgrp->session;
@@ -541,6 +550,29 @@ proc_reap_locked(proc_t *parent, proc_t *child)
 	proc_free(child);
 }
 
+size_t
+proc_terminate_all(proc_t *ignore)
+{
+	proc_t *proc, *tmp;
+	size_t alive = 0;
+
+	ke_mutex_enter(&proctree_mutex, "proc_terminate_all");
+	TAILQ_FOREACH_SAFE(proc, &allproc, allproc_qlink, tmp) {
+		if (proc == &proc0 || proc == ignore)
+			continue;
+		if (proc->exited) {
+			/* parent is also going away so just reap it now */
+			proc_reap_locked(proc->parent, proc);
+			continue;
+		}
+		proc_terminate(proc, W_EXITCODE(0, SIGKILL));
+		alive++;
+	}
+	ke_mutex_exit(&proctree_mutex);
+
+	return alive;
+}
+
 /* Destroy a process that never ran (i.e. fork() failed) */
 void
 proc_destroy_unstarted(proc_t *proc)
@@ -562,6 +594,28 @@ proc_destroy_unstarted(proc_t *proc)
 	ke_mutex_exit(&proctree_mutex);
 
 	proc_free(proc);
+}
+
+void
+debug_proc_dump_all(proc_t *ignore)
+{
+	proc_t *proc;
+	kthread_t *thread;
+
+	ke_mutex_enter(&proctree_mutex, "proc_shutdown_report");
+	TAILQ_FOREACH(proc, &allproc, allproc_qlink) {
+		if (proc == &proc0 || proc == ignore || proc->exited)
+			continue;
+		kdprintf("shutdown: pid %d (%s) lifecycle %d threads %u:\n",
+		    proc->pid, proc->comm, proc->lifecycle,
+		    proc->ktask.threads_count);
+		LIST_FOREACH(thread, &proc->ktask.threads, proc_link)
+			kdprintf("  tid %d state %d ast %u signallable %d in %s\n",
+			    thread->tid, thread->state, thread->ast_pending,
+			    thread->wait_signallable,
+			    thread->wait_reason ? thread->wait_reason : "-");
+	}
+	ke_mutex_exit(&proctree_mutex);
 }
 
 pid_t

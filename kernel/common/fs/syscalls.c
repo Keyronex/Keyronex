@@ -926,6 +926,11 @@ sys_umount(const char *utarget, int flags)
 	if (r != 0)
 		return r;
 
+	if (nch.nc == nch.vfs->root_nc && nch.vfs->nchcovered.nc == NULL) {
+		nchandle_release(nch);
+		return -EBUSY;
+	}
+
 	return vfs_unmount(nch); /* consumes nch */
 }
 

@@ -96,6 +96,7 @@ kernel_sources += [
     'os/jobctl.c',
     'os/main.c',
     'os/proc.c',
+    'os/reboot.c',
     'os/signal.c',
     'os/syscall.c',
 

@@ -68,7 +68,7 @@ static krwlock_t topology_lock;
  * mounted VFS must cover an entry of a VFS prior to it in this list.
  */
 static kmutex_t vfs_mount_lock;
-static TAILQ_HEAD(, vfs) vfs_mount_list =
+static TAILQ_HEAD(vfs_mount_list_head, vfs) vfs_mount_list =
     TAILQ_HEAD_INITIALIZER(vfs_mount_list);
 
 static size_t lru_pos_n = 0, lru_neg_n = 0;
@@ -571,15 +571,15 @@ vfs_unmount(namecache_handle_t nch)
 		nchandle_release(nch);
 		return -EINVAL;
 	}
-	if (vfs->nchcovered.nc == NULL || vfs->ops == NULL) {
-		/* only shutdown unmounts this */
+	if (vfs->ops == NULL) {
 		nchandle_release(nch);
 		return -EBUSY;
 	}
 
 	ke_mutex_enter(&vfs_mount_lock, "vfs_unmount");
 	ke_rwlock_enter_write(&topology_lock, "vfs_unmount");
-	/* 2 for the mount's reference, and 2 for our handle's */
+
+	/* we expect one reference from the mount, one from caller's handle */
 	expected = 4;
 	if (!atomic_compare_exchange_strong_explicit(&vfs->opencnt, &expected,
 		1, memory_order_acq_rel, memory_order_relaxed)) {
@@ -630,6 +630,97 @@ vfs_unmount(namecache_handle_t nch)
 	kmem_free(vfs, sizeof(*vfs));
 
 	return 0;
+}
+
+static void
+debug_nc_dump_held_internal(namecache_t *nc, const char *path)
+{
+	namecache_t *child;
+	uint32_t rc = atomic_load_explicit(&nc->refcnt, memory_order_relaxed);
+	size_t expected = 1; /* LRU queue's retain */
+	char *childpath;
+
+	RB_FOREACH(child, namecache_rb, &nc->children)
+		expected++;
+
+	if (rc > expected)
+		kdprintf("  %s: refcnt %u (expected %zu, have %u)\n", path, rc,
+		    expected, rc - (uint32_t)expected);
+
+	RB_FOREACH(child, namecache_rb, &nc->children) {
+		kmem_asprintf(&childpath, "%s/%s", path, child->name);
+		debug_nc_dump_held_internal(child, childpath);
+		kmem_strfree(childpath);
+	}
+}
+
+/*
+ * Show all namecaches for the given VFS that prevent its unmounting.
+ */
+static void
+debug_nc_dump_held(vfs_t *vfs)
+{
+	kdprintf("vfs %p: opencnt %u, held entries:\n", vfs,
+	    atomic_load_explicit(&vfs->opencnt, memory_order_relaxed));
+	ke_rwlock_enter_read(&topology_lock, "debug_nc_dump_held");
+	debug_nc_dump_held_internal(vfs->root_nc, "");
+	ke_rwlock_exit_read(&topology_lock);
+}
+
+void
+vfs_unmount_all(void)
+{
+	for (;;) {
+		namecache_handle_t nch;
+		vfs_t *vfs;
+		bool root;
+		const char *name;
+		int r;
+
+		ke_mutex_enter(&vfs_mount_lock, "vfs_unmount_all");
+		vfs = TAILQ_LAST(&vfs_mount_list, vfs_mount_list_head);
+		if (vfs == NULL) {
+			ke_mutex_exit(&vfs_mount_lock);
+			break;
+		}
+
+		root =  vfs->nchcovered.nc == NULL;
+		name = root ? "root" : vfs->nchcovered.nc->name;
+
+		if (root) {
+			ke_rwlock_enter_write(&topology_lock,
+			    "vfs_unmount_all");
+			kassert(root_nch.vfs == vfs);
+			nch = root_nch;
+			root_nch = NCH_NULL;
+			ke_rwlock_exit_write(&topology_lock);
+		} else {
+			nch.nc = nc_retain(vfs->root_nc);
+			r = vfs_tryretain(vfs);
+			kassert(r == 0,
+			    "vfs_unmount_all: vfs already unmounting");
+			nch.vfs = vfs;
+		}
+		ke_mutex_exit(&vfs_mount_lock);
+
+		if (atomic_load_explicit(&vfs->opencnt, memory_order_relaxed) !=
+		    4) {
+			kdprintf("shutdown: %s still has namecache entries\n",
+			    name);
+			debug_nc_dump_held(vfs);
+		}
+
+		r = vfs_unmount(nch);
+		if (r != 0)
+			kfatal("shutdown: unmount of %s failed: %d\n", name, r);
+	}
+
+	if (lru_pos_n != 0 || lru_neg_n != 0 || nc_dissociated_n != 0)
+		kfatal("shutdown: namecache entries remain\n"
+		    "(pos %u, neg %u, dissociated %u)\n", lru_pos_n, lru_neg_n,
+		    nc_dissociated_n);
+
+	kdprintf("shutdown: all filesystems unmounted\n");
 }
 
 int

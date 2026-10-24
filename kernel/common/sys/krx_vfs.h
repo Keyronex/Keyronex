@@ -192,6 +192,13 @@ int vfs_sync_all(int fsync_flags);
 int vfs_unmount(namecache_handle_t nch);
 
 /*!
+ * @brief Unmount every VFS in reverse mount order.
+ *
+ * for now, fatals if any VFSes referenced or namecache entries remain.
+ */
+void vfs_unmount_all(void);
+
+/*!
  * @brief Wait for a given VFS to have at most \p remaining vnodes.
  *
  * i.e. for unmount.
