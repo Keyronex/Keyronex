@@ -36,6 +36,10 @@ file_new(namecache_handle_t nch, vnode_t *vn, int flags)
 
 	__atomic_store_n(&file->refcnt, 1, __ATOMIC_RELAXED);
 	file->nch = nch;
+	if (vn == NULL) {
+		kassert(nch.nc != NULL);
+		vn = vn_retain(nch.nc->vp);
+	}
 	file->vnode = vn;
 	ke_mutex_init(&file->offset_mutex);
 	file->offset = 0;
@@ -100,19 +104,13 @@ file_release(file_t *file)
 	if (old == 1) {
 		poll_watched_file_did_close(file);
 
-		if (file->nch.nc != NULL) {
-			if (file->nch.nc->vp->ops->close != NULL)
-				VOP_CLOSE(file->nch.nc->vp,
-				    atomic_load_explicit(&file->flags,
-					memory_order_relaxed));
+		if (file->vnode->ops->close != NULL)
+			VOP_CLOSE(file->vnode,
+			    atomic_load_explicit(&file->flags,
+				memory_order_relaxed));
+		vn_release(file->vnode);
+		if (file->nch.nc != NULL)
 			nchandle_release(file->nch);
-		} else if (file->vnode != NULL) {
-			if (file->vnode->ops->close != NULL)
-				VOP_CLOSE(file->vnode,
-				    atomic_load_explicit(&file->flags,
-					memory_order_relaxed));
-			vn_release(file->vnode);
-		}
 
 		ke_rcu_call(&file->rcu, file_free_rcu, file);
 	}

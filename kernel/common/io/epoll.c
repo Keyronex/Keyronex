@@ -608,9 +608,6 @@ sys_epoll_create(int flags)
 		return -ENOMEM;
 	}
 
-	file->nch = (namecache_handle_t) { NULL, NULL };
-	file->vnode = vnode;
-
 	ke_mutex_init(&ep->mutex);
 	ke_spinlock_init(&ep->ready_lock);
 	LIST_INIT(&ep->watches);

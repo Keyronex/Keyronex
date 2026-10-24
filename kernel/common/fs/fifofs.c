@@ -204,7 +204,7 @@ sys_pipe(int ufd[2], int flags)
 		return -ENOMEM;
 	}
 
-	vn_retain(vn); /* file_new() steals a ref */
+	vn_retain(vn); /* file_new() consumes */
 
 	wf = file_new(NCH_NULL, vn, O_WRONLY | (flags & O_NONBLOCK));
 	if (wf == NULL) {

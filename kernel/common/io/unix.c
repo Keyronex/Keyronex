@@ -26,9 +26,11 @@
  * We preallocate control messages like t_discon_ind at the point of connect
  * request/response so we can put those up.
  *
- * The bindings RB tree is vestigial and not actually used anymore, because
- * higher-level layers provide existence guarantees on ACCEPTOR_id and sux_rq.
- * It can probably go away and I don't see it being used for anything else.
+ * Higher-level layers provide existence guarantees on ACCEPTOR_id and sux_rq
+ * across connect.
+ *
+ * TODO: cycle collector (track SCM_RIGHTS transfer edges and do SCC on the
+ * graph thereof.)
  */
 
 #include <sys/errno.h>
@@ -61,7 +63,6 @@ typedef struct ux_endp {
 	bool closing;
 	struct ux_endp *peer;
 
-	RB_ENTRY(ux_endp) rb_entry;
 
 	/* UX_CONNECTING */
 	LIST_ENTRY(ux_endp) conninds_entry;
@@ -77,19 +78,13 @@ typedef struct ux_endp {
 	mblk_t *ordrel_ind_mp;
 } ux_endp_t;
 
-RB_HEAD(ux_endp_tree, ux_endp);
 
-static int ep_cmp(ux_endp_t *a, ux_endp_t *b);
 
 static int ux_ropen(queue_t *rq, void *);
 static void ux_rclose(queue_t *rq);
 static void ux_rput(queue_t *rq, mblk_t *);
 static void ux_wput(queue_t *wq, mblk_t *);
 
-RB_GENERATE_STATIC(ux_endp_tree, ux_endp, rb_entry, ep_cmp);
-
-static krwlock_t ux_bindings_rwlock = KRWLOCK_INITIALISER;
-static struct ux_endp_tree ux_bindings = RB_INITIALIZER(&ux_bindings);
 static struct qinit ux_rinit = {
 	.qopen = ux_ropen,
 	.qclose = ux_rclose,
@@ -108,17 +103,6 @@ struct streamtab ux_clts_streamtab = {
 	.rinit = &ux_rinit,
 	.winit = &ux_winit,
 };
-
-static int
-ep_cmp(ux_endp_t *a, ux_endp_t *b)
-{
-	if (a->rq < b->rq)
-		return -1;
-	else if (a->rq > b->rq)
-		return 1;
-	else
-		return 0;
-}
 
 static void
 ep_retain(ux_endp_t *ep)
@@ -202,10 +186,6 @@ ux_ropen(queue_t *rq, void *)
 
 	ep->discon_ind_mp = NULL;
 	ep->ordrel_ind_mp = NULL;
-
-	ke_rwlock_enter_write(&ux_bindings_rwlock, "ux_ropen");
-	RB_INSERT(ux_endp_tree, &ux_bindings, ep);
-	ke_rwlock_exit_write(&ux_bindings_rwlock);
 
 	rq->ptr = rq->other->ptr = ep;
 
@@ -320,10 +300,6 @@ ux_rclose(queue_t *rq)
 	ux_endp_t *peer = NULL;
 	ux_endp_t *listener = NULL;
 	enum ux_state state;
-
-	ke_rwlock_enter_write(&ux_bindings_rwlock, "ux_rclose rb");
-	RB_REMOVE(ux_endp_tree, &ux_bindings, ep);
-	ke_rwlock_exit_write(&ux_bindings_rwlock);
 
 	ke_mutex_enter(&ep->lock, "ux_rclose quiesce");
 

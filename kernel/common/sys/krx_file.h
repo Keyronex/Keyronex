@@ -28,22 +28,29 @@ enum file_mode {
 typedef struct file {
 	uint32_t refcnt;
 	krcu_entry_t rcu;
-	namecache_handle_t nch;
-	struct vnode *vnode;
+	namecache_handle_t nch;	/* optional opened name */
+	struct vnode *vnode;	/* vnode used for I/O */
 	kmutex_t offset_mutex;
 	off_t offset;
 	atomic_int flags;
-	enum file_mode mode; /* (immutable after creation) */
+	enum file_mode mode;	/* (immutable after creation) */
 
 	kspinlock_t epoll_lock;
 	LIST_HEAD(, poll_entry) epoll_watches;
 
 	kmutex_t flock_mutex;	/* protects flock_entries */
-	TAILQ_HEAD(, flock_entry) flocks_held; /* BSD-style flock()s held */
+	TAILQ_HEAD(, flock_entry) flocks_held;	/* BSD-style flock()s held */
 } file_t;
 
-/* steals namecache/vnode ref */
-file_t *file_new(namecache_handle_t, struct vnode *, int flags);
+/*!
+ * Create a new file object.
+ *
+ * On success, consumes any supplied \p nch and \p vn references.
+ * If \p vn is NULL then \p nch must be valid.
+ *
+ * @returns retained new file object, or NULL on OOM.
+ */
+file_t *file_new(namecache_handle_t nch, struct vnode *vn, int flags);
 
 file_t *file_tryretain_rcu(file_t *file);
 file_t *file_retain(file_t *file);

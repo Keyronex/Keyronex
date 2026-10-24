@@ -70,6 +70,9 @@ typedef struct vattr {
 
 /*
  * A virtual node
+ *
+ * Locking:
+ * (l) nc_lock
  */
 typedef struct vnode {
 	atomic_uint	refcount;
@@ -94,7 +97,7 @@ typedef struct vnode {
 			struct vm_object	*vmobj;
 		} file;
 		struct {
-			struct vnode *sockvn;
+			struct vnode *sockvn; /* (l) weak pointer */
 		} sock;
 	};
 	uintptr_t	fsprivate_1,

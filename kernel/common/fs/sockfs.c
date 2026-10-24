@@ -258,6 +258,8 @@ so_create(file_t **out_fp, struct socknode **out_sn, int domain, int type, int p
 	sn->conn_indq_len = 0;
 	ke_event_init(&sn->conn_ind_ev, false);
 
+	sn->bound_nch = NCH_NULL;
+
 	sh->wq->next->ptr = sh->wq->next->other->ptr = sn; /* sockmod's ptr */
 
 	vn = vn_alloc(NULL, VSOCK, &sock_vnops, (uintptr_t)sn, 0);
@@ -535,6 +537,7 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 {
 	mblk_t *mp;
 	struct T_bind_req *br;
+	ipl_t ipl;
 	int r;
 
 	str_req_begin(sn->stream);
@@ -596,7 +599,8 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 
 			path[addrlen - sizeof(sa_family_t)] = '\0';
 
-			vfs_lookup_init(&li, root_nch, path, LOOKUP_CREATE);
+			vfs_lookup_init(&li, root_nch, path,
+			    LOOKUP_CREATE | LOOKUP_EXCL);
 			attr.type = VSOCK;
 			attr.mode = 0777;
 			li.create_attr = &attr;
@@ -604,18 +608,18 @@ so_bind(vnode_t *vn, struct socknode *sn, const struct sockaddr *addr,
 
 			if (r != 0) {
 				str_req_end_unheld(sn->stream);
-				kdprintf("sobind: vfs_lookup failed: %d\n", r);
-				kdprintf("sobind: path was '%s'\n", path);
-				return r;
+				return r == -EEXIST ? -EADDRINUSE : r;
 			}
 
-			/*
-			 * FIXME: this works around the inode reuse bug of 9p!
-			 */
-			li.result.nc->vp->sock.sockvn = vn;
-			li.result.nc->vp->type = VSOCK;
+			kassert(li.result.nc->vp->type == VSOCK,
+			    "so_bind: node wasn't created as socket");
 
-			/* this takes over the retained lookup */
+			ipl = ke_spinlock_enter(&li.result.nc->vp->nc_lock);
+			kassert(li.result.nc->vp->sock.sockvn == NULL);
+			li.result.nc->vp->sock.sockvn = vn;
+			ke_spinlock_exit(&li.result.nc->vp->nc_lock, ipl);
+
+			/* bound_nch consumes the reference from the lookup */
 			sn->bound_nch = li.result;
 		}
 
@@ -791,14 +795,28 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 			return r;
 		}
 
+		/*
+		 * The filesystem vnode is strongly held from lookup, and
+		 * vnode::nc_lock stabilises the socket vnode (cf
+		 * sock_inactive.)
+		 *
+		 * By retaining the peervn we keep the peer's sux_rq alive
+		 * until connect completes as the UX transport needs.
+		 */
 		boundvn = li.result.nc->vp;
-		if (boundvn->type != VSOCK || boundvn->sock.sockvn == NULL) {
-			nchandle_release(li.result);
+		if (boundvn->type == VSOCK) {
+			ipl_t ipl = ke_spinlock_enter(&boundvn->nc_lock);
+			peervn = boundvn->sock.sockvn;
+			if (peervn != NULL && !vn_tryretain(peervn))
+				peervn = NULL;
+			ke_spinlock_exit(&boundvn->nc_lock, ipl);
+		}
+		nchandle_release(li.result);
+
+		if (peervn == NULL) {
 			str_req_end_unheld(sh);
-			kdprintf("sys_connect: target is not a socket "
-				"(type=%d, sock=%p)\n",
-			    boundvn->type, boundvn->sock.sockvn);
-			return -ENOTSOCK;
+			str_freemsg(mp);
+			return -ECONNREFUSED;
 		}
 
 		br->DEST_length = addrlen +
@@ -808,11 +826,7 @@ so_connect(struct socknode *sn, const struct sockaddr *addr, socklen_t addrlen)
 		sux = (struct sockaddr_ux *)&br->DEST;
 		sux->sun_family = AF_UNIX;
 		memcpy(sux->sun_path, path, addrlen - sizeof(sa_family_t));
-		sux->sux_rq = VTOSN(boundvn->sock.sockvn)->stream->rq_bottom;
-
-		peervn = boundvn->sock.sockvn;
-		vn_retain(peervn);
-		nchandle_release(li.result);
+		sux->sux_rq = VTOSN(peervn)->stream->rq_bottom;
 
 	} else {
 		br->DEST_length = addrlen;
@@ -1016,7 +1030,37 @@ static int
 sock_inactive(vnode_t *vn)
 {
 	struct socknode *sn = VTOSN(vn);
+	namecache_handle_t bound = sn->bound_nch;
+
+	/*
+	 * If the socket is bound then the only other way to reach the socket
+	 * vnode is through the socketfile it's bound to (sock.sockvn)
+	 */
+
+	if (bound.nc != NULL) {
+		vnode_t *fsvn = bound.nc->vp;
+		ipl_t ipl;
+
+		ipl = ke_spinlock_enter(&fsvn->nc_lock);
+		if (!vn_tryfreeze(vn)) {
+			/* raced by a connect, which now retains us */
+			ke_spinlock_exit(&fsvn->nc_lock, ipl);
+			return -EAGAIN;
+		}
+		kassert(fsvn->sock.sockvn == vn);
+		fsvn->sock.sockvn = NULL;
+		ke_spinlock_exit(&fsvn->nc_lock, ipl);
+	} else {
+		bool frozen = vn_tryfreeze(vn);
+		kassert(frozen, "sock_inactive: unbound socket retained");
+		(void)frozen;
+	}
+
+	/* transport frees socknode */
 	strclose(sn->stream);
+	nchandle_release(bound);
+	vn_free(vn);
+
 	return 0;
 }
 
