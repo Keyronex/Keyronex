@@ -225,6 +225,79 @@ vnode_init(void)
 }
 
 void
+vfs_vn_iter_init(vfs_vnode_iter_t *it, vfs_t *vfs)
+{
+	ipl_t ipl;
+
+	it->vfs = vfs;
+	it->marker.type = VITER_MARKER;
+	it->marker.vfs = vfs;
+	it->marker.published = false;
+
+	ipl = ke_spinlock_enter(&vfs->vnode_list_lock);
+	TAILQ_INSERT_HEAD(&vfs->vnode_list, &it->marker, vfs_vnlistentry);
+	ke_spinlock_exit(&vfs->vnode_list_lock, ipl);
+}
+
+vnode_t *
+vfs_vn_iter_next(vfs_vnode_iter_t *it)
+{
+	vfs_t *vfs = it->vfs;
+	vnode_t *vn;
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&vfs->vnode_list_lock);
+	vn = TAILQ_NEXT(&it->marker, vfs_vnlistentry);
+	for (;;) {
+		if (vn == NULL)
+			break;
+		/* skip others' markers, and frozen vnodes */
+		if (vn->type != VITER_MARKER && vn_tryretain(vn))
+			break;
+		vn = TAILQ_NEXT(vn, vfs_vnlistentry);
+	}
+	if (vn != NULL) {
+		TAILQ_REMOVE(&vfs->vnode_list, &it->marker, vfs_vnlistentry);
+		TAILQ_INSERT_AFTER(&vfs->vnode_list, vn, &it->marker,
+		    vfs_vnlistentry);
+	}
+	ke_spinlock_exit(&vfs->vnode_list_lock, ipl);
+
+	return vn;
+}
+
+void
+vfs_vn_iter_destroy(vfs_vnode_iter_t *it)
+{
+	ipl_t ipl;
+
+	ipl = ke_spinlock_enter(&it->vfs->vnode_list_lock);
+	TAILQ_REMOVE(&it->vfs->vnode_list, &it->marker, vfs_vnlistentry);
+	ke_spinlock_exit(&it->vfs->vnode_list_lock, ipl);
+}
+
+int
+vfs_sync(vfs_t *vfs, int fsync_flags)
+{
+	vfs_vnode_iter_t it;
+	vnode_t *vn;
+	int r, first = 0;
+
+	vfs_vn_iter_init(&it, vfs);
+	while ((vn = vfs_vn_iter_next(&it)) != NULL) {
+		if (vn->ops->fsync != NULL) {
+			r = VOP_FSYNC(vn, fsync_flags);
+			if (r != 0 && first == 0)
+				first = r;
+		}
+		vn_release(vn);
+	}
+	vfs_vn_iter_destroy(&it);
+
+	return first;
+}
+
+void
 vfs_init(vfs_t *vfs)
 {
 	ke_spinlock_init(&vfs->vnode_list_lock);

@@ -62,6 +62,14 @@ static LIST_HEAD(vfs_hash_bucket, vfs) vfs_hash[MNT_HASH_NBUCKETS];
 namecache_handle_t root_nch;
 static krwlock_t topology_lock;
 
+/*
+ * List of all mounted VFSes, appended to in mount order. It follows that any
+ * mounted VFS must cover an entry of a VFS prior to it in this list.
+ */
+static kmutex_t vfs_mount_lock;
+static TAILQ_HEAD(, vfs) vfs_mount_list =
+    TAILQ_HEAD_INITIALIZER(vfs_mount_list);
+
 static size_t lru_pos_n = 0, lru_neg_n = 0;
 static atomic_size_t nc_dissociated_n; /* dissociated entries still allocated */
 
@@ -354,7 +362,7 @@ nc_alloc(const char *name, uint64_t key)
 }
 
 int
-vfs_try_retain(vfs_t *vfs)
+vfs_tryretain(vfs_t *vfs)
 {
 	uint32_t current = atomic_load_explicit(&vfs->opencnt,
 	    memory_order_acquire);
@@ -390,7 +398,7 @@ vfs_release(vfs_t *vfs)
 namecache_handle_t
 nchandle_retain(namecache_handle_t in)
 {
-	kassert(vfs_try_retain(in.vfs) == 0);
+	kassert(vfs_tryretain(in.vfs) == 0);
 	nc_retain(in.nc);
 	return in;
 }
@@ -454,6 +462,8 @@ nc_makeroot(vfs_t *vfs, vnode_t *root_vn)
 
 	ke_rwlock_init(&topology_lock);
 	ke_mutex_init(&lru_mutex);
+	ke_mutex_init(&vfs_mount_lock);
+	TAILQ_INSERT_TAIL(&vfs_mount_list, vfs, mount_link);
 }
 
 void
@@ -465,13 +475,46 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 	nc_set_vp(rootnc, rootvn);
 	vfs->root_nc = rootnc;
 
+	ke_mutex_enter(&vfs_mount_lock, "nc_domount");
 	ke_rwlock_enter_write(&topology_lock, "nc_domount");
 	atomic_fetch_add_explicit(&overnch.nc->flags, 1u << NC_MOUNTS_SHIFT,
 	    memory_order_relaxed);
 	LIST_INSERT_HEAD(&vfs_hash[nchandle_hash(overnch)], vfs,
 	    mountpoint_hash_entry);
 	vfs->nchcovered = overnch; /* consumed */
+	TAILQ_INSERT_TAIL(&vfs_mount_list, vfs, mount_link);
 	ke_rwlock_exit_write(&topology_lock);
+	ke_mutex_exit(&vfs_mount_lock);
+}
+
+int
+vfs_sync_all(int fsync_flags)
+{
+	vfs_t *vfs, *next;
+	int r, first = 0;
+
+	ke_mutex_enter(&vfs_mount_lock, "vfs_sync_all");
+	vfs = TAILQ_FIRST(&vfs_mount_list);
+	while (vfs != NULL) {
+		if (vfs_tryretain(vfs) != 0) {
+			/* it's unmounting, it will sync itself */
+			vfs = TAILQ_NEXT(vfs, mount_link);
+			continue;
+		}
+		ke_mutex_exit(&vfs_mount_lock);
+
+		r = vfs_sync(vfs, fsync_flags);
+		if (r != 0 && first == 0)
+			first = r;
+
+		ke_mutex_enter(&vfs_mount_lock, "vfs_sync_all");
+		next = TAILQ_NEXT(vfs, mount_link);
+		vfs_release(vfs);
+		vfs = next;
+	}
+	ke_mutex_exit(&vfs_mount_lock);
+
+	return first;
 }
 
 /*
@@ -569,7 +612,7 @@ nc_cross_mounts(namecache_handle_t *nch, vfs_t *borrowed)
 			break;
 
 		/* again, fine, no lockless lookup yet */
-		kassert(vfs_try_retain(vfs) == 0);
+		kassert(vfs_tryretain(vfs) == 0);
 		vfsroot.nc = nc_retain(vfs->root_nc);
 		vfsroot.vfs = vfs;
 

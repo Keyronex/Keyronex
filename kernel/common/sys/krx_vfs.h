@@ -68,10 +68,11 @@ typedef struct vfs {
 	namecache_t *root_nc;
 	namecache_handle_t nchcovered;
 	LIST_ENTRY(vfs) mountpoint_hash_entry;
+	TAILQ_ENTRY(vfs) mount_link; /* on mount list (vfs_mount_lock) */
 
 	kspinlock_t vnode_list_lock;
 	TAILQ_HEAD(, vnode) vnode_list; /* (v) vnodes */
-	kwaitq_t vnode_waitq; /* vn_free of a published vnode wakes */
+	kwaitq_t vnode_waitq; /* woken on vn_free of a published vnode */
 
 	uintptr_t fsprivate_1;
 } vfs_t;
@@ -137,6 +138,22 @@ int vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
 
 void vfs_init(vfs_t *);
 
+/*!
+ * @brief Try to retain a VFS.
+ *
+ * @retval 0 success
+ * @retval -EBUSY the VFS is being unmounted.
+ */
+int vfs_tryretain(vfs_t *vfs);
+
+void vfs_release(vfs_t *vfs);
+
+int vfs_sync_all(int fsync_flags);
+int vfs_sync(struct vfs *, int fsync_flags);
+
+namecache_handle_t nchandle_retain(namecache_handle_t in);
+namecache_handle_t nchandle_release(namecache_handle_t in);
+
 int sys_openat(int dirfd, const char *upath, int flags, mode_t mode);
 int sys_faccessat(int dirfd, const char *path, int mode, int flags);
 int sys_mkdirat(int dirfd, const char *path, mode_t mode);
@@ -151,8 +168,7 @@ int sys_fchmodat(int dirfd, const char *pathname, mode_t mode, int flags);
 int sys_fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group,
     int flags);
 
-namecache_handle_t nchandle_retain(namecache_handle_t in);
-namecache_handle_t nchandle_release(namecache_handle_t in);
+int sys_sync(void);
 
 extern namecache_handle_t root_nch;
 

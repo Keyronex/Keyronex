@@ -897,6 +897,16 @@ out:
 	return r;
 }
 
+
+/*
+ * sync(2)
+ */
+int
+sys_sync(void)
+{
+	return vfs_sync_all(0);
+}
+
 /*
  * fsync(2) (datasync == 0)
  * fdatasync(2) (datasync != 0)

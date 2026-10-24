@@ -295,6 +295,9 @@ sys_dispatch(karch_trapframe_t *frame, enum posix_syscall syscall,
 	case SYS_fsync:
 		return sys_fsync((int)arg1, (int)arg2);
 
+	case SYS_sync:
+		return sys_sync();
+
 	case SYS_flock:
 		return sys_flock((int)arg1, (int)arg2);
 

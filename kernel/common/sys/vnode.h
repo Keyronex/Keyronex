@@ -103,10 +103,28 @@ typedef struct vnode {
 } vnode_t;
 
 typedef struct vfs_vn_iter {
-	vnode_t		*end_marker_vn;
-	vnode_t		*next_vn;
+	vnode_t		marker;
 	struct vfs	*vfs;
 } vfs_vnode_iter_t;
+
+/*!
+ * @brief Initialise an iterator over all vnodes of a VFS.
+ */
+void vfs_vn_iter_init(vfs_vnode_iter_t *, struct vfs *);
+
+/*!
+ * @brief Get the next vnode from a vnode iterator.
+ *
+ * Frozen vnodes are skipped.
+ *
+ * @returns a retained vnode, or NULL when none remain.
+ */
+vnode_t *vfs_vn_iter_next(vfs_vnode_iter_t *);
+
+/*!
+ * @brief Destroy a vnode iterator.
+ */
+void vfs_vn_iter_destroy(vfs_vnode_iter_t *);
 
 struct vnode_ops {
 	size_t stack_depth;

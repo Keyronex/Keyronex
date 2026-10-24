@@ -10,6 +10,7 @@
 #include <sys/errno.h>
 #include <sys/k_log.h>
 #include <sys/kmem.h>
+#include <sys/krx_vfs.h>
 #include <sys/vnode.h>
 
 #include <stdatomic.h>
@@ -116,15 +117,30 @@ vm_map_release(vm_map_t *map)
 static void
 object_retain(vm_object_t *object)
 {
-	if (object->kind == VM_OBJ_VNODE)
-		vn_retain(object->vnobj.vnode);
+	if (object->kind == VM_OBJ_VNODE) {
+		vnode_t *vn = object->vnobj.vnode;
+
+		vn_retain(vn);
+
+		/* stop the FS being unmounted */
+		if (vn->vfs != NULL) {
+			int r = vfs_tryretain(vn->vfs);
+			kassert(r == 0, "vnode mapped but FS being unmounted");
+			(void)r;
+		}
+	}
 }
 
 static void
 object_release(vm_object_t *object)
 {
-	if (object->kind == VM_OBJ_VNODE)
-		vn_release(object->vnobj.vnode);
+	if (object->kind == VM_OBJ_VNODE) {
+		vnode_t *vn = object->vnobj.vnode;
+
+		if (vn->vfs != NULL)
+			vfs_release(vn->vfs);
+		vn_release(vn);
+	}
 }
 
 static void
