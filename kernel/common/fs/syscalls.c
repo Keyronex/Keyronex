@@ -55,7 +55,7 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	file_t *file;
 	struct lookup_info info;
 	vattr_t create_attr;
-	vnode_t *vn;
+	vnode_t *vn, *openvn = NULL;
 	int r, len;
 
 	len = strldup_user(&path, upath, 4095);
@@ -99,11 +99,6 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		nchandle_release(dirnch);
 		kmem_free(path, len + 1);
 		return r;
-	} else if ((flags & O_CREAT) && (flags & O_EXCL) && !info.did_create) {
-		nchandle_release(info.result);
-		nchandle_release(dirnch);
-		kmem_free(path, len + 1);
-		return -EEXIST;
 	}
 
 	result = info.result;
@@ -118,7 +113,7 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	vn = result.nc->vp;
 
 	if (vn->ops->open != NULL) {
-		vnode_t *openvn = vn_retain(vn);
+		openvn = vn_retain(vn);
 
 		r = VOP_OPEN(&openvn, flags);
 		if (r != 0) {
@@ -127,30 +122,17 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 			return r;
 		}
 
-		vn = openvn;
-
-		if (vn != result.nc->vp) {
-			/*
-			 * Different vnode (e.g. because of /dev/tty).
-			 * So throw away the namecache handle. They aren't
-			 * needed but for namespace operations anyway, and you
-			 * don't do those on devices.
-			 *
-			 * FIXME: Pass in the namecache_handle to open?
-			 * Then the nc can be released and nulled, or replaced,
-			 * as desired by the driver.
-			 */
-			nchandle_release(result);
-			result = NCH_NULL;
+		if (openvn == vn) {
+			/* file retains the vnode via the nchandle */
+			vn_release(openvn);
+			openvn = NULL;
 		} else {
 			/*
-			 * The namecache handle is kept, and that retains the
-			 * vnode. file_release() will only release the namecache
-			 * handle. So release the extra retain on vn.
+			 * Different vnode (e.g. because of /dev/ptmx).
+			 * The file consumes the reference.
 			 */
-			vn_release(vn);
+			vn = openvn;
 		}
-
 	}
 
 	if ((flags & O_TRUNC) && vn->type == VREG &&
@@ -160,20 +142,18 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 		attr.size = 0;
 		r = VOP_SETATTR(vn, &attr);
 		if (r != 0) {
-			if (result.nc != NULL)
-				nchandle_release(result);
-			else
-				vn_release(vn);
+			if (openvn != NULL)
+				vn_release(openvn);
+			nchandle_release(result);
 			return r;
 		}
 	}
 
-	file = file_new(result, vn, flags);
+	file = file_new(result, openvn, flags);
 	if (file == NULL) {
-		if (result.nc != NULL)
-			nchandle_release(result);
-		else
-			vn_release(vn);
+		if (openvn != NULL)
+			vn_release(openvn);
+		nchandle_release(result);
 		return -ENOMEM;
 	}
 
@@ -329,7 +309,7 @@ sys_mkdirat(int dirfd, const char *upath, mode_t mode)
 	create_attr.mode = mode & ~S_IFMT;
 	/* TODO: umask here */
 
-	info.flags |= LOOKUP_CREATE;
+	info.flags |= LOOKUP_CREATE | LOOKUP_EXCL;
 	info.create_attr = &create_attr;
 
 	r = vfs_lookup(&info);
@@ -337,11 +317,6 @@ sys_mkdirat(int dirfd, const char *upath, mode_t mode)
 	kmem_free(path, len + 1);
 	if (r != 0)
 		return r;
-
-	if (!info.did_create) {
-		nchandle_release(info.result);
-		return -EEXIST;
-	}
 
 	nchandle_release(info.result);
 

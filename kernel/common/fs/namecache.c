@@ -176,7 +176,7 @@ lru_queue_for(namecache_t *nc, size_t **n_out)
 }
 
 /*
- * Place an attached entry on an LRU queue, which steals a reference.
+ * Place an attached entry on an LRU queue, which then retains a reference.
  * (topology lock, write)
  */
 static void
@@ -827,6 +827,8 @@ vfs_lookup_init(struct lookup_info *info, namecache_handle_t start,
 	info->start = start;
 	info->path = path;
 	info->flags = flags;
+	if (flags & LOOKUP_EXCL)
+		info->flags |= LOOKUP_NOFOLLOW_FINAL;
 	info->create_attr = NULL;
 	info->result = NCH_NULL;
 	info->did_create = false;
@@ -952,6 +954,13 @@ vfs_lookup(struct lookup_info *info)
 				break;
 			}
 		} else if (r != 0) {
+			break;
+		}
+
+		if (is_final && (info->flags & LOOKUP_EXCL) &&
+		    !info->did_create && next.nc->vp != NULL) {
+			nc_release_child(nch, next);
+			r = -EEXIST;
 			break;
 		}
 

@@ -80,7 +80,12 @@ enum lookup_flags {
 	LOOKUP_2NDLAST = 1 << 1,
 	LOOKUP_CREATE = 1 << 2,
 	LOOKUP_ALLOW_NEG = 1 << 3,
-	LOOKUP_EXCL = 1 << 4, /* with LOOKUP_CREATE, EEXIST if already exists */
+	/*!
+	 * When paired with LOOKUP_CREATE, requires the final name not already
+	 * exist, and EEXIST is returned if it does.
+	 * LOOKUP_NOFOLLOW_FINAL is implied by this flag.
+	 */
+	LOOKUP_EXCL = 1 << 4,
 };
 
 struct lookup_info {
