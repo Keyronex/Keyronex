@@ -372,9 +372,13 @@ vfs_try_retain(vfs_t *vfs)
 void
 vfs_release(vfs_t *vfs)
 {
+	uint32_t old;
+
 	if (vfs == NULL)
 		return;
-	atomic_fetch_sub_explicit(&vfs->opencnt, 2, memory_order_release);
+	old = atomic_fetch_sub_explicit(&vfs->opencnt, 2, memory_order_release);
+	kassert(old >= 2, "vfs_release: no reference to release");
+	(void)old;
 }
 
 namecache_handle_t
@@ -464,16 +468,20 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 	ke_rwlock_exit_write(&topology_lock);
 }
 
+/*
+ * Wait for a busy entry to resolve and exits topology lock (which must be held
+ * read.)
+ * (nc must be retained)
+ */
 static void
-nc_wait_for_busy(struct namecache *nc)
+nc_wait_for_busy_and_exit_topology(struct namecache *nc)
 {
 	kwaiter_t waiter;
 
 	ke_waitq_prepare(&nc->busy_waitq, &waiter);
 	ke_rwlock_exit_read(&topology_lock);
-	ke_waitq_wait(&nc->busy_waitq, &waiter, "nc_wait_for_busy()", false,
-	    ABSTIME_FOREVER);
-	ke_rwlock_enter_read(&topology_lock, "after nc_wait_for_busy");
+	ke_waitq_wait(&nc->busy_waitq, &waiter,
+	    "nc_wait_for_busy_and_exit_topology()", false, ABSTIME_FOREVER);
 }
 
 static void
@@ -517,17 +525,77 @@ nc_unbusy(namecache_t *nc)
 	nc_wake_busy_waiters(nc);
 }
 
-int
-nc_lookup(struct namecache *nc, struct namecache **out, const char *name,
+/*
+ * Cross any mounts that might exist over *nch
+ * The parent's vfs reference is borrowed but the namecache entry's reference is
+ * consumed.
+ * (topology lock must be held read)
+ */
+static void
+nc_cross_mounts(namecache_handle_t *nch, vfs_t *borrowed)
+{
+	while (nc_mounts_over(nch->nc) > 0) {
+		vfs_t *vfs = mountpoint_find(*nch);
+		namecache_handle_t vfsroot;
+
+		if (vfs == NULL)
+			break;
+
+		/* again, fine, no lockless lookup yet */
+		kassert(vfs_try_retain(vfs) == 0);
+		vfsroot.nc = nc_retain(vfs->root_nc);
+		vfsroot.vfs = vfs;
+
+		/* mountpoint are attached, so it can't be the last release */
+		if (nch->vfs == borrowed)
+			nc_release(nch->nc);
+		else
+			nchandle_release(*nch);
+		*nch = vfsroot;
+	}
+}
+
+/*
+ * since nc_lookup/nc_create borrow parent vfs reference unless mount was
+ * crossed. TODO: is that an accident waiting to happen?
+ */
+static void
+nc_release_child(namecache_handle_t parent, namecache_handle_t child)
+{
+	nc_release(child.nc);
+	if (child.vfs != parent.vfs)
+		vfs_release(child.vfs);
+}
+
+static void
+nc_advance(namecache_handle_t *nch, namecache_handle_t child)
+{
+	if (child.vfs == nch->vfs)
+		nc_release(nch->nc); /* borrowed VFS reference */
+	else
+		nchandle_release(*nch);
+	*nch = child;
+}
+
+/*
+ * Look up component `name` in the directory `parent`, traversing any mounts.
+ * On success the found entry is written to *out - the VFS reference is BORROWED
+ * from `parent` unless mounts were crossed. (use nc_advance())
+ */
+static int
+nc_lookup(namecache_handle_t parent, namecache_handle_t *out, const char *name,
     bool allow_neg)
 {
+	namecache_t *nc = parent.nc;
 	bool writelocked = false;
 	vnode_t *vn;
 	struct namecache *found, key;
 	int r;
 
 	key.name = (char *)name;
-	key.key = nc_hash(name, name == NULL ? 0 : strlen(name));
+	key.key = nc_hash(name, strlen(name));
+
+	ke_rwlock_enter_read(&topology_lock, "nc_lookup");
 
 retry:
 	found = RB_FIND(namecache_rb, &nc->children, &key);
@@ -540,26 +608,30 @@ retry:
 			}
 
 			nc_retain(found);
-			nc_wait_for_busy(found);
+			nc_wait_for_busy_and_exit_topology(found);
 			/*
 			 * While we waited the entry might have been dissociated
-			 * and ours might be the last reference, so we drop the
-			 * topology lock around this in case there's a vnode
-			 * release.
+			 * and ours might be the last reference. Since we hold
+			 * no lock the possible vnode release is fine.
 			 */
-			ke_rwlock_exit_read(&topology_lock);
 			nc_release(found);
-			ke_rwlock_enter_read(&topology_lock, "nc_lookup: relock");
+			ke_rwlock_enter_read(&topology_lock, "nc_lookup: retry");
 			goto retry;
-
 		} else if (found->vp == NULL && !allow_neg) {
 			/* negative entry */
-			return -ENOENT;
+			r = -ENOENT;
 		} else {
-			nc_retain(found);
-			*out = found;
-			return 0;
+			out->nc = nc_retain(found);
+			out->vfs = parent.vfs;
+			nc_cross_mounts(out, parent.vfs);
+			r = 0;
 		}
+
+		if (writelocked)
+			ke_rwlock_exit_write(&topology_lock);
+		else
+			ke_rwlock_exit_read(&topology_lock);
+		return r;
 	}
 
 	if (!writelocked) {
@@ -574,7 +646,7 @@ retry:
 	found = nc_alloc(name, key.key);
 	found->parent = nc_retain(nc);
 	RB_INSERT(namecache_rb, &nc->children, found);
-	lru_insert(found); /* initially negative  */
+	lru_insert(found); /* initially negative, lookup might change that */
 
 	nc_busy(found);
 	ke_rwlock_exit_write(&topology_lock);
@@ -585,27 +657,32 @@ retry:
 
 	if (r == 0) {
 		nc_set_vp(found, vn);
-		*out = found;
 	} else if (r == -ENOENT && allow_neg) {
-		*out = found;
 		r = 0;
 	} else {
 		nc_dissociate(found);
 	}
 
 	nc_unbusy(found);
-	ke_rwlock_downgrade(&topology_lock);
 
-	if (r != 0) {
-		/* dissociated, no vnode - fine with the topology lock */
+	if (r == 0) {
+		out->nc = found;
+		out->vfs = parent.vfs;
+		ke_rwlock_exit_write(&topology_lock);
+	} else {
+		ke_rwlock_exit_write(&topology_lock);
 		nc_release(found);
 	}
 
 	return r;
 }
 
+/*
+ * Create component `name` in the directory `parent`.
+ * see nc_lookup() (but note here no mountpoint traversal)
+ */
 static int
-nc_create(namecache_t *parent, namecache_t **out, const char *name,
+nc_create(namecache_handle_t parent, namecache_handle_t *out, const char *name,
     vattr_t *attr)
 {
 	namecache_t key, *nc;
@@ -613,46 +690,43 @@ nc_create(namecache_t *parent, namecache_t **out, const char *name,
 	bool created = false;
 	int r;
 
-	if (parent->vp->type != VDIR)
+	if (parent.nc->vp->type != VDIR)
 		return -ENOTDIR;
-	if (parent->vp->ops->create == NULL)
+	if (parent.nc->vp->ops->create == NULL)
 		return -ENOTSUP;
-
-retry:
-	if (!ke_rwlock_tryupgrade(&topology_lock)) {
-		ke_rwlock_exit_read(&topology_lock);
-		ke_rwlock_enter_write(&topology_lock, "nc_create: upgrade");
-	}
 
 	key.name = (char *)name;
 	key.key = nc_hash(name, strlen(name));
 
-	nc = RB_FIND(namecache_rb, &parent->children, &key);
+retry:
+	ke_rwlock_enter_write(&topology_lock, "nc_create");
+
+	nc = RB_FIND(namecache_rb, &parent.nc->children, &key);
 	if (nc != NULL) {
 		nc_retain(nc);
 
 		if (nc_test(nc, NC_BUSY)) {
 			ke_rwlock_downgrade(&topology_lock);
-			nc_wait_for_busy(nc);
+			nc_wait_for_busy_and_exit_topology(nc);
 			nc_release(nc);
 			goto retry;
 		}
 
 		if (nc_mounts_over(nc) > 0) {
 			nc_release(nc);
-			ke_rwlock_downgrade(&topology_lock);
+			ke_rwlock_exit_write(&topology_lock);
 			return -EBUSY;
 		}
 
 		if (nc->vp != NULL) {
 			nc_release(nc);
-			ke_rwlock_downgrade(&topology_lock);
+			ke_rwlock_exit_write(&topology_lock);
 			return -EEXIST;
 		}
 	} else {
 		nc = nc_alloc(name, key.key);
-		nc->parent = nc_retain(parent);
-		RB_INSERT(namecache_rb, &parent->children, nc);
+		nc->parent = nc_retain(parent.nc);
+		RB_INSERT(namecache_rb, &parent.nc->children, nc);
 		lru_insert(nc);
 		created = true;
 	}
@@ -660,14 +734,16 @@ retry:
 	nc_busy(nc);
 	ke_rwlock_exit_write(&topology_lock);
 
-	r = parent->vp->ops->create(parent->vp, name, attr, &new_vn);
+	r = parent.nc->vp->ops->create(parent.nc->vp, name, attr, &new_vn);
 
 	ke_rwlock_enter_write(&topology_lock, "nc_create: relock");
 
 	if (r == 0) {
 		nc_set_vp(nc, new_vn);
 		nc_unbusy(nc);
-		*out = nc; /* retained */
+		ke_rwlock_exit_write(&topology_lock);
+		out->nc = nc; /* retained */
+		out->vfs = parent.vfs;
 	} else {
 		if (r == -EEXIST) {
 			/* make away with the stale negative */
@@ -678,14 +754,14 @@ retry:
 			nc_dissociate(nc);
 		}
 
+		nc_unbusy(nc);
+		ke_rwlock_exit_write(&topology_lock);
+
 		if (new_vn != NULL)
 			vn_release(new_vn);
 
-		nc_unbusy(nc);
 		nc_release(nc);
 	}
-
-	ke_rwlock_downgrade(&topology_lock);
 
 	return r;
 }
@@ -757,6 +833,57 @@ vfs_lookup_init(struct lookup_info *info, namecache_handle_t start,
 	return 0;
 }
 
+/*
+ * Lookup ".." in `nch`.
+ * If nch's entry was dissociated in the meantime then returns -ENOENT.
+ */
+static int
+nc_dotdot(namecache_handle_t *nch)
+{
+	namecache_t *parent;
+
+	ke_rwlock_enter_read(&topology_lock, "nc_dotdot");
+
+	/* follow the nchcovered chain */
+	if (nch->nc == nch->vfs->root_nc) {
+		namecache_handle_t mp = nch->vfs->nchcovered;
+
+		if (mp.nc == NULL) {
+			/* root vfs, .. is itself */
+			ke_rwlock_exit_read(&topology_lock);
+			return 0;
+		}
+
+		/* mp is the mountpoint entry in the parent mount */
+		nchandle_retain(mp);
+		/* being a root, this can never be the last release */
+		nchandle_release(*nch);
+		*nch = mp;
+	}
+
+	/* finally get the parent of this nc */
+	if (nch->nc == nch->vfs->root_nc) {
+		ke_rwlock_exit_read(&topology_lock);
+		return 0;
+	}
+
+	parent = nch->nc->parent;
+	if (parent == NULL) {
+		ke_rwlock_exit_read(&topology_lock);
+		return -ENOENT;
+	}
+
+	nc_retain(parent);
+	ke_rwlock_exit_read(&topology_lock);
+
+	nc_release(nch->nc);
+	nch->nc = parent;
+
+	/* nch->vfs unchanged */
+
+	return 0;
+}
+
 int
 vfs_lookup(struct lookup_info *info)
 {
@@ -776,17 +903,14 @@ vfs_lookup(struct lookup_info *info)
 	if (r != 0)
 		return r;
 
-	ke_rwlock_enter_read(&topology_lock, "nc_lookup");
-
 	if (*pathcpy == '/')
 		nch = nchandle_retain(root_nch);
 	else
 		nch = nchandle_retain(info->start);
 
-
 	for (np = TAILQ_FIRST(&state.components); np != NULL;
 	    np = TAILQ_NEXT(np, tailq_entry)) {
-		namecache_handle_t next_nch;
+		namecache_handle_t next;
 		bool is_final = TAILQ_NEXT(np, tailq_entry) == NULL;
 
 		if (is_final && info->flags & LOOKUP_2NDLAST)
@@ -796,49 +920,21 @@ vfs_lookup(struct lookup_info *info)
 			/* note: ought to check if is dir */
 			continue;
 		} else if (strcmp(np->name, "..") == 0) {
-
-			/* follow the nchcovered chain */
-			if (nch.nc == nch.vfs->root_nc) {
-				namecache_handle_t mp = nch.vfs->nchcovered;
-
-				if (mp.nc != NULL) {
-					/*
-					 * mp is the mountpoint entry in the
-					 * parent mount
-					 */
-					nchandle_retain(mp);
-					nchandle_release(nch);
-					nch = mp;
-				} else {
-					/* root vfs, .. is itself */
-					continue;
-				}
-			}
-
-			/* finally get the parent of this nc */
-			if (nch.nc != nch.vfs->root_nc &&
-			    nch.nc->parent != NULL) {
-				namecache_t *p = nc_retain(nch.nc->parent);
-				nc_release(nch.nc);
-				nch.nc = p;
-				/* nch.vfs unchanged */
-			}
-
+			r = nc_dotdot(&nch);
+			if (r != 0)
+				break;
 			continue;
 		}
-
-		next_nch.vfs = nch.vfs;
 
 		if (nch.nc->vp->type != VDIR) {
 			r = -ENOTDIR;
 			break;
 		}
 
-		r = nc_lookup(nch.nc, &next_nch.nc, np->name,
+		r = nc_lookup(nch, &next, np->name,
 		    is_final && (info->flags & LOOKUP_ALLOW_NEG));
 		if (r == -ENOENT && is_final && (info->flags & LOOKUP_CREATE)) {
-			r = nc_create(nch.nc, &next_nch.nc, np->name,
-			    info->create_attr);
+			r = nc_create(nch, &next, np->name, info->create_attr);
 			if (r == 0) {
 				info->did_create = true;
 			} else if (r == -EEXIST &&
@@ -847,7 +943,7 @@ vfs_lookup(struct lookup_info *info)
 				 * Stale negative. nc_create() has already made
 				 * away with it so try again.
 				 */
-				r = nc_lookup(nch.nc, &next_nch.nc, np->name,
+				r = nc_lookup(nch, &next, np->name,
 				    is_final &&
 					(info->flags & LOOKUP_ALLOW_NEG));
 				if (r != 0)
@@ -859,50 +955,25 @@ vfs_lookup(struct lookup_info *info)
 			break;
 		}
 
-		while (nc_mounts_over(next_nch.nc) > 0) {
-			vfs_t *vfs;
-
-			vfs = mountpoint_find(next_nch);
-			if (vfs != NULL) {
-				namecache_handle_t vfsroot;
-
-				/* again, fine, no lockless lookup yet */
-				kassert(vfs_try_retain(vfs) == 0);
-
-				vfsroot.nc = nc_retain(vfs->root_nc);
-				vfsroot.vfs = vfs;
-
-				nchandle_release(next_nch);
-
-				next_nch = vfsroot;
-			} else {
-				break;
-			}
-		}
-
-		nc_release(nch.nc);
-		nch = next_nch;
-
-		if (nch.nc->vp != NULL && nch.nc->vp->type == VLNK) {
+		if (next.nc->vp != NULL && next.nc->vp->type == VLNK &&
+		    !(is_final && (info->flags & LOOKUP_NOFOLLOW_FINAL))) {
 			char *buf;
-			bool is_final_lnk = TAILQ_NEXT(np, tailq_entry) == NULL;
-
-			if (is_final_lnk &&
-			    (info->flags & LOOKUP_NOFOLLOW_FINAL))
-				continue;
 
 			if (nlinks + 1 > 8) {
+				nc_release_child(nch, next);
 				r = -ELOOP;
 				goto out;
 			}
 
 			buf = linkpaths[nlinks++] = kmem_alloc(256);
 			if (buf == NULL) {
+				nc_release_child(nch, next);
 				r = -ENOMEM;
 				goto out;
 			}
 
-			r = VOP_READLINK(nch.nc->vp, buf, 255);
+			r = VOP_READLINK(next.nc->vp, buf, 255);
+			nc_release_child(nch, next);
 			if (r < 0) {
 				kmem_free(buf, 256);
 				nlinks--;
@@ -918,17 +989,15 @@ vfs_lookup(struct lookup_info *info)
 			if (buf[0] == '/') {
 				nchandle_release(nch);
 				nch = nchandle_retain(root_nch);
-			} else {
-				namecache_t *parent = nc_retain(nch.nc->parent);
-				nc_release(nch.nc);
-				nch.nc = parent;
 			}
+
+			continue;
 		}
+
+		nc_advance(&nch, next);
 	}
 
 out:
-	ke_rwlock_exit_read(&topology_lock);
-
 	TAILQ_FOREACH_SAFE(np, &state.components, tailq_entry, tmp)
 		kmem_free(np, sizeof(*np));
 
@@ -993,8 +1062,7 @@ retry:
 
 	if (nc_test(dst.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
-		nc_wait_for_busy(dst.nc);
-		ke_rwlock_exit_read(&topology_lock);
+		nc_wait_for_busy_and_exit_topology(dst.nc);
 		nchandle_release(dst);
 		goto retry;
 	}
@@ -1057,8 +1125,7 @@ retry:
 
 	if (nc_test(targnch.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
-		nc_wait_for_busy(targnch.nc);
-		ke_rwlock_exit_read(&topology_lock);
+		nc_wait_for_busy_and_exit_topology(targnch.nc);
 		nchandle_release(targnch);
 		goto retry;
 	}
@@ -1182,8 +1249,7 @@ retry:
 
 	if (nc_test(src.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
-		nc_wait_for_busy(src.nc);
-		ke_rwlock_exit_read(&topology_lock);
+		nc_wait_for_busy_and_exit_topology(src.nc);
 		nchandle_release(src);
 		nchandle_release(dst);
 		goto retry;
@@ -1191,8 +1257,7 @@ retry:
 
 	if (nc_test(dst.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
-		nc_wait_for_busy(dst.nc);
-		ke_rwlock_exit_read(&topology_lock);
+		nc_wait_for_busy_and_exit_topology(dst.nc);
 		nchandle_release(src);
 		nchandle_release(dst);
 		goto retry;

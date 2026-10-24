@@ -1758,10 +1758,9 @@ ninep_readlink(vnode_t *vn, char *buf, size_t buflen)
 	fid_t fid;
 	off_t r = 0;
 
-	/* TODO: fix namecache to not hold topology lock around me */
-	fid = node->fid;
-	if (fid == NOFID)
-		return -ENOENT;
+	r = node_walk_fid(fs, node, &fid);
+	if (r != 0)
+		return r;
 
 	/* size[4] Treadlink tag[2] fid[4] */
 	buf_in = ninep_buf_alloc("F");
