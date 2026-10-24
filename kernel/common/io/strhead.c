@@ -915,6 +915,20 @@ retry:
 	return r;
 }
 
+size_t
+str_nplinks(void)
+{
+	struct linkblk *linkp;
+	size_t n = 0;
+
+	ke_mutex_enter(&mux_links_lock, "str_nplinks");
+	TAILQ_FOREACH(linkp, &mux_links, link)
+		n++;
+	ke_mutex_exit(&mux_links_lock);
+
+	return n;
+}
+
 static int
 do_punlink(stdata_t *upper_sh, int index)
 {

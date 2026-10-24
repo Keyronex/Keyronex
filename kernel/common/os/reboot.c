@@ -25,6 +25,7 @@
 #include <sys/krx_vfs.h>
 #include <sys/krx_reboot.h>
 #include <sys/proc.h>
+#include <sys/strsubr.h>
 #include <sys/vnode.h>
 #include <sys/wait.h>
 
@@ -80,11 +81,12 @@ reboot_thread(void *)
 	ke_rcu_synchronise(); /* clear up RCU-freed items */
 
 	kdprintf("reboot: files alloced=%u freed=%u "
-	   "vnodes alloced=%u freed=%u\n",
+	   "vnodes alloced=%u freed=%u plinks=%zu\n",
 	    atomic_load_explicit(&files_allocated, memory_order_relaxed),
 	    atomic_load_explicit(&files_freed, memory_order_relaxed),
 	    atomic_load_explicit(&vnodes_allocated, memory_order_relaxed),
-	    atomic_load_explicit(&vnodes_freed, memory_order_relaxed));
+	    atomic_load_explicit(&vnodes_freed, memory_order_relaxed),
+	    str_nplinks());
 
 	kassert(atomic_load_explicit(&files_allocated, memory_order_relaxed) ==
 	    atomic_load_explicit(&files_freed, memory_order_relaxed),

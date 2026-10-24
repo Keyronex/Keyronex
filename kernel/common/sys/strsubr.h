@@ -120,4 +120,6 @@ void str_ingress_putq(stdata_t *, mblk_t *);
 
 void str_kick(stdata_t *st);
 
+size_t str_nplinks(void);
+
 #endif /* ECX_SYS_STRSUBR_H */
