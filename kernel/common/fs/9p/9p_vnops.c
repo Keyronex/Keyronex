@@ -862,7 +862,7 @@ ninep_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 		}
 		ke_rwlock_exit_write(&node->rwlock);
 
-		if (used)
+		if (!used)
 			fid_clunk(fs, new_fid);
 
 	} else if (r == 0) {

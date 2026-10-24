@@ -46,6 +46,7 @@ typedef struct namecache {
 #define NC_BUSY (1u << 0)	/*!< busy resolving, wait on busy_waitq */
 #define NC_ON_LRU (1u << 1)	/*!< on (and retained by) an LRU queue */
 #define NC_ACCESSED (1u << 2)	/*!< accessed bit for replacement */
+#define NC_DISSOCIATED (1u << 3) /*!< removed from hierarchy  */
 #define NC_MOUNTS_SHIFT 8	/*!< number of vfses mounted over this entry */
 #define NC_MOUNTS_MASK (0xffu << NC_MOUNTS_SHIFT)
 
@@ -100,6 +101,13 @@ struct lookup_info {
 
 
 void nc_makeroot(vfs_t *vfs, struct vnode *root_vn);
+
+/*!
+ * @brief Mount vfs (with root vnode rootvn) over directory overnch.
+ *
+ * Consumes \p overnch
+ */
+void nc_domount(namecache_handle_t overnch, vfs_t *vfs, struct vnode *rootvn);
 
 int nc_link(namecache_handle_t dirnch, struct vnode *target_vn,
     const char *name);

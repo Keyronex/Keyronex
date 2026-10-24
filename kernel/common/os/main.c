@@ -12,6 +12,7 @@
 #include <sys/k_thread.h>
 #include <sys/kmem.h>
 #include <sys/krx_vfs.h>
+#include <sys/vnode.h>
 #include <sys/limine.h>
 #include <sys/proc.h>
 #include <sys/vm.h>
@@ -182,6 +183,7 @@ runinit(void *)
 {
 	int r;
 	namecache_handle_t ld, init;
+	vnode_t *initvn, *ldvn;
 
 	for (int i = 0; i < 3; i++) {
 		r = sys_openat(AT_FDCWD, "/dev/console", O_RDWR, 0);
@@ -200,7 +202,12 @@ runinit(void *)
 	kdprintf("exec_init: Loading init\n");
 
 	int load_init(struct vnode *initvn, struct vnode *ldvn);
-	load_init(init.nc->vp, ld.nc->vp);
+	/* load_init consumes these vnode references */
+	initvn = vn_retain(init.nc->vp);
+	ldvn = vn_retain(ld.nc->vp);
+	nchandle_release(init);
+	nchandle_release(ld);
+	load_init(initvn, ldvn);
 
 	kfatal("runinit: Should never reach this point\n");
 }

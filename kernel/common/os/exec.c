@@ -256,10 +256,9 @@ load_init(vnode_t *server_vnode, vnode_t *ld_vnode)
 
 	strcpy(curproc()->comm, "init");
 
-	/*
-	 * leaks init nch?
-	 * we want proc struct to keep an nch reference on what it opened anyway
-	 */
+	/* the mappings retained the vnodes (and vfs) */
+	vn_release(server_vnode);
+	vn_release(ld_vnode);
 
 	kdprintf("Entering usermode\n");
 	ke_md_enter_usermode(rtldpkg.entry, pkg.sp);

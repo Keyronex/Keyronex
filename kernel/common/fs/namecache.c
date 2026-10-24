@@ -63,6 +63,8 @@ namecache_handle_t root_nch;
 static krwlock_t topology_lock;
 
 static size_t lru_pos_n = 0, lru_neg_n = 0;
+static atomic_size_t nc_dissociated_n; /* dissociated entries still allocated */
+
 static TAILQ_HEAD(namecache_lru_queue, namecache)
     lru_pos_queue = TAILQ_HEAD_INITIALIZER(lru_pos_queue),
     lru_neg_queue = TAILQ_HEAD_INITIALIZER(lru_neg_queue);
@@ -320,6 +322,10 @@ nc_free(namecache_t *nc)
 	kassert(nc->parent == NULL);
 	kassert(!nc_test(nc, NC_ON_LRU | NC_BUSY));
 
+	if (nc_test(nc, NC_DISSOCIATED))
+		atomic_fetch_sub_explicit(&nc_dissociated_n, 1,
+		    memory_order_relaxed);
+
 	if (nc->name != NULL)
 		kmem_free((void *)nc->name, nc_namelen(nc) + 1);
 
@@ -464,7 +470,7 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 	    memory_order_relaxed);
 	LIST_INSERT_HEAD(&vfs_hash[nchandle_hash(overnch)], vfs,
 	    mountpoint_hash_entry);
-	vfs->nchcovered = nchandle_retain(overnch);
+	vfs->nchcovered = overnch; /* consumed */
 	ke_rwlock_exit_write(&topology_lock);
 }
 
@@ -504,8 +510,29 @@ nc_dissociate(namecache_t *nc)
 	RB_REMOVE(namecache_rb, &nc->parent->children, nc);
 	nc_release(nc->parent);
 	nc->parent = NULL;
+	nc_set(nc, NC_DISSOCIATED);
+	atomic_fetch_add_explicit(&nc_dissociated_n, 1, memory_order_relaxed);
 
 	lru_remove(nc);
+}
+
+static void
+nc_purge_negative_children(namecache_t *nc)
+{
+	namecache_t *child;
+
+	while ((child = RB_MIN(namecache_rb, &nc->children)) != NULL) {
+		kassert(child->vp == NULL);
+		nc_retain(child); /* so the LRU's isn't last ref */
+		nc_dissociate(child);
+		nc_release(child); /* being negative, fine under lock */
+	}
+}
+
+static bool
+nc_is_dissociated(namecache_t *nc)
+{
+	return nc_test(nc, NC_DISSOCIATED);
 }
 
 /* (topology lock must be held write) */
@@ -588,7 +615,7 @@ nc_lookup(namecache_handle_t parent, namecache_handle_t *out, const char *name,
 {
 	namecache_t *nc = parent.nc;
 	bool writelocked = false;
-	vnode_t *vn;
+	vnode_t *vn, *stale_vn = NULL;
 	struct namecache *found, key;
 	int r;
 
@@ -598,6 +625,14 @@ nc_lookup(namecache_handle_t parent, namecache_handle_t *out, const char *name,
 	ke_rwlock_enter_read(&topology_lock, "nc_lookup");
 
 retry:
+	if (nc_is_dissociated(nc)) {
+		if (writelocked)
+			ke_rwlock_exit_write(&topology_lock);
+		else
+			ke_rwlock_exit_read(&topology_lock);
+		return -ENOENT;
+	}
+
 	found = RB_FIND(namecache_rb, &nc->children, &key);
 
 	if (found != NULL) {
@@ -655,7 +690,13 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_lookup: relock");
 
-	if (r == 0) {
+	if (nc_is_dissociated(nc)) {
+		/* dissociated while in fs - child should be dissociated too */
+		if (r == 0)
+			stale_vn = vn;
+		r = -ENOENT;
+		nc_dissociate(found);
+	} else if (r == 0) {
 		nc_set_vp(found, vn);
 	} else if (r == -ENOENT && allow_neg) {
 		r = 0;
@@ -672,6 +713,8 @@ retry:
 	} else {
 		ke_rwlock_exit_write(&topology_lock);
 		nc_release(found);
+		if (stale_vn != NULL)
+			vn_release(stale_vn);
 	}
 
 	return r;
@@ -700,6 +743,11 @@ nc_create(namecache_handle_t parent, namecache_handle_t *out, const char *name,
 
 retry:
 	ke_rwlock_enter_write(&topology_lock, "nc_create");
+
+	if (nc_is_dissociated(parent.nc)) {
+		ke_rwlock_exit_write(&topology_lock);
+		return -ENOENT;
+	}
 
 	nc = RB_FIND(namecache_rb, &parent.nc->children, &key);
 	if (nc != NULL) {
@@ -738,7 +786,15 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_create: relock");
 
-	if (r == 0) {
+	if (r == 0 && nc_is_dissociated(parent.nc)) {
+		/* dissociated while in fs - child should be dissociated too */
+		r = -ENOENT;
+		nc_dissociate(nc);
+		nc_unbusy(nc);
+		ke_rwlock_exit_write(&topology_lock);
+		vn_release(new_vn);
+		nc_release(nc);
+	} else if (r == 0) {
 		nc_set_vp(nc, new_vn);
 		nc_unbusy(nc);
 		ke_rwlock_exit_write(&topology_lock);
@@ -1188,15 +1244,7 @@ retry:
 		namecache_t *child;
 
 		/* empty directory can still have negative children */
-
-		while ((child = RB_MIN(namecache_rb, &targnch.nc->children)) !=
-		    NULL) {
-			kassert(child->vp == NULL);
-			nc_retain(child); /* so the LRU's isn't last ref */
-			nc_dissociate(child);
-			nc_release(child); /* being negative, fine under lock */
-		}
-
+		nc_purge_negative_children(targnch.nc);
 		nc_dissociate(targnch.nc);
 	} else if (r == -ENOENT) {
 		kdprintf("warning: nc_remove: remove failed in vfs layer");
@@ -1331,6 +1379,7 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_rename: relock");
 	if (r == 0) {
+		nc_purge_negative_children(dst.nc);
 		nc_dissociate(dst.nc);
 		nc_move(src.nc, new_dirnch.nc, new_name);
 	} else {

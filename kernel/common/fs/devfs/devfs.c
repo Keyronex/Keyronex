@@ -435,10 +435,7 @@ mount_devfs(void)
 
 	vn = vn_alloc(NULL, VDIR, &dev_vnops, 0);
 
-	void nc_domount(namecache_handle_t overnch, vfs_t * vfs,
-	    vnode_t * rootvn);
-
-	nc_domount(overnch, vfs, vn);
+	nc_domount(overnch, vfs, vn); /* consumes overnch */
 }
 
 static struct vnode_ops dev_spec_vnops = {
