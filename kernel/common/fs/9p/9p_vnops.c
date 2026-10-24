@@ -65,7 +65,7 @@ struct ninepfs_state {
 	struct vnode *provider;
 
 	/* debug counters */
-	atomic_uint fids_allocated, fids_clunked;
+	atomic_uint fids_allocated, fids_clunked, fids_unused;
 	atomic_uint nodes_created, nodes_freed, nodes_torn_down;
 };
 
@@ -354,6 +354,8 @@ fid_clone(struct ninepfs_state *fs, ninep_fid_t fid, ninep_fid_t new_fid)
 		uint32_t err;
 		ninep_buf_getu32(buf_out, &err);
 		r = -err;
+		atomic_fetch_add_explicit(&fs->fids_unused, 1,
+		    memory_order_relaxed);
 		break;
 	}
 
@@ -462,6 +464,8 @@ fid_walk1(struct ninepfs_state *fs, fid_t fid, fid_t new_fid, const char *name,
 		ninep_buf_getu32(buf_out, &err);
 		r = -err;
 		kassert(r != 0);
+		atomic_fetch_add_explicit(&fs->fids_unused, 1,
+		    memory_order_relaxed);
 		break;
 	}
 
@@ -1952,10 +1956,11 @@ ninep_freevfs(vfs_t *vfs)
 	struct ninepfs_state *fs = (struct ninepfs_state *)vfs->fsprivate_1;
 
 	kassert(fs->root_node == NULL, "ninep_free: root still exists");
-	kdprintf("9p: unmounted: fids alloc=%u clunked=%u nodes created=%u "
-	    "freed=%u\n",
+	kdprintf("9p: unmounted: fids alloc=%u clunked=%u unused=%u "
+	    "nodes created=%u freed=%u\n",
 	    atomic_load_explicit(&fs->fids_allocated, memory_order_relaxed),
 	    atomic_load_explicit(&fs->fids_clunked, memory_order_relaxed),
+	    atomic_load_explicit(&fs->fids_unused, memory_order_relaxed),
 	    atomic_load_explicit(&fs->nodes_created, memory_order_relaxed),
 	    atomic_load_explicit(&fs->nodes_freed, memory_order_relaxed));
 	vn_idcache_fini(&fs->idcache);
@@ -1980,6 +1985,7 @@ ninep_attach(vnode_t *provider, vfs_t *vfs)
 	atomic_store(&state->req_tag, 0);
 	atomic_store(&state->fids_allocated, 0);
 	atomic_store(&state->fids_clunked, 0);
+	atomic_store(&state->fids_unused, 0);
 	atomic_store(&state->nodes_created, 0);
 	atomic_store(&state->nodes_freed, 0);
 	atomic_store(&state->nodes_torn_down, 0);
