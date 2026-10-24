@@ -6,7 +6,7 @@
  * @file namecache.c
  * @brief Namecache.
  */
- /*
+/*
  * @file vfs_namecache.c
  * @brief Namecache.
  *
@@ -18,12 +18,24 @@
  * holding it for reading stabilises the tree (including preventing LRU cached
  * entries from being evicted).
  *
- * The standby positive and negative queues are guarded by their own mutexes.
- * Moving onto or off these queues acquires this mutex.
+ * The LRU queues are guarded by the lru_mutex.
  *
- * Reclamation will proceed by taking the topology_rwlock exclusive, then
+ * LRU
+ * ---
  *
- * The ordering is: topology_rwlock -> standby mutexes.
+ * Every attached (i.e. is a child of a parent) namecache entry is on either the
+ * positive or negative LRU queue, which retains the namecache. Therefore any
+ * attached entry's reference count is always > 1. Since roots have no parent
+ * they are not on an LRU queue.
+ *
+ * On retain, an accessed bit is set. The idea is that when there is an ager, it
+ * will do something like CLOCK, and CAS the refcount of entries no one holds
+ * from 1 to 0, then dissociate them under the topology lock held write.
+ *
+ * At dissociation from the tree, the entry is taken off its LRU queue and
+ * released. The last release of a dissociated namecache frees it.
+ *
+ * The ordering is: topology_rwlock -> lru_mutex.
  *
  * Namecache resolution (from negative to positive) is done with the topology
  * lock released and the needful namecaches busied instead. People encountering
@@ -50,11 +62,11 @@ static LIST_HEAD(vfs_hash_bucket, vfs) vfs_hash[MNT_HASH_NBUCKETS];
 namecache_handle_t root_nch;
 static krwlock_t topology_lock;
 
-static size_t standby_pos_n = 0, standby_neg_n = 0;
-static TAILQ_HEAD(namecache_standby_queue, namecache)
-    standby_pos_queue = TAILQ_HEAD_INITIALIZER(standby_pos_queue),
-    standby_neg_queue = TAILQ_HEAD_INITIALIZER(standby_neg_queue);
-static kmutex_t standby_pos_mutex, standby_neg_mutex;
+static size_t lru_pos_n = 0, lru_neg_n = 0;
+static TAILQ_HEAD(namecache_lru_queue, namecache)
+    lru_pos_queue = TAILQ_HEAD_INITIALIZER(lru_pos_queue),
+    lru_neg_queue = TAILQ_HEAD_INITIALIZER(lru_neg_queue);
+static kmutex_t lru_mutex;
 
 static size_t
 nc_namelen(namecache_t *nc)
@@ -80,6 +92,37 @@ nc_hash(const char *str, size_t len)
 	return fnv1a_hash32(str, len) | ((uint64_t)len << 32);
 }
 
+static inline uint32_t
+nc_flags(namecache_t *nc)
+{
+	return atomic_load_explicit(&nc->flags, memory_order_relaxed);
+}
+
+static inline bool
+nc_test(namecache_t *nc, uint32_t flag)
+{
+	return (nc_flags(nc) & flag) != 0;
+}
+
+/* (topology lock must be held as writer for anything but NC_ACCESSED) */
+static inline void
+nc_set(namecache_t *nc, uint32_t flag)
+{
+	atomic_fetch_or_explicit(&nc->flags, flag, memory_order_relaxed);
+}
+
+static inline void
+nc_clear(namecache_t *nc, uint32_t flag)
+{
+	atomic_fetch_and_explicit(&nc->flags, ~flag, memory_order_relaxed);
+}
+
+static inline unsigned
+nc_mounts_over(namecache_t *nc)
+{
+	return (nc_flags(nc) & NC_MOUNTS_MASK) >> NC_MOUNTS_SHIFT;
+}
+
 /*
  * An existence guarantee on nc is required to call this.
  * This can be either holding the topology_rwlock (shared is fine)
@@ -88,138 +131,121 @@ nc_hash(const char *str, size_t len)
 static namecache_t *
 nc_retain(namecache_t *nc)
 {
-	for (;;) {
-		uint32_t current = atomic_load_explicit(&nc->refcnt,
-		    memory_order_acquire);
+	uint32_t old = atomic_fetch_add_explicit(&nc->refcnt, 1,
+	    memory_order_relaxed);
 
-	retry:
-		if (current == 0) {
-			kmutex_t *mutex;
-			struct namecache_standby_queue *queue;
-			size_t *queue_n;
+	kassert(old != 0, "nc_retain of a frozen namecache");
+	(void)old;
 
-			/* may need to take it off a standby queue */
+	if (!nc_test(nc, NC_ACCESSED)) /* try to avoid needless cache dirty */
+		nc_set(nc, NC_ACCESSED);
 
-			if (nc->vp == NULL) {
-				mutex = &standby_neg_mutex;
-				queue = &standby_neg_queue;
-				queue_n = &standby_neg_n;
-			} else {
-				mutex = &standby_pos_mutex;
-				queue = &standby_pos_queue;
-				queue_n = &standby_pos_n;
-			}
-
-			ke_mutex_enter(mutex, "");
-
-			current = atomic_load_explicit(&nc->refcnt,
-			    memory_order_acquire);
-			if (current != 0) {
-				/* someone else ref'd it, retry */
-				ke_mutex_exit(mutex);
-				goto retry;
-			}
-
-			/*
-			 * Otherwise (current == 0) we can just store; without
-			 * holding the standby mutex, no one else can race with
-			 * us here.
-			 */
-			atomic_store_explicit(&nc->refcnt, 1,
-			    memory_order_release);
-			TAILQ_REMOVE(queue, nc, standby_qlink);
-			(*queue_n)--;
-			ke_mutex_exit(mutex);
-			return nc;
-
-		} else if (atomic_compare_exchange_weak_explicit(&nc->refcnt,
-			       &current, current + 1, memory_order_acq_rel,
-			       memory_order_acquire)) {
-			return nc;
-		} else {
-			/* CAS failed; retry */
-			goto retry;
-		}
-	}
+	return nc;
 }
 
+/*
+ * Topology lock may be held unless only if this is NOT the last reference to a
+ * positive entry (in case of vnode release.)
+ */
 static void
 nc_release(namecache_t *nc)
 {
+	uint32_t old;
+
 	if (nc == NULL)
 		return;
 
-	for (;;) {
-		uint32_t current = atomic_load_explicit(&nc->refcnt,
-		    memory_order_acquire);
-
-	retry:
-
-		if (current == 1) {
-			kmutex_t *mutex;
-			struct namecache_standby_queue *queue;
-			size_t *queue_n;
-
-			if (nc->parent == NULL) {
-				/*
-				 * No other way to reference it, and it's not
-				 * bound for a standby queue.
-				 */
-				nc_free(nc);
-				return;
-			}
-
-			/* may need to release to a standby queue, or free it */
-
-			if (nc->vp == NULL) {
-				mutex = &standby_neg_mutex;
-				queue = &standby_neg_queue;
-				queue_n = &standby_neg_n;
-			} else {
-				mutex = &standby_pos_mutex;
-				queue = &standby_pos_queue;
-				queue_n = &standby_pos_n;
-			}
-
-			ke_mutex_enter(mutex, "");
-
-			/*
-			 * We CAS because the refcount drop has been deferred.
-			 * If there's any other way the namecache could be
-			 * retained, that might have happened. I can't remember
-			 * if there's any such way, but
-			 */
-			if (!atomic_compare_exchange_weak_explicit(&nc->refcnt,
-				&current, 0, memory_order_release,
-				memory_order_acquire)) {
-				/* someone else ref'd it, try again */
-				ke_mutex_exit(mutex);
-				goto retry;
-			}
-
-			TAILQ_INSERT_TAIL(queue, nc, standby_qlink);
-			(*queue_n)++;
-
-			ke_mutex_exit(mutex);
-			return;
-		} else if (atomic_compare_exchange_weak_explicit(&nc->refcnt,
-			       &current, current - 1, memory_order_release,
-			       memory_order_acquire)) {
-			return;
-		} else {
-			/* CAS failed; retry */
-			goto retry;
-		}
+	old = atomic_fetch_sub_explicit(&nc->refcnt, 1, memory_order_release);
+	kassert(old != 0);
+	if (old == 1) {
+		atomic_thread_fence(memory_order_acquire);
+		nc_free(nc);
 	}
 }
 
-/* vn must be retained (the retain is taken) */
+static struct namecache_lru_queue *
+lru_queue_for(namecache_t *nc, size_t **n_out)
+{
+	if (nc->vp == NULL) {
+		*n_out = &lru_neg_n;
+		return &lru_neg_queue;
+	} else {
+		*n_out = &lru_pos_n;
+		return &lru_pos_queue;
+	}
+}
+
+/*
+ * Place an attached entry on an LRU queue, which steals a reference.
+ * (topology lock, write)
+ */
+static void
+lru_insert(namecache_t *nc)
+{
+	struct namecache_lru_queue *queue;
+	size_t *n;
+
+	kassert(!nc_test(nc, NC_ON_LRU));
+	kassert(nc->parent != NULL);
+
+	atomic_fetch_add_explicit(&nc->refcnt, 1, memory_order_relaxed);
+
+	ke_mutex_enter(&lru_mutex, "lru_insert");
+	queue = lru_queue_for(nc, &n);
+	TAILQ_INSERT_TAIL(queue, nc, lru_qlink);
+	(*n)++;
+	ke_mutex_exit(&lru_mutex);
+
+	nc_set(nc, NC_ON_LRU);
+}
+
+/*
+ * Remove an entry from its LRU queue. The queue's reference is released, so
+ * this must be called with caller holding another retain on the entry.
+ * (topology lock must be held write)
+ */
+static void
+lru_remove(namecache_t *nc)
+{
+	struct namecache_lru_queue *queue;
+	size_t *n;
+	uint32_t old;
+
+	kassert(nc_test(nc, NC_ON_LRU));
+
+	ke_mutex_enter(&lru_mutex, "lru_remove");
+	queue = lru_queue_for(nc, &n);
+	TAILQ_REMOVE(queue, nc, lru_qlink);
+	(*n)--;
+	ke_mutex_exit(&lru_mutex);
+
+	nc_clear(nc, NC_ON_LRU);
+
+	old = atomic_fetch_sub_explicit(&nc->refcnt, 1, memory_order_release);
+	kassert(old > 1, "lru_remove dropped the last reference");
+	(void)old;
+}
+
+/*
+ * vn must be retained (the retain is taken).
+ * (topology lock must be held write except for not-yet-published roots)
+ */
 static void
 nc_set_vp(namecache_t *nc, vnode_t *vn)
 {
 	ipl_t ipl;
 
 	kassert(nc->vp == NULL);
+
+	if (nc_test(nc, NC_ON_LRU)) {
+		/* now positive */
+		ke_mutex_enter(&lru_mutex, "nc_set_vp");
+		TAILQ_REMOVE(&lru_neg_queue, nc, lru_qlink);
+		lru_neg_n--;
+		TAILQ_INSERT_TAIL(&lru_pos_queue, nc, lru_qlink);
+		lru_pos_n++;
+		ke_mutex_exit(&lru_mutex);
+	}
 
 	ipl = ke_spinlock_enter(&vn->nc_lock);
 	nc->vp = vn;
@@ -283,17 +309,16 @@ nc_vnode_live_name(vnode_t *vn, vnode_t **parent_out, char *name,
 }
 
 /*
- * Free an entry. (If there is a vnode, i.e. not a negative entry, then the
- * topology lock musn't be held as vnode release can block on writeback,
- * network, etc.)
+ * Free an entry that's no longer referenced. It must by now be either
+ * dissociated or a never published root, since the LRU queues retain.
+ * (If there is a vnode, i.e. not a negative entry, then the topology lock
+ * musn't be held as vnode release can block on writeback, network, etc.)
  */
 static void
 nc_free(namecache_t *nc)
 {
-	namecache_t *parent = nc->parent;
-
-	if (parent != NULL)
-		RB_REMOVE(namecache_rb, &parent->children, nc);
+	kassert(nc->parent == NULL);
+	kassert(!nc_test(nc, NC_ON_LRU | NC_BUSY));
 
 	if (nc->name != NULL)
 		kmem_free((void *)nc->name, nc_namelen(nc) + 1);
@@ -302,9 +327,24 @@ nc_free(namecache_t *nc)
 		vn_release(nc_clear_vp(nc));
 
 	kmem_free(nc, sizeof(namecache_t));
+}
 
-	if (parent != NULL)
-		nc_release(parent);
+/* Allocate a new namecache entry with an initial retain. */
+static namecache_t *
+nc_alloc(const char *name, uint64_t key)
+{
+	namecache_t *nc = kmem_alloc(sizeof(namecache_t));
+
+	atomic_store_explicit(&nc->refcnt, 1, memory_order_relaxed);
+	atomic_store_explicit(&nc->flags, 0, memory_order_relaxed);
+	nc->vp = NULL;
+	nc->parent = NULL;
+	RB_INIT(&nc->children);
+	ke_waitq_init(&nc->busy_waitq);
+	nc->name = name == NULL ? NULL : kmem_strdup(name);
+	nc->key = key;
+
+	return nc;
 }
 
 int
@@ -390,17 +430,8 @@ nc_makeroot(vfs_t *vfs, vnode_t *root_vn)
 {
 	namecache_t *root_nc;
 
-	root_nc = kmem_alloc(sizeof(namecache_t));
-	atomic_store_explicit(&root_nc->refcnt, 1, memory_order_relaxed);
-	root_nc->mounts_over_n = 0;
-	root_nc->busy = false;
-	root_nc->vp = NULL;
-	root_nc->parent = NULL;
-	RB_INIT(&root_nc->children);
-	ke_waitq_init(&root_nc->busy_waitq);
+	root_nc = nc_alloc(NULL, nc_hash(NULL, 0));
 	nc_set_vp(root_nc, root_vn);
-	root_nc->name = NULL;
-	root_nc->key = nc_hash(root_nc->name, 0);
 
 	kassert(root_nch.nc == NULL);
 	kassert(root_nch.vfs == NULL);
@@ -412,8 +443,7 @@ nc_makeroot(vfs_t *vfs, vnode_t *root_vn)
 	root_nch.vfs = vfs; /* consumes the initial vfs refcount */
 
 	ke_rwlock_init(&topology_lock);
-	ke_mutex_init(&standby_pos_mutex);
-	ke_mutex_init(&standby_neg_mutex);
+	ke_mutex_init(&lru_mutex);
 }
 
 void
@@ -421,21 +451,13 @@ nc_domount(namecache_handle_t overnch, vfs_t *vfs, vnode_t *rootvn)
 {
 	namecache_t *rootnc;
 
-	rootnc = kmem_alloc(sizeof(namecache_t));
-	atomic_store_explicit(&rootnc->refcnt, 1, memory_order_relaxed);
-	rootnc->mounts_over_n = 0;
-	rootnc->busy = false;
-	rootnc->vp = NULL;
-	rootnc->parent = NULL;
-	RB_INIT(&rootnc->children);
-	ke_waitq_init(&rootnc->busy_waitq);
+	rootnc = nc_alloc(NULL, nc_hash(NULL, 0));
 	nc_set_vp(rootnc, rootvn);
-	rootnc->name = NULL;
-	rootnc->key = nc_hash(rootnc->name, 0);
 	vfs->root_nc = rootnc;
 
 	ke_rwlock_enter_write(&topology_lock, "nc_domount");
-	overnch.nc->mounts_over_n++;
+	atomic_fetch_add_explicit(&overnch.nc->flags, 1u << NC_MOUNTS_SHIFT,
+	    memory_order_relaxed);
 	LIST_INSERT_HEAD(&vfs_hash[nchandle_hash(overnch)], vfs,
 	    mountpoint_hash_entry);
 	vfs->nchcovered = nchandle_retain(overnch);
@@ -460,6 +482,12 @@ nc_wake_busy_waiters(struct namecache *nc)
 	ke_waitq_wake_all(&nc->busy_waitq);
 }
 
+/*
+ * Dissociate a namecache entry from the tree and take it off any LRU queue it
+ * may be on.
+ *
+ * (topology lock must be held write. caller must have a reference on the entry)
+ */
 static void
 nc_dissociate(namecache_t *nc)
 {
@@ -468,12 +496,25 @@ nc_dissociate(namecache_t *nc)
 	RB_REMOVE(namecache_rb, &nc->parent->children, nc);
 	nc_release(nc->parent);
 	nc->parent = NULL;
+
+	lru_remove(nc);
 }
 
+/* (topology lock must be held write) */
 static void
 nc_busy(namecache_t *nc)
 {
-	nc->busy = true;
+	kassert(!nc_test(nc, NC_BUSY));
+	nc_set(nc, NC_BUSY);
+}
+
+/* (topology lock must be held write) */
+static void
+nc_unbusy(namecache_t *nc)
+{
+	kassert(nc_test(nc, NC_BUSY));
+	nc_clear(nc, NC_BUSY);
+	nc_wake_busy_waiters(nc);
 }
 
 int
@@ -492,7 +533,7 @@ retry:
 	found = RB_FIND(namecache_rb, &nc->children, &key);
 
 	if (found != NULL) {
-		if (found->busy) {
+		if (nc_test(found, NC_BUSY)) {
 			if (writelocked) {
 				ke_rwlock_downgrade(&topology_lock);
 				writelocked = false;
@@ -530,17 +571,10 @@ retry:
 		}
 	}
 
-	found = kmem_alloc(sizeof(namecache_t));
-
-	atomic_store_explicit(&found->refcnt, 1, memory_order_relaxed);
-	found->name = name == NULL ? NULL : kmem_strdup(name);
-	found->key = key.key;
+	found = nc_alloc(name, key.key);
 	found->parent = nc_retain(nc);
-	found->mounts_over_n = 0;
-	found->vp = NULL;
-	RB_INIT(&found->children);
-	ke_waitq_init(&found->busy_waitq);
 	RB_INSERT(namecache_rb, &nc->children, found);
+	lru_insert(found); /* initially negative  */
 
 	nc_busy(found);
 	ke_rwlock_exit_write(&topology_lock);
@@ -559,12 +593,11 @@ retry:
 		nc_dissociate(found);
 	}
 
-	found->busy = false;
-	nc_wake_busy_waiters(found);
+	nc_unbusy(found);
 	ke_rwlock_downgrade(&topology_lock);
 
 	if (r != 0) {
-		/* no vnode - fine with the topology lock */
+		/* dissociated, no vnode - fine with the topology lock */
 		nc_release(found);
 	}
 
@@ -598,14 +631,14 @@ retry:
 	if (nc != NULL) {
 		nc_retain(nc);
 
-		if (nc->busy) {
+		if (nc_test(nc, NC_BUSY)) {
 			ke_rwlock_downgrade(&topology_lock);
 			nc_wait_for_busy(nc);
 			nc_release(nc);
 			goto retry;
 		}
 
-		if (nc->mounts_over_n > 0) {
+		if (nc_mounts_over(nc) > 0) {
 			nc_release(nc);
 			ke_rwlock_downgrade(&topology_lock);
 			return -EBUSY;
@@ -617,17 +650,10 @@ retry:
 			return -EEXIST;
 		}
 	} else {
-		nc = kmem_alloc(sizeof(*nc));
-		nc->name = kmem_strdup(name);
-		nc->key = key.key;
+		nc = nc_alloc(name, key.key);
 		nc->parent = nc_retain(parent);
-		nc->mounts_over_n = 0;
-		nc->vp = NULL;
-		RB_INIT(&nc->children);
-		ke_waitq_init(&nc->busy_waitq);
-		atomic_store(&nc->refcnt, 1);
-
 		RB_INSERT(namecache_rb, &parent->children, nc);
+		lru_insert(nc);
 		created = true;
 	}
 
@@ -640,8 +666,7 @@ retry:
 
 	if (r == 0) {
 		nc_set_vp(nc, new_vn);
-		nc->busy = false;
-		nc_wake_busy_waiters(nc);
+		nc_unbusy(nc);
 		*out = nc; /* retained */
 	} else {
 		if (r == -EEXIST) {
@@ -656,8 +681,7 @@ retry:
 		if (new_vn != NULL)
 			vn_release(new_vn);
 
-		nc->busy = false;
-		nc_wake_busy_waiters(nc);
+		nc_unbusy(nc);
 		nc_release(nc);
 	}
 
@@ -835,7 +859,7 @@ vfs_lookup(struct lookup_info *info)
 			break;
 		}
 
-		while (next_nch.nc->mounts_over_n > 0) {
+		while (nc_mounts_over(next_nch.nc) > 0) {
 			vfs_t *vfs;
 
 			vfs = mountpoint_find(next_nch);
@@ -967,7 +991,7 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_link");
 
-	if (dst.nc->busy) {
+	if (nc_test(dst.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
 		nc_wait_for_busy(dst.nc);
 		ke_rwlock_exit_read(&topology_lock);
@@ -981,7 +1005,7 @@ retry:
 		goto retry;
 	}
 
-	if (dst.nc->mounts_over_n > 0) {
+	if (nc_mounts_over(dst.nc) > 0) {
 		r = -EBUSY;
 		goto out;
 	}
@@ -1004,8 +1028,7 @@ retry:
 		nc_dissociate(dst.nc); /* the negative entry seems stale */
 	}
 
-	dst.nc->busy = false;
-	nc_wake_busy_waiters(dst.nc);
+	nc_unbusy(dst.nc);
 out:
 	ke_rwlock_exit_write(&topology_lock);
 	nchandle_release(dst);
@@ -1032,7 +1055,7 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_remove");
 
-	if (targnch.nc->busy) {
+	if (nc_test(targnch.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
 		nc_wait_for_busy(targnch.nc);
 		ke_rwlock_exit_read(&topology_lock);
@@ -1057,7 +1080,7 @@ retry:
 		goto out;
 	}
 
-	if (targnch.nc->mounts_over_n > 0) {
+	if (nc_mounts_over(targnch.nc) > 0) {
 		r = -EBUSY;
 		goto out;
 	}
@@ -1093,9 +1116,9 @@ retry:
 		while ((child = RB_MIN(namecache_rb, &targnch.nc->children)) !=
 		    NULL) {
 			kassert(child->vp == NULL);
-			nc_retain(child);
+			nc_retain(child); /* so the LRU's isn't last ref */
 			nc_dissociate(child);
-			nc_release(child);
+			nc_release(child); /* being negative, fine under lock */
 		}
 
 		nc_dissociate(targnch.nc);
@@ -1103,8 +1126,7 @@ retry:
 		kdprintf("warning: nc_remove: remove failed in vfs layer");
 	}
 
-	targnch.nc->busy = false;
-	nc_wake_busy_waiters(targnch.nc);
+	nc_unbusy(targnch.nc);
 
 out:
 	ke_rwlock_exit_write(&topology_lock);
@@ -1158,7 +1180,7 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_remove");
 
-	if (src.nc->busy) {
+	if (nc_test(src.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
 		nc_wait_for_busy(src.nc);
 		ke_rwlock_exit_read(&topology_lock);
@@ -1167,7 +1189,7 @@ retry:
 		goto retry;
 	}
 
-	if (dst.nc->busy) {
+	if (nc_test(dst.nc, NC_BUSY)) {
 		ke_rwlock_downgrade(&topology_lock);
 		nc_wait_for_busy(dst.nc);
 		ke_rwlock_exit_read(&topology_lock);
@@ -1194,7 +1216,7 @@ retry:
 	}
 
 	/* don't mess with mountpoints */
-	if (src.nc->mounts_over_n > 0 || dst.nc->mounts_over_n > 0) {
+	if (nc_mounts_over(src.nc) > 0 || nc_mounts_over(dst.nc) > 0) {
 		r = -EBUSY;
 		goto out;
 	}
@@ -1241,10 +1263,8 @@ retry:
 		kdprintf("warning: nc_rename: rename failed in vfs layer");
 	}
 
-	src.nc->busy = false;
-	dst.nc->busy = false;
-	nc_wake_busy_waiters(src.nc);
-	nc_wake_busy_waiters(dst.nc);
+	nc_unbusy(src.nc);
+	nc_unbusy(dst.nc);
 
 out:
 	ke_rwlock_exit_write(&topology_lock);

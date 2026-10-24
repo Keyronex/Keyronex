@@ -18,12 +18,18 @@
 
 #include <libkern/queue.h>
 
+/*!
+ * A namecache entry
+ *
+ * In flags, NC_ACCESSED can be set by any retainer but the rest require
+ * the topology lock held write.
+ */
 typedef struct namecache {
 	atomic_uint refcnt;
-	uint32_t mounts_over_n : 8, busy: 1, unused : 23;
+	atomic_uint flags;	/* NC_* flags and mount count */
 	struct vnode *vp;
 	LIST_ENTRY(namecache) vn_link; /* on vp->nc_refs */
-	TAILQ_ENTRY(namecache) standby_qlink;
+	TAILQ_ENTRY(namecache) lru_qlink; /* (lru_mutex) */
 	struct namecache *parent;
 	RB_ENTRY(namecache) sib_rblink;
 	RB_HEAD(namecache_rb, namecache) children;
@@ -36,6 +42,12 @@ typedef struct namecache {
 	 */
 	kwaitq_t busy_waitq;
 } namecache_t;
+
+#define NC_BUSY (1u << 0)	/*!< busy resolving, wait on busy_waitq */
+#define NC_ON_LRU (1u << 1)	/*!< on (and retained by) an LRU queue */
+#define NC_ACCESSED (1u << 2)	/*!< accessed bit for replacement */
+#define NC_MOUNTS_SHIFT 8	/*!< number of vfses mounted over this entry */
+#define NC_MOUNTS_MASK (0xffu << NC_MOUNTS_SHIFT)
 
 typedef struct namecache_handle {
 	namecache_t *nc;
