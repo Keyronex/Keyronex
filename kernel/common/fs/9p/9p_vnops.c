@@ -29,7 +29,8 @@
 
 typedef uint32_t fid_t;
 
-#define NOFID ((fid_t)~0u)
+#define NOFID ((fid_t)-1)
+#define NOGEN ((uint64_t)-1)
 
 /*
  * A 9p 'inode'
@@ -45,6 +46,7 @@ struct ninep_node {
 	kmutex_t open_fid_lock;
 	bool paging_fid_rdonly;	/* open fid open only for read */
 	bool unlinked;		/* set by node_evict(), no lock to read */
+	uint64_t gen;		/* host inode gen, or NOGEN */
 	vnode_t *vnode;
 	krwlock_t rwlock, paging_rwlock;
 	vattr_t vattr;
@@ -75,7 +77,9 @@ struct ninepfs_state *ninep_debug_state;
 
 static struct vnode_ops ninep_vnops;
 
-static int do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr);
+static int do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr,
+    bool want_gen);
+static void node_evict(struct ninepfs_state *fs, struct ninep_node *node);
 
 static fid_t
 fid_allocate(struct ninepfs_state *fs)
@@ -177,13 +181,42 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	r = vn_idcache_find(&fs->idcache, &qid.path, sizeof(qid.path), &vn);
 	if (r == 0) {
 		node = VTO9(vn);
-		/* don't check version, it's just mtime... */
-		kassert(node->qid.path == qid.path &&
-		    node->qid.type == qid.type);
-		*out = node;
-		return 1;
+		kassert(node->qid.path == qid.path);
+
+		/*
+		 * Try to detect host reuse of the inode for this qid.path and
+		 * enthustically evict our node if it did.
+		 *
+		 * qid.version is useless for this (QEMU's 9p it's just mtime)
+		 * but qid.type and (if we have it) stat.gen are helpful.
+		 */
+		if (node->qid.type != qid.type) {
+			r = -ESTALE;
+		} else if (node->gen != NOGEN) {
+			vattr_t fresh;
+
+			r = do_getattr(fs, fid, &fresh, true);
+			if (r == 0 && fresh.gen != NOGEN &&
+			    fresh.gen != node->gen)
+				r = -ESTALE;
+		} else {
+			r = 0;
+		}
+
+		if (r == -ESTALE) {
+			kdprintf("9p: node for qid %" PRIu64 " is stale (host "
+			    "reused the inode); evicting\n", qid.path);
+			node_evict(fs, node);
+			vn_release(vn);
+			/* fall out and proceed */
+		} else {
+			/* be optimistic if getattr failed */
+			*out = node;
+			return 1;
+		}
+	} else {
+		kassert(r == -ENOENT);
 	}
-	kassert(r == -ENOENT);
 
 	node = kmem_alloc(sizeof(struct ninep_node));
 	node->qid = qid;
@@ -197,7 +230,8 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 	ke_mutex_init(&node->open_fid_lock);
 	atomic_fetch_add_explicit(&fs->nodes_created, 1, memory_order_relaxed);
 
-	r = do_getattr(fs, fid, &node->vattr);
+	r = do_getattr(fs, fid, &node->vattr, true);
+	node->gen = r == 0 ? node->vattr.gen : NOGEN;
 	if (r != 0) {
 		kdprintf("9p: node_for_qid: getattr failed: %d\n", r);
 		kmem_free(node, sizeof(*node));
@@ -217,16 +251,34 @@ node_for_qid(struct ninepfs_state *fs, struct ninep_node **out,
 
 	vn_idcache_entry_init(&node->idc_entry, node->vnode, &node->qid.path,
 	    sizeof(node->qid.path));
-	r = vn_idcache_insert(&fs->idcache, &node->idc_entry, &vn);
-	if (r == -EEXIST) {
+
+	for (;;) {
+		struct ninep_node *existing;
+
+		r = vn_idcache_insert(&fs->idcache, &node->idc_entry, &vn);
+		if (r == 0)
+			break;
+		kassert(r == -EEXIST);
+
+		existing = VTO9(vn);
+		kassert(existing->qid.path == qid.path);
+
+		if (existing->qid.type != qid.type ||
+		    (existing->gen != NOGEN &&
+			node->gen != NOGEN &&
+			existing->gen != node->gen)) {
+			/* stale node created meantime, get rid of it */
+			kdprintf("9p: node for qid %" PRIu64 " is stale (host "
+			    "reused the inode); evicting\n", qid.path);
+			node_evict(fs, existing);
+			vn_release(vn);
+			continue;
+		}
+
 		node_free_unpublished(fs, node);
-		node = VTO9(vn);
-		kassert(node->qid.path == qid.path &&
-		    node->qid.type == qid.type);
-		*out = node;
+		*out = existing;
 		return 1;
 	}
-	kassert(r == 0);
 
 	*out = node;
 
@@ -599,13 +651,13 @@ mode_to_vtype(mode_t mode)
 }
 
 static int
-do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
+do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr, bool want_gen)
 {
 	iop_t *iop;
 	struct ninep_buf *buf_in, *buf_out;
 	uint64_t valid;
 	struct ninep_qid qid;
-	uint64_t nlink, blocks;
+	uint64_t nlink, blocks, btime, gen_val;
 
 	/* size[4] Tgetattr tag[2] fid[4] request_mask[8] */
 	buf_in = ninep_buf_alloc("Fl");
@@ -621,7 +673,8 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
 	buf_in->data->tag = to_leu16(fs->req_tag++);
 	buf_in->data->kind = k9pGetattr;
 	ninep_buf_addfid(buf_in, fid);
-	ninep_buf_addu64(buf_in, k9pGetattrBasic);
+	ninep_buf_addu64(buf_in,
+	    k9pGetattrBasic | (want_gen ? k9pGetattrGen : 0));
 	ninep_buf_close(buf_in);
 
 	iop = iop_new_9p(fs->provider, buf_in, buf_out, NULL);
@@ -646,7 +699,7 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
 	}
 
 	ninep_buf_getu64(buf_out, &valid);
-	kassert(valid == k9pGetattrBasic);
+	kassert((valid & k9pGetattrBasic) == k9pGetattrBasic);
 	ninep_buf_getqid(buf_out, &qid);
 	ninep_buf_getu32(buf_out, &vattr->mode);
 	ninep_buf_getu32(buf_out, &vattr->uid);
@@ -662,6 +715,12 @@ do_getattr(struct ninepfs_state *fs, fid_t fid, vattr_t *vattr)
 	ninep_buf_gettime(buf_out, &vattr->mtim.tv_nsec);
 	ninep_buf_gettime(buf_out, &vattr->ctim.tv_sec);
 	ninep_buf_gettime(buf_out, &vattr->ctim.tv_nsec);
+	ninep_buf_getu64(buf_out, &btime); /* (btime_sec) */
+	ninep_buf_getu64(buf_out, &btime); /* (btime_nsec) */
+	ninep_buf_getu64(buf_out, &gen_val);
+
+	vattr->gen = (valid & k9pGetattrGen) != 0 ? gen_val :
+	    NOGEN;
 
 	vattr->fileid = qid.path;
 	vattr->fsid = 0;
@@ -794,7 +853,18 @@ ninep_lookup(vnode_t *dvn, const char *name, vnode_t **out)
 
 	r = node_for_qid(fs, &node, qid, new_fid, VNON);
 	if (r == 1) {
-		fid_clunk(fs, new_fid);
+		bool used = false;
+
+		ke_rwlock_enter_write(&node->rwlock, "node_adopt_walk_fid");
+		if (node->fid == NOFID) {
+			node->fid = new_fid;
+			used = true;
+		}
+		ke_rwlock_exit_write(&node->rwlock);
+
+		if (used)
+			fid_clunk(fs, new_fid);
+
 	} else if (r == 0) {
 		node->name = kmem_strdup(name);
 	} else {
@@ -1140,7 +1210,7 @@ node_remove_begin(struct ninepfs_state *fs, struct ninep_node *node)
 	else
 		r = 0;
 	if (r == 0)
-		r = do_getattr(fs, fid, &attr);
+		r = do_getattr(fs, fid, &attr, false);
 	if (r != 0) {
 		kdprintf("9pfs: getattr of %s before removal failed: %d; "
 		    "evicting\n", node->name, r);
@@ -1340,7 +1410,7 @@ ninep_getattr(vnode_t *vn, vattr_t *attr)
 	else
 		r = 0;
 	if (r == 0)
-		r = do_getattr(fs, fid, &fresh);
+		r = do_getattr(fs, fid, &fresh, false);
 
 	/*
 	 * Take the rwlock so the size can't race with extension by a write,
@@ -1355,6 +1425,8 @@ ninep_getattr(vnode_t *vn, vattr_t *attr)
 		fresh.size = node->vattr.size;
 		/* since e.g. sockets override the type, keep ours */
 		fresh.type = node->vattr.type;
+		/* gen wasn't requested, keep the one we know */
+		fresh.gen = node->gen;
 		node->vattr = fresh;
 		*attr = fresh;
 	}

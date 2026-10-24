@@ -47,6 +47,7 @@ typedef struct vattr {
 			ctim;	/*!< creation time */
 	dev_t 		rdev;	/*!< represented device */
 	uint64_t	dsize;	/*!< on-disk size in bytes */
+	uint64_t	gen;	/*!< node generation */
 } vattr_t;
 
 #define VATTR_NULL (vattr_t) {				\
@@ -64,6 +65,7 @@ typedef struct vattr {
 	.ctim = { .tv_sec = -1, .tv_nsec = -1 },	\
 	.rdev = -1,					\
 	.dsize = -1,					\
+	.gen = -1,					\
 };
 
 /*
