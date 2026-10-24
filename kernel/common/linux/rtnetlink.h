@@ -16,6 +16,7 @@
 
 #include <linux/if_addr.h>
 #include <linux/neighbour.h>
+#include <linux/netlink.h>
 
 #include <stdint.h>
 

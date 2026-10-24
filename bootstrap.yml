@@ -122,10 +122,10 @@ tools:
     source:
       name: automake-1.16
       subdir: 'sources'
-      url: 'https://ftpmirror.gnu.org/gnu/automake/automake-1.16.tar.xz'
+      url: 'https://ftpmirror.gnu.org/gnu/automake/automake-1.16.5.tar.xz'
       format: 'tar.xz'
-      extract_path: 'automake-1.16'
-      version: '1.16'
+      extract_path: 'automake-1.16.5'
+      version: '1.16.5'
       patch-path-strip: 1
       tools_required:
         - host-autoconf-2.69

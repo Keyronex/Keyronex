@@ -86,6 +86,7 @@ packages:
         - '--without-bash-malloc'
         environ:
           ac_cv_func_wcswidth: 'no'
+          CC_FOR_BUILD: 'gcc -std=gnu17'
     build:
       - args: ['make', '-j@PARALLELISM@']
       - args: ['make', 'DESTDIR=@THIS_COLLECT_DIR@', 'install']

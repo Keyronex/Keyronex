@@ -18,7 +18,8 @@
 #define TCSETA		0x5406
 #define TCSETAW		0x5407
 #define TCSETAF		0x5408
-
+#define TIOCEXCL	0x540C
+#define TIOCNXCL	0x540D
 #define TIOCSCTTY	0x540E
 
 #define TIOCGPTN	0x80045430
