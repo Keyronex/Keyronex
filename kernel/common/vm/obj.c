@@ -682,7 +682,7 @@ obj_max_readahead(struct obj_pte_wire_state *cursor, pgoff_t pgoff,
 		pte_t *obj_ppte = cursor->pte + i, pte;
 
 		/* stop if we cross a page boundary */
-		if (pgoff < OBJ_N_DIRECT &&
+		if (pgoff >= OBJ_N_DIRECT &&
 		    ((uintptr_t)(obj_ppte) & (PGSIZE - 1)) == 0)
 			break;
 

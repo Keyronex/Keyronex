@@ -252,6 +252,7 @@ do_object_fault(struct fault_info *info,
 		    count << PGSHIFT, obj_pgoff << PGSHIFT);
 		iop_send_sync(iop);
 		VOP_PAGING_EXIT(info->object->vnobj.vnode);
+		iop_free(iop);
 
 #if 0
 		kprintf("Did read in object page (%d; tot. %d)\n", obj_pgoff, count);
