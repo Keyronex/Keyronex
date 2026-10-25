@@ -383,7 +383,7 @@ sys_linkat(int olddirfd, const char *uoldpath, int newdirfd,
 	if (r != 0)
 		goto out_release_target;
 
-	r = nc_link(new_parent_nch, target_nch.nc->vp, newname);
+	r = nc_link(new_parent_nch, target_nch, newname);
 
 	nchandle_release(new_parent_nch);
 out_release_target:

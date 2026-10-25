@@ -12,6 +12,7 @@
 
 #include <sys/types.h>
 #include <sys/k_intr.h>
+#include <sys/k_thread.h>
 #include <sys/k_waitq.h>
 #include <sys/krx_atomic.h>
 #include <sys/tree.h>
@@ -76,6 +77,7 @@ typedef struct vfs {
 	kspinlock_t vnode_list_lock;
 	TAILQ_HEAD(, vnode) vnode_list; /* (v) vnodes */
 	kwaitq_t vnode_waitq; /* woken on vn_free of a published vnode */
+	kmutex_t rename_mutex; /* cross-tree renames */
 
 	uintptr_t fsprivate_1;
 } vfs_t;
@@ -138,7 +140,7 @@ void nc_init(void);
  */
 void nc_mount(namecache_handle_t overnch, vfs_t *vfs, struct vnode *rootvn);
 
-int nc_link(namecache_handle_t dirnch, struct vnode *target_vn,
+int nc_link(namecache_handle_t dirnch, namecache_handle_t target,
     const char *name);
 
 int nc_remove(namecache_handle_t dirnch, const char *name, bool isdir);

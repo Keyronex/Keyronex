@@ -800,13 +800,17 @@ nc_dissociate(namecache_t *nc)
 	lru_remove(nc);
 }
 
+
 static void
 nc_purge_negative_children(namecache_t *nc)
 {
-	namecache_t *child;
+	namecache_t *child, *next;
 
-	while ((child = RB_MIN(namecache_rb, &nc->children)) != NULL) {
+	RB_FOREACH_SAFE(child, namecache_rb, &nc->children, next) {
 		kassert(child->vp == NULL);
+		/* leave to nc_busy(). ? maybe instead check in lookup/rename */
+		if (nc_test(child, NC_BUSY))
+			continue;
 		nc_retain(child); /* so the LRU's isn't last ref */
 		nc_dissociate(child);
 		nc_release(child); /* being negative, fine under lock */
@@ -827,11 +831,13 @@ nc_busy(namecache_t *nc)
 	nc_set(nc, NC_BUSY);
 }
 
-/* (topology lock must be held write) */
+/* (topology lock must be held write, nc must be retained) */
 static void
 nc_unbusy(namecache_t *nc)
 {
 	kassert(nc_test(nc, NC_BUSY));
+	if (nc->parent != NULL && nc_is_dissociated(nc->parent))
+		nc_dissociate(nc); /* deferred from purge_negative_children */
 	nc_clear(nc, NC_BUSY);
 	nc_wake_busy_waiters(nc);
 }
@@ -1384,14 +1390,19 @@ vfs_lookup_simple(namecache_handle_t start, namecache_handle_t *out,
 }
 
 int
-nc_link(namecache_handle_t dirnch, vnode_t *target_vn, const char *name)
+nc_link(namecache_handle_t dirnch, namecache_handle_t target,
+    const char *name)
 {
+	vnode_t *target_vn = target.nc->vp;
 	namecache_handle_t dst;
 	int r;
 
 	/* can't link into a non-dir */
 	if (dirnch.nc->vp->type != VDIR)
 		return -ENOTDIR;
+
+	if (dirnch.vfs != target.vfs)
+		return -EXDEV;
 
 	/* need a link op */
 	if (dirnch.nc->vp->ops->link == NULL)
@@ -1525,8 +1536,6 @@ retry:
 
 	ke_rwlock_enter_write(&topology_lock, "nc_remove: relock topology_lock");
 	if (r == 0) {
-		namecache_t *child;
-
 		/* empty directory can still have negative children */
 		nc_purge_negative_children(targnch.nc);
 		nc_dissociate(targnch.nc);
@@ -1565,25 +1574,42 @@ nc_rename(namecache_handle_t old_dirnch, const char *old_name,
     namecache_handle_t new_dirnch, const char *new_name)
 {
 	namecache_handle_t src, dst;
+	kmutex_t *rename_mutex = NULL;
 	int r;
 
 	if (old_dirnch.nc->vp->type != VDIR || new_dirnch.nc->vp->type != VDIR)
 		return -ENOTDIR;
 
+	if (old_dirnch.vfs != new_dirnch.vfs)
+		return -EXDEV;
+
+	if (old_dirnch.nc->vp->ops->rename == NULL)
+		return -ENOTSUP;
+
 	if (old_dirnch.nc == new_dirnch.nc && strcmp(old_name, new_name) == 0)
 		return 0;
+
+	/*
+	 * Serialise cross-tree renames so the cycle check is not stale
+	 * This lets the FS lock parents in the right order
+	 */
+	if (old_dirnch.nc != new_dirnch.nc) {
+		kassert(old_dirnch.nc->vp->vfs != NULL);
+		rename_mutex = &old_dirnch.nc->vp->vfs->rename_mutex;
+		ke_mutex_enter(rename_mutex, "nc_rename");
+	}
 
 retry:
 	r = vfs_lookup_simple(old_dirnch, &src, old_name,
 	    LOOKUP_NOFOLLOW_FINAL);
 	if (r != 0)
-		return r;
+		goto out_unlock;
 
 	r = vfs_lookup_simple(new_dirnch, &dst, new_name,
 	    LOOKUP_NOFOLLOW_FINAL | LOOKUP_ALLOW_NEG);
 	if (r != 0) {
 		nchandle_release(src);
-		return r;
+		goto out_unlock;
 	}
 
 	ke_rwlock_enter_write(&topology_lock, "nc_remove");
@@ -1677,6 +1703,9 @@ out:
 	ke_rwlock_exit_write(&topology_lock);
 	nchandle_release(src);
 	nchandle_release(dst);
+out_unlock:
+	if (rename_mutex != NULL)
+		ke_mutex_exit(rename_mutex);
 	return r;
 }
 

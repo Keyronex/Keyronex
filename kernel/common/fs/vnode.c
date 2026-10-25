@@ -341,6 +341,7 @@ vfs_init(vfs_t *vfs)
 	ke_spinlock_init(&vfs->vnode_list_lock);
 	TAILQ_INIT(&vfs->vnode_list);
 	ke_waitq_init(&vfs->vnode_waitq);
+	ke_mutex_init(&vfs->rename_mutex);
 	atomic_store_explicit(&vfs->opencnt, 2,
 	    memory_order_relaxed); /* initial refcount; mountpoint ref */
 }
