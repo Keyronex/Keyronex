@@ -241,7 +241,7 @@ ptm_ioctl(struct pty *pty, queue_t *wq, mblk_t *mp)
 
 	default:
 		mp->db->type = M_IOCNAK;
-		ioc->rval = ENOTSUP;
+		ioc->rval = ENOTTY;
 		str_qreply(wq, mp);
 		break;
 	}
@@ -359,6 +359,9 @@ pts_ioctl(struct pty *pty, queue_t *wq, mblk_t *mp)
 
 	default:
 		kdprintf("pts: warning, unhandled ioctl 0x%x\n", ioc->ic_cmd);
+		mp->db->type = M_IOCNAK;
+		ioc->rval = ENOTTY;
+		str_qreply(wq, mp);
 		break;
 	}
 }
