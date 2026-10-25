@@ -42,7 +42,7 @@ session_alloc(pid_t sid, struct proc *leader)
 }
 
 void
-session_ref(struct session *sess)
+session_retain(struct session *sess)
 {
 	kassert(ke_mutex_held(&proctree_mutex));
 
@@ -50,7 +50,7 @@ session_ref(struct session *sess)
 }
 
 void
-session_unref(struct session *sess)
+session_release(struct session *sess)
 {
 	kassert(ke_mutex_held(&proctree_mutex));
 
@@ -77,21 +77,21 @@ pgrp_alloc(pid_t pgid, struct session *sess)
 	pgrp->session = sess;
 	LIST_INIT(&pgrp->members);
 
-	session_ref(sess);
+	session_retain(sess);
 	LIST_INSERT_HEAD(&sess->pgrps, pgrp, session_link);
 
 	return pgrp;
 }
 
 void
-pgrp_ref(struct pgrp *pgrp)
+pgrp_retain(struct pgrp *pgrp)
 {
 	kassert(ke_mutex_held(&proctree_mutex));
 	pgrp->refcount++;
 }
 
 void
-pgrp_unref(struct pgrp *pgrp)
+pgrp_release(struct pgrp *pgrp)
 {
 	kassert(ke_mutex_held(&proctree_mutex));
 	kassert(pgrp->refcount > 0);
@@ -102,7 +102,7 @@ pgrp_unref(struct pgrp *pgrp)
 		LIST_REMOVE(pgrp, session_link);
 		kmem_free(pgrp, sizeof(*pgrp));
 
-		session_unref(sess);
+		session_release(sess);
 	}
 }
 
@@ -114,7 +114,7 @@ pgrp_add_member(struct pgrp *pgrp, struct proc *proc)
 	if (proc->pgrp != NULL)
 		pgrp_remove_member(proc);
 
-	pgrp_ref(pgrp);
+	pgrp_retain(pgrp);
 	proc->pgrp = pgrp;
 	LIST_INSERT_HEAD(&pgrp->members, proc, pgrp_link);
 }
@@ -131,7 +131,7 @@ pgrp_remove_member(struct proc *proc)
 
 	LIST_REMOVE(proc, pgrp_link);
 	proc->pgrp = NULL;
-	pgrp_unref(pgrp);
+	pgrp_release(pgrp);
 }
 
 pid_t
@@ -260,9 +260,12 @@ sys_setpgid(pid_t pid, pid_t pgid)
 			ke_mutex_exit(&proctree_mutex);
 			return -ENOMEM;
 		}
+		pgrp_add_member(pgrp, target);
+		pgrp_release(pgrp);
+	} else {
+		pgrp_add_member(pgrp, target);
 	}
 
-	pgrp_add_member(pgrp, target);
 	ke_mutex_exit(&proctree_mutex);
 	return ret;
 }
@@ -293,12 +296,15 @@ sys_setsid(void)
 
 	pgrp = pgrp_alloc(pid, sess);
 	if (pgrp == NULL) {
-		session_unref(sess);
+		session_release(sess);
 		ke_mutex_exit(&proctree_mutex);
 		return -ENOMEM;
 	}
 
 	pgrp_add_member(pgrp, proc);
+
+	pgrp_release(pgrp);
+	session_release(sess);
 
 	ke_mutex_exit(&proctree_mutex);
 

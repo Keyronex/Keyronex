@@ -119,13 +119,13 @@ thread_t *proc_new_thread(proc_t *proc, karch_trapframe_t *fork_frame,
 thread_t *proc_new_system_thread(void (*func)(void*), void *arg);
 
 struct session *session_alloc(pid_t sid, struct proc *leader);
-void session_ref(struct session *sess);
-void session_unref(struct session *sess);
+void session_retain(struct session *sess);
+void session_release(struct session *sess);
 
-struct pgrp *pgrp_alloc(pid_t pgid, struct session *sess);
-void pgrp_ref(struct pgrp *pgrp);
-void pgrp_unref(struct pgrp *pgrp);
-void pgrp_add_member(struct pgrp *pgrp, struct proc *proc);
+struct pgrp *pgrp_alloc(pid_t pgid, struct session *sess); /* retains sess */
+void pgrp_retain(struct pgrp *pgrp);
+void pgrp_release(struct pgrp *pgrp);
+void pgrp_add_member(struct pgrp *pgrp, struct proc *proc); /* retains pgrp */
 void pgrp_remove_member(struct proc *proc);
 
 void proc_reap_locked(proc_t *parent, proc_t *child);

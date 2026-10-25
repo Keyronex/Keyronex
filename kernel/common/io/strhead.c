@@ -324,10 +324,10 @@ void strclose(stdata_t *sh)
 		if (sh->tty_session != NULL) {
 			sh->tty_session->ctty_str = NULL;
 			sh->tty_session->ctty_vn = NULL;
-			session_unref(sh->tty_session);
+			session_release(sh->tty_session);
 		}
 		if (sh->tty_pgrp != NULL)
-			pgrp_unref(sh->tty_pgrp);
+			pgrp_release(sh->tty_pgrp);
 		ke_mutex_exit(&proctree_mutex);
 	}
 
@@ -560,8 +560,8 @@ do_setctty(struct vnode *vn, stdata_t *sh)
 		return -EPERM;
 	}
 
-	session_ref(sess);
-	pgrp_ref(proc->pgrp);
+	session_retain(sess);
+	pgrp_retain(proc->pgrp);
 
 	sh->tty_session = sess;
 	sh->tty_pgrp = proc->pgrp;
@@ -587,11 +587,11 @@ str_tty_detach_session_locked(stdata_t *sh)
 	sh->tty_session = NULL;
 
 	if (sh->tty_pgrp != NULL) {
-		pgrp_unref(sh->tty_pgrp);
+		pgrp_release(sh->tty_pgrp);
 		sh->tty_pgrp = NULL;
 	}
 
-	session_unref(sess);
+	session_release(sess);
 }
 
 /* convert a muxed stream back into one with a normal head */
@@ -1041,11 +1041,11 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 			return -ESRCH;
 		}
 
-		pgrp_ref(pgrp);
+		pgrp_retain(pgrp);
 
 		str_enter(sh, "TIOCSPGRP");
 		if (sh->tty_pgrp != NULL)
-			pgrp_unref(sh->tty_pgrp);
+			pgrp_release(sh->tty_pgrp);
 		sh->tty_pgrp = pgrp;
 		str_exit(sh);
 
