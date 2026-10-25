@@ -67,10 +67,12 @@ typedef struct stdata {
 	kevent_t ioctl_done_ev;
 
 	union {
+		/* TTYs, all under proctree_mutex */
 		struct {
 			struct pgrp *tty_pgrp; /* foreground process group */
 			struct session *tty_session; /* controlling session */
 		};
+		/* FIFOs */
 		struct {
 			size_t nreaders;
 			size_t nwriters;

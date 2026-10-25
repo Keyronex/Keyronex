@@ -527,6 +527,12 @@ strwrite(stdata_t *sh, const void *buf, size_t len, enum strrw_options)
 		return -EPIPE;
 	}
 
+	if (sh->hanged_up) {
+		str_freeb(mp);
+		str_req_end(sh);
+		return -EIO;
+	}
+
 	str_putnext(sh->wq, mp);
 	str_req_end(sh);
 
@@ -999,14 +1005,14 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 	case TIOCGPGRP: {
 		pid_t pgrp_id;
 
-		str_enter(sh, "TIOCGPGRP");
+		ke_mutex_enter(&proctree_mutex, "TIOCGPGRP");
 		if (sh->tty_pgrp == NULL) {
-			str_exit(sh);
+			ke_mutex_exit(&proctree_mutex);
 			kdprintf("str_ioctl: TIOCGPGRP with no tty_pgrp\n");
 			return -ENOTTY;
 		}
 		pgrp_id = sh->tty_pgrp->pgid;
-		str_exit(sh);
+		ke_mutex_exit(&proctree_mutex);
 
 		return memcpy_to_user(arg, &pgrp_id, sizeof(pid_t));
 	}
@@ -1042,12 +1048,9 @@ strioctl(struct vnode *vn, stdata_t *sh, unsigned long cmd, void *arg)
 		}
 
 		pgrp_retain(pgrp);
-
-		str_enter(sh, "TIOCSPGRP");
 		if (sh->tty_pgrp != NULL)
 			pgrp_release(sh->tty_pgrp);
 		sh->tty_pgrp = pgrp;
-		str_exit(sh);
 
 		ke_mutex_exit(&proctree_mutex);
 		return 0;
@@ -1250,6 +1253,7 @@ sth_rput(queue_t *q, mblk_t *mp)
 	case M_HANGUP:
 		str_freeb(mp);
 		sh->hanged_up = true;
+		ke_event_set_signalled(&sh->data_readable, true);
 		pollhead_deliver_events(&sh->pollhead, EPOLLHUP);
 
 #if 0
