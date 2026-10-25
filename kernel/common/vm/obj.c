@@ -299,9 +299,9 @@ obj_wire_pte(vm_object_t *obj, struct obj_pte_wire_state *state, vaddr_t offset,
 			page->objtable.level = level - 1;
 			page->objtable.is_root = level == (indirection_level + 1);
 
-			/* refcnt is already 1; add 1 to these to pin. */
-			page->objtable.noswap_ptes++;
-			page->objtable.nonzero_ptes++;
+			/* refcnt is already 1; make these 1 to pin. */
+			page->objtable.noswap_ptes = 1;
+			page->objtable.nonzero_ptes = 1;
 
 			if (table_page != NULL) {
 				table_page->objtable.noswap_ptes++;
@@ -509,6 +509,12 @@ obj_valid_ptes_zeroed_table(vm_object_t *obj, vm_page_t *table_page, size_t n)
 	kassert(ke_spinlock_held(&obj->stealing_lock));
 	kassert(table_page->owner_obj == obj);
 	kassert(table_page->use == VM_PAGE_OBJ_TABLE);
+
+	/* for non-anonymous objects these should move in lockstep */
+	kassert(obj->kind != VM_OBJ_VNODE ||
+	    table_page->objtable.noswap_ptes ==
+	    table_page->objtable.nonzero_ptes,
+	    "object table for vnode has differing noswap/nonzero counts");
 
 	kassert(table_page->objtable.nonzero_ptes >= (int)n);
 	table_page->objtable.nonzero_ptes -= (int)n;

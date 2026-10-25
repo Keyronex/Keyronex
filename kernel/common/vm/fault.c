@@ -160,8 +160,15 @@ do_object_fault(struct fault_info *info,
 	ke_spinlock_enter_nospl(&info->object->stealing_lock);
 
 	if (info->object->kind == VM_OBJ_VNODE &&
-	    info->object_offset >= info->object->vnobj.valid_length)
+	    info->object_offset >= info->object->vnobj.valid_length) {
+		ke_spinlock_exit_nospl(&info->object->stealing_lock);
+		ke_spinlock_exit_nospl(&info->object->creation_lock);
+		ke_spinlock_enter_nospl(&info->map->stealing_lock);
+		pmap_unwire_pte(info->map, info->rs, &info->cursor);
+		ke_spinlock_exit_nospl(&info->map->stealing_lock);
+		ke_spinlock_exit_nospl(&info->map->creation_lock);
 		return -EFAULT;
+	}
 
 	r = obj_wire_pte(info->object, &objcursor, info->object_offset,
 	    true, proc_creation_lock_state);
