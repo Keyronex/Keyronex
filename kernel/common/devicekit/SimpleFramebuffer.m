@@ -81,7 +81,11 @@ fbdev_mmap(void *addr, size_t len, int prot, int flags, void *dev,
     io_off_t offset, vaddr_t *window)
 {
 	SimpleFramebuffer *self = dev;
+	size_t fb_len = roundup2((size_t)self->m_fix_info.smem_len, PGSIZE);
 	int r;
+
+	if (offset < 0 || len > fb_len || (size_t)offset > fb_len - len)
+		return -EINVAL;
 
 	r = vm_map_phys(proc_curproc()->vm_map,
 	    self->m_fix_info.smem_start + offset, window, len, prot,
