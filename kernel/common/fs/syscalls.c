@@ -56,6 +56,7 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	struct lookup_info info;
 	vattr_t create_attr;
 	vnode_t *vn, *openvn = NULL;
+	bool opened = false;
 	int r, len;
 
 	len = strldup_user(&path, upath, 4095);
@@ -66,7 +67,6 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	kprintf("sys_openat (%s): dirfd=%d path='%s' flags=0x%x mode=0o%o\n",
 	    curproc()->comm, dirfd, path, flags, mode);
 #endif
-
 
 	r = get_dirfd_nch(dirfd, &dirnch);
 	if (r != 0) {
@@ -122,6 +122,8 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 			return r;
 		}
 
+		opened = true;
+
 		if (openvn == vn) {
 			/* file retains the vnode via the nchandle */
 			vn_release(openvn);
@@ -141,20 +143,14 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 
 		attr.size = 0;
 		r = VOP_SETATTR(vn, &attr);
-		if (r != 0) {
-			if (openvn != NULL)
-				vn_release(openvn);
-			nchandle_release(result);
-			return r;
-		}
+		if (r != 0)
+			goto fail;
 	}
 
 	file = file_new(result, openvn, flags);
 	if (file == NULL) {
-		if (openvn != NULL)
-			vn_release(openvn);
-		nchandle_release(result);
-		return -ENOMEM;
+		r = -ENOMEM;
+		goto fail;
 	}
 
 	r = uf_reserve_fd(curproc()->finfo, 0,
@@ -164,6 +160,14 @@ sys_openat(int dirfd, const char *upath, int flags, mode_t mode)
 	else
 		uf_install_reserved(curproc()->finfo, r, file);
 
+	return r;
+
+fail:
+	if (opened && vn->ops->close != NULL)
+		VOP_CLOSE(vn, flags);
+	if (openvn != NULL)
+		vn_release(openvn);
+	nchandle_release(result);
 	return r;
 }
 
