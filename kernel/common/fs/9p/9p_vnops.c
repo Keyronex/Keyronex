@@ -1856,6 +1856,7 @@ static int negotiate_version(struct ninepfs_state *state)
 
 		kdprintf("9pfs: Negotiated 9p version %s, message size %d\n",
 		    ver, msize);
+		kmem_free(ver, strlen(ver) + 1);
 		break;
 	}
 
