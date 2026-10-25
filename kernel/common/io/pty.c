@@ -146,7 +146,7 @@ ptm_ropen(queue_t *rq, void *dev)
 
 	ke_mutex_enter(&pty_lock, "ptm_ropen");
 	for (int i = 0; i < PTY_MAX; i++) {
-		if (pty_table[index] == NULL) {
+		if (pty_table[i] == NULL) {
 			index = i;
 			break;
 		}
